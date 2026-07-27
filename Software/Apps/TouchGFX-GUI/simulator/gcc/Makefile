@@ -83,6 +83,7 @@ Libs/Source/Fit/FitRecordCadence.cpp\
 Libs/Source/Fit/RecordingMarker.cpp\
 ../../Libs/Sources/ActivitySummarySerializer.cpp\
 ../../Libs/Sources/ActivityWriter.cpp\
+../../Libs/Sources/ImuCsvRecorder.cpp\
 ../../Libs/Sources/Service.cpp\
 ../../Libs/Sources/SettingsSerializer.cpp\
 ../../Libs/Sources/WristTiltDetector.cpp\

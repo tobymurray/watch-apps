@@ -69,6 +69,7 @@
     <ClCompile Include="$(SdkPath)\Libs\Source\Simulator\Components\SensorDriver.cpp"/>
     <ClCompile Include="..\..\..\..\Libs\Sources\ActivitySummarySerializer.cpp"/>
     <ClCompile Include="..\..\..\..\Libs\Sources\ActivityWriter.cpp"/>
+    <ClCompile Include="..\..\..\..\Libs\Sources\ImuCsvRecorder.cpp"/>
     <ClCompile Include="..\..\..\..\Libs\Sources\Service.cpp"/>
     <ClCompile Include="..\..\..\..\Libs\Sources\SettingsSerializer.cpp"/>
     <ClCompile Include="..\..\..\..\Libs\Sources\WristTiltDetector.cpp"/>
