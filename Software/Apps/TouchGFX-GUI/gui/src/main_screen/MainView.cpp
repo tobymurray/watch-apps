@@ -3,11 +3,11 @@
 MainView::MainView()
     : idBuffer{}
 {
-    barcodeBackground.setPosition(10, 40, 220, 110);
+    barcodeBackground.setPosition(10, 65, 220, 110);
     barcodeBackground.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
     add(barcodeBackground);
 
-    barcode.setPosition(20, 50, 200, 90);
+    barcode.setPosition(20, 75, 200, 90);
     add(barcode);
 }
 
@@ -18,7 +18,7 @@ void MainView::setupScreen()
     buttons.setL1(ButtonsSet::NONE);
     buttons.setL2(ButtonsSet::NONE);
     buttons.setR1(ButtonsSet::NONE);
-    buttons.setR2(ButtonsSet::WHITE);
+    buttons.setR2(ButtonsSet::NONE);
 
     textArea1.setWildcard1(idBuffer);
 

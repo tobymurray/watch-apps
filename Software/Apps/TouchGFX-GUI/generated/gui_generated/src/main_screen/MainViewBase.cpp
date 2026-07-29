@@ -17,7 +17,7 @@ MainViewBase::MainViewBase()
     buttons.setXY(0, 47);
     add(buttons);
 
-    textArea1.setXY(19, 150);
+    textArea1.setXY(19, 178);
     textArea1.setWidthHeight(203, 30);
     textArea1.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
     textArea1.setLinespacing(0);
