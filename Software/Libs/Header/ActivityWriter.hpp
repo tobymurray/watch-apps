@@ -248,6 +248,14 @@ private:
 
     bool createAndOpenFile(std::time_t utc);
     bool saveSummary(const TrackData& track);
+    /// Mirror a just-finished .fit into "<mPath>Archive/<yyyymm>/<name>.fit"
+    /// (a sibling of mPath, e.g. "ActivityArchive/" next to "Activity/"), so
+    /// the recording survives whatever the kernel does to the canonical copy
+    /// once it registers/syncs it -- a subdirectory of mPath is not safe, as
+    /// that whole subtree gets wiped post-sync. Must run before
+    /// saveSummary(), which repoints mFile at the .json sidecar and would
+    /// leave getPath() wrong.
+    bool archiveFinishedFile(const std::string& fitPath);
 
     static std::time_t tm2epoch(const struct tm* tm);
     static std::time_t epochToLocal(std::time_t utc);

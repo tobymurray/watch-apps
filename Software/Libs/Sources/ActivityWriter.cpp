@@ -482,6 +482,11 @@ bool ActivityWriter::stop(const TrackData& track)
     ok = finishOk && mFit->ok() && ok;
     mFit.reset();
 
+    // Captured before close(): on-device IFile::getPath() after close() was
+    // observed to no longer match the "<mPath>/..." form archiveFinishedFile()
+    // expects, so grabbing it here is required, not just tidier.
+    const std::string fitPath = mFile ? mFile->getPath() : std::string();
+
     if (mFile) {
         ok = mFile->flush() && ok;
         ok = mFile->close() && ok;
@@ -493,6 +498,15 @@ bool ActivityWriter::stop(const TrackData& track)
     // next boot does not treat this activity as interrupted.
     if (ok) {
         mMarker.remove();
+    }
+
+    // Activities recorded on this build have been observed to vanish from
+    // Activity/<yyyymm>/ sometime after the kernel syncs them to a paired
+    // phone -- there is no SDK-exposed flag to opt a file out of that, so the
+    // only lever an app has is to keep its own copy elsewhere. Must run
+    // before saveSummary() below repoints mFile at the .json sidecar.
+    if (ok && !archiveFinishedFile(fitPath)) {
+        LOG_ERROR("Failed to archive activity .fit [%s]\n", fitPath.c_str());
     }
 
     // FIT durability IS the save-success contract: the kernel auto-registers the
@@ -571,6 +585,44 @@ bool ActivityWriter::createAndOpenFile(std::time_t utc)
     if (!mFile || !mFile->open(true, true)) {
         LOG_ERROR("Failed to create file [%s]\n", buff);
         mFile.reset();
+        return false;
+    }
+
+    return true;
+}
+
+bool ActivityWriter::archiveFinishedFile(const std::string& fitPath)
+{
+    // Must be a sibling of mPath ("Activity"), NOT a subdirectory of it: the
+    // kernel's post-sync cleanup was observed to wipe the entire Activity/
+    // subtree recursively (an Activity/Archive/ mirror vanished along with
+    // the canonical copy), keeping only the fixed Activity/summary.json path.
+    //
+    // getPath() on-device returns an absolute path ("/Activity/202607/...")
+    // though mPath itself has no leading slash, so locate the "Activity/"
+    // segment rather than assuming it starts at index 0.
+    const std::string activityDir = std::string(mPath) + "/";
+    const size_t pos = fitPath.find(activityDir);
+    const size_t lastSlash = fitPath.rfind('/');
+    if (pos == std::string::npos || lastSlash == std::string::npos) {
+        LOG_ERROR("Unexpected .fit path shape [%s]\n", fitPath.c_str());
+        return false;
+    }
+
+    const size_t monthStart = pos + activityDir.size();
+    const std::string monthDir   = fitPath.substr(monthStart, lastSlash + 1 - monthStart);
+    const std::string fileName   = fitPath.substr(lastSlash + 1);
+    const std::string leadIn     = fitPath.substr(0, pos);  // whatever precedes "Activity/" (e.g. "/")
+    const std::string archiveDir = leadIn + std::string(mPath) + "Archive/" + monthDir;
+
+    if (!mKernel.fs.mkdir(archiveDir.c_str())) {
+        LOG_ERROR("Failed to create archive dir [%s]\n", archiveDir.c_str());
+        return false;
+    }
+
+    const std::string archivePath = archiveDir + fileName;
+    if (!mKernel.fs.copy(fitPath.c_str(), archivePath.c_str())) {
+        LOG_ERROR("Failed to archive activity file [%s]\n", archivePath.c_str());
         return false;
     }
 
