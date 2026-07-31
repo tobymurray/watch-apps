@@ -99,10 +99,12 @@ The sim then applies only what the physical panel does:
 - **Panel quirks** — `emulate_panel()` in `sim.rs` is an identity hook today; it's
   the single place to encode device-only behavior (see below).
 
-What the sim **cannot** show without calibration: the on-device **font-glyph
-under-render** (thin features vanish on the panel — the reason the clock is drawn
-as filled-rectangle 7-segment digits). That's physical panel behavior, not in the
-buffer, so the sim renders such text fine while the watch doesn't.
+What the sim **cannot** show without calibration: the on-device **dark-on-light
+drop-out**. Verified on hardware — bright text on the dark background renders
+crisply (title, footer), but dark thin glyphs on a light fill vanish (an early
+black-text-on-white-box clock showed as a blank white band; hence the clock is now
+bold white 7-segment digits on black). That asymmetry is physical panel behavior,
+not in the buffer, so the sim shows dark-on-light text the watch would drop.
 
 ## Tightening the sim ↔ hardware loop
 
@@ -119,8 +121,9 @@ The goal is that "looks right in the sim" ⇒ "looks right on the watch". Three 
    remaining visual difference as *pure panel behavior*. (Static elements match
    exactly; animated ones like the ball depend on the frame counter.)
 3. **Calibrate `emulate_panel()`.** Feed the differences from step 2 into the
-   `emulate_panel()` hook (e.g. a thin-feature erosion approximating the glyph
-   drop-out). Once calibrated, the sim predicts what the watch will actually show.
+   `emulate_panel()` hook (e.g. modelling the dark-on-light drop-out — eroding dark
+   thin runs that sit on a light fill). Once calibrated, the sim predicts what the
+   watch will actually show.
 
 ## Known PoC shortcuts (flagged for a real version)
 

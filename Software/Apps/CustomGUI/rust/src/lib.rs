@@ -19,7 +19,7 @@
 
 use embedded_graphics::{
     mono_font::{
-        ascii::{FONT_6X10, FONT_9X15_BOLD},
+        ascii::FONT_9X15_BOLD,
         MonoTextStyle,
     },
     pixelcolor::{raw::RawU8, PixelColor},
@@ -144,37 +144,13 @@ fn draw_rim(fb: &mut FrameBuf, g: &Geom) {
         .ok();
 }
 
-/// A boxed label: filled rectangle with high-contrast text punched in. Text on a
-/// solid block reads even when thin glyph strokes alone would wash out.
-fn boxed_text(
-    fb: &mut FrameBuf,
-    center: Point,
-    inner_w: u32,
-    inner_h: u32,
-    fill: Abgr2222,
-    fg: Abgr2222,
-    text: &str,
-    font: &embedded_graphics::mono_font::MonoFont,
-) {
-    Rectangle::new(
-        Point::new(center.x - inner_w as i32 / 2, center.y - inner_h as i32 / 2),
-        Size::new(inner_w, inner_h),
-    )
-    .into_styled(PrimitiveStyle::with_fill(fill))
-    .draw(fb)
-    .ok();
-
-    // Nudge the baseline to vertically center the glyph in the box.
-    let baseline = center.y + font.character_size.height as i32 / 3;
-    Text::with_alignment(text, Point::new(center.x, baseline), MonoTextStyle::new(font, fg), Alignment::Center)
-        .draw(fb)
-        .ok();
-}
-
 // -----------------------------------------------------------------------------
-// 7-segment clock — digits from filled rectangles (font glyphs don't render on
-// this panel, but filled rects provably do)
+// 7-segment clock — digits from filled rectangles
 // -----------------------------------------------------------------------------
+// Panel legibility rule (verified on-device): BRIGHT text on the DARK background
+// renders crisply (see the title/footer), but DARK thin glyphs on a LIGHT fill
+// drop out. So the clock is drawn as bold WHITE segments on black — big, bright,
+// always legible — rather than dark glyphs on a light block.
 // Segment bits: a=1 b=2 c=4 d=8 e=16 f=32 g=64
 //    aaa
 //   f   b
@@ -265,9 +241,9 @@ fn draw_home(fb: &mut FrameBuf, frame: u32) {
     .draw(fb)
     .ok();
 
-    // Hero clock, drawn as 7-segment digits built from FILLED RECTANGLES — the
-    // one primitive this panel provably displays. Font glyphs (even large black
-    // text on a white block) do not render on-device, so we don't use them here.
+    // Hero clock, drawn as 7-segment digits from filled rectangles: bold WHITE
+    // on black, so it stays big and legible (see the panel legibility note above
+    // the 7-seg section).
     let secs = frame / 30; // ~30 ticks/sec, assumed
     draw_clock_7seg(fb, g.cx, g.cy, secs, Abgr2222::WHITE);
 
@@ -289,17 +265,15 @@ fn draw_shapes(fb: &mut FrameBuf, frame: u32) {
     let g = geom(fb);
     draw_rim(fb, &g);
 
-    // Boxed header so text is legible on this screen too.
-    boxed_text(
-        fb,
-        Point::new(g.cx, g.cy - g.half + 16),
-        (g.half as u32 * 2).saturating_sub(6),
-        22,
-        Abgr2222::GREEN,
-        Abgr2222::BLACK,
+    // Bright header text on the dark background (dark-on-light drops out on-panel).
+    Text::with_alignment(
         "embedded-graphics",
-        &FONT_6X10,
-    );
+        Point::new(g.cx, g.cy - g.half + 18),
+        MonoTextStyle::new(&FONT_9X15_BOLD, Abgr2222::GREEN),
+        Alignment::Center,
+    )
+    .draw(fb)
+    .ok();
 
     let outline = PrimitiveStyleBuilder::new()
         .stroke_color(Abgr2222::WHITE)
@@ -342,7 +316,7 @@ fn footer(fb: &mut FrameBuf, g: &Geom, msg: &str) {
     Text::with_alignment(
         msg,
         Point::new(g.cx, g.cy + g.half - 8),
-        MonoTextStyle::new(&FONT_6X10, Abgr2222::WHITE),
+        MonoTextStyle::new(&FONT_9X15_BOLD, Abgr2222::WHITE),
         Alignment::Center,
     )
     .draw(fb)
