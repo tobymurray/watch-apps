@@ -1,0 +1,5 @@
+# Cortex-M33 (STM32U5A5), hard-float. Matches the arm-none-eabi C++ half's
+# float ABI — mismatching hard/soft float here is the classic silent linker
+# failure when mixing rustc and gcc objects.
+[build]
+target = "thumbv8m.main-none-eabihf"

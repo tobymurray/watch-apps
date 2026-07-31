@@ -1,0 +1,24 @@
+[package]
+name = "poc_gui"
+version = "0.1.0"
+edition = "2021"
+description = "no_std Rust frontend core for the UNA Watch CustomGUI PoC: embedded-graphics rendering into an 8bpp ABGR2222 framebuffer, exposed over a C ABI."
+license = "MIT OR Apache-2.0"
+
+# A staticlib so the arm-none-eabi C++ shim (Gui.cpp) can link it into the GUI ELF.
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+# The de-facto no_std 2D drawing crate. No alloc required for what we use.
+embedded-graphics = "0.8"
+
+# Size-first, and abort on panic so we never drag the C++ unwinder across the
+# Rust<->C++ boundary (the SDK ships libsupc++/libstdc++, but we keep the seam
+# a plain C ABI).
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false
