@@ -10,7 +10,12 @@
 //! circular region of the rectangular framebuffer, so all content is kept inside
 //! the inscribed square (the largest axis-aligned box that fits in the circle).
 //! A faint rim ring is drawn at the display edge to make the safe area visible.
-#![no_std]
+//!
+//! The host simulator (`src/bin/sim.rs`, `--features sim`) links this same crate
+//! and calls the same [`render`] function the device does — so the sim is
+//! pixel-identical to the device *at the framebuffer level* by construction; the
+//! only differences left are what the physical panel does to those bytes.
+#![cfg_attr(not(feature = "std"), no_std)]
 
 use embedded_graphics::{
     mono_font::{
@@ -24,8 +29,9 @@ use embedded_graphics::{
 };
 
 // -----------------------------------------------------------------------------
-// Panic handler (panic = "abort" -> a no-op handler satisfies the lang item)
+// Panic handler (device/no_std only; the host sim uses std's handler)
 // -----------------------------------------------------------------------------
+#[cfg(not(feature = "std"))]
 #[panic_handler]
 fn on_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
@@ -344,17 +350,42 @@ fn footer(fb: &mut FrameBuf, g: &Geom, msg: &str) {
 }
 
 // -----------------------------------------------------------------------------
-// C ABI — the seam the C++ shim (Gui.cpp) calls
+// Rendering entry point — the single source of truth for BOTH the device (via
+// the C ABI below) and the host simulator (src/bin/sim.rs).
 // -----------------------------------------------------------------------------
 
-/// Number of selectable screens, so the shim knows the modulus for cycling.
-#[no_mangle]
-pub extern "C" fn poc_gui_screen_count() -> u32 {
+/// Number of selectable screens.
+pub const fn screen_count() -> u32 {
     SCREEN_COUNT
 }
 
-/// Render one frame into `buf` (an 8bpp ABGR2222 framebuffer of `width*height`
-/// bytes). `screen` selects which UI is shown; `frame` is a monotonic counter.
+/// Render one frame into `buf`, an 8bpp ABGR2222 framebuffer of at least
+/// `width * height` bytes. `screen` selects the UI; `frame` is a monotonic
+/// counter driving animation. This is what the device and the sim both call, so
+/// they cannot drift.
+pub fn render(buf: &mut [u8], width: u32, height: u32, screen: u32, frame: u32) {
+    if width == 0 || height == 0 || buf.len() < (width * height) as usize {
+        return;
+    }
+    let mut fb = FrameBuf { buf, w: width, h: height };
+    fb.buf.fill(Abgr2222::BLACK.0);
+    match screen % SCREEN_COUNT {
+        0 => draw_home(&mut fb, frame),
+        _ => draw_shapes(&mut fb, frame),
+    }
+}
+
+// -----------------------------------------------------------------------------
+// C ABI — the seam the C++ shim (Gui.cpp) calls on-device
+// -----------------------------------------------------------------------------
+
+/// C ABI wrapper for [`screen_count`].
+#[no_mangle]
+pub extern "C" fn poc_gui_screen_count() -> u32 {
+    screen_count()
+}
+
+/// C ABI wrapper for [`render`].
 ///
 /// # Safety
 /// `buf` must point to at least `width * height` writable bytes and stay valid
@@ -370,14 +401,6 @@ pub unsafe extern "C" fn poc_gui_render(
     if buf.is_null() || width == 0 || height == 0 {
         return;
     }
-    let len = width as usize * height as usize;
-    let slice = core::slice::from_raw_parts_mut(buf, len);
-    let mut fb = FrameBuf { buf: slice, w: width as u32, h: height as u32 };
-
-    fb.buf.fill(Abgr2222::BLACK.0);
-
-    match screen % SCREEN_COUNT {
-        0 => draw_home(&mut fb, frame),
-        _ => draw_shapes(&mut fb, frame),
-    }
+    let slice = core::slice::from_raw_parts_mut(buf, width as usize * height as usize);
+    render(slice, width as u32, height as u32, screen, frame);
 }

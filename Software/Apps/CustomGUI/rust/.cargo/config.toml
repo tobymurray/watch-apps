@@ -1,5 +1,7 @@
-# Cortex-M33 (STM32U5A5), hard-float. Matches the arm-none-eabi C++ half's
-# float ABI — mismatching hard/soft float here is the classic silent linker
-# failure when mixing rustc and gcc objects.
-[build]
-target = "thumbv8m.main-none-eabihf"
+# No default target on purpose:
+#  - Device build: the app CMake invokes `cargo build --release --target
+#    thumbv8m.main-none-eabihf` explicitly (Cortex-M33, hard-float, matching the
+#    SDK's -mfpu=fpv5-sp-d16 -mfloat-abi=hard).
+#  - Host sim build: `cargo run --bin sim --features sim` builds for the host
+#    triple so it can open an SDL window.
+# Forcing a default target here would make the sim try to build for the MCU.

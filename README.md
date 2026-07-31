@@ -34,9 +34,11 @@ Software/
         ├── Gui.hpp / Gui.cpp             # C++ shim: message loop + framebuffer
         ├── poc_gui.h                     # C ABI to the Rust core
         └── rust/                         # no_std embedded-graphics rendering crate
-            ├── Cargo.toml
-            ├── .cargo/config.toml        # target = thumbv8m.main-none-eabihf
-            └── src/lib.rs                # ABGR2222 DrawTarget + two screens
+            ├── Cargo.toml                # device staticlib + optional `sim` bin
+            ├── .cargo/config.toml
+            └── src/
+                ├── lib.rs                # ABGR2222 DrawTarget + render() (shared)
+                └── bin/sim.rs            # desktop SDL simulator (--features sim)
 ```
 
 ## Build status (as scaffolded)
@@ -45,7 +47,8 @@ Software/
 |---|---|
 | **Rust core** (`libpoc_gui.a`, Cortex-M33) | ✅ **Builds** — `cargo build --release` compiles clean for `thumbv8m.main-none-eabihf` (hard-float, matching the SDK's `-mfpu=fpv5-sp-d16 -mfloat-abi=hard`); exports `poc_gui_render` + `poc_gui_screen_count`. |
 | **C++ shim + `.uapp` link** | ⏳ **Not built in the authoring env** — needs `arm-none-eabi-gcc` + `cmake`, which weren't installed there. The sources are written against the SDK's verbatim idioms; build on a toolchain machine or in CI (below). |
-| **On-device run** | ⏳ Untested — pending the full build + a watch (or simulator). |
+| **Desktop `sim` bin** | ✅ **Compiles** — links the same crate/`render()`; only the SDL2 *system* library is needed to finish linking (`brew install sdl2`). |
+| **On-device run** | ⏳ Iterating on hardware (see the render notes above). |
 
 The interesting/novel half (Rust rendering into ABGR2222 on Cortex-M33) is
 proven to compile; the remaining work is the ordinary arm-gcc link, which the
@@ -66,6 +69,56 @@ cmake --build build                       # cargo builds libpoc_gui.a, then arm-
 
 The resulting `*.uapp` is copied to `Software/Output/`; deploy it over USB mass
 storage per `Docs/deploy.md`.
+
+## Desktop simulator (develop without the watch)
+
+A host SDL window that renders the GUI, so you can iterate layout/animation/logic
+in seconds instead of the reflash loop.
+
+```sh
+brew install sdl2                                    # macOS (or the OS SDL2 dev pkg)
+cd Software/Apps/CustomGUI/rust
+cargo run --bin sim --features sim                   # live animation
+cargo run --bin sim --features sim -- fb_dump.bin    # view a raw device fb dump
+```
+
+Controls: any key = next screen; close the window = quit.
+
+### Accuracy: the sim runs the same code as the device
+
+The sim links this crate and calls the **same `poc_gui::render()`** the firmware
+calls, into an identical 240×240 ABGR2222 buffer — so the framebuffer is
+byte-identical to the device's *by construction* (no reimplementation to drift).
+The sim then applies only what the physical panel does:
+
+- **Color** — decodes ABGR2222 with the panel's 2-bits-per-channel gamut
+  (0/85/170/255), so on-screen colors match the device's 64-color range, not full
+  24-bit color.
+- **Shape** — a round mask (black outside the inscribed circle) reproducing the
+  circular bezel.
+- **Panel quirks** — `emulate_panel()` in `sim.rs` is an identity hook today; it's
+  the single place to encode device-only behavior (see below).
+
+What the sim **cannot** show without calibration: the on-device **font-glyph
+under-render** (thin features vanish on the panel — the reason the clock is drawn
+as filled-rectangle 7-segment digits). That's physical panel behavior, not in the
+buffer, so the sim renders such text fine while the watch doesn't.
+
+## Tightening the sim ↔ hardware loop
+
+The goal is that "looks right in the sim" ⇒ "looks right on the watch". Three levers:
+
+1. **Single source of truth (done).** Sim and device call the same `render()`; the
+   only differences left are the panel's, not code drift.
+2. **Framebuffer dump + compare.** Add a device path (a few lines in `Gui.cpp`
+   writing `mFrameBuf` to a file via `mKernel.fs` on a button, pulled over USB),
+   then `cargo run --bin sim --features sim -- fb_dump.bin`. Because both sides use
+   the same `render()`, the dumped bytes should equal what the sim rendered — this
+   confirms parity at the framebuffer level and isolates every remaining visual
+   difference as *pure panel behavior*.
+3. **Calibrate `emulate_panel()`.** Feed the differences from step 2 into the
+   `emulate_panel()` hook (e.g. a thin-feature erosion approximating the glyph
+   drop-out). Once calibrated, the sim predicts what the watch will actually show.
 
 ## Known PoC shortcuts (flagged for a real version)
 
