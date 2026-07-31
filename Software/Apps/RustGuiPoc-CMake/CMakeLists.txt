@@ -11,7 +11,8 @@ set(APP_USER_NAME "Rust GUI")
 set(APP_TYPE "Utility")
 set(DEV_ID "UNA")
 set(APP_ID "A159B1C005CFD2B7")           # PoC id; regenerate for a real release
-set(APP_USE_ICONS Off)                    # no bundled icons for the PoC
+set(APP_USE_ICONS On)
+set(RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Resources")
 set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")
 set(LIBS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../Libs")
 set(CUSTOMGUI_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../CustomGUI")

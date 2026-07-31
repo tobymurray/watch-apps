@@ -6,6 +6,7 @@
  */
 #include "Service.hpp"
 
+#include "SDK/Messages/MessageBase.hpp"
 #include "SDK/Messages/MessageTypes.hpp"
 
 #define LOG_MODULE_PRX   "RustSvc"
