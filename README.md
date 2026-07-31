@@ -110,12 +110,14 @@ The goal is that "looks right in the sim" ⇒ "looks right on the watch". Three 
 
 1. **Single source of truth (done).** Sim and device call the same `render()`; the
    only differences left are the panel's, not code drift.
-2. **Framebuffer dump + compare.** Add a device path (a few lines in `Gui.cpp`
-   writing `mFrameBuf` to a file via `mKernel.fs` on a button, pulled over USB),
-   then `cargo run --bin sim --features sim -- fb_dump.bin`. Because both sides use
-   the same `render()`, the dumped bytes should equal what the sim rendered — this
-   confirms parity at the framebuffer level and isolates every remaining visual
-   difference as *pure panel behavior*.
+2. **Framebuffer dump + compare (wired).** On-device, **long-press SW3**
+   (bottom-left / DOWN) to write the current framebuffer to
+   `Apps/RustGuiPoc/fb_dump.bin`. Pull it over USB mass storage and load it in the
+   sim: `cargo run --bin sim --features sim -- fb_dump.bin`. Because both sides use
+   the same `render()`, the dumped bytes equal what the sim renders for that
+   screen — so this confirms parity at the framebuffer level and isolates every
+   remaining visual difference as *pure panel behavior*. (Static elements match
+   exactly; animated ones like the ball depend on the frame counter.)
 3. **Calibrate `emulate_panel()`.** Feed the differences from step 2 into the
    `emulate_panel()` hook (e.g. a thin-feature erosion approximating the glyph
    drop-out). Once calibrated, the sim predicts what the watch will actually show.

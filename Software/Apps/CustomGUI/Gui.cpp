@@ -11,6 +11,7 @@
 
 #include "SDK/Messages/MessageTypes.hpp"
 #include "SDK/Messages/CommandMessages.hpp"
+#include "SDK/Interfaces/IFileSystem.hpp"
 
 #include "poc_gui.h"
 
@@ -72,6 +73,33 @@ void Gui::renderAndPush()
     ++mFrame;
 }
 
+void Gui::dumpFramebuffer()
+{
+    // The framebuffer is exactly what poc_gui_render() produced, so this file is
+    // byte-comparable to the sim's render() output for the same screen.
+    static constexpr char kDir[]  = "Apps/RustGuiPoc";
+    static constexpr char kPath[] = "Apps/RustGuiPoc/fb_dump.bin";
+
+    mKernel.fs.mkdir(kDir);
+
+    auto file = mKernel.fs.file(kPath);
+    if (!file || !file->open(/*wMode=*/true, /*override=*/true)) {
+        LOG_WARNING("fb dump: open '%s' failed\n", kPath);
+        return;
+    }
+
+    const size_t bytes = static_cast<size_t>(mWidth) * static_cast<size_t>(mHeight); // 8bpp: 1 byte/px
+    size_t written = 0;
+    const bool ok = file->write(reinterpret_cast<const char *>(mFrameBuf), bytes, written);
+    file->flush();
+    file->close();
+
+    LOG_INFO("fb dump: %s screen=%u %dx%d -> %u/%u bytes %s\n",
+             kPath, static_cast<unsigned>(mScreen), mWidth, mHeight,
+             static_cast<unsigned>(written), static_cast<unsigned>(bytes),
+             (ok && written == bytes) ? "OK" : "FAIL");
+}
+
 void Gui::run()
 {
     LOG_INFO("Started\n");
@@ -115,10 +143,13 @@ void Gui::run()
                 using Id    = SDK::Message::EventButton::Id;
                 using Event = SDK::Message::EventButton::Event;
                 // SW2 (top-right / SELECT) cycles screens — the "move between
-                // two UIs" demo. Everything else is ignored by this PoC.
+                // two UIs" demo. SW3 (bottom-left / DOWN) long-press dumps the
+                // framebuffer for the desktop sim. Everything else is ignored.
                 if (btn->event == Event::CLICK && btn->id == Id::SW2 && screenCount > 0) {
                     mScreen = (mScreen + 1) % screenCount;
                     renderAndPush(); // repaint immediately so the switch feels instant
+                } else if (btn->event == Event::LONG_PRESS && btn->id == Id::SW3) {
+                    dumpFramebuffer();
                 }
                 msg->setResult(SDK::MessageResult::SUCCESS);
             } break;

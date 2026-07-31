@@ -29,6 +29,11 @@ private:
     void queryDisplayConfig();
     void renderAndPush();
 
+    // Debug: write the current ABGR2222 framebuffer to a file for the desktop
+    // sim to load (`cargo run --bin sim --features sim -- fb_dump.bin`). Lets you
+    // byte-verify the device's framebuffer against what render() produces.
+    void dumpFramebuffer();
+
     SDK::Kernel &mKernel;
 
     int16_t  mWidth      = 0;
