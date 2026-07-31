@@ -6,16 +6,19 @@
 //! the kernel message bus, input, lifecycle — lives in the C++ shim (`Gui.cpp`),
 //! which calls the `extern "C"` entry points at the bottom of this file.
 //!
-//! Why this split: the app<->kernel ABI is C++ (vtables, mangled names), which
-//! Rust can't consume directly. A thin C ABI seam keeps the interesting UI work
-//! in Rust while the C++ shim satisfies the SDK's `Gui { Gui(kernel); run(); }`
-//! contract.
+//! The layout is **round-display aware**: the physical panel shows only a
+//! circular region of the rectangular framebuffer, so all content is kept inside
+//! the inscribed square (the largest axis-aligned box that fits in the circle).
+//! A faint rim ring is drawn at the display edge to make the safe area visible.
 #![no_std]
 
 use core::fmt::Write;
 
 use embedded_graphics::{
-    mono_font::{ascii::FONT_6X10, ascii::FONT_9X15_BOLD, MonoTextStyle},
+    mono_font::{
+        ascii::{FONT_10X20, FONT_6X10, FONT_9X15_BOLD},
+        MonoTextStyle,
+    },
     pixelcolor::{raw::RawU8, PixelColor},
     prelude::*,
     primitives::{Circle, Line, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle},
@@ -23,10 +26,8 @@ use embedded_graphics::{
 };
 
 // -----------------------------------------------------------------------------
-// Panic handler
+// Panic handler (panic = "abort" -> a no-op handler satisfies the lang item)
 // -----------------------------------------------------------------------------
-// panic = "abort" in Cargo.toml means no unwinder, so a no-op handler is all the
-// language item requires. A real build would route this to the kernel logger.
 #[panic_handler]
 fn on_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
@@ -36,8 +37,6 @@ fn on_panic(_info: &core::panic::PanicInfo) -> ! {
 // ABGR2222 — the watch's 8-bits-per-pixel packed color
 // -----------------------------------------------------------------------------
 // One byte per pixel. From MSB: A[7:6] B[5:4] G[3:2] R[1:0], 2 bits per channel.
-// The panel is effectively a few-bit reflective memory LCD, so 2 bits/channel is
-// all the color it can show — embedded-graphics' blocky output is a good match.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Abgr2222(pub u8);
 
@@ -74,7 +73,6 @@ impl PixelColor for Abgr2222 {
 // -----------------------------------------------------------------------------
 // Framebuffer as an embedded-graphics DrawTarget
 // -----------------------------------------------------------------------------
-/// Borrows the caller's raw buffer (`width * height` bytes, row-major, 1 B/px).
 struct FrameBuf<'a> {
     buf: &'a mut [u8],
     w: u32,
@@ -118,7 +116,6 @@ impl Buf {
         Buf { data: [0; 48], len: 0 }
     }
     fn as_str(&self) -> &str {
-        // Only ASCII is written below, so this is always valid UTF-8.
         core::str::from_utf8(&self.data[..self.len]).unwrap_or("")
     }
 }
@@ -135,111 +132,173 @@ impl Write for Buf {
 }
 
 // -----------------------------------------------------------------------------
+// Round-display geometry
+// -----------------------------------------------------------------------------
+/// The circular panel's center, radius, and the half-side of the inscribed
+/// square (the largest box guaranteed fully visible). Everything important is
+/// laid out within `cx±half, cy±half`.
+struct Geom {
+    cx: i32,
+    cy: i32,
+    r: i32,
+    half: i32,
+}
+fn geom(fb: &FrameBuf) -> Geom {
+    let w = fb.w as i32;
+    let h = fb.h as i32;
+    let r = w.min(h) / 2;
+    Geom {
+        cx: w / 2,
+        cy: h / 2,
+        r,
+        half: r * 181 / 256, // r / sqrt(2) ~= 0.707 r
+    }
+}
+
+/// Faint rim so the round edge / clipped region is visible on-device.
+fn draw_rim(fb: &mut FrameBuf, g: &Geom) {
+    Circle::new(Point::new(g.cx - g.r + 1, g.cy - g.r + 1), (g.r as u32 - 1) * 2)
+        .into_styled(PrimitiveStyle::with_stroke(Abgr2222::GRAY, 1))
+        .draw(fb)
+        .ok();
+}
+
+/// A boxed label: filled rectangle with high-contrast text punched in. Text on a
+/// solid block reads even when thin glyph strokes alone would wash out.
+fn boxed_text(
+    fb: &mut FrameBuf,
+    center: Point,
+    inner_w: u32,
+    inner_h: u32,
+    fill: Abgr2222,
+    fg: Abgr2222,
+    text: &str,
+    font: &embedded_graphics::mono_font::MonoFont,
+) {
+    Rectangle::new(
+        Point::new(center.x - inner_w as i32 / 2, center.y - inner_h as i32 / 2),
+        Size::new(inner_w, inner_h),
+    )
+    .into_styled(PrimitiveStyle::with_fill(fill))
+    .draw(fb)
+    .ok();
+
+    // Nudge the baseline to vertically center the glyph in the box.
+    let baseline = center.y + font.character_size.height as i32 / 3;
+    Text::with_alignment(text, Point::new(center.x, baseline), MonoTextStyle::new(font, fg), Alignment::Center)
+        .draw(fb)
+        .ok();
+}
+
+// -----------------------------------------------------------------------------
 // Screens
 // -----------------------------------------------------------------------------
 const SCREEN_COUNT: u32 = 2;
 
 fn draw_home(fb: &mut FrameBuf, frame: u32) {
-    let w = fb.w as i32;
-    let h = fb.h as i32;
+    let g = geom(fb);
+    draw_rim(fb, &g);
 
-    // Header band.
-    Rectangle::new(Point::new(0, 0), Size::new(fb.w, 22))
-        .into_styled(PrimitiveStyle::with_fill(Abgr2222::BLUE))
-        .draw(fb)
-        .ok();
+    // Title, centered near the top of the safe square.
     Text::with_alignment(
-        "UNA · Rust UI",
-        Point::new(w / 2, 15),
-        MonoTextStyle::new(&FONT_9X15_BOLD, Abgr2222::WHITE),
-        Alignment::Center,
-    )
-    .draw(fb)
-    .ok();
-
-    // A "clock" derived from the frame counter — no real time source in the PoC,
-    // just proof the render loop is live and animating.
-    let secs = frame / 30; // ~30 ticks/sec, assumed
-    let mut t = Buf::new();
-    let _ = write!(t, "{:02}:{:02}:{:02}", (secs / 3600) % 24, (secs / 60) % 60, secs % 60);
-    Text::with_alignment(
-        t.as_str(),
-        Point::new(w / 2, h / 2),
+        "UNA . Rust",
+        Point::new(g.cx, g.cy - g.half + 18),
         MonoTextStyle::new(&FONT_9X15_BOLD, Abgr2222::CYAN),
         Alignment::Center,
     )
     .draw(fb)
     .ok();
 
-    // Animated marker orbiting so a still screenshot still shows motion frame-to-frame.
+    // Hero clock: big black text on a white block, dead center — unmissable, and
+    // a decisive legibility test vs. thin colored glyphs. Derived from the frame
+    // counter (no real time source in the PoC).
+    let secs = frame / 30; // ~30 ticks/sec, assumed
+    let mut t = Buf::new();
+    let _ = write!(t, "{:02}:{:02}:{:02}", (secs / 3600) % 24, (secs / 60) % 60, secs % 60);
+    let box_w = (g.half as u32 * 2).saturating_sub(6).max(80);
+    boxed_text(
+        fb,
+        Point::new(g.cx, g.cy),
+        box_w,
+        30,
+        Abgr2222::WHITE,
+        Abgr2222::BLACK,
+        t.as_str(),
+        &FONT_10X20,
+    );
+
+    // Animated marker orbiting just below the clock, kept inside the safe square.
     let steps = 60u32;
     let phase = frame % steps;
-    let cx = w / 2;
-    let cy = h / 2 + 34;
-    let x = cx - 40 + (80 * phase as i32 / steps as i32);
-    Circle::new(Point::new(x - 4, cy - 4), 8)
+    let travel = g.half; // total horizontal travel, centered
+    let x = g.cx - travel / 2 + (travel * phase as i32 / steps as i32);
+    let y = g.cy + 34;
+    Circle::new(Point::new(x - 5, y - 5), 10)
         .into_styled(PrimitiveStyle::with_fill(Abgr2222::YELLOW))
         .draw(fb)
         .ok();
 
-    footer(fb, "SW2: next screen  (1/2)");
+    footer(fb, &g, "SW2 = next  (1/2)");
 }
 
 fn draw_shapes(fb: &mut FrameBuf, frame: u32) {
-    let w = fb.w as i32;
+    let g = geom(fb);
+    draw_rim(fb, &g);
 
-    Rectangle::new(Point::new(0, 0), Size::new(fb.w, 22))
-        .into_styled(PrimitiveStyle::with_fill(Abgr2222::GREEN))
-        .draw(fb)
-        .ok();
-    Text::with_alignment(
+    // Boxed header so text is legible on this screen too.
+    boxed_text(
+        fb,
+        Point::new(g.cx, g.cy - g.half + 16),
+        (g.half as u32 * 2).saturating_sub(6),
+        22,
+        Abgr2222::GREEN,
+        Abgr2222::BLACK,
         "embedded-graphics",
-        Point::new(w / 2, 15),
-        MonoTextStyle::new(&FONT_9X15_BOLD, Abgr2222::BLACK),
-        Alignment::Center,
-    )
-    .draw(fb)
-    .ok();
+        &FONT_6X10,
+    );
 
     let outline = PrimitiveStyleBuilder::new()
         .stroke_color(Abgr2222::WHITE)
         .stroke_width(2)
         .build();
 
-    Rectangle::new(Point::new(20, 40), Size::new(50, 50))
+    // Shapes row, inset within the safe square.
+    let left = g.cx - g.half + 6;
+    let row_y = g.cy - 24;
+    Rectangle::new(Point::new(left, row_y), Size::new(40, 40))
         .into_styled(outline)
         .draw(fb)
         .ok();
-    Circle::new(Point::new(90, 40), 50)
+    Circle::new(Point::new(g.cx - 6, row_y), 40)
         .into_styled(PrimitiveStyle::with_fill(Abgr2222::RED))
         .draw(fb)
         .ok();
-    Line::new(Point::new(20, 110), Point::new(w - 20, 110))
+    Line::new(Point::new(left, row_y + 52), Point::new(g.cx + g.half - 6, row_y + 52))
         .into_styled(PrimitiveStyle::with_stroke(Abgr2222::CYAN, 3))
         .draw(fb)
         .ok();
 
-    // A progress bar that fills with the frame counter.
-    let bar_w = (w - 40) as u32;
+    // Progress bar filling with the frame counter.
+    let bar_w = (g.half as u32 * 2).saturating_sub(12);
     let fill = (frame % 100) * bar_w / 100;
-    Rectangle::new(Point::new(20, 130), Size::new(bar_w, 12))
+    let bar_y = row_y + 66;
+    Rectangle::new(Point::new(g.cx - bar_w as i32 / 2, bar_y), Size::new(bar_w, 12))
         .into_styled(outline)
         .draw(fb)
         .ok();
-    Rectangle::new(Point::new(20, 130), Size::new(fill, 12))
+    Rectangle::new(Point::new(g.cx - bar_w as i32 / 2, bar_y), Size::new(fill, 12))
         .into_styled(PrimitiveStyle::with_fill(Abgr2222::YELLOW))
         .draw(fb)
         .ok();
 
-    footer(fb, "SW2: next screen  (2/2)");
+    footer(fb, &g, "SW2 = next  (2/2)");
 }
 
-fn footer(fb: &mut FrameBuf, msg: &str) {
-    let h = fb.h as i32;
+fn footer(fb: &mut FrameBuf, g: &Geom, msg: &str) {
     Text::with_alignment(
         msg,
-        Point::new(fb.w as i32 / 2, h - 8),
-        MonoTextStyle::new(&FONT_6X10, Abgr2222::GRAY),
+        Point::new(g.cx, g.cy + g.half - 8),
+        MonoTextStyle::new(&FONT_6X10, Abgr2222::WHITE),
         Alignment::Center,
     )
     .draw(fb)
@@ -257,8 +316,7 @@ pub extern "C" fn poc_gui_screen_count() -> u32 {
 }
 
 /// Render one frame into `buf` (an 8bpp ABGR2222 framebuffer of `width*height`
-/// bytes). `screen` selects which UI is shown; `frame` is a monotonic counter
-/// for animation.
+/// bytes). `screen` selects which UI is shown; `frame` is a monotonic counter.
 ///
 /// # Safety
 /// `buf` must point to at least `width * height` writable bytes and stay valid
@@ -278,7 +336,6 @@ pub unsafe extern "C" fn poc_gui_render(
     let slice = core::slice::from_raw_parts_mut(buf, len);
     let mut fb = FrameBuf { buf: slice, w: width as u32, h: height as u32 };
 
-    // Clear.
     fb.buf.fill(Abgr2222::BLACK.0);
 
     match screen % SCREEN_COUNT {
