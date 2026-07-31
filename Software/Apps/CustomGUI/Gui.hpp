@@ -33,7 +33,7 @@ private:
 
     int16_t  mWidth      = 0;
     int16_t  mHeight     = 0;
-    uint8_t  mColorDepth = 8;      // ABGR2222 == 8bpp
+    uint8_t  mColorDepth = 8;      // 8bpp ABGR2222 storage (config reports 6 = color bits only)
     bool     mResumed    = false;  // only push while the GUI is foreground
     uint32_t mFrame      = 0;      // animation counter
     uint32_t mScreen     = 0;      // which UI is shown; cycled by SW2

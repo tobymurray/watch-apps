@@ -12,11 +12,9 @@
 //! A faint rim ring is drawn at the display edge to make the safe area visible.
 #![no_std]
 
-use core::fmt::Write;
-
 use embedded_graphics::{
     mono_font::{
-        ascii::{FONT_10X20, FONT_6X10, FONT_9X15_BOLD},
+        ascii::{FONT_6X10, FONT_9X15_BOLD},
         MonoTextStyle,
     },
     pixelcolor::{raw::RawU8, PixelColor},
@@ -37,6 +35,10 @@ fn on_panic(_info: &core::panic::PanicInfo) -> ! {
 // ABGR2222 — the watch's 8-bits-per-pixel packed color
 // -----------------------------------------------------------------------------
 // One byte per pixel. From MSB: A[7:6] B[5:4] G[3:2] R[1:0], 2 bits per channel.
+// NOTE: RequestDisplayConfig reports colorDepth=6 — that is the count of
+// *displayed color* bits (3 channels x 2), NOT the storage width. Storage is a
+// full 8bpp byte; the top 2 (alpha) bits must be 0b11 (opaque), which rgb() OR's
+// in unconditionally. Do not "shrink" this to 6bpp.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Abgr2222(pub u8);
 
@@ -105,33 +107,6 @@ impl DrawTarget for FrameBuf<'_> {
 }
 
 // -----------------------------------------------------------------------------
-// Tiny no-alloc string builder (avoids pulling in `alloc` or `heapless`)
-// -----------------------------------------------------------------------------
-struct Buf {
-    data: [u8; 48],
-    len: usize,
-}
-impl Buf {
-    fn new() -> Self {
-        Buf { data: [0; 48], len: 0 }
-    }
-    fn as_str(&self) -> &str {
-        core::str::from_utf8(&self.data[..self.len]).unwrap_or("")
-    }
-}
-impl Write for Buf {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        for &b in s.as_bytes() {
-            if self.len < self.data.len() {
-                self.data[self.len] = b;
-                self.len += 1;
-            }
-        }
-        Ok(())
-    }
-}
-
-// -----------------------------------------------------------------------------
 // Round-display geometry
 // -----------------------------------------------------------------------------
 /// The circular panel's center, radius, and the half-side of the inscribed
@@ -191,6 +166,81 @@ fn boxed_text(
 }
 
 // -----------------------------------------------------------------------------
+// 7-segment clock — digits from filled rectangles (font glyphs don't render on
+// this panel, but filled rects provably do)
+// -----------------------------------------------------------------------------
+// Segment bits: a=1 b=2 c=4 d=8 e=16 f=32 g=64
+//    aaa
+//   f   b
+//    ggg
+//   e   c
+//    ddd
+const SEG: [u8; 10] = [
+    0b0111111, // 0: a b c d e f
+    0b0000110, // 1: b c
+    0b1011011, // 2: a b g e d
+    0b1001111, // 3: a b g c d
+    0b1100110, // 4: f g b c
+    0b1101101, // 5: a f g c d
+    0b1111101, // 6: a f g e c d
+    0b0000111, // 7: a b c
+    0b1111111, // 8: all
+    0b1101111, // 9: a b c d f g
+];
+
+fn fill_rect(fb: &mut FrameBuf, x: i32, y: i32, w: i32, h: i32, color: Abgr2222) {
+    if w > 0 && h > 0 {
+        Rectangle::new(Point::new(x, y), Size::new(w as u32, h as u32))
+            .into_styled(PrimitiveStyle::with_fill(color))
+            .draw(fb)
+            .ok();
+    }
+}
+
+fn draw_digit(fb: &mut FrameBuf, x: i32, y: i32, dw: i32, dh: i32, th: i32, d: u8, color: Abgr2222) {
+    let seg = SEG[(d % 10) as usize];
+    let hlen = dw - 2 * th;
+    let vlen = (dh - 3 * th) / 2;
+    let on = |bit: u8| seg & (1 << bit) != 0;
+    if on(0) { fill_rect(fb, x + th, y, hlen, th, color); }                       // a
+    if on(5) { fill_rect(fb, x, y + th, th, vlen, color); }                       // f
+    if on(1) { fill_rect(fb, x + dw - th, y + th, th, vlen, color); }             // b
+    if on(6) { fill_rect(fb, x + th, y + th + vlen, hlen, th, color); }           // g
+    if on(4) { fill_rect(fb, x, y + 2 * th + vlen, th, vlen, color); }            // e
+    if on(2) { fill_rect(fb, x + dw - th, y + 2 * th + vlen, th, vlen, color); }  // c
+    if on(3) { fill_rect(fb, x + th, y + 2 * th + 2 * vlen, hlen, th, color); }   // d
+}
+
+/// Draw HH:MM:SS centered on (cx, cy) from a seconds count.
+fn draw_clock_7seg(fb: &mut FrameBuf, cx: i32, cy: i32, secs: u32, color: Abgr2222) {
+    let hh = (secs / 3600) % 24;
+    let mm = (secs / 60) % 60;
+    let ss = secs % 60;
+    let digits = [
+        (hh / 10) as u8, (hh % 10) as u8,
+        (mm / 10) as u8, (mm % 10) as u8,
+        (ss / 10) as u8, (ss % 10) as u8,
+    ];
+
+    let (dw, dh, th, colon_w, gap) = (16, 30, 3, 8, 3);
+    let total = 6 * dw + 2 * colon_w + 7 * gap;
+    let y = cy - dh / 2;
+    let mut x = cx - total / 2;
+
+    for (i, d) in digits.iter().enumerate() {
+        draw_digit(fb, x, y, dw, dh, th, *d, color);
+        x += dw + gap;
+        if i == 1 || i == 3 {
+            // colon after HH and MM
+            let cxp = x + colon_w / 2 - th / 2;
+            fill_rect(fb, cxp, y + dh / 3 - th, th, th, color);
+            fill_rect(fb, cxp, y + 2 * dh / 3, th, th, color);
+            x += colon_w + gap;
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
 // Screens
 // -----------------------------------------------------------------------------
 const SCREEN_COUNT: u32 = 2;
@@ -209,23 +259,11 @@ fn draw_home(fb: &mut FrameBuf, frame: u32) {
     .draw(fb)
     .ok();
 
-    // Hero clock: big black text on a white block, dead center — unmissable, and
-    // a decisive legibility test vs. thin colored glyphs. Derived from the frame
-    // counter (no real time source in the PoC).
+    // Hero clock, drawn as 7-segment digits built from FILLED RECTANGLES — the
+    // one primitive this panel provably displays. Font glyphs (even large black
+    // text on a white block) do not render on-device, so we don't use them here.
     let secs = frame / 30; // ~30 ticks/sec, assumed
-    let mut t = Buf::new();
-    let _ = write!(t, "{:02}:{:02}:{:02}", (secs / 3600) % 24, (secs / 60) % 60, secs % 60);
-    let box_w = (g.half as u32 * 2).saturating_sub(6).max(80);
-    boxed_text(
-        fb,
-        Point::new(g.cx, g.cy),
-        box_w,
-        30,
-        Abgr2222::WHITE,
-        Abgr2222::BLACK,
-        t.as_str(),
-        &FONT_10X20,
-    );
+    draw_clock_7seg(fb, g.cx, g.cy, secs, Abgr2222::WHITE);
 
     // Animated marker orbiting just below the clock, kept inside the safe square.
     let steps = 60u32;
