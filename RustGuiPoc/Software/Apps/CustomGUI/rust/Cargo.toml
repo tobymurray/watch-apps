@@ -1,0 +1,38 @@
+[package]
+name = "poc_gui"
+version = "0.1.0"
+edition = "2021"
+description = "no_std Rust frontend core for the UNA Watch CustomGUI PoC: embedded-graphics rendering into an 8bpp ABGR2222 framebuffer, exposed over a C ABI, with a host simulator that runs the same render() the device does."
+license = "MIT OR Apache-2.0"
+
+# staticlib: the arm-none-eabi C++ shim links this into the GUI ELF.
+# lib (rlib): lets the host `sim` bin link the same crate.
+[lib]
+crate-type = ["staticlib", "lib"]
+
+# Host simulator. Only built with `--features sim` (which pulls SDL2), so the
+# default/device build never sees the desktop-only dependency.
+[[bin]]
+name = "sim"
+required-features = ["sim"]
+
+[features]
+# `std` makes the crate host-linkable (drops #![no_std] + the panic_handler).
+std = []
+# `sim` = std + the desktop SDL simulator backend.
+sim = ["std", "dep:embedded-graphics-simulator"]
+
+[dependencies]
+# The de-facto no_std 2D drawing crate. No alloc required for what we use.
+embedded-graphics = "0.8"
+# Desktop SDL preview window — optional, only under the `sim` feature.
+embedded-graphics-simulator = { version = "0.7", optional = true }
+
+# Size-first, abort on panic so we never drag an unwinder across the Rust<->C++
+# boundary on-device. (The host sim under `std` uses std's panic machinery.)
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false
