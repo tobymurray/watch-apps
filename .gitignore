@@ -1,0 +1,4 @@
+# CMake builds in place, next to the project it built.
+build/
+# Packed apps land here; they are outputs, not sources.
+*.uapp
