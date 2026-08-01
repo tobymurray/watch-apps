@@ -20,6 +20,19 @@ bare-metal Embassy firmware work.
   `no_std` staticlib owns *only* rendering, over a tiny C ABI (`poc_gui.h`).
 - **Switching between two UIs** on-device: `SW2` (top-right button) cycles screens.
 
+## Buttons
+
+| Button | Position | Does |
+|---|---|---|
+| `SW2` / R1 | top right | cycle to the next screen |
+| `SW4` / R2 | bottom right | **back — leaves the app** |
+| `SW3` / L2, long press | bottom left | dump the framebuffer for the desktop sim |
+
+The screens are a cycle rather than a stack, so back has nothing to go back *to*
+and exits instead — which is what the SDK's own apps do with R2. It is not
+optional: this app owns the kernel message loop and swallows every button event,
+so with nothing handling back there is no way out of it but rebooting the watch.
+
 ## Layout
 
 ```

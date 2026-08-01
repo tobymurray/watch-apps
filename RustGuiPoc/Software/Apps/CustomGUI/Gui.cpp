@@ -142,6 +142,25 @@ void Gui::run()
                 auto *btn = static_cast<SDK::Message::EventButton *>(msg);
                 using Id    = SDK::Message::EventButton::Id;
                 using Event = SDK::Message::EventButton::Event;
+
+                // SW4 (bottom-right) is BACK. The screens here are a cycle, not
+                // a stack, so there is nothing to go back *to* — back leaves the
+                // app, which is what the SDK's own apps do with R2. This loop
+                // owns the message queue and swallows every button, so without
+                // it the only way out of the app is rebooting the watch.
+                //
+                // Acked and released first, exactly as COMMAND_APP_STOP does:
+                // sys.exit() does not return on the device.
+                if (btn->event == Event::CLICK && btn->id == Id::SW4) {
+                    LOG_INFO("Back pressed; exiting\n");
+                    msg->setResult(SDK::MessageResult::SUCCESS);
+                    mKernel.comm.releaseMessage(msg);
+                    mKernel.sys.exit(0);
+                    // Reached only on the simulator, where exit() sets a flag
+                    // and returns rather than tearing the app down.
+                    return;
+                }
+
                 // SW2 (top-right / SELECT) cycles screens — the "move between
                 // two UIs" demo. SW3 (bottom-left / DOWN) long-press dumps the
                 // framebuffer for the desktop sim. Everything else is ignored.
