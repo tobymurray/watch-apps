@@ -67,7 +67,7 @@ una_app_build_service(${APP_NAME}Service.elf)
 # GUI ELF (CustomGUI entry + our shim + Rust staticlib) — no TouchGFX
 # ---------------------------------------------------------------------------
 set(GUI_SOURCES
-    $ENV{UNA_SDK}/Libs/Source/AppSystem/EntryPoint/CustomGUI/main.cpp
+    ${CUSTOMGUI_PATH}/entrypoint/main.cpp   # vendored; see the file for why
     ${CUSTOMGUI_PATH}/Gui.cpp
     ${UNA_SDK_SOURCES_COMMON}
 )
