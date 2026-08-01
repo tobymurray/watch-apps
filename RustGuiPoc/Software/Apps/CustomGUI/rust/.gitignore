@@ -1,2 +1,4 @@
 /target
-Cargo.lock
+# Cargo.lock is committed on purpose: this crate is built into a binary that
+# Kira publishes from a pinned commit, and without the lock file the same commit
+# can resolve different dependency versions and produce different bytes.
