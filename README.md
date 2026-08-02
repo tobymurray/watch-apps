@@ -9,11 +9,12 @@ than living inside it.
 
 | App | What it is |
 | --- | --- |
+| [`Barcode`](Barcode) | A parkrun-style Code 128 barcode for an id you supply, read from a small JSON file you write into the app's folder over USB — because the SDK has no supported way to get a user-specific value onto the watch. |
 | [`GpsLab`](GpsLab) | The Running activity plus GNSS instrumentation — per-sample error estimate, fix and dead-reckoning state, recorded alongside the activity. |
 | [`RustGuiPoc`](RustGuiPoc) | A proof of concept: a watch app whose GUI is drawn by Rust and `embedded-graphics` through the SDK's CustomGUI entry point, instead of TouchGFX. |
 
-Both began as example apps inside the SDK tree and were moved here with their
-history intact.
+All three began as example apps inside the SDK tree and were moved here with
+their history intact.
 
 ## Building
 

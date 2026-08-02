@@ -22,7 +22,7 @@ Model::Model()
     : modelListener(0)
     , mKernel(SDK::KernelProviderGUI::GetInstance().getKernel())
     , mSender(mKernel)
-    , mState(Barcode::makeDefaultState())
+    , mState(Barcode::makeUnsetState(Barcode::Problem::NoFile))
 {
     SDK::TouchGFXCommandProcessor::GetInstance().setAppLifeCycleCallback(this);
     SDK::TouchGFXCommandProcessor::GetInstance().setCustomMessageHandler(this);

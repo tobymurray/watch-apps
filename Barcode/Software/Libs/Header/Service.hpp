@@ -14,6 +14,7 @@
 
 #include "Commands.hpp"
 #include "Barcode.hpp"
+#include "InputConfig.hpp"
 
 /**
  * @class Service
@@ -34,9 +35,13 @@ public:
 private:
     SDK::Kernel           &mKernel;
     CustomMessage::Sender  mSender;
+    InputConfig::Reader    mInput;
     Barcode::State         mState;
 
     void handleCommand(SDK::MessageBase *msg);
+
+    /// Turn whatever the reader currently holds into a publishable state.
+    void adopt();
 
     void publish();
 };

@@ -32,7 +32,9 @@ namespace CustomMessage
 constexpr SDK::MessageType::Type BARCODE_STATE = 0x00000001;
 
 // GUI --> Service
-constexpr SDK::MessageType::Type BARCODE_SET_ID  = 0x00000002;
+// 0x00000002 was BARCODE_SET_ID, a GUI-owned id. The id now comes from the
+// provisioning file, and a GUI path that could overwrite it would only give
+// the app a way to lose what the user provided.
 constexpr SDK::MessageType::Type BARCODE_REQUEST = 0x00000003;
 
 /**
@@ -42,7 +44,7 @@ struct BarcodeState : public SDK::MessageBase {
     Barcode::State state;
     BarcodeState()
         : SDK::MessageBase(BARCODE_STATE)
-        , state(Barcode::makeDefaultState())
+        , state(Barcode::makeUnsetState(Barcode::Problem::NoFile))
     {}
 };
 
@@ -50,18 +52,7 @@ static_assert(sizeof(BarcodeState) <= 256,
               "BarcodeState must fit the largest kernel message pool block");
 
 /**
- * @brief Ask the service to display a new id.
- */
-struct BarcodeSetId : public SDK::MessageBase {
-    Barcode::State state;
-    BarcodeSetId() : SDK::MessageBase(BARCODE_SET_ID), state{} {}
-};
-
-static_assert(sizeof(BarcodeSetId) <= 256,
-              "BarcodeSetId must fit the largest kernel message pool block");
-
-/**
- * @brief Ask the service to reply with the current state.
+ * @brief Ask the service to re-check the file and reply with the result.
  */
 struct BarcodeRequest : public SDK::MessageBase {
     BarcodeRequest() : SDK::MessageBase(BARCODE_REQUEST) {}
@@ -96,20 +87,12 @@ public:
     }
 
     /**
-     * @brief GUI --> Service: ask for a new id to be displayed.
+     * @brief GUI --> Service: re-check the provisioning file and reply.
+     *
+     * Nothing tells an app that a file it does not own was rewritten, so the
+     * GUI asking on every resume is the notification: the service re-stats
+     * the file, and only re-reads it if something outside changed it.
      */
-    bool setId(const Barcode::State &state)
-    {
-        auto *msg = mKernel.comm.allocateMessage<BarcodeSetId>();
-        if (!msg) {
-            return false;
-        }
-        msg->state = state;
-        const bool status = mKernel.comm.sendMessage(msg);
-        mKernel.comm.releaseMessage(msg);
-        return status;
-    }
-
     bool requestState() { return send<BarcodeRequest>(); }
 
 private:
