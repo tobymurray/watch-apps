@@ -13,6 +13,10 @@ set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")
 set(LIBS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../Libs")
 set(TOUCHGFX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../TouchGFX-GUI")
 
+if("$ENV{UNA_SDK}" STREQUAL "")
+    message(FATAL_ERROR "UNA_SDK environment variable is not set. Run SDK/Utilities/Scripts/set-una-sdk-env.ps1 or set UNA_SDK to the SDK root.")
+endif()
+
 # Includes all build steps and required tools
 # Sets toolchain before project
 include($ENV{UNA_SDK}/cmake/una-app.cmake)
@@ -36,9 +40,10 @@ project(${APP_NAME})
 una_app_setup_version(BUILD_VERSION ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Build service
-# The app owns no sensors, writes no files and has nothing to time, so the
-# FIT, sensor, track-map and calibration groups of UNA_SDK_SOURCES_SERVICE are
-# deliberately left out, same as Stopwatch.
+# The app owns no sensors and has nothing to time, so the FIT, sensor,
+# track-map and calibration groups of UNA_SDK_SOURCES_SERVICE are deliberately
+# left out, same as Stopwatch. JSON is in: the service reads the provisioning
+# file the user's id arrives in.
 set(SERVICE_SOURCES
     ${LIBS_SOURCES}
     ${UNA_SDK_SOURCES_COMMON}
