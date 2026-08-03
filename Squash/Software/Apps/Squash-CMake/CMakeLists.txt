@@ -13,6 +13,10 @@ set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")
 set(LIBS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../Libs")
 set(TOUCHGFX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../TouchGFX-GUI")
 
+if("$ENV{UNA_SDK}" STREQUAL "")
+    message(FATAL_ERROR "UNA_SDK environment variable is not set. Run SDK/Utilities/Scripts/set-una-sdk-env.ps1 or set UNA_SDK to the SDK root.")
+endif()
+
 # Includes all build steps and required tools
 # Sets toolchain before project
 include($ENV{UNA_SDK}/cmake/una-app.cmake)
