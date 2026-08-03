@@ -16,6 +16,8 @@
 #include "ActivityWriter.hpp"
 #include "Commands.hpp"
 #include "WristTiltDetector.hpp"
+#include "ImuCsvRecorder.hpp"
+#include "ImuFileSink.hpp"
 #include <array>
 
 class Service : public WristTiltDetector::IListener
@@ -53,6 +55,13 @@ private:
     ActivitySummary           mSummary;
     ActivitySummarySerializer mActivitySummarySerializer;
     ActivityWriter            mActivityWriter;
+
+    // Research mode (Settings::imuResearchEn), off unless explicitly enabled.
+    ImuFileSink               mImuSink;
+    ImuCsvRecorder            mImuRecorder;
+    /// Sink is open and waiting for the first IMU sample to start the clock.
+    /// Cleared once begun, so a run stopped by a cap is never restarted.
+    bool                      mImuArmed = false;
 
     // -- Sensors --------------------------------------------------------------
 

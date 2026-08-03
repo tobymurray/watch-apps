@@ -41,6 +41,7 @@ Service::Service(SDK::Kernel &kernel)
         , mSummary{}
         , mActivitySummarySerializer(mKernel, "Activity/summary.json")
         , mActivityWriter(mKernel, "Activity")
+        , mImuSink(mKernel, "Imu")
         , mSensorPressure(SDK::Sensor::Type::PRESSURE, skSamplePeriod, skSampleLatency)
         , mSensorHr(SDK::Sensor::Type::HEART_RATE_EX, skSamplePeriod, skSampleLatency)
         , mSensorBatteryLevel(SDK::Sensor::Type::BATTERY_LEVEL)
@@ -306,6 +307,35 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
             if (parser.isDataValid()) {
                 SDK::SensorDataParser::FusionRaw::Data sample{};
                 parser.getData(sample);
+
+                // Research recording gets all six axes in raw LSB, unlike the
+                // tilt detector below which only needs ay/gx. The sensor's own
+                // timestamp is the clock: a batch carries ~10 samples, so using
+                // a loop-local "now" would collapse them onto one instant.
+                if (mImuArmed || mImuRecorder.isRecording()) {
+                    const uint32_t ts = parser.getTimestamp();
+                    if (mImuArmed) {
+                        mImuArmed = false;
+                        if (!mImuRecorder.begin(mImuSink, ts)) {
+                            LOG_ERROR("Failed to start research recording\n");
+                        }
+                    }
+                    if (mImuRecorder.isRecording()) {
+                        ImuCsvRecorder::Sample raw{};
+                        raw.ax = sample.accel.x;
+                        raw.ay = sample.accel.y;
+                        raw.az = sample.accel.z;
+                        raw.gx = sample.gyro.x;
+                        raw.gy = sample.gyro.y;
+                        raw.gz = sample.gyro.z;
+                        if (!mImuRecorder.onSample(ts, raw)) {
+                            LOG_INFO("Research recording ended: reason %u, %u samples\n",
+                                     static_cast<unsigned>(mImuRecorder.stopReason()),
+                                     static_cast<unsigned>(mImuRecorder.sampleCount()));
+                        }
+                    }
+                }
+
                 batch[batchLen].ayLsb = sample.accel.y;
                 batch[batchLen].gxLsb = sample.gyro.x;
                 batch[batchLen].timestampMs = parser.getTimestamp();
@@ -621,6 +651,16 @@ void Service::startTrack(std::time_t utc)
 
     connectSensors();
 
+    // Research recording: open the file now so a storage failure is known and
+    // logged at start, but leave the recorder's clock unstarted until the first
+    // sample arrives, so t=0 is a real sample and not this call.
+    if (mSettings.imuResearchEn) {
+        mImuArmed = mImuSink.create(utc);
+        if (!mImuArmed) {
+            LOG_ERROR("Research recording enabled but the file could not be opened\n");
+        }
+    }
+
     ActivityWriter::AppInfo info{};
     info.timestamp = utc;
     info.appVersion = SDK::ParseVersion(BUILD_VERSION).u32;
@@ -824,6 +864,24 @@ void Service::stopTrack(bool discard)
         }
     } else {
         mActivityWriter.discard();
+    }
+
+    // Closed out on both paths, including discard: the CSV is research data,
+    // not part of the activity, so a discarded session's samples are still
+    // worth keeping. end() is safe when nothing was ever started.
+    if (mImuArmed || mImuRecorder.isRecording() || mImuSink.isOpen()) {
+        const bool intact = mImuRecorder.end();
+        const uint32_t samples = mImuRecorder.sampleCount();
+        const uint32_t bytes   = mImuRecorder.bytesWritten();
+        mImuSink.close();
+        mImuArmed = false;
+
+        if (intact) {
+            LOG_INFO("Research recording saved: %u samples, %u bytes\n",
+                     static_cast<unsigned>(samples), static_cast<unsigned>(bytes));
+        } else {
+            LOG_ERROR("Research recording is torn and should not be trusted\n");
+        }
     }
 
     mTrackState = Track::State::INACTIVE;

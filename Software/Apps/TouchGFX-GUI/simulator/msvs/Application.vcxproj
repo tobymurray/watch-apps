@@ -70,6 +70,7 @@
     <ClCompile Include="..\..\..\..\Libs\Sources\ActivitySummarySerializer.cpp"/>
     <ClCompile Include="..\..\..\..\Libs\Sources\ActivityWriter.cpp"/>
     <ClCompile Include="..\..\..\..\Libs\Sources\ImuCsvRecorder.cpp"/>
+    <ClCompile Include="..\..\..\..\Libs\Sources\ImuFileSink.cpp"/>
     <ClCompile Include="..\..\..\..\Libs\Sources\Service.cpp"/>
     <ClCompile Include="..\..\..\..\Libs\Sources\SettingsSerializer.cpp"/>
     <ClCompile Include="..\..\..\..\Libs\Sources\WristTiltDetector.cpp"/>
@@ -365,6 +366,8 @@
     <ClInclude Include="..\..\..\..\Libs\Header\ActivitySummarySerializer.hpp"/>
     <ClInclude Include="..\..\..\..\Libs\Header\ActivityWriter.hpp"/>
     <ClInclude Include="..\..\..\..\Libs\Header\Commands.hpp"/>
+    <ClInclude Include="..\..\..\..\Libs\Header\ImuCsvRecorder.hpp"/>
+    <ClInclude Include="..\..\..\..\Libs\Header\ImuFileSink.hpp"/>
     <ClInclude Include="..\..\..\..\Libs\Header\Service.hpp"/>
     <ClInclude Include="..\..\..\..\Libs\Header\Settings.hpp"/>
     <ClInclude Include="..\..\..\..\Libs\Header\SettingsSerializer.hpp"/>
