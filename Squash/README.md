@@ -36,15 +36,32 @@ saturation rather than hiding it behind a conversion.
 ## Turning the recorder on
 
 There is no on-watch toggle yet — adding one means a TouchGFX Designer change.
-It is enabled the same way Barcode takes its id: by writing a file over USB.
+It is enabled by writing the app's settings file over USB.
 
-1. Run the app once so it writes its settings file, then connect by USB.
-2. Open the app's folder on the watch and edit the settings JSON.
-3. Set `"imu_research_en": true`.
+The app only writes `settings.json` when a setting is changed on the watch, so a
+fresh install has no file to edit. Create it yourself:
 
-The flag survives the app's own settings screens — both of them read, modify and
-write the whole settings struct, so a GUI with no toggle for it will not clear
-it. A settings file written before the field existed reads as `false`.
+1. Connect the watch by USB and wait for the drive to mount.
+2. Open `Apps/Squash/` on it — the same folder the `.uapp` lives in.
+3. Create `settings.json`:
+
+   ```json
+   { "imu_research_en": true }
+   ```
+
+Absent keys keep their defaults, so that one line is the whole file. To confirm
+it took, change any setting on the watch afterwards and read the file back — the
+app will have rewritten it in full, with `imu_research_en` still `true`.
+
+The flag survives the app's own settings screens: both of them read, modify and
+write the whole struct, so a GUI with no toggle for it cannot clear it. A
+settings file written before the field existed reads as `false`.
+
+This is the app's own settings file rather than a separate input document, which
+is fine for one person with a USB cable but is *not* a good fit for Kira's
+config form — the app rewrites this file, so anything the form put there would
+be at the mercy of the next settings change. Shipping the toggle to other people
+means reading it from a dedicated `input.json`, the way `Barcode` does.
 
 ## What you get
 

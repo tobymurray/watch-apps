@@ -21,6 +21,25 @@ namespace fit = SDK::Fit;
 using Field = fit::FitWriter::Field;
 using DevFieldDef = fit::FitWriter::DevField;
 
+namespace {
+
+// sport and sub_sport values from the FIT profile, carried here rather than
+// taken from SDK::Fit::Sport / ::SubSport.
+//
+// Those enums list only what the SDK's own examples happen to record, and no
+// released SDK has the racket family — apps-v1.3.0 stops at Hiking = 17 and
+// Treadmill = 1. Depending on them would pin this app to an unreleased SDK for
+// the sake of two integers, and Kira builds against a release tag.
+//
+// Hard-coding is safe because these are not SDK API, they are wire format: the
+// FIT profile assigns them globally, every decoder reads the numbers, and they
+// cannot be revised without invalidating every file already written. Checked
+// against the official FIT SDK profile.
+constexpr uint8_t kSportRacket    = 64;
+constexpr uint8_t kSubSportSquash = 94;
+
+} // namespace
+
 ActivityWriter::ActivityWriter(const SDK::Kernel& kernel, const char* pathToDir)
     : mKernel(kernel), mPath(pathToDir), mMarker(kernel.fs, pathToDir)
 {
@@ -251,8 +270,8 @@ bool ActivityWriter::stop(const TrackData& track)
         .u16(mLapCounter)
         // Squash is a sub_sport of the racket family, so both fields are set:
         // consumers key off sport=racket and refine with sub_sport=squash.
-        .u8(static_cast<uint8_t>(fit::Sport::Racket))
-        .u8(static_cast<uint8_t>(fit::SubSport::Squash))
+        .u8(kSportRacket)
+        .u8(kSubSportSquash)
         .u8(static_cast<uint8_t>(track.hrAvg))
         .u8(static_cast<uint8_t>(track.hrMax))
         .u16(static_cast<uint16_t>(track.calories + 0.5f))
