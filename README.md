@@ -37,6 +37,9 @@ version, and the `.uapp`'s own CRC:
 kira build-app --app GpsLab --sdk /path/to/una-sdk --version 1.0.0 --out GpsLab.uapp
 ```
 
+`Squash` also carries host tests for its recorder path under
+[`Squash/Tests`](Squash/Tests) — see [its README](Squash/README.md#tests).
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE). Both apps derive from the UNA SDK's MIT-licensed

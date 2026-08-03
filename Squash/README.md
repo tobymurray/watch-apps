@@ -101,6 +101,26 @@ Key `6` in the simulator queues a synthetic racquet swing, and
 `IMU_FUSION_SIM_CSV_PATH` in `simulator/ConfigurationSimulator.hpp` replays a
 recorded CSV instead.
 
+## Tests
+
+Host tests for the recorder path, in [`Tests`](Tests):
+
+```sh
+export UNA_SDK=/path/to/una-sdk
+cmake -S Tests -B Tests/build -DCMAKE_BUILD_TYPE=Debug
+cmake --build Tests/build -j"$(nproc)"
+cd Tests/build && ctest --output-on-failure
+```
+
+`squash-recorder-tests` covers `ImuCsvRecorder`'s byte format and its size and
+duration caps against an in-memory sink, and needs nothing but GoogleTest.
+
+`squash-filesink-tests` asserts the round trip — recorder to storage through
+`SDK::Kernel`, then back out through the simulator's `ImuFusionSource` playback
+parser — so it needs an SDK checkout carrying the IMU fusion sensor source.
+That is not in the SDK mainline yet; on a mainline SDK the suite is skipped at
+configure time with a message rather than failing the build.
+
 ## Licence
 
 MIT. Derived from the UNA SDK's MIT-licensed Workout example, whose copyright
