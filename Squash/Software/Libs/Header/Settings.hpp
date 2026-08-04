@@ -43,12 +43,11 @@ struct Settings {
     bool     phoneNotifEn  = true;  ///< Flag to enable receiving phone notification when app is run.
     Alerts::Time::Id     alertTimeId     = Alerts::Time::ID_OFF;     ///< Time alert option.
 
-    /// Research mode: stream the raw 100 Hz IMU to CSV alongside the activity.
-    /// Off by default and deliberately opt-in — it costs ~4.3 KiB/s of flash
-    /// and exists to collect labelled data for tuning shot detection, not as a
-    /// user feature. Absent from a settings file written before this field
-    /// existed, which the loader reads as false.
-    bool     imuResearchEn = false;
+    // Raw-IMU research recording is deliberately NOT a field here. It is
+    // decided from outside the watch, and this file is rewritten whole on every
+    // save, so a key the app did not put here does not survive the next
+    // settings change. 1.0.0 shipped it here and was unusable for that reason.
+    // It lives in input.json now -- see InputConfig.hpp.
 };
 
 #endif // SETTINGS_HPP

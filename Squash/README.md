@@ -35,33 +35,45 @@ saturation rather than hiding it behind a conversion.
 
 ## Turning the recorder on
 
-There is no on-watch toggle yet — adding one means a TouchGFX Designer change.
-It is enabled by writing the app's settings file over USB.
+There is no on-watch toggle — adding one means a TouchGFX Designer change. The
+flag comes from `input.json` in the app's own folder, which is either written
+for you by Kira's install page or by hand over USB.
 
-The app only writes `settings.json` when a setting is changed on the watch, so a
-fresh install has no file to edit. Create it yourself:
+If you installed from Kira, tick **Record raw IMU** on the app's card and it
+writes the file. Otherwise:
 
 1. Connect the watch by USB and wait for the drive to mount.
 2. Open `Apps/Squash/` on it — the same folder the `.uapp` lives in.
-3. Create `settings.json`:
+3. Create `input.json`:
 
    ```json
-   { "imu_research_en": true }
+   {
+     "schema": 1,
+     "values": {
+       "record_imu": "on"
+     }
+   }
    ```
 
-Absent keys keep their defaults, so that one line is the whole file. To confirm
-it took, change any setting on the watch afterwards and read the file back — the
-app will have rewritten it in full, with `imu_research_en` still `true`.
+[`input.example.json`](input.example.json) is that file, ready to copy.
 
-The flag survives the app's own settings screens: both of them read, modify and
-write the whole struct, so a GUI with no toggle for it cannot clear it. A
-settings file written before the field existed reads as `false`.
+`on`, `yes`, `true`, `1` and `enabled` all mean on, in any case. Anything else
+means off, including a word that is neither — the file is written by hand, and
+off is the safe direction for a flag whose only effect is to start filling
+flash. It is re-read at the start of every session, so flipping it takes effect
+on your next activity without reinstalling or even restarting the app.
 
-This is the app's own settings file rather than a separate input document, which
-is fine for one person with a USB cable but is *not* a good fit for Kira's
-config form — the app rewrites this file, so anything the form put there would
-be at the mercy of the next settings change. Shipping the toggle to other people
-means reading it from a dedicated `input.json`, the way `Barcode` does.
+**Not `settings.json`.** That file is the app's own and is rewritten whole every
+time a setting changes on the watch, so a key the app did not put there would not
+survive. Version 1.0.0 shipped the flag there and was unusable for exactly that
+reason: an install had no such file, and nothing but hand-editing could make one.
+Keeping externally-written data in its own file also makes "this came from
+outside, validate it" a property of the filename.
+
+The reader is bounded on purpose — a size ceiling checked before anything is
+allocated, a `schema` major that must match exactly, and a fall back to off on
+every failure. A config file somebody else wrote must never stop the app
+starting.
 
 ## What you get
 
@@ -131,6 +143,13 @@ cd Tests/build && ctest --output-on-failure
 
 `squash-recorder-tests` covers `ImuCsvRecorder`'s byte format and its size and
 duration caps against an in-memory sink, and needs nothing but GoogleTest.
+
+`squash-inputconfig-tests` covers the provisioning file that decides whether
+recording happens at all — the accepted vocabulary, and every way the file can be
+absent, malformed, oversized or of an unknown schema. Mostly negative paths,
+because 1.0.0's failure was silent: the app started, recorded a good activity,
+and wrote no IMU, with nothing observable saying why. Needs coreJSON, so it is
+skipped if the SDK's submodules are not initialized.
 
 `squash-filesink-tests` asserts the round trip — recorder to storage through
 `SDK::Kernel`, then back out through the simulator's `ImuFusionSource` playback

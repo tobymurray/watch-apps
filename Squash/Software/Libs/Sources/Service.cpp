@@ -41,6 +41,7 @@ Service::Service(SDK::Kernel &kernel)
         , mSummary{}
         , mActivitySummarySerializer(mKernel, "Activity/summary.json")
         , mActivityWriter(mKernel, "Activity")
+        , mInputConfig(mKernel)
         , mImuSink(mKernel, "Imu")
         , mSensorPressure(SDK::Sensor::Type::PRESSURE, skSamplePeriod, skSampleLatency)
         , mSensorHr(SDK::Sensor::Type::HEART_RATE_EX, skSamplePeriod, skSampleLatency)
@@ -654,7 +655,12 @@ void Service::startTrack(std::time_t utc)
     // Research recording: open the file now so a storage failure is known and
     // logged at start, but leave the recorder's clock unstarted until the first
     // sample arrives, so t=0 is a real sample and not this call.
-    if (mSettings.imuResearchEn) {
+    //
+    // input.json is re-read here rather than once at boot, so flipping the flag
+    // over USB takes effect on the next session instead of the next restart.
+    // Costs one stat when the file has not changed.
+    mInputConfig.refresh();
+    if (mInputConfig.getFlag(InputConfig::kQueryRecordImu)) {
         mImuArmed = mImuSink.create(utc);
         if (!mImuArmed) {
             LOG_ERROR("Research recording enabled but the file could not be opened\n");

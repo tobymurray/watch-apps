@@ -18,6 +18,7 @@
 #include "WristTiltDetector.hpp"
 #include "ImuCsvRecorder.hpp"
 #include "ImuFileSink.hpp"
+#include "InputConfig.hpp"
 #include <array>
 
 class Service : public WristTiltDetector::IListener
@@ -56,7 +57,10 @@ private:
     ActivitySummarySerializer mActivitySummarySerializer;
     ActivityWriter            mActivityWriter;
 
-    // Research mode (Settings::imuResearchEn), off unless explicitly enabled.
+    // Research mode, off unless input.json turns it on. Re-read at the start of
+    // every session, so the flag can be flipped over USB without reinstalling
+    // and without restarting the app.
+    InputConfig::Reader       mInputConfig;
     ImuFileSink               mImuSink;
     ImuCsvRecorder            mImuRecorder;
     /// Sink is open and waiting for the first IMU sample to start the clock.

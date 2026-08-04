@@ -57,7 +57,6 @@ bool SettingsSerializer::save(const Settings &settings)
     writer.add("version",        settings.version);
     writer.add("phone_notif_en", settings.phoneNotifEn);
     writer.add("alert_time_id",  static_cast<uint8_t>(settings.alertTimeId));
-    writer.add("imu_research_en", settings.imuResearchEn);
 
     writer.endMap();
 
@@ -125,9 +124,6 @@ bool SettingsSerializer::load(Settings &settings)
     settings.alertTimeId = timeId < Settings::Alerts::Time::ID_COUNT
         ? static_cast<Settings::Alerts::Time::Id>(timeId)
         : Settings::Alerts::Time::ID_OFF;
-    // Left at its default when the key is absent, so settings files written
-    // before this field existed load with research recording off.
-    reader.get("imu_research_en", settings.imuResearchEn);
 
     delete[] buffer;
 
