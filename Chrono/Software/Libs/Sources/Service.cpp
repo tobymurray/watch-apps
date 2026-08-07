@@ -102,5 +102,16 @@ void Service::publish()
     if (!mGuiStarted) {
         return;
     }
-    SDK::send_msg<CustomMessage::StopwatchState>(mKernel, mStopwatch.state());
+
+    // Built through the guard rather than the message's own constructor: on SDK
+    // 1.3 allocateMessage cannot forward constructor arguments, so the snapshot
+    // is assigned into the default-constructed message instead. The guard
+    // releases it whichever way the send goes.
+    auto msg = SDK::make_msg<CustomMessage::StopwatchState>(mKernel);
+    if (!msg) {
+        return;
+    }
+
+    msg->state = mStopwatch.state();
+    msg.send();
 }

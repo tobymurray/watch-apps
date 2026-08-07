@@ -76,7 +76,7 @@ void Model::onStart()
     // The service publishes a snapshot when it is told the GUI is up, so this
     // is only a safety net for the case where that message beat our handler
     // being registered.
-    SDK::send_msg<CustomMessage::StopwatchRequest>(mKernel);
+    Chrono::sendMsg<CustomMessage::StopwatchRequest>(mKernel);
 }
 
 void Model::onResume()
@@ -84,7 +84,7 @@ void Model::onResume()
     mInvalidate = true;
 
     // The stopwatch may have moved on while the GUI was suspended.
-    SDK::send_msg<CustomMessage::StopwatchRequest>(mKernel);
+    Chrono::sendMsg<CustomMessage::StopwatchRequest>(mKernel);
 }
 
 void Model::onSuspend()
