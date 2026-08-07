@@ -6,6 +6,10 @@ file(GLOB_RECURSE TOUCHGFX_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/generated/texts/src/*.cpp
 )
 
+if(NOT DEFINED ENV{UNA_SDK})
+    message(FATAL_ERROR "UNA_SDK environment variable not set")
+endif()
+
 set(TOUCHGFX_INCLUDE_DIRS
     $ENV{UNA_SDK}/ThirdParty/touchgfx/framework/include
     ${CMAKE_CURRENT_LIST_DIR}/generated/fonts/include
