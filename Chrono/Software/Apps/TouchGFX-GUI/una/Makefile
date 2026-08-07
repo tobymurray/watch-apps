@@ -173,7 +173,7 @@ VPATH_dirs :=
 VPATH_dirs := $(sort $(VPATH_dirs))
 $(eval VPATH := $(VPATH):$(VPATH_dirs))
 override user_cflags += -Wno-error
-override user_cflags += -DBUILD_VERSION=\"1.2.3\" -DAPP_ID=\"A159B1C005CFD2A5\" -DDEV_ID=\"UNA\"
+override user_cflags += -DBUILD_VERSION=\"1.2.3\" -DAPP_ID=\"FD92465DEEB5F39C\" -DDEV_ID=\"UNA\"
 #------------------------------------------------------------------------------
 
 textconvert_script_path := $(touchgfx_path)/framework/tools/textconvert

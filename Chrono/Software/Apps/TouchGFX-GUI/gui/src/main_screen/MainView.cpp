@@ -82,7 +82,7 @@ void MainView::setupScreen()
     // the list still carries the taller Designer rect until told otherwise.
     setLayout(false, false);
 
-    title.set(T_TEXT_STOPWATCH);
+    title.set(T_TEXT_CHRONO);
 
     // kSmall keeps the rail in the gap between the L1 and L2 button arcs.
     // kBig spans the whole left bezel and would draw straight over them.

@@ -305,7 +305,7 @@
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>WIN32;_SILENCE_CXX17_C_HEADER_DEPRECATION_WARNING;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;NOMINMAX;APP_ID="A159B1C005CFD2A5";DEV_ID="UNA";BUILD_VERSION="1.2.3";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_SILENCE_CXX17_C_HEADER_DEPRECATION_WARNING;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;NOMINMAX;APP_ID="FD92465DEEB5F39C";DEV_ID="UNA";BUILD_VERSION="1.2.3";%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <TreatWarningAsError>true</TreatWarningAsError>
       <DisableSpecificWarnings>4355</DisableSpecificWarnings>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>

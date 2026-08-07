@@ -60,9 +60,9 @@
         <Translation Language="GB">&lt;&gt;</Translation>
       </Text>
       </TextGroup>
-    <TextGroup Id="Stopwatch">
-      <Text Id="TEXT_STOPWATCH" Alignment="Center" TypographyId="Poppins_Italic_18">
-        <Translation Language="GB">STOPWATCH</Translation>
+    <TextGroup Id="Chrono">
+      <Text Id="TEXT_CHRONO" Alignment="Center" TypographyId="Poppins_Italic_18">
+        <Translation Language="GB">CHRONO</Translation>
       </Text>
       <Text Id="WC_TIME_MAIN" Alignment="Right" TypographyId="Poppins_SemiBold_60">
         <Translation Language="GB">00:00</Translation>

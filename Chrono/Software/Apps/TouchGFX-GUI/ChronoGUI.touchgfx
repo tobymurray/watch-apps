@@ -397,7 +397,7 @@
         "Interactions": []
       }
     ],
-    "Name": "StopwatchGUI",
+    "Name": "ChronoGUI",
     "Resolution": {
       "Width": 240,
       "Height": 240

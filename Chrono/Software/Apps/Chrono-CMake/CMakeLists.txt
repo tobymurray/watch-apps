@@ -3,15 +3,23 @@ cmake_minimum_required(VERSION 3.21)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build")
 
 # App configuration
-set(APP_NAME "Stopwatch")
-set(APP_USER_NAME "Stopwatch")
+#
+# A fork of the SDK's Stopwatch example, so it must not present itself as that
+# app: a different name and a different AppID mean the two install side by side
+# rather than one replacing the other.
+set(APP_NAME "Chrono")
+set(APP_USER_NAME "Chrono")
 set(APP_TYPE "Utility")
 set(DEV_ID "UNA")
-set(APP_ID "A159B1C005CFD2A5")
+set(APP_ID "FD92465DEEB5F39C")     # sha256("https://github.com/tobymurray/watch-apps#chrono")[0:8]
 set(RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Resources")
 set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")
 set(LIBS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../Libs")
 set(TOUCHGFX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../TouchGFX-GUI")
+
+if("$ENV{UNA_SDK}" STREQUAL "")
+    message(FATAL_ERROR "UNA_SDK environment variable is not set. Run SDK/Utilities/Scripts/set-una-sdk-env.ps1 or set UNA_SDK to the SDK root.")
+endif()
 
 # Includes all build steps and required tools
 # Sets toolchain before project
