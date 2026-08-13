@@ -273,7 +273,7 @@ above):
 ```sh
 export UNA_SDK=/path/to/una-sdk       # checked out at apps-v1.3.0
 cd MapManager/Software/Apps/MapManager-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.1.0 .. && cmake --build build
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.1.0 . && cmake --build build
 ```
 
 Deploy by copying the resulting `.uapp` from `build/` (or `../../../Output/`)
