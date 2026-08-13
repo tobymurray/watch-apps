@@ -14,16 +14,71 @@
  *        declared CRC-32) has already passed a full CRC-32 scan" -- or has
  *        been confirmed corrupt.
  *
- * 16 bytes, little-endian:
- *   [0..3]   magic   -- kMagicGood ('M','P','T','1') or kMagicBad ('M','P','T','X')
- *   [4..11]  fileSize (uint64)
- *   [12..15] crc      (uint32) -- the declared trailing CRC that was checked
+ * ===========================================================================
+ * THIS COMMENT IS THE NORMATIVE SPEC of the trust-marker format. It is the
+ * entire contract between Map Manager and any app that consumes a pack it
+ * verifies. Consumers reimplement the reader (AthensRun's
+ * MapPackTrustMarker.hpp in the una-sdk repo is one such reimplementation),
+ * so changes here are format changes: bump the magic, do not redefine a
+ * field in place.
+ * ===========================================================================
  *
- * ANY failure to read a well-formed marker (absent file, short read, bad
- * magic, or a torn read from a concurrent writer) is treated as Trust::Absent
- * by read(). There is no distinct "corrupt marker" state because that
- * fallback is always safe (never a false-trust) and always self-correcting
- * (the next completed verification pass overwrites it).
+ * WHERE
+ *   For a tracked file <path>, its marker is at exactly "<path>.trust" --
+ *   sibling, same directory, suffix appended to the full name including the
+ *   original extension ("maps/athens.rawtiles" -> "maps/athens.rawtiles.trust").
+ *
+ * LAYOUT -- exactly 16 bytes, little-endian, no padding, no version field
+ * beyond the magic:
+ *   [0..3]   magic    (uint32) -- kMagicGood ('M','P','T','1') or
+ *                                kMagicBad  ('M','P','T','X')
+ *   [4..11]  fileSize (uint64) -- size in bytes of the file this verdict is
+ *                                about, as it was when scanned
+ *   [12..15] crc      (uint32) -- the CRC-32/ISO-HDLC the file declared in
+ *                                its own trailing 4 bytes
+ *   A marker whose length is not exactly 16, or whose magic is neither
+ *   value, is not a marker. See Trust::Absent below.
+ *
+ * TRI-STATE, and what a consumer must do with each:
+ *   Good    -- a full CRC-32 pass over [0, fileSize-4) matched the CRC the
+ *              file declares in its last 4 bytes. Safe to use the contents.
+ *   Bad     -- that same pass ran and did NOT match. The file is corrupt;
+ *              do not use its contents, and do not wait for a verdict that
+ *              will not change. Report it and move on.
+ *   Absent  -- no verdict yet. This is NOT "no pack" and NOT "bad pack": it
+ *              means keep waiting and re-read later. Verification is a
+ *              background pass that may take minutes on a large file, and it
+ *              starts at boot rather than when an app opens.
+ *
+ * THE (size, crc) GUARD -- required, not optional:
+ *   A consumer MUST treat a Good or Bad marker as applying to its file only
+ *   if BOTH the marker's fileSize equals the file's current size AND the
+ *   marker's crc equals the CRC the file currently declares in its footer.
+ *   On any mismatch, treat the marker as Absent. A marker describes the bytes
+ *   that were scanned; a file replaced since then is a different file that
+ *   happens to share a path, and the old verdict says nothing about it.
+ *   This is what makes a stale marker harmless rather than dangerous.
+ *
+ * WHAT THIS DETECTS, AND WHAT IT DOES NOT:
+ *   This is an integrity check against corruption -- a truncated or
+ *   interrupted transfer, a bad sector, bit rot. It is NOT an authenticity
+ *   check and gives no protection against a deliberately crafted file.
+ *   The file declares its own checksum, so a file that lies consistently
+ *   (body altered, footer updated to match) verifies as Good; and the marker
+ *   lives in a shared directory that every installed app can write, so a
+ *   marker itself can be forged with 16 bytes. The root of trust is that no
+ *   app installed on the watch is hostile. If that ever stops being a fair
+ *   assumption, this needs a signature, not a checksum.
+ *
+ * ROBUSTNESS:
+ *   ANY failure to read a well-formed marker (absent file, short read, bad
+ *   magic, or a torn read from a concurrent writer) is treated as
+ *   Trust::Absent by read(). There is no distinct "corrupt marker" state
+ *   because that fallback is always safe (never a false-trust) and always
+ *   self-correcting (the next completed verification pass overwrites it).
+ *   Power loss during a marker write therefore costs a rescan, never a wrong
+ *   answer: writes truncate first, so a partial write leaves a file that is
+ *   not 16 bytes long, which reads as Absent.
  */
 class PackTrustMarker {
 public:
