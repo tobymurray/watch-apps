@@ -180,12 +180,17 @@ the ~50ms the old wait already cost.
 
 Measured on the host fixture, an 8MB pack now completes in 129 loop
 iterations where one-chunk-per-wait would have taken 2048 — **15.9x fewer
-message waits**. Folding in the ~3ms per 4096-byte chunk that the on-device
-77KB/s figure implies, that projects to ~1.1MB/s, i.e. **~3 minutes for a
-201MB pack** against 42.5 minutes before. The iteration count is measured;
-the wall-clock projection is arithmetic from an earlier measurement and
-**still wants confirming on hardware** — re-read `mapmanager_verify.log`'s
-`throughput=` field after the next deploy and correct these numbers.
+message waits**.
+
+**Confirmed on hardware 2026-08-13**, and it beat the projection. Verifying
+all seven packs in `SharedData/maps/` — 160.5MiB — took **56.6 seconds of
+scanning, a sustained 2.9MB/s**, every pack reporting `throughput=` between
+2882 and 2934KB/s with no drift across sizes from 17MB to 45MB. That is
+**37x** the 77KB/s the one-chunk-per-wait build managed, against the ~14x
+that was projected from arithmetic; the earlier "~1.1MB/s, ~3 minutes for a
+201MB pack" estimate was conservative because it assumed the per-chunk cost
+measured under the old build still applied. It doesn't — a 201MB pack now
+projects to **~68 seconds** against 42.5 minutes before.
 
 Once idle, the wait goes the other way: it sleeps until the next rescan is
 actually due (capped at the GUI refresh period while a screen is open)
@@ -193,6 +198,56 @@ instead of waking twice a second forever. This service is `APP_AUTOSTART` and
 never exits, so an idle poll is a cost the device pays for its whole life;
 the SDK's own autostart utility (`Alarm`) sleeps to its next scheduled work
 for the same reason.
+
+## Reading the log: every USB connection restarts the service
+
+`Debug/mapmanager_verify.log` reads alarmingly at first: scans begin many
+times and finish rarely, and every rescan rediscovers every pack as new, as
+though the service kept losing its state. It does lose its state — but not
+through any fault of its own. **The kernel terminates every running app the
+moment the USB cable is connected, and autostart launches them again when it
+is unplugged.** The kernel's own log records the sequence; it is recoverable
+from `Crash/dump_*.bin` at the root of the watch volume, which embeds it:
+
+```
+18298 UsbDevice::onUsbDetected:46   : USB cable plugged
+19234 App.Manager::stopAll:483      : Terminate all active applications
+19236 Application::stop:535         : [Alarm] Stop request
+20942 UsbDevice::onUsbDetected:46   : USB cable unplugged
+```
+
+This is device-wide and not specific to this app: `stopAll` names every
+running app, and the two it names above are the SDK's own `Alarm` and an
+unrelated GUI. It also cannot be seen from inside the app, which is why the
+log reads as a mystery — `ManagerLog` appends forever across every launch and
+every boot, and nothing marks where one launch ended and the next began.
+
+Two things make a launch boundary recoverable after the fact:
+
+- **`mKernel.sys.getTimeMs()` is device uptime, and it survives an app
+  restart** — it resets only when the *device* reboots. So a timestamp that
+  jumps backwards is a reboot; a fresh burst of `discovered` lines at a
+  timestamp that keeps climbing is an app restart within one boot.
+- A launch always opens with a full `discovered` burst, because `mEntries`
+  starts empty.
+
+Read that way, the pre-2026-08-13 log is **10 device boots containing 25 app
+launches**, not one confused process. Every abandoned scan is followed by a
+relaunch one to six minutes later — the length of a USB session — and the
+number of packs each launch discovers grows in step with the packs being
+copied during those sessions. The single scan that completed is the one where
+the watch was left alone for 42 minutes.
+
+**The rescan throttle and the entry dedupe are both fine**; neither is the
+explanation. Two scan summaries closer together than `kRescanPeriodMs` always
+mean two launches, never a throttle that failed. Confirmed on hardware
+2026-08-13: a launch left running for 45 seconds — longer than one rescan
+period — rediscovered nothing on its second pass.
+
+The consequence worth knowing is that **verification makes no progress while
+the watch is plugged in**. A pack copied over USB does not begin verifying
+until the cable comes out, and a scan interrupted that way restarts from byte
+0 rather than resuming.
 
 ## Buttons
 
@@ -249,14 +304,21 @@ elsewhere on this SDK works, not despite the display's limits.
   relabeled or removed, to avoid touching the fragile packed string table
   Designer generates (see the class doc comment on `MainView`). Cosmetically
   inert, functionally harmless.
-- No persisted resume checkpoint: if the watch reboots mid-verification, the
-  in-progress scan restarts from byte 0 next boot (only the finished
-  tri-state marker survives a reboot, not partial byte progress). This was
-  the more serious of the two rough edges while a 200MB pack took 42
-  uninterrupted minutes — a watch rebooted daily might genuinely never
-  finish one. At the current slice budget the same pack is single-digit
-  minutes, which is why the fix was throughput rather than a checkpoint.
-  If pack sizes grow by another order of magnitude, revisit that.
+- No persisted resume checkpoint: an interrupted scan restarts from byte 0
+  (only the finished tri-state marker survives, not partial byte progress).
+  **Settled 2026-08-13: this stays absent, deliberately** — the earlier note
+  reached the right answer for a weaker reason than the real one. It is not
+  merely that scans are now short. It is that interruptions are not random
+  events a long scan might lose a race against: the interrupter is a USB
+  connection (see [reading the log](#reading-the-log-every-usb-connection-restarts-the-service)),
+  a deliberate act by someone holding the watch who has just stopped every
+  app on it. When the cable comes out the scan reruns unattended and, at
+  2.9MB/s, clears a 201MB pack in about 68 seconds. A checkpoint would add
+  persisted state — and a way for that state to be wrong about a file — to
+  save a minute of work nobody is waiting on. Revisit if packs grow to where
+  a rerun stops being cheap, or if a cause of *involuntary* restarts turns
+  up: the 9 device reboots in the old log have no recorded cause, and the
+  only two crash dumps on the volume both predate this app.
 - The `.trust` marker of a pack that's been deleted is left behind rather
   than cleaned up. Deliberate: it's 16 bytes, it self-invalidates through its
   own `(size, crc)` guard, it's re-adopted for free if the pack comes back,
