@@ -106,21 +106,28 @@ PackCrcVerifier::Status PackCrcVerifier::start()
     uint32_t markedCrc  = 0;
     PackTrustMarker::Trust trust = marker.read(markedSize, markedCrc);
 
-    if (trust == PackTrustMarker::Trust::Good && markedSize == mFileSize && markedCrc == mDeclaredCrc) {
+    // A marker of either kind is a cached verdict for exactly this (size,
+    // crc), so both kinds short-circuit the scan. The (size, crc) guard is
+    // what makes that safe: any file that is not byte-for-byte the same
+    // length AND self-declaring the same CRC falls through to a real scan.
+    if (markedSize == mFileSize && markedCrc == mDeclaredCrc
+            && (trust == PackTrustMarker::Trust::Good || trust == PackTrustMarker::Trust::Bad)) {
+        const bool good = (trust == PackTrustMarker::Trust::Good);
         mFile->close();
         mFile.reset();
-        mStatus = Status::Verified;
-        mLog.logf("PackCrcVerifier::start() %s already trusted via cached marker "
+        mStatus = good ? Status::Verified : Status::Mismatched;
+        mLog.logf("PackCrcVerifier::start() %s verdict already cached in marker as %s "
                   "(size=%llu crc=0x%08lX) -- skipping scan\n",
-                  mPath.c_str(), static_cast<unsigned long long>(mFileSize),
+                  mPath.c_str(), good ? "Good" : "Bad",
+                  static_cast<unsigned long long>(mFileSize),
                   static_cast<unsigned long>(mDeclaredCrc));
         return mStatus;
     }
 
-    // No matching Good marker: begin (or restart) the scan from byte 0.
-    // Covers Absent (never checked), Bad (previously failed), and a Good
-    // marker whose (size, crc) no longer match this exact file (replaced
-    // since the marker was written).
+    // No marker matching this exact file: begin (or restart) the scan from
+    // byte 0. Covers Absent (never checked) and a Good-or-Bad marker whose
+    // (size, crc) no longer match this file -- i.e. it was replaced since
+    // the marker was written, so the cached verdict is about other bytes.
     mFile->seek(0);
     mBytesDone       = 0;
     mCrc             = 0xFFFFFFFFu;
@@ -129,7 +136,10 @@ PackCrcVerifier::Status PackCrcVerifier::start()
     mLastLoggedAtMs  = mStartedAtMs;
     mStatus          = Status::InProgress;
 
-    const char* trustDesc = trust == PackTrustMarker::Trust::Bad ? "Bad"
+    // Reaching here with a marker present means its (size, crc) did not match
+    // this file -- both cached verdicts are short-circuited above -- so any
+    // marker we saw is by definition stale.
+    const char* trustDesc = trust == PackTrustMarker::Trust::Bad ? "Bad-but-stale"
                            : trust == PackTrustMarker::Trust::Good ? "Good-but-stale"
                                                                     : "Absent";
     mLog.logf("PackCrcVerifier::start() %s size=%llu declaredCrc=0x%08lX "
@@ -139,31 +149,68 @@ PackCrcVerifier::Status PackCrcVerifier::start()
     return mStatus;
 }
 
+void PackCrcVerifier::reset()
+{
+    if (mFile) {
+        mFile->close();
+        mFile.reset();
+    }
+    mFileSize    = 0;
+    mCrcStart    = 0;
+    mBytesDone   = 0;
+    mCrc         = 0xFFFFFFFFu;
+    mDeclaredCrc = 0;
+    mStatus      = Status::Idle;
+}
+
 PackCrcVerifier::Status PackCrcVerifier::step(size_t maxBytes)
 {
     if (mStatus != Status::InProgress) {
         return mStatus;
     }
 
-    const size_t take = static_cast<size_t>(
-        std::min<uint64_t>(std::min<size_t>(maxBytes, kDefaultChunkBytes), mCrcStart - mBytesDone));
+    uint8_t buf[kIoChunkBytes];
+    size_t budgetLeft = maxBytes;
 
-    uint8_t buf[kDefaultChunkBytes];
-    size_t got = 0;
-    if (!mFile->read(reinterpret_cast<char*>(buf), take, got) || got != take) {
-        mFile->close();
-        mFile.reset();
-        mStatus = Status::IoError;
-        mLog.logf("PackCrcVerifier::step() read failed at offset %llu of %s\n",
-                  static_cast<unsigned long long>(mBytesDone), mPath.c_str());
+    // Spend the whole budget before returning, in kIoChunkBytes reads. The
+    // loop always terminates: every iteration either consumes at least one
+    // byte of budget, or take==0 (only reachable when the scannable region is
+    // empty) which finishes the pass and clears InProgress.
+    while (mStatus == Status::InProgress && budgetLeft > 0) {
+        const size_t take = static_cast<size_t>(
+            std::min<uint64_t>(std::min<size_t>(budgetLeft, kIoChunkBytes), mCrcStart - mBytesDone));
+
+        size_t got = 0;
+        if (!mFile->read(reinterpret_cast<char*>(buf), take, got) || got != take) {
+            mFile->close();
+            mFile.reset();
+            mStatus = Status::IoError;
+            mLog.logf("PackCrcVerifier::step() read failed at offset %llu of %s\n",
+                      static_cast<unsigned long long>(mBytesDone), mPath.c_str());
+            return mStatus;
+        }
+        mCrc = crc32Update(mCrc, buf, take);
+        mBytesDone += take;
+        budgetLeft -= take;
+
+        if (mBytesDone >= mCrcStart) {
+            finish((mCrc ^ 0xFFFFFFFFu) == mDeclaredCrc, mDeclaredCrc);
+            break;
+        }
+        if (take == 0) {
+            break; // Defensive: no progress possible, don't spin on the budget.
+        }
+    }
+
+    // Progress logging only while still scanning: finish() emits its own
+    // terminal line, and a mid-scan progress line after it would be noise.
+    if (mStatus != Status::InProgress) {
         return mStatus;
     }
-    mCrc = crc32Update(mCrc, buf, take);
-    mBytesDone += take;
 
     const uint32_t nowMs = mKernel.sys.getTimeMs();
-    constexpr uint64_t kLogEveryBytes = 256 * kDefaultChunkBytes; // ~1MB at the default chunk size
-    if ((mBytesDone - mLastLoggedBytes) >= kLogEveryBytes || (nowMs - mLastLoggedAtMs) >= 1000) {
+    constexpr uint64_t kLogEveryBytes = 4 * 1024 * 1024; // ~4MB
+    if ((mBytesDone - mLastLoggedBytes) >= kLogEveryBytes || (nowMs - mLastLoggedAtMs) >= 5000) {
         const uint32_t elapsedMs = nowMs - mStartedAtMs;
         const double throughputKBs = elapsedMs > 0
             ? (static_cast<double>(mBytesDone) / 1024.0) / (static_cast<double>(elapsedMs) / 1000.0)
@@ -176,9 +223,6 @@ PackCrcVerifier::Status PackCrcVerifier::step(size_t maxBytes)
         mLastLoggedAtMs  = nowMs;
     }
 
-    if (mBytesDone >= mCrcStart) {
-        finish((mCrc ^ 0xFFFFFFFFu) == mDeclaredCrc, mDeclaredCrc);
-    }
     return mStatus;
 }
 

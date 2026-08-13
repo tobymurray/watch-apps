@@ -32,9 +32,16 @@ include("${UNA_SDK_ROOT}/Tests/Host/cmake/FetchGoogleTest.cmake")
 
 enable_testing()
 
+# Service_test.cpp drives Service's directory-scan orchestration, so it needs
+# the SDK's InMemoryDirectory (a real enumerating fake, not the EmptyDirectory
+# stub that always reported no entries). Point UNA_SDK at an SDK checkout that
+# has it -- see the README's Tests section.
 add_executable(mapmanager-verifier-tests
     PackCrcVerifier_test.cpp
+    ManagerLog_test.cpp
+    Service_test.cpp
     "${APP_LIBS}/Sources/PackCrcVerifier.cpp"
+    "${APP_LIBS}/Sources/Service.cpp"
     "${UNA_SDK_ROOT}/Tests/Host/support/KernelTestDoubles.cpp"
     "${UNA_SDK_ROOT}/Libs/Source/UnaLogger/Logger.cpp"
     "${UNA_SDK_ROOT}/Libs/Source/Wrappers/StdLibWrappers.c"

@@ -19,9 +19,20 @@
  * (not a held-open handle), so nothing is lost if the process dies mid-run.
  * Best-effort: failures are silently swallowed (this is a diagnostic aid, not
  * something correctness can depend on).
+ *
+ * Bounded on purpose. This app's service is APP_AUTOSTART and never exits, so
+ * an append-only log here is append-forever across every boot the device ever
+ * does -- unbounded growth on internal flash, in exchange for history nobody
+ * reads. At kMaxBytes the log restarts from empty with a one-line notice. The
+ * useful window is "what happened during this boot", and that fits.
  */
 class ManagerLog {
 public:
+    /// Restart the log once it reaches this size. Sized to hold a full
+    /// verification pass's worth of lines (see PackCrcVerifier::step()'s
+    /// throttle) with room to spare, while staying negligible on flash.
+    static constexpr size_t kMaxBytes = 64 * 1024;
+
     explicit ManagerLog(const SDK::Kernel& kernel) : mKernel(kernel) {}
 
     void logf(const char* fmt, ...) const
@@ -38,10 +49,28 @@ public:
         if (!file->open(true, false)) {
             return;
         }
+
+        bool rotated = false;
+        if (file->size() >= kMaxBytes) {
+            // Reopen with override=true to truncate. Cheaper than copying a
+            // tail forward, and the tail is not worth the flash writes.
+            file->close();
+            if (!file->open(true, true)) {
+                return;
+            }
+            rotated = true;
+        }
+
         // Explicit seek-to-end: whether a non-override write-mode open
         // positions the cursor at EOF or at 0 isn't guaranteed by the
         // interface -- don't rely on it.
         file->seek(file->size());
+
+        if (rotated) {
+            static const char kNotice[] = "-- log restarted (size cap reached) --\n";
+            size_t noticeWritten = 0;
+            file->write(kNotice, sizeof(kNotice) - 1, noticeWritten);
+        }
 
         char line[256];
         int len = std::snprintf(line, sizeof(line), "[%lums] ",

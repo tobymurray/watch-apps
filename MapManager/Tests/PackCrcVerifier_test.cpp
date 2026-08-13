@@ -58,10 +58,10 @@ const std::string kMarkerPath = kPackPath + ".trust";
 // independently of the spec's pinned test vector (0xCBF43926 for ASCII
 // "123456789") isn't needed here: this class is format-agnostic and never
 // claims rawtiles conformance, unlike AthensRun's Container-level tests.
-std::string buildValidPack()
+std::string buildValidPack(size_t bodyBytes = 4000)
 {
     std::string body;
-    for (int i = 0; i < 4000; ++i) {
+    for (size_t i = 0; i < bodyBytes; ++i) {
         body.push_back(static_cast<char>('A' + (i % 26)));
     }
     appendU32LE(body, crc32(body));
@@ -154,6 +154,236 @@ TEST(PackCrcVerifier, BytesDoneAndTotalTrackProgress)
 
     verifier.step(64);
     EXPECT_EQ(verifier.bytesDone(), 64u);
+}
+
+// --------------------------------------------------------------------------
+// The (size, crc) guard on the cached-verdict fast path.
+//
+// This is the load-bearing expression in start(): every skipped scan is only
+// safe because of it. Both of its false branches need to force a real scan,
+// so both are pinned here rather than left to the happy-path test above.
+// --------------------------------------------------------------------------
+TEST(PackCrcVerifier, GoodMarkerForADifferentSizeIsIgnored)
+{
+    KernelFixture fixture;
+    const std::string pack = buildValidPack();
+    fixture.fileSystem.seedFile(kPackPath, pack);
+
+    // A Good marker claiming the right CRC but the wrong length.
+    PackTrustMarker(fixture.kernel, kMarkerPath.c_str())
+        .writeGood(pack.size() + 1, crc32(pack.substr(0, pack.size() - 4)));
+
+    PackCrcVerifier verifier(fixture.kernel, kPackPath);
+    EXPECT_EQ(verifier.start(), PackCrcVerifier::Status::InProgress)
+        << "a Good marker whose size does not match must not short-circuit the scan";
+}
+
+TEST(PackCrcVerifier, GoodMarkerForADifferentCrcIsIgnored)
+{
+    KernelFixture fixture;
+    const std::string pack = buildValidPack();
+    fixture.fileSystem.seedFile(kPackPath, pack);
+
+    // A Good marker claiming the right length but some other CRC.
+    PackTrustMarker(fixture.kernel, kMarkerPath.c_str()).writeGood(pack.size(), 0x12345678u);
+
+    PackCrcVerifier verifier(fixture.kernel, kPackPath);
+    EXPECT_EQ(verifier.start(), PackCrcVerifier::Status::InProgress)
+        << "a Good marker whose CRC does not match must not short-circuit the scan";
+}
+
+TEST(PackCrcVerifier, StaleMarkerFromAReplacedPackIsIgnoredAndRescanned)
+{
+    KernelFixture fixture;
+    fixture.fileSystem.seedFile(kPackPath, buildValidPack());
+
+    PackCrcVerifier first(fixture.kernel, kPackPath);
+    runToCompletion(first);
+    ASSERT_EQ(first.status(), PackCrcVerifier::Status::Verified);
+
+    // Redeploy a different pack over the same path. The marker on disk still
+    // says Good, but for the old pack's (size, crc).
+    fixture.fileSystem.seedFile(kPackPath, buildValidPack(8000));
+
+    PackCrcVerifier second(fixture.kernel, kPackPath);
+    ASSERT_EQ(second.start(), PackCrcVerifier::Status::InProgress);
+    while (!second.done()) {
+        second.step();
+    }
+    EXPECT_EQ(second.status(), PackCrcVerifier::Status::Verified);
+
+    uint64_t markedSize = 0;
+    uint32_t markedCrc  = 0;
+    ASSERT_EQ(PackTrustMarker(fixture.kernel, kMarkerPath.c_str()).read(markedSize, markedCrc),
+              PackTrustMarker::Trust::Good);
+    EXPECT_EQ(markedSize, 8004u) << "the marker must now describe the new pack";
+}
+
+// --------------------------------------------------------------------------
+// A cached Bad verdict is honoured, so a corrupt pack is not re-scanned in
+// full on every boot for the rest of the device's life.
+// --------------------------------------------------------------------------
+TEST(PackCrcVerifier, CachedBadMarkerSkipsTheRescan)
+{
+    KernelFixture fixture;
+    fixture.fileSystem.seedFile(kPackPath, buildCorruptedPack());
+
+    PackCrcVerifier first(fixture.kernel, kPackPath);
+    runToCompletion(first);
+    ASSERT_EQ(first.status(), PackCrcVerifier::Status::Mismatched);
+
+    PackCrcVerifier second(fixture.kernel, kPackPath);
+    EXPECT_EQ(second.start(), PackCrcVerifier::Status::Mismatched);
+    EXPECT_TRUE(second.done());
+    EXPECT_EQ(second.bytesDone(), 0u) << "the cached Bad verdict must cost no scan I/O";
+}
+
+TEST(PackCrcVerifier, BadMarkerIsIgnoredOnceTheFileIsReplaced)
+{
+    KernelFixture fixture;
+    fixture.fileSystem.seedFile(kPackPath, buildCorruptedPack());
+
+    PackCrcVerifier first(fixture.kernel, kPackPath);
+    runToCompletion(first);
+    ASSERT_EQ(first.status(), PackCrcVerifier::Status::Mismatched);
+
+    // A good copy of the same pack is redeployed. Same length, but its footer
+    // now declares the CRC that actually matches its body, so the Bad
+    // marker's (size, crc) no longer describes it.
+    fixture.fileSystem.seedFile(kPackPath, buildValidPack());
+
+    PackCrcVerifier second(fixture.kernel, kPackPath);
+    ASSERT_EQ(second.start(), PackCrcVerifier::Status::InProgress)
+        << "a Bad verdict must not outlive the bytes it was about";
+    while (!second.done()) {
+        second.step();
+    }
+    EXPECT_EQ(second.status(), PackCrcVerifier::Status::Verified);
+}
+
+// --------------------------------------------------------------------------
+// Size edge cases around the 4-byte footer.
+// --------------------------------------------------------------------------
+TEST(PackCrcVerifier, FileExactlyFooterSizedHasAnEmptyScanRegion)
+{
+    KernelFixture fixture;
+    std::string pack;
+    appendU32LE(pack, crc32("")); // CRC of no bytes at all
+    ASSERT_EQ(pack.size(), 4u);
+    fixture.fileSystem.seedFile(kPackPath, pack);
+
+    PackCrcVerifier verifier(fixture.kernel, kPackPath);
+    ASSERT_EQ(verifier.start(), PackCrcVerifier::Status::InProgress);
+    EXPECT_EQ(verifier.bytesTotal(), 0u);
+    EXPECT_EQ(verifier.step(), PackCrcVerifier::Status::Verified)
+        << "a zero-length scan region must terminate, not underflow or spin";
+}
+
+TEST(PackCrcVerifier, FileOneByteLargerThanTheFooter)
+{
+    KernelFixture fixture;
+    fixture.fileSystem.seedFile(kPackPath, buildValidPack(1));
+
+    PackCrcVerifier verifier(fixture.kernel, kPackPath);
+    ASSERT_EQ(verifier.start(), PackCrcVerifier::Status::InProgress);
+    EXPECT_EQ(verifier.bytesTotal(), 1u);
+    runToCompletion(verifier);
+    EXPECT_EQ(verifier.status(), PackCrcVerifier::Status::Verified);
+}
+
+TEST(PackCrcVerifier, ShorterThanTheFooterIsAnIoError)
+{
+    KernelFixture fixture;
+    fixture.fileSystem.seedFile(kPackPath, "abc"); // 3 bytes: no room for a footer
+
+    PackCrcVerifier verifier(fixture.kernel, kPackPath);
+    EXPECT_EQ(verifier.start(), PackCrcVerifier::Status::IoError);
+}
+
+// --------------------------------------------------------------------------
+// step()'s budget: one call spends the whole budget, in kIoChunkBytes reads.
+// Throughput depends on this -- a call that did one chunk regardless of the
+// budget would tie the scan rate to the caller's loop period.
+// --------------------------------------------------------------------------
+TEST(PackCrcVerifier, StepSpendsItsWholeBudgetInOneCall)
+{
+    KernelFixture fixture;
+    fixture.fileSystem.seedFile(kPackPath, buildValidPack(64 * 1024));
+
+    PackCrcVerifier verifier(fixture.kernel, kPackPath);
+    ASSERT_EQ(verifier.start(), PackCrcVerifier::Status::InProgress);
+
+    const size_t budget = 5 * PackCrcVerifier::kIoChunkBytes;
+    verifier.step(budget);
+    EXPECT_EQ(verifier.bytesDone(), budget)
+        << "step() must consume its whole budget, not a single I/O chunk";
+
+    verifier.step(budget);
+    EXPECT_EQ(verifier.bytesDone(), 2 * budget);
+}
+
+TEST(PackCrcVerifier, StepIsClampedToTheScanRegionNotTheBudget)
+{
+    KernelFixture fixture;
+    const std::string pack = buildValidPack(1000);
+    fixture.fileSystem.seedFile(kPackPath, pack);
+
+    PackCrcVerifier verifier(fixture.kernel, kPackPath);
+    ASSERT_EQ(verifier.start(), PackCrcVerifier::Status::InProgress);
+
+    // A budget far larger than the file must finish it, not overrun it.
+    EXPECT_EQ(verifier.step(1024 * 1024), PackCrcVerifier::Status::Verified);
+    EXPECT_EQ(verifier.bytesDone(), 1000u);
+}
+
+TEST(PackCrcVerifier, StepWithAZeroBudgetIsANoOp)
+{
+    KernelFixture fixture;
+    fixture.fileSystem.seedFile(kPackPath, buildValidPack());
+
+    PackCrcVerifier verifier(fixture.kernel, kPackPath);
+    ASSERT_EQ(verifier.start(), PackCrcVerifier::Status::InProgress);
+    EXPECT_EQ(verifier.step(0), PackCrcVerifier::Status::InProgress);
+    EXPECT_EQ(verifier.bytesDone(), 0u);
+}
+
+// --------------------------------------------------------------------------
+// reset(): how Service re-arms an entry whose file changed underneath it.
+// --------------------------------------------------------------------------
+TEST(PackCrcVerifier, ResetReturnsToIdleAndReleasesTheFileHandle)
+{
+    KernelFixture fixture;
+    fixture.fileSystem.seedFile(kPackPath, buildValidPack());
+
+    PackCrcVerifier verifier(fixture.kernel, kPackPath);
+    ASSERT_EQ(verifier.start(), PackCrcVerifier::Status::InProgress);
+    verifier.step(64);
+    ASSERT_GT(verifier.bytesDone(), 0u);
+    ASSERT_EQ(fixture.fileSystem.openHandles[kPackPath], 1u);
+
+    verifier.reset();
+    EXPECT_EQ(verifier.status(), PackCrcVerifier::Status::Idle);
+    EXPECT_EQ(verifier.bytesDone(), 0u);
+    EXPECT_EQ(verifier.fileSize(), 0u);
+    EXPECT_EQ(fixture.fileSystem.openHandles[kPackPath], 0u)
+        << "reset() must not leak the open handle (a FatFs lock slot on device)";
+
+    // And the verifier is reusable afterwards.
+    ASSERT_EQ(verifier.start(), PackCrcVerifier::Status::InProgress);
+    runToCompletion(verifier);
+    EXPECT_EQ(verifier.status(), PackCrcVerifier::Status::Verified);
+}
+
+TEST(PackCrcVerifier, VerifiedPassLeavesNoOpenHandle)
+{
+    KernelFixture fixture;
+    fixture.fileSystem.seedFile(kPackPath, buildValidPack());
+
+    PackCrcVerifier verifier(fixture.kernel, kPackPath);
+    runToCompletion(verifier);
+    ASSERT_EQ(verifier.status(), PackCrcVerifier::Status::Verified);
+    EXPECT_EQ(fixture.fileSystem.openHandles[kPackPath], 0u);
+    EXPECT_EQ(fixture.fileSystem.openHandles[kMarkerPath], 0u);
 }
 
 TEST(PackTrustMarker, RoundTripsGoodAndBad)

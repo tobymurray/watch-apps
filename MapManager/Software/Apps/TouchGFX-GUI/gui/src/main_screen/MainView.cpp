@@ -69,8 +69,6 @@ void MainView::onProgressChanged(const Model::Progress &progress)
 
 void MainView::refresh(const Model::Progress &progress)
 {
-    mLastProgress = progress;
-
     char text1[kLineBufSize];
     char text2[kLineBufSize];
 
@@ -81,25 +79,54 @@ void MainView::refresh(const Model::Progress &progress)
         std::snprintf(text1, sizeof(text1), "no packs found");
         std::snprintf(text2, sizeof(text2), "drop one in SharedData/maps");
     } else if (!progress.anyInProgress) {
-        std::snprintf(text1, sizeof(text1), "all packs verified");
-        std::snprintf(text2, sizeof(text2), "%u of %u", progress.packsVerified, progress.packsTotal);
+        // Nothing is scanning. That is only "all verified" if every pack
+        // actually passed -- saying so while one of them failed its CRC is
+        // exactly the wrong thing to tell someone whose map is missing.
+        if (progress.packsVerified == progress.packsTotal) {
+            std::snprintf(text1, sizeof(text1), "all packs verified");
+            std::snprintf(text2, sizeof(text2), "%u of %u", progress.packsVerified,
+                          progress.packsTotal);
+        } else {
+            std::snprintf(text1, sizeof(text1), "%u of %u verified",
+                          progress.packsVerified, progress.packsTotal);
+            std::snprintf(text2, sizeof(text2), "%u failed CRC",
+                          static_cast<unsigned>(progress.packsTotal - progress.packsVerified));
+        }
     } else if (progress.bytesTotal == 0 || progress.bytesDone == 0) {
-        std::snprintf(text1, sizeof(text1), "%s", progress.packName);
+        // Explicit precision, not a bare %s: a pack name can be up to
+        // kMaxPackNameLen and this line holds far less, so the clip is
+        // intended -- say so rather than leave snprintf to do it silently.
+        std::snprintf(text1, sizeof(text1), "%.*s", kNameFieldChars, progress.packName);
         std::snprintf(text2, sizeof(text2), "starting...");
     } else {
         const unsigned percent = static_cast<unsigned>(
             (progress.bytesDone * 100ull) / progress.bytesTotal);
-        std::snprintf(text1, sizeof(text1), "%s %u%%", progress.packName, percent);
+        // Room reserved for the trailing " 100%".
+        std::snprintf(text1, sizeof(text1), "%.*s %u%%", kNameFieldChars - 5,
+                      progress.packName, percent);
 
         // ETA from the actually-observed rate for this pass, not a
         // hardcoded assumption -- throughput varies by device/storage, so
         // this only means anything once real bytes have actually moved.
+        // (bytesDone is non-zero here: the branch above catches the zero.)
         const uint64_t remainingBytes = progress.bytesTotal - progress.bytesDone;
         const uint64_t remainingMs    = (remainingBytes * progress.elapsedMs) / progress.bytesDone;
         const uint32_t remainingSec   = static_cast<uint32_t>(remainingMs / 1000);
-        std::snprintf(text2, sizeof(text2), "ETA %um%02us  %u/%u",
-                      remainingSec / 60, remainingSec % 60,
-                      progress.packsVerified, progress.packsTotal);
+
+        // The first sample or two of a pass are measured over a handful of
+        // bytes and extrapolate to nonsense. Show that the estimate is not
+        // ready yet rather than a confident "ETA 833m20s".
+        if (remainingSec >= kImplausibleEtaSec) {
+            std::snprintf(text2, sizeof(text2), "ETA --   %u/%u",
+                          progress.packsVerified, progress.packsTotal);
+        } else {
+            // Cast: uint32_t is long unsigned on this target, so %u would be
+            // a format mismatch without it.
+            std::snprintf(text2, sizeof(text2), "ETA %um%02us  %u/%u",
+                          static_cast<unsigned>(remainingSec / 60),
+                          static_cast<unsigned>(remainingSec % 60),
+                          progress.packsVerified, progress.packsTotal);
+        }
     }
 
     touchgfx::Unicode::strncpy(mLine1Buf, text1, kLineBufSize - 1);

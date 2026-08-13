@@ -42,14 +42,23 @@ protected:
 private:
     static constexpr uint16_t kLineBufSize = 40;
 
+    /// Above this, an ETA extrapolated from the first few bytes of a pass is
+    /// noise rather than an estimate, and is shown as "--" instead. Well
+    /// clear of a real worst case: the largest pack this has been run against
+    /// (~200MB) verifies in single-digit minutes.
+    static constexpr uint32_t kImplausibleEtaSec = 100u * 60u;
+
+    /// How much of a pack name a line can show. A name may be up to
+    /// CustomMessage::kMaxPackNameLen; this screen is much narrower, so the
+    /// clip is deliberate rather than incidental.
+    static constexpr int kNameFieldChars = static_cast<int>(kLineBufSize) - 1;
+
     void refresh(const Model::Progress &progress);
 
     touchgfx::TextAreaWithOneWildcard mLine1; ///< Pack name + percent, or idle/status text.
     touchgfx::TextAreaWithOneWildcard mLine2; ///< ETA and pack counts.
     touchgfx::Unicode::UnicodeChar    mLine1Buf[kLineBufSize];
     touchgfx::Unicode::UnicodeChar    mLine2Buf[kLineBufSize];
-
-    Model::Progress mLastProgress{};
 };
 
 #endif // MAINVIEW_HPP

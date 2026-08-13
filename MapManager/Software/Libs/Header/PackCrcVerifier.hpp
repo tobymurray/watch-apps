@@ -33,11 +33,15 @@
  */
 class PackCrcVerifier {
 public:
-    /// Bytes read per step() call; also the hard cap even if a caller asks
-    /// for more via step(maxBytes). Not validated on hardware yet for this
-    /// app specifically -- mirrors the value AthensRun's equivalent settled
-    /// on after its own on-device measurement; may need its own tuning pass.
-    static constexpr size_t kDefaultChunkBytes = 4096;
+    /// Size of one read()/CRC I/O chunk, and of the stack buffer step() uses.
+    /// This is NOT the amount of work one step() call does -- step(maxBytes)
+    /// consumes its whole budget in chunks of this size (see step()). Keep it
+    /// small: it is a stack allocation in a background service task.
+    static constexpr size_t kIoChunkBytes = 4096;
+
+    /// Default step() budget. Callers that want a bigger slice pass one;
+    /// Service does (see kSliceBudgetBytes in Service.hpp).
+    static constexpr size_t kDefaultChunkBytes = kIoChunkBytes;
 
     enum class Status {
         Idle,        ///< Not started yet.
@@ -53,18 +57,40 @@ public:
     /// Opens @c path, and:
     ///   - Verified immediately, with no scan I/O, if a Good marker already
     ///     matches the file's current (size, declared CRC).
+    ///   - Mismatched immediately, with no scan I/O, if a Bad marker already
+    ///     matches it. A confirmed-corrupt file does not become uncorrupt by
+    ///     being re-read, so re-deriving that answer on every boot is pure
+    ///     cost; the marker is the cached answer for both verdicts, not just
+    ///     the happy one. Replacing the file changes its (size, crc) and so
+    ///     invalidates the marker on its own -- see the (size, crc) guard.
     ///   - InProgress otherwise (scan starts from byte 0).
     ///   - IoError if the file can't be opened or is too short to have a
     ///     trailing CRC.
     /// No-op (returns current status unchanged) if already InProgress.
+    /// Calling start() again on a finished verifier re-evaluates from
+    /// scratch, which is how Service re-arms an entry whose file changed.
     Status start();
 
-    /// Advances the scan by up to min(maxBytes, kDefaultChunkBytes) bytes.
-    /// No-op if not InProgress. On finishing a full pass: compares against
-    /// the trailing 4-byte CRC, writes a Good marker on match or a Bad
-    /// marker (with the mismatching declared CRC, for diagnostics) on
-    /// mismatch.
+    /// Advances the scan by up to @p maxBytes, reading in kIoChunkBytes
+    /// chunks. No-op if not InProgress, or if @p maxBytes is 0.
+    ///
+    /// One call does the whole budget rather than a single chunk: the loop
+    /// driving this is gated by a kernel message wait, so a one-chunk-per-
+    /// wait design ties throughput to the wait period rather than to the
+    /// storage (that is exactly the ~8KB/s bug the README describes, and
+    /// shortening the wait only moved the ceiling). Budget per call, not
+    /// chunk per call, decouples the two.
+    ///
+    /// On finishing a full pass: compares against the trailing 4-byte CRC,
+    /// writes a Good marker on match or a Bad marker (with the mismatching
+    /// declared CRC, for diagnostics) on mismatch.
     Status step(size_t maxBytes = kDefaultChunkBytes);
+
+    /// Drops any scan in progress and returns to Idle, so the next start()
+    /// re-evaluates the file from scratch. Closes an open handle. Does not
+    /// touch the on-disk marker -- a stale marker is invalidated by its own
+    /// (size, crc) guard, not by deleting it.
+    void reset();
 
     Status             status() const { return mStatus; }
     bool                done() const   { return mStatus != Status::InProgress; }
@@ -82,6 +108,12 @@ public:
     /// Kernel timestamp (ms) the current scan began, for an ETA computed
     /// from the actually-observed rate: elapsed = nowMs - startedAtMs().
     uint32_t startedAtMs() const { return mStartedAtMs; }
+
+    /// Size the file had when start() last opened it, or 0 if start() has
+    /// never got that far (never called, or the open itself failed). Service
+    /// compares this against what the directory currently reports to notice a
+    /// file that changed under a finished verdict.
+    uint64_t fileSize() const { return mFileSize; }
 
 private:
     const SDK::Kernel&                      mKernel;
