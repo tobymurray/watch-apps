@@ -42,6 +42,27 @@ endif()
 
 project(${APP_NAME})
 
+# apps-v1.3.0 adds -fcyclomatic-complexity unconditionally in its own
+# add_compile_options(). That flag is ST-CubeIDE-GCC-only; mainline
+# arm-none-eabi-gcc rejects it outright, so a from-scratch checkout of that tag
+# fails to build any app at all. Mainline SDK guards it behind a
+# check_cxx_compiler_flag probe, but the fix cannot be backported into a tag
+# that has already shipped, and this app targets 1.3 deliberately (see the
+# README) because 1.4 firmware is not out yet.
+#
+# So probe the compiler the same way mainline does and drop the flag here when
+# it is not supported. Directory-scope, applied after the include and before any
+# target is created, so it reaches every target this app builds. On a toolchain
+# that does support the flag nothing changes.
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag(-fcyclomatic-complexity UNA_APP_HAS_CYCLOMATIC_COMPLEXITY)
+if(NOT UNA_APP_HAS_CYCLOMATIC_COMPLEXITY)
+    get_directory_property(_una_app_opts COMPILE_OPTIONS)
+    list(REMOVE_ITEM _una_app_opts -fcyclomatic-complexity)
+    set_directory_properties(PROPERTIES COMPILE_OPTIONS "${_una_app_opts}")
+    message(STATUS "Dropped -fcyclomatic-complexity: this compiler rejects it")
+endif()
+
 # Set up version
 una_app_setup_version(BUILD_VERSION ${CMAKE_CURRENT_SOURCE_DIR})
 

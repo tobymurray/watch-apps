@@ -83,15 +83,17 @@ message that carries a payload (`MapManagerProgress`), since 1.3's
 `IAppComm::allocateMessage` can't forward constructor arguments the way later
 SDKs can.
 
-**Known build gotcha on `apps-v1.3.0` — currently needs a local SDK edit:**
+**Build gotcha on `apps-v1.3.0` — handled by this app's own CMakeLists:**
 that tag predates mainline's `check_cxx_compiler_flag` probe for
 `-fcyclomatic-complexity` (an ST-CubeIDE-GCC-only flag mainline
 `arm-none-eabi-gcc` rejects outright). A from-scratch checkout of
 `apps-v1.3.0` will fail to build *any* app — this one included — with
-`-fcyclomatic-complexity: unrecognized command-line option` until that
-unconditional flag is removed or guarded in that checkout's own
-`cmake/una-app.cmake` (around the `una_app_build_service`/`una_app_build_gui`
-compile-options list).
+`-fcyclomatic-complexity: unrecognized command-line option` unless something removes that
+unconditional flag. This app's `CMakeLists.txt` now probes for it the way
+mainline does and drops it at directory scope when the compiler rejects it, so a
+from-scratch `apps-v1.3.0` checkout builds this app with no SDK edit at all --
+verified against a pristine worktree of the tag. On a toolchain that does accept
+the flag the probe passes and nothing changes.
 
 This is a defect in the `apps-v1.3.0` tag, not in this app — mainline
 `una-sdk` already carries the fix (the probe at `cmake/una-app.cmake`, guarded
