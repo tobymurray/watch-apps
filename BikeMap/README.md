@@ -28,8 +28,9 @@ gives it.
 A map needs *where*, not just *whether*. Sent at 1 Hz from the same place as the
 clock and battery updates.
 
-**`R2` cycles the zoom, but only on the map face.** On every stock face R2 is
-still the lap button. The map face is *new*, so R2 on it did not previously do
+**`R2` cycles the zoom, but only on the map face, and only when there is a
+map to zoom.** On every stock face R2 is still the lap button, and on the map
+face with no usable pack it is the lap button too. The map face is *new*, so R2 on it did not previously do
 anything — this takes nothing away. A lap is always one `L1`/`L2` press away.
 The zoom steps through the selected pack's own `zoomMin..zoomMax` and wraps,
 starting at the finest.
@@ -48,6 +49,32 @@ a live map* and nothing else. Not an oversight. Doing it properly means giving
 the summary face a `MapTileView` and deciding what pack a *finished* activity
 should be drawn against — a different question from the live one, because a
 saved activity has a bounding box of its own and no current fix.
+
+## With no maps installed
+
+Worth being exact about, because it is the state most watches will be in.
+Everything the Cycling app does, this app still does: the ride records, the
+`.fit` is written, the stock faces are unchanged, and the summary is the same.
+Nothing waits on a map, nothing fails, and nothing is logged as an error --
+running with no `SharedData/maps/` directory at all produces one informational
+line and no more.
+
+Two things are still different from stock, and neither is a bug:
+
+- **The map face is still there**, showing the breadcrumb on a blank background
+  with `no map for here`. It is not hidden when there is no pack, deliberately:
+  the face carousel changing length underneath you -- as a pack finishes
+  verifying, or as you walk into coverage -- would be worse than a face that
+  says why it is empty. It is also the only place the app can tell you that a
+  pack failed, which matters, since MapManager's own screen
+  [may not be reachable](../MapManager/README.md#a-real-firmware-quirk-found-while-testing-this).
+- **The map costs its RAM either way.** The tile cache is one 64 KiB static
+  slot, claimed at link time whether or not a pack is ever installed.
+
+`R2` is *not* one of the differences. It cycles the zoom on the map face only
+when there is a map to zoom; with no pack it takes a lap, exactly as it does on
+every other face. Someone who never installs a pack should not lose a button to
+a feature they are not using.
 
 ## How the map behaves
 
@@ -99,7 +126,7 @@ beside that root.
 
 **On hardware: nothing.** No part of this has run on a watch.
 
-**Host tests** ([`MapKit/Tests`](../MapKit/Tests), 90 of them) cover the shared
+**Host tests** ([`MapKit/Tests`](../MapKit/Tests), 93 of them) cover the shared
 layer: pack selection and its tie-breaks, the `(size, crc)` trust guard, the
 header screen, trace decimation, the projection maths, and `MapSession`'s state
 machine. They are shared with the other two map apps, because the logic is.

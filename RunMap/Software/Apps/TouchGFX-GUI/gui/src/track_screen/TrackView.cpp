@@ -189,11 +189,13 @@ void TrackView::handleKeyEvent(uint8_t key)
         // already spoken for and zoom needs one. A lap stays one L1/L2 press
         // away. Intervals workouts keep R2 as next-phase everywhere, including
         // the map -- phase advance is not something to hide behind a face.
+        // On a watch with no packs installed the map face has nothing to
+        // zoom, so cycleMapZoom() reports that and R2 falls back to the lap
+        // it means everywhere else. Someone who never installs a pack should
+        // not lose a button to a feature they are not using.
         if (mIntervalsMode) {
             presenter->intervalsNextPhase();
-        } else if (mCurrentFaceId == FaceId::ID_MAP) {
-            presenter->cycleMapZoom();
-        } else {
+        } else if (mCurrentFaceId != FaceId::ID_MAP || !presenter->cycleMapZoom()) {
             presenter->saveLap();
             application().gotoTrackLapScreenNoTransition();
         }

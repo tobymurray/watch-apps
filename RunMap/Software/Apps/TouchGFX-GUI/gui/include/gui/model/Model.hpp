@@ -130,7 +130,7 @@ public:
     // budget at build time. See MapKit/TileCache.hpp.
     // -----------------------------------------------------------------
     MapKit::MapSession& mapSession() { return mMap; }
-    void cycleMapZoom() { mMap.cycleZoom(); }
+    bool cycleMapZoom() { return mMap.cycleZoom(); }
 
 private:
     // Fields required for GUI <-> Service communication

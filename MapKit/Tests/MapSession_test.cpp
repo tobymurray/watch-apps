@@ -227,13 +227,60 @@ TEST_F(SessionFixture, ZoomCyclesThroughThePacksOwnRangeAndWraps)
     s.cycleZoom();  EXPECT_EQ(s.zoom(), 14);
 }
 
-TEST_F(SessionFixture, ZoomDoesNothingWithNoPack)
+TEST_F(SessionFixture, ZoomReportsThatItDidNothingWhenThereIsNoPack)
 {
+    // The return value is what lets the caller hand R2 back to the lap it
+    // means on every other face. A watch with no packs installed must not end
+    // up with a dead button on this one.
     MapSession s(fx.kernel, cache);
     s.onPosition(kFarLat, kFarLon, true, false);
     const uint8_t before = s.zoom();
-    s.cycleZoom();
+    EXPECT_FALSE(s.cycleZoom());
     EXPECT_EQ(s.zoom(), before);
+}
+
+TEST_F(SessionFixture, ZoomReportsThatItDidNothingWhileStillVerifying)
+{
+    // Same reasoning during the seconds after a fresh pack is deployed: the
+    // face is not drawing tiles yet, so there is nothing to zoom, so the
+    // button should still take a lap.
+    seedPack("city.rawtiles");
+    MapSession s(fx.kernel, cache);
+    s.onPosition(kLat, kLon, true, false);
+    ASSERT_EQ(s.status(), MapStatus::Verifying);
+    EXPECT_FALSE(s.cycleZoom());
+}
+
+TEST_F(SessionFixture, ZoomReportsSuccessOnceThereIsAMapToZoom)
+{
+    seedPack("city.rawtiles");
+    seedMarker("city.rawtiles", PackTrustReader::kMagicGood);
+    MapSession s(fx.kernel, cache);
+    s.onPosition(kLat, kLon, true, false);
+    ASSERT_TRUE(s.renderable());
+    EXPECT_TRUE(s.cycleZoom());
+}
+
+TEST_F(SessionFixture, WithNoSharedMapDirectoryAtAllTheActivityIsUnaffected)
+{
+    // The shape of a watch that has never had MapManager or a pack on it: the
+    // directory does not exist, so there is nothing to open, list or verify.
+    // That is a normal state, not an error, and everything the activity itself
+    // depends on has to keep working through it.
+    MapSession s(fx.kernel, cache);
+
+    for (int i = 0; i < 10; ++i) {
+        s.onPosition(kLat + 0.001F * i, kLon, true, /*recording=*/true);
+    }
+
+    EXPECT_EQ(s.status(), MapStatus::NoPack);
+    EXPECT_FALSE(s.renderable());
+    EXPECT_EQ(s.packName(), nullptr);
+    EXPECT_EQ(s.packErrorText(), nullptr) << "no pack is not a pack error";
+    EXPECT_FALSE(s.cycleZoom()) << "so R2 stays the lap button";
+    // The breadcrumb -- the thing the activity actually records -- is
+    // unaffected by there being no basemap under it.
+    EXPECT_GT(s.trace().count(), 1u);
 }
 
 TEST_F(SessionFixture, TheTraceGrowsOnlyWhileRecording)

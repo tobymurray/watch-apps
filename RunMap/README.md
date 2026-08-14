@@ -29,13 +29,14 @@ need. A map needs *where*, not just *whether*. It is sent at 1 Hz from the same
 place as the clock and battery updates — well inside the GUI's ten-deep message
 queue, which is drained once per frame at 10 Hz.
 
-**`R2` cycles the zoom, but only on the map face**, and only in a free run.
-This is the one button that behaves differently from the stock app, and it is
-worth being precise about why it is not a change: the map face is *new*, so R2
-on it did not previously do anything. On every stock face R2 is still the lap
-button. In an intervals workout R2 stays next-phase everywhere, including the
-map — advancing a phase is not something to hide behind a face. A lap is always
-one `L1`/`L2` press away.
+**`R2` cycles the zoom** — on the map face, in a free run, and only when there
+is a map to zoom. This is the one button that behaves differently from the
+stock app, and it is worth being precise about why it is not a change: the map
+face is *new*, so R2 on it did not previously do anything. On every stock face
+R2 is still the lap button, and on the map face with no usable pack it is the
+lap button too. In an intervals workout R2 stays next-phase everywhere,
+including the map — advancing a phase is not something to hide behind a face.
+A lap is always one `L1`/`L2` press away.
 
 The zoom steps through the *selected pack's own* `zoomMin..zoomMax` and wraps,
 starting at the finest: the wearer is looking at where they are, and can zoom
@@ -57,6 +58,32 @@ whether it was missed. Doing it properly means giving the summary face a
 `MapTileView` and deciding what pack a *finished* activity should be drawn
 against — which is a different question from the live one, because a saved
 activity has a bounding box of its own and no current fix.
+
+## With no maps installed
+
+Worth being exact about, because it is the state most watches will be in.
+Everything the Running app does, this app still does: the run records, the
+`.fit` is written, the stock faces are unchanged, and the summary is the same.
+Nothing waits on a map, nothing fails, and nothing is logged as an error --
+running with no `SharedData/maps/` directory at all produces one informational
+line and no more.
+
+Two things are still different from stock, and neither is a bug:
+
+- **The map face is still there**, showing the breadcrumb on a blank background
+  with `no map for here`. It is not hidden when there is no pack, deliberately:
+  the face carousel changing length underneath you -- as a pack finishes
+  verifying, or as you walk into coverage -- would be worse than a face that
+  says why it is empty. It is also the only place the app can tell you that a
+  pack failed, which matters, since MapManager's own screen
+  [may not be reachable](../MapManager/README.md#a-real-firmware-quirk-found-while-testing-this).
+- **The map costs its RAM either way.** The tile cache is one 64 KiB static
+  slot, claimed at link time whether or not a pack is ever installed.
+
+`R2` is *not* one of the differences. It cycles the zoom on the map face only
+when there is a map to zoom; with no pack it takes a lap, exactly as it does on
+every other face. Someone who never installs a pack should not lose a button to
+a feature they are not using.
 
 ## How the map behaves
 
@@ -124,7 +151,7 @@ Stated plainly, because the honest answer is mixed.
 **On hardware: nothing.** No part of this has run on a watch. Everything below
 is a host test or the desktop simulator.
 
-**Host tests** ([`MapKit/Tests`](../MapKit/Tests), 90 of them) cover the pack
+**Host tests** ([`MapKit/Tests`](../MapKit/Tests), 93 of them) cover the pack
 selection rule and all its tie-breaks, the `(size, crc)` trust guard in both
 directions, the header screen, trace decimation and thinning, the projection
 and zoom rescaling, and `MapSession`'s whole state machine including

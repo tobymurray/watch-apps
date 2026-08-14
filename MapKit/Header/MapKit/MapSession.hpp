@@ -102,8 +102,12 @@ public:
     void resetTrace() { mTrace.clear(); }
 
     /// Step the display zoom through the selected pack's own zoom range,
-    /// wrapping. No-op with no pack (there is no range to step through).
-    void cycleZoom();
+    /// wrapping.
+    /// @return false when there is no drawable pack, and so no range to step
+    ///         through. Callers that took a button away from something else to
+    ///         offer zoom must give that button back when this is false --
+    ///         otherwise a watch with no maps has a dead button on this face.
+    bool cycleZoom();
 
     // -- read by the map face ----------------------------------------------
 

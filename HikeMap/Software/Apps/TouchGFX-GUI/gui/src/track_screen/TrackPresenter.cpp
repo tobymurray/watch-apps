@@ -80,8 +80,11 @@ MapKit::MapSession& TrackPresenter::mapSession()
     return model->mapSession();
 }
 
-void TrackPresenter::cycleMapZoom()
+bool TrackPresenter::cycleMapZoom()
 {
-    model->cycleMapZoom();
+    if (!model->cycleMapZoom()) {
+        return false;
+    }
     view.updateMapFace();
+    return true;
 }

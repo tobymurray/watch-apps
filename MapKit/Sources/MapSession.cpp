@@ -173,13 +173,18 @@ void MapSession::pollTrust()
     }
 }
 
-void MapSession::cycleZoom()
+bool MapSession::cycleZoom()
 {
     if (!renderable()) {
-        return;
+        // Nothing to zoom. Say so rather than silently absorbing the press:
+        // the caller owns a button that means something else everywhere else,
+        // and a dead button is worse than a button that does the ordinary
+        // thing.
+        return false;
     }
     const SDK::RawTiles::Header& h = mContainer.header();
     mZoom = (mZoom >= h.zoomMax) ? h.zoomMin : static_cast<uint8_t>(mZoom + 1);
+    return true;
 }
 
 MapStatus MapSession::status() const

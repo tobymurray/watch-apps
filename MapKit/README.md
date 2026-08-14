@@ -314,8 +314,14 @@ coarsens rather than truncates and always keeps the newest point; the projection
 and the trace-zoom rescaling identity; and `MapSession`'s whole state machine,
 including `verifying → trusted` and `verifying → corrupt` resolving on a later
 GPS sample with nothing else happening, walking into and out of coverage, the
-scan-once property above, and falling back to a second covering pack when the
-first is condemned mid-activity.
+scan-once property above, falling back to a second covering pack when the first
+is condemned mid-activity, and `cycleZoom()` reporting that it did nothing so a
+consuming app can hand its button back to whatever that button means elsewhere.
+
+There is also a test for the whole feature being absent: no shared map
+directory, no packs, ten GPS samples, and the breadcrumb still grows while
+every map-facing accessor reports the honest nothing. A watch that never has a
+pack on it is the common case, not an edge case.
 
 Two of these have been checked by mutation rather than assumed: deleting the
 `(size, crc)` guard fails six tests, and dropping the known-corrupt exclusion

@@ -161,9 +161,13 @@ void TrackView::handleKeyEvent(uint8_t key)
         // face -- which is new, so this takes nothing away from what the stock
         // app did -- it cycles the zoom instead: all four buttons are already
         // spoken for and zoom needs one. A lap stays one L1/L2 press away.
-        if (mCurrentFaceId == FaceId::ID_MAP) {
-            presenter->cycleMapZoom();
-        } else {
+        //
+        // Unless there is no map to zoom. On a watch with no packs installed
+        // the map face is a trace on a blank background, and a zoom button
+        // there would be dead -- so cycleMapZoom() reports that and R2 falls
+        // back to the lap it means everywhere else. Someone who never installs
+        // a pack should not lose a button to a feature they are not using.
+        if (mCurrentFaceId != FaceId::ID_MAP || !presenter->cycleMapZoom()) {
             presenter->saveLap();
             application().gotoTrackLapScreenNoTransition();
         }

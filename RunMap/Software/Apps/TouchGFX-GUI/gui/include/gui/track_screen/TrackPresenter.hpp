@@ -40,7 +40,9 @@ public:
     // Live map plumbing. The view borrows the Model's map session on every
     // setupScreen -- screens are transient, the session is not.
     MapKit::MapSession& mapSession();
-    void cycleMapZoom();
+    /// @return false when there is no drawable map, so the caller can
+    ///         hand the button back to what it does everywhere else.
+    bool cycleMapZoom();
 
     void saveLap();
     void intervalsNextPhase();
