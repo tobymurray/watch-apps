@@ -10,9 +10,12 @@ than living inside it.
 | App | What it is |
 | --- | --- |
 | [`Barcode`](Barcode) | A parkrun-style Code 128 barcode for an id you supply, read from a small JSON file you write into the app's folder over USB — because the SDK has no supported way to get a user-specific value onto the watch. |
+| [`BikeMap`](BikeMap) | The stock Cycling activity with a live map on the in-activity screen: offline basemap tiles under the GPS breadcrumb, instead of breadcrumb-on-black. |
 | [`Chrono`](Chrono) | The SDK's Stopwatch example backported to SDK 1.3, which upstream never had a build of — so it launches on a watch whose kernel is still on interface version 2. |
 | [`GpsLab`](GpsLab) | The Running activity plus GNSS instrumentation — per-sample error estimate, fix and dead-reckoning state, recorded alongside the activity. |
-| [`MapManager`](MapManager) | A background, autostart `Utility` app that discovers and CRC-verifies offline map packs dropped into the shared `SharedData/maps/` directory, so map-consuming apps (`AthensRun`) read from one already-verified location instead of each running their own copy of this pipeline. |
+| [`HikeMap`](HikeMap) | The stock Hiking activity with the same live map. |
+| [`MapManager`](MapManager) | A background, autostart `Utility` app that discovers and CRC-verifies offline map packs dropped into the shared `SharedData/maps/` directory, so map-consuming apps read from one already-verified location instead of each running their own copy of this pipeline. |
+| [`RunMap`](RunMap) | The stock Running activity with the same live map. |
 | [`RustGuiPoc`](RustGuiPoc) | A proof of concept: a watch app whose GUI is drawn by Rust and `embedded-graphics` through the SDK's CustomGUI entry point, instead of TouchGFX. |
 | [`Squash`](Squash) | A squash activity app, and the raw 100 Hz IMU recorder it is being built out of — because tuning shot detection needs labelled court data that does not exist yet. |
 
@@ -20,13 +23,20 @@ Most of these started as example apps inside the SDK tree and came here with
 their history intact (`Barcode`, `GpsLab`, `RustGuiPoc`, `Squash`); `Chrono`
 is a fork of an example that is still upstream, carrying its own name and
 AppID so the two install side by side; `MapManager` is new here, built off
-`Chrono`'s shell for the SDK-1.3 groundwork only.
+`Chrono`'s shell for the SDK-1.3 groundwork only. `BikeMap`, `HikeMap` and
+`RunMap` are forks of `Cycling`, `Hiking` and `Running` in the same
+install-alongside sense, and are the same app three times over as far as the map
+goes — the code that draws it lives once, in [`MapKit`](MapKit), which is a
+shared directory rather than an app.
 
 ## Building
 
 Each app is a self-contained app root: a `Software/` directory holding exactly one
 `*-CMake` project, which finds the SDK through `$UNA_SDK` rather than by relative
-path. So an SDK checkout anywhere will do.
+path. So an SDK checkout anywhere will do. The three map apps additionally reach
+`MapKit/` by relative path within this repository, which is the arrangement
+Kira's registry recommends for a monorepo and which its one-`*-CMake`-per-app
+rule is unaffected by — see [MapKit's README](MapKit/README.md#layout-and-why-kira-is-fine-with-it).
 
 ```sh
 export UNA_SDK=/path/to/una-sdk
@@ -45,11 +55,12 @@ kira build-app --app GpsLab --sdk /path/to/una-sdk --version 1.0.0 --out GpsLab.
 `Squash` also carries host tests for its recorder path under
 [`Squash/Tests`](Squash/Tests) — see [its README](Squash/README.md#tests) —
 `Chrono` carries tests for its stopwatch core under [`Chrono/Tests`](Chrono/Tests),
-and `MapManager` carries tests for its verifier core under
-[`MapManager/Tests`](MapManager/Tests).
+`MapManager` carries tests for its verifier core under
+[`MapManager/Tests`](MapManager/Tests), and the three map apps share one suite
+under [`MapKit/Tests`](MapKit/Tests).
 
-`Chrono` and `MapManager` are pinned to a particular SDK: point `$UNA_SDK` at a
-checkout of `apps-v1.3.0` for either, and see their READMEs
+`Chrono`, `MapManager` and the three map apps are pinned to a particular SDK:
+point `$UNA_SDK` at a checkout of `apps-v1.3.0`, and see their READMEs
 ([Chrono](Chrono/README.md#why-13-matters), [MapManager](MapManager/README.md#why-its-pinned-to-sdk-13))
 for why.
 

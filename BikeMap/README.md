@@ -1,0 +1,118 @@
+# Bike Map — the stock Cycling app, with a map
+
+The SDK's `Cycling` activity app at `apps-v1.3.0`, with one thing added: the
+in-activity screen gains a map face. Tiles from an offline `.rawtiles` pack
+underneath, the GPS breadcrumb over them, one line of status at the bottom.
+
+Everything else is the stock app, unchanged — the menus, the lap handling, the
+four existing faces, the summary, the `.fit` it writes. It installs alongside
+`Cycling` rather than replacing it: different name, different AppID.
+
+| | |
+| --- | --- |
+| AppID | `22AF6725BB5EBEEE` |
+| Type | `Activity` |
+| Forked from | `Examples/Apps/Cycling` at `apps-v1.3.0` |
+| Shared code | [`../MapKit`](../MapKit) |
+| Needs | [`MapManager`](../MapManager) installed, and a pack in `Apps/SharedData/maps/` |
+
+## What it adds
+
+**A fifth face on the activity screen**, after the stock four (total, overview,
+lap, status). `L1` / `L2` scroll to it the same way they scroll to any other
+face — it is appended last, so every stock face keeps the position the stock app
+gives it.
+
+**A `GPS_POSITION` message**, Service → GUI. The stock app forwards only the fix
+*state*; the coordinates stay in the Service, which is all the stock faces need.
+A map needs *where*, not just *whether*. Sent at 1 Hz from the same place as the
+clock and battery updates.
+
+**`R2` cycles the zoom, but only on the map face.** On every stock face R2 is
+still the lap button. The map face is *new*, so R2 on it did not previously do
+anything — this takes nothing away. A lap is always one `L1`/`L2` press away.
+The zoom steps through the selected pack's own `zoomMin..zoomMax` and wraps,
+starting at the finest.
+
+## What it deliberately does not do
+
+**The post-activity summary screen still has no map.** The stock app already
+carries `Map.hpp`, `PolyLine.hpp` and `SummaryFaceMap.hpp` — the
+breadcrumb-on-black you get after finishing a ride — and it is untouched. It has
+no tile view, so a saved ride's map is still a trace on a blank background even
+though the live screen now has a basemap.
+
+Deferred on purpose, twice: once by the proof of concept this grew out of, and
+again here, because the point of these three apps is to be the stock apps *plus
+a live map* and nothing else. Not an oversight. Doing it properly means giving
+the summary face a `MapTileView` and deciding what pack a *finished* activity
+should be drawn against — a different question from the live one, because a
+saved activity has a bounding box of its own and no current fix.
+
+## How the map behaves
+
+Which pack gets drawn and why, the three failure states that must not look
+alike, and the trust contract with `MapManager` are all in
+[MapKit's README](../MapKit/README.md). The short version:
+
+| Status line | What it means |
+| --- | --- |
+| `acquiring GPS` | No fix yet, so "which pack covers me" has no answer. |
+| `no map for here` | Nothing on this watch covers this position. |
+| `verifying map` | Pack is fine; MapManager has not finished checking it. **Resolves itself.** |
+| `map pack corrupt` | MapManager confirmed these exact bytes corrupt. |
+| `map: <reason>` | The pack failed to open. |
+| `off map  z<n>` | Pack is live, but there is no tile at this spot and zoom. |
+| `z<n>` | Drawing. |
+
+**In every one of these the activity keeps recording and the breadcrumb keeps
+drawing.** The map is an addition to the ride, never a precondition for it.
+
+## Building
+
+Pinned to SDK 1.3, for the same reason as [`Chrono`](../Chrono/README.md#why-13-matters)
+and [`MapManager`](../MapManager/README.md#why-its-pinned-to-sdk-13): an app
+carries the kernel interface version it was built against, and 1.4 firmware has
+not shipped.
+
+```sh
+export UNA_SDK=/path/to/una-sdk       # checked out at apps-v1.3.0
+cd BikeMap/Software/Apps/BikeMap-CMake
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.1.0 . && cmake --build build
+```
+
+That works against a **pristine** `apps-v1.3.0` with no SDK edit. The tag ships
+`-fcyclomatic-complexity` unconditionally — an ST-CubeIDE-GCC-only flag that
+mainline `arm-none-eabi-gcc` rejects, so a from-scratch checkout fails to build
+*any* app, the stock `Cycling` included. This app's `CMakeLists.txt` probes for
+it the way mainline does and drops it when the compiler says no.
+
+Deploy by copying the resulting `.uapp` into `Apps/BikeMap/` on the watch's
+USB-MSC volume, and put a `.rawtiles` pack in `Apps/SharedData/maps/`.
+
+The simulator builds with `make -f simulator/gcc/Makefile -j8` from
+`Software/Apps/TouchGFX-GUI`; its filesystem root is `../../../../../Output/`
+relative to the directory you launch it from, with packs in `SharedData/maps/`
+beside that root.
+
+## How it was verified
+
+**On hardware: nothing.** No part of this has run on a watch.
+
+**Host tests** ([`MapKit/Tests`](../MapKit/Tests), 90 of them) cover the shared
+layer: pack selection and its tie-breaks, the `(size, crc)` trust guard, the
+header screen, trace decimation, the projection maths, and `MapSession`'s state
+machine. They are shared with the other two map apps, because the logic is.
+
+**The simulator** was run for this app specifically, and its log confirms
+discovery → selection → structural open → trust marker against a generated test
+pack, plus the two negative paths: with the marker removed it sits in
+`verifying`, and with the pack removed it reports `no pack covers this position`
+exactly once rather than once per second.
+
+**Unproven: everything that draws.** The map face has never been seen, here or
+on any of the three apps. Reaching it in the simulator needs button presses, and
+synthetic key injection does not reach the SDL window — reproduced here with the
+window focused and a real XTEST keypress ignored. See
+[RunMap's README](../RunMap/README.md#how-it-was-verified) for the full account;
+it applies unchanged to this app, since the drawing code is the same code.
