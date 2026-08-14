@@ -22,6 +22,7 @@ MapKit/
 │       ├── MapMath.hpp               # WebMercator lat/lon -> world pixels
 │       ├── TraceBuffer.hpp           # the breadcrumb ring buffer
 │       ├── TileCache.hpp             # fixed-slot LRU of decoded tiles
+│       ├── TileRequestLog.hpp        # where the map was missing
 │       ├── PackTrustReader.hpp       # reader for MapManager's trust marker
 │       ├── PackSelection.hpp         # *which pack* — the rule, as pure code
 │       ├── PackCatalog.hpp           # what packs exist, cheaply
@@ -135,6 +136,63 @@ broken map as **`map: ok`**.
 a rectangle drawn around a set of tiles, not the set itself, and it only
 promises coverage somewhere in `[zoomMin, zoomMax]`, not at every zoom. The
 honest test is whether the tile under the crosshair actually exists.
+
+## Asking for the maps that are missing
+
+A watch that says `no map for here` knows something useful, and until this it
+threw it away. `TileRequestLog` writes it down: one line per distinct area
+entered without tile coverage, appended to
+`../SharedData/maps/requested-tiles.txt` — beside the packs, where a desktop
+tool can pick it up over the same USB connection used to deploy packs in the
+first place.
+
+It closes the loop the other way round from everything else here. MapManager
+tells apps which packs are trustworthy; this tells whoever makes the packs
+which ones are missing.
+
+```
+# mapkit-requested-tiles v1
+# Places visited with no map coverage. One line per distinct tile, first
+# visit only. z/x/y are XYZ (slippy) tile coordinates; lat/lon is that
+# tile's centre in degrees. Duplicates across sessions are possible --
+# de-duplicate on z/x/y when consuming.
+12/2371/1402 49.2391 28.4326 BikeMap
+```
+
+**It records a tile, not a fix**, quantised to `kRequestZoom` (z12, the
+coarsest zoom real packs carry), and only the first visit to each tile. That is
+not a privacy gesture bolted on afterwards — it is what makes the thing work at
+all:
+
+- *The unit of a pack is an area.* "Build something covering these tiles" is a
+  request a generator can act on; ten thousand fixes is one it would have to
+  reduce first.
+- *It bounds the writing.* At 1 Hz, an unquantised log would append tens of
+  thousands of lines per activity, on the GUI thread, to internal flash.
+  Quantised, a walk crosses a z12 tile boundary every half hour or so.
+- *It bounds what is disclosed.* This file sits in a directory every installed
+  app can read and anyone who plugs the watch in can copy. A z12 tile is
+  several kilometres across, so it says "somewhere around here" — all a pack
+  generator needs, and rather less than a track log. Worth knowing before
+  handing the watch to someone.
+
+**Only two states file a request:** no pack covers the position, and a pack was
+selected but has no tile here at this zoom. A corrupt or unopenable pack also
+leaves the screen blank, but the answer there is to re-copy a pack that already
+exists, not to build a new one — filing those would put work in the queue that
+nobody should do.
+
+The extension is deliberate. MapManager tracks `*.rawtiles` and would adopt and
+CRC-verify anything that matched, so this is `.txt` and a test asserts it stays
+that way.
+
+Bounds: `kMaxTilesPerSession` (64) distinct tiles per run of the app, and the
+file stops being appended to at `kMaxBytes` (256 KiB) rather than rotating — an
+old request is exactly as valid as a new one, so dropping the oldest to make
+room would discard the very thing being collected. De-duplication is
+within-session only, so returning to the same uncovered place on another day
+appends the same line again; the header says to de-duplicate on `z/x/y`, and
+the file is meant to be collected and cleared rather than kept forever.
 
 ## The contract with MapManager
 
@@ -309,7 +367,12 @@ whole-world bbox area without `int32` overflow, corrupt exclusion; the
 `(size, crc)` guard in both directions (a stale `Bad` marker must not condemn a
 correctly re-copied pack, just as a stale `Good` must not bless a replaced one);
 the catalog's header screen and its refusal to truncate a path, its hard cap,
-and that it leaves no open file handles behind; trace decimation, thinning that
+and that it leaves no open file handles behind; the request log's quantising,
+its within-session de-duplication, appending to a file an earlier session left
+behind, both its bounds, and that its path cannot be mistaken for a pack; the
+inverse projection it needs, round-tripped against a tolerance derived from the
+forward projection's own resolution rather than a number that happened to pass;
+trace decimation, thinning that
 coarsens rather than truncates and always keeps the newest point; the projection
 and the trace-zoom rescaling identity; and `MapSession`'s whole state machine,
 including `verifying → trusted` and `verifying → corrupt` resolving on a later

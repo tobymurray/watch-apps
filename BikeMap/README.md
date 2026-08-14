@@ -35,6 +35,14 @@ anything — this takes nothing away. A lap is always one `L1`/`L2` press away.
 The zoom steps through the selected pack's own `zoomMin..zoomMax` and wraps,
 starting at the finest.
 
+**A record of the maps it could not find.** When the wearer is somewhere with
+no tile coverage, the app appends a line to a shared
+`SharedData/maps/requested-tiles.txt` naming the area (quantised to a ~7 km
+tile, first visit only) and which app wanted it. The watch is the only thing
+that knows where a map was missing; this is how that reaches whoever builds the
+packs. See [MapKit's README](../MapKit/README.md#asking-for-the-maps-that-are-missing)
+for the format, the bounds, and what it does and does not disclose.
+
 ## What it deliberately does not do
 
 **The post-activity summary screen still has no map.** The stock app already
@@ -70,6 +78,10 @@ Two things are still different from stock, and neither is a bug:
   [may not be reachable](../MapManager/README.md#a-real-firmware-quirk-found-while-testing-this).
 - **The map costs its RAM either way.** The tile cache is one 64 KiB static
   slot, claimed at link time whether or not a pack is ever installed.
+- **It writes down where you went.** With no coverage the app appends the
+  area to `SharedData/maps/requested-tiles.txt` so a pack can be built for
+  it later. Coarse and de-duplicated, but it is a file on a shared volume;
+  delete it if you would rather it did not exist.
 
 `R2` is *not* one of the differences. It cycles the zoom on the map face only
 when there is a map to zoom; with no pack it takes a lap, exactly as it does on
@@ -126,7 +138,7 @@ beside that root.
 
 **On hardware: nothing.** No part of this has run on a watch.
 
-**Host tests** ([`MapKit/Tests`](../MapKit/Tests), 93 of them) cover the shared
+**Host tests** ([`MapKit/Tests`](../MapKit/Tests), 112 of them) cover the shared
 layer: pack selection and its tie-breaks, the `(size, crc)` trust guard, the
 header screen, trace decimation, the projection maths, and `MapSession`'s state
 machine. They are shared with the other two map apps, because the logic is.

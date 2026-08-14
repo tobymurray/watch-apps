@@ -67,7 +67,7 @@ TEST_F(SessionFixture, BeforeAnyFixTheQuestionHasNoAnswer)
     // says so rather than guessing or blaming the map.
     seedPack("city.rawtiles");
     seedMarker("city.rawtiles", PackTrustReader::kMagicGood);
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     EXPECT_EQ(s.status(), MapStatus::NoFix);
 
     s.onPosition(0.0F, 0.0F, /*fix=*/false, /*recording=*/false);
@@ -79,7 +79,7 @@ TEST_F(SessionFixture, NoPackCoveringThePositionIsSaidPlainly)
 {
     seedPack("city.rawtiles");
     seedMarker("city.rawtiles", PackTrustReader::kMagicGood);
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kFarLat, kFarLon, true, false);
     EXPECT_EQ(s.status(), MapStatus::NoPack);
     EXPECT_FALSE(s.renderable());
@@ -88,7 +88,7 @@ TEST_F(SessionFixture, NoPackCoveringThePositionIsSaidPlainly)
 
 TEST_F(SessionFixture, NoPacksDeployedAtAllIsAlsoJustNoPack)
 {
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     EXPECT_EQ(s.status(), MapStatus::NoPack);
 }
@@ -99,7 +99,7 @@ TEST_F(SessionFixture, APackWithNoVerdictYetReportsVerifyingAndWithholdsTiles)
     // resolves on its own. Not an error, and definitely not a blank screen
     // with no explanation.
     seedPack("city.rawtiles");
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
 
     EXPECT_EQ(s.status(), MapStatus::Verifying);
@@ -113,7 +113,7 @@ TEST_F(SessionFixture, VerifyingBecomesTrustedWithoutAnythingElseHappening)
     // Map Manager finishes its background pass while the app is running. The
     // next GPS sample has to notice, or "verifying" would be a dead end.
     seedPack("city.rawtiles");
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     ASSERT_EQ(s.status(), MapStatus::Verifying);
 
@@ -133,7 +133,7 @@ TEST_F(SessionFixture, APackAlreadyKnownCorruptIsNeverSelected)
     // app is never going to draw.
     seedPack("broken.rawtiles");
     seedMarker("broken.rawtiles", PackTrustReader::kMagicBad);
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
 
     EXPECT_EQ(s.status(), MapStatus::NoPack);
@@ -148,7 +148,7 @@ TEST_F(SessionFixture, APackThatTurnsCorruptWhileWaitingIsReportedAsCorrupt)
     // the only thing wrong with it -- so describing its OpenResult would print
     // "ok" for a broken map. Corrupt is its own state for exactly that reason.
     seedPack("city.rawtiles");
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     ASSERT_EQ(s.status(), MapStatus::Verifying);
 
@@ -166,7 +166,7 @@ TEST_F(SessionFixture, ACorruptVerdictIsFinalAndStopsThePolling)
     // Sticky both ways: a file confirmed corrupt does not become whole by
     // being read again, so the session must not flip back to Verifying.
     seedPack("city.rawtiles");
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     seedMarker("city.rawtiles", PackTrustReader::kMagicBad);
     s.onPosition(kLat, kLon, true, false);
@@ -184,7 +184,7 @@ TEST_F(SessionFixture, ACorruptPackDoesNotBlockAWorkingOne)
     seedPack("fine.rawtiles");
     seedMarker("fine.rawtiles", PackTrustReader::kMagicGood);
 
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     EXPECT_STREQ(s.packName(), "fine.rawtiles");
     EXPECT_TRUE(s.renderable());
@@ -197,7 +197,7 @@ TEST_F(SessionFixture, TheDeeperPackIsChosenWhenSeveralCover)
     seedPack("region.rawtiles", shallow);
     seedPack("city.rawtiles", deep);
 
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     EXPECT_STREQ(s.packName(), "city.rawtiles");
 }
@@ -208,7 +208,7 @@ TEST_F(SessionFixture, ZoomStartsAtThePacksFinestLevel)
     seedPack("city.rawtiles", spec);
     seedMarker("city.rawtiles", PackTrustReader::kMagicGood, spec);
 
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     EXPECT_EQ(s.zoom(), 16) << "the wearer is looking at where they are";
 }
@@ -219,7 +219,7 @@ TEST_F(SessionFixture, ZoomCyclesThroughThePacksOwnRangeAndWraps)
     seedPack("city.rawtiles", spec);
     seedMarker("city.rawtiles", PackTrustReader::kMagicGood, spec);
 
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     ASSERT_EQ(s.zoom(), 14);
     s.cycleZoom();  EXPECT_EQ(s.zoom(), 12) << "wraps to the pack's coarsest";
@@ -232,7 +232,7 @@ TEST_F(SessionFixture, ZoomReportsThatItDidNothingWhenThereIsNoPack)
     // The return value is what lets the caller hand R2 back to the lap it
     // means on every other face. A watch with no packs installed must not end
     // up with a dead button on this one.
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kFarLat, kFarLon, true, false);
     const uint8_t before = s.zoom();
     EXPECT_FALSE(s.cycleZoom());
@@ -245,7 +245,7 @@ TEST_F(SessionFixture, ZoomReportsThatItDidNothingWhileStillVerifying)
     // face is not drawing tiles yet, so there is nothing to zoom, so the
     // button should still take a lap.
     seedPack("city.rawtiles");
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     ASSERT_EQ(s.status(), MapStatus::Verifying);
     EXPECT_FALSE(s.cycleZoom());
@@ -255,10 +255,72 @@ TEST_F(SessionFixture, ZoomReportsSuccessOnceThereIsAMapToZoom)
 {
     seedPack("city.rawtiles");
     seedMarker("city.rawtiles", PackTrustReader::kMagicGood);
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     ASSERT_TRUE(s.renderable());
     EXPECT_TRUE(s.cycleZoom());
+}
+
+TEST_F(SessionFixture, AGapInCoverageIsRecordedForWhoeverBuildsPacks)
+{
+    // The watch is the only thing that knows the wearer went somewhere with no
+    // map. See TileRequestLog.
+    MapSession s(fx.kernel, cache, "TestApp");
+    s.onPosition(kLat, kLon, true, false);
+
+    ASSERT_EQ(s.status(), MapStatus::NoPack);
+    EXPECT_EQ(s.requests().count(), 1u);
+    const std::string filed = fx.fileSystem.readFile("../SharedData/maps/requested-tiles.txt");
+    EXPECT_NE(filed.find("TestApp"), std::string::npos);
+}
+
+TEST_F(SessionFixture, ALiveMapRecordsNoRequest)
+{
+    seedPack("city.rawtiles");
+    seedMarker("city.rawtiles", PackTrustReader::kMagicGood);
+    MapSession s(fx.kernel, cache, "TestApp");
+    s.onPosition(kLat, kLon, true, false);
+
+    // The fixture packs carry no tiles, so this is honestly off-coverage --
+    // which is a gap, and is recorded. What matters is that it is the tile
+    // test deciding, not the mere presence of a pack.
+    ASSERT_EQ(s.status(), MapStatus::OffCoverage);
+    EXPECT_EQ(s.requests().count(), 1u);
+}
+
+TEST_F(SessionFixture, ABrokenPackIsNotFiledAsAMissingOne)
+{
+    // A pack that will not open, and one confirmed corrupt, both leave the
+    // screen blank -- but the answer to each is to re-copy a pack that already
+    // exists, not to build a new one. Filing them here would put work in the
+    // queue that nobody should do.
+    std::string pack = buildPack();
+    pack[92] = static_cast<char>(0xFF);          // index_offset must be 292
+    fx.fileSystem.seedFile(inMaps("mangled.rawtiles"), pack);
+
+    MapSession s(fx.kernel, cache, "TestApp");
+    s.onPosition(kLat, kLon, true, false);
+    ASSERT_EQ(s.status(), MapStatus::PackError);
+    EXPECT_EQ(s.requests().count(), 0u);
+}
+
+TEST_F(SessionFixture, APackStillVerifyingIsNotFiledAsAMissingOne)
+{
+    seedPack("city.rawtiles");
+    MapSession s(fx.kernel, cache, "TestApp");
+    s.onPosition(kLat, kLon, true, false);
+    ASSERT_EQ(s.status(), MapStatus::Verifying);
+    EXPECT_EQ(s.requests().count(), 0u)
+        << "the map is probably fine; it just has not been checked yet";
+}
+
+TEST_F(SessionFixture, StandingStillOutsideCoverageFilesOneRequestNotOnePerSample)
+{
+    MapSession s(fx.kernel, cache, "TestApp");
+    for (int i = 0; i < 200; ++i) {
+        s.onPosition(kLat, kLon, true, true);
+    }
+    EXPECT_EQ(s.requests().count(), 1u);
 }
 
 TEST_F(SessionFixture, WithNoSharedMapDirectoryAtAllTheActivityIsUnaffected)
@@ -267,7 +329,7 @@ TEST_F(SessionFixture, WithNoSharedMapDirectoryAtAllTheActivityIsUnaffected)
     // directory does not exist, so there is nothing to open, list or verify.
     // That is a normal state, not an error, and everything the activity itself
     // depends on has to keep working through it.
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
 
     for (int i = 0; i < 10; ++i) {
         s.onPosition(kLat + 0.001F * i, kLon, true, /*recording=*/true);
@@ -288,7 +350,7 @@ TEST_F(SessionFixture, TheTraceGrowsOnlyWhileRecording)
     // A paused activity must not draw a straight line across the gap where
     // the wearer stood still, or across a drive home.
     seedPack("city.rawtiles");
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
 
     s.onPosition(kLat, kLon, true, /*recording=*/false);
     EXPECT_EQ(s.trace().count(), 0u);
@@ -303,7 +365,7 @@ TEST_F(SessionFixture, TheTraceGrowsOnlyWhileRecording)
 TEST_F(SessionFixture, TheTraceIgnoresSamplesWithNoFix)
 {
     seedPack("city.rawtiles");
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, true);
     s.onPosition(0.0F, 0.0F, /*fix=*/false, true);
     EXPECT_EQ(s.trace().count(), 1u) << "a no-fix sample must not append (0, 0)";
@@ -313,7 +375,7 @@ TEST_F(SessionFixture, ResetTraceClearsTheBreadcrumbButKeepsThePack)
 {
     seedPack("city.rawtiles");
     seedMarker("city.rawtiles", PackTrustReader::kMagicGood);
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, true);
     ASSERT_EQ(s.trace().count(), 1u);
     ASSERT_TRUE(s.renderable());
@@ -335,7 +397,7 @@ TEST_F(SessionFixture, WalkingOffOnePackOntoAnotherReselects)
     seedMarker("ontario.rawtiles", PackTrustReader::kMagicGood, here);
     seedMarker("london.rawtiles", PackTrustReader::kMagicGood, there);
 
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     ASSERT_STREQ(s.packName(), "ontario.rawtiles");
 
@@ -363,7 +425,7 @@ TEST_F(SessionFixture, TheDirectoryIsScannedExactlyOncePerLaunch)
     elsewhere.minLon = 130000000; elsewhere.minLat = -40000000;
     elsewhere.maxLon = 140000000; elsewhere.maxLat = -30000000;
     seedPack("elsewhere.rawtiles", elsewhere);
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
 
     s.onPosition(kFarLat, kFarLon, true, false);
     ASSERT_EQ(s.status(), MapStatus::NoPack);
@@ -383,7 +445,7 @@ TEST_F(SessionFixture, WalkingIntoCoverageStillFindsThePack)
     // wearer who started outside every pack would never get a map.
     seedPack("city.rawtiles");
     seedMarker("city.rawtiles", PackTrustReader::kMagicGood);
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
 
     s.onPosition(kFarLat, kFarLon, true, false);
     ASSERT_EQ(s.status(), MapStatus::NoPack);
@@ -403,7 +465,7 @@ TEST_F(SessionFixture, APackThatTurnsCorruptFallsBackToAnotherThatCovers)
     seedPack("coarse.rawtiles", shallow);
     seedMarker("coarse.rawtiles", PackTrustReader::kMagicGood, shallow);
 
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     ASSERT_STREQ(s.packName(), "detailed.rawtiles");
     ASSERT_EQ(s.status(), MapStatus::Verifying);
@@ -421,7 +483,7 @@ TEST_F(SessionFixture, WithNothingToFallBackToACorruptPackKeepsItsOwnDiagnosis)
     // here", so with no alternative the session stays put rather than
     // reselecting into nothing.
     seedPack("city.rawtiles");
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     ASSERT_EQ(s.status(), MapStatus::Verifying);
 
@@ -438,7 +500,7 @@ TEST_F(SessionFixture, StayingInsideThePackDoesNotReopenIt)
     // on every GPS sample would put it on the GUI thread once a second.
     seedPack("city.rawtiles");
     seedMarker("city.rawtiles", PackTrustReader::kMagicGood);
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     ASSERT_TRUE(s.renderable());
 
@@ -458,7 +520,7 @@ TEST_F(SessionFixture, AStructurallyBrokenPackIsAnErrorWithAReason)
     pack[92] = static_cast<char>(0xFF);   // index_offset must be exactly 292
     fx.fileSystem.seedFile(inMaps("mangled.rawtiles"), pack);
 
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
 
     EXPECT_EQ(s.status(), MapStatus::PackError);
@@ -479,7 +541,7 @@ TEST_F(SessionFixture, OpensPacksWithoutRunningTheWholeFileCrcScan)
     pack[kHeaderSize] = static_cast<char>(pack[kHeaderSize] ^ 0xFF);   // break the footer
     fx.fileSystem.seedFile(inMaps("city.rawtiles"), pack);
 
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     EXPECT_EQ(s.status(), MapStatus::Verifying)
         << "structural open must succeed; trust is Map Manager's to grant";
@@ -495,7 +557,7 @@ TEST_F(SessionFixture, AMarkerForDifferentBytesLeavesTheSessionWaiting)
                            buildMarker(PackTrustReader::kMagicGood,
                                        pack.size() + 1, declaredCrcOf(pack)));
 
-    MapSession s(fx.kernel, cache);
+    MapSession s(fx.kernel, cache, "TestApp");
     s.onPosition(kLat, kLon, true, false);
     EXPECT_EQ(s.status(), MapStatus::Verifying);
     EXPECT_FALSE(s.renderable());

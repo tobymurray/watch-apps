@@ -70,6 +70,19 @@ void MapSession::onPosition(float latitude, float longitude, bool fix, bool reco
         chooseAndOpen();
         pollTrust();
     }
+
+    // Somewhere with no tiles. Write it down so somebody can build a pack for
+    // next time -- the watch is the only thing that knows, and until this it
+    // threw the knowledge away. Quantised and de-duplicated by TileRequestLog,
+    // so this is a file write on entering a new region, not once a second.
+    //
+    // Only the two states that mean *this place has no map*. A corrupt or
+    // unopenable pack also leaves the screen blank, but the answer there is to
+    // re-copy a pack that already exists, not to make a new one.
+    const MapStatus now = status();
+    if (now == MapStatus::NoPack || now == MapStatus::OffCoverage) {
+        mRequests.note(mLatUDeg, mLonUDeg);
+    }
 }
 
 bool MapSession::coversCurrentFix() const

@@ -52,6 +52,7 @@
 #include <MapKit/PackCatalog.hpp>
 #include <MapKit/PackSelection.hpp>
 #include <MapKit/TileCache.hpp>
+#include <MapKit/TileRequestLog.hpp>
 #include <MapKit/TraceBuffer.hpp>
 #include <SDK/RawTiles/Container.hpp>
 
@@ -78,8 +79,11 @@ enum class MapStatus : uint8_t {
 class MapSession
 {
 public:
-    MapSession(const SDK::Kernel& kernel, TileCache& cache)
-        : mKernel(kernel), mCatalog(kernel), mCache(cache)
+    /// @param appTag short name of the owning app, recorded alongside any
+    ///        coverage gap this session reports. Three apps share one request
+    ///        file, and a pack for a hiker is not a pack for a cyclist.
+    MapSession(const SDK::Kernel& kernel, TileCache& cache, const char* appTag)
+        : mKernel(kernel), mCatalog(kernel), mCache(cache), mRequests(kernel, appTag)
     {
     }
 
@@ -118,6 +122,9 @@ public:
     /// true from the structural open onward, i.e. before the CRC is confirmed.
     bool renderable() const { return mOpenResult == SDK::RawTiles::OpenResult::Ok && mTrusted; }
 
+    /// Coverage gaps this session has filed. See TileRequestLog.
+    const TileRequestLog& requests() const { return mRequests; }
+
     const SDK::RawTiles::Container& container() const { return mContainer; }
     TileCache&                      cache() const { return mCache; }
     const TraceBuffer&              trace() const { return mTrace; }
@@ -146,6 +153,7 @@ private:
     PackCatalog        mCatalog;
     TileCache&         mCache;
     TraceBuffer        mTrace;
+    TileRequestLog     mRequests;
 
     SDK::RawTiles::Container mContainer;
 

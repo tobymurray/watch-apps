@@ -91,6 +91,7 @@ Libs/Source/Fit/RecordingMarker.cpp\
 ../../../../MapKit/Sources/MapTileView.cpp\
 ../../../../MapKit/Sources/PackCatalog.cpp\
 ../../../../MapKit/Sources/PackSelection.cpp\
+../../../../MapKit/Sources/TileRequestLog.cpp\
 ../../../../MapKit/Sources/TrackFaceMap.cpp\
 ADDITIONAL_SOURCES :=
 ADDITIONAL_INCLUDE_PATHS := $(SDK)/Libs/Header\

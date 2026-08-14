@@ -104,6 +104,37 @@ TEST(MapMath, TraceStorageZoomFitsInTheInt32TheTraceBufferUses)
     EXPECT_EQ(world, 67108864) << "z18: 2^18 * 256";
 }
 
+TEST(MapMath, InverseProjectionRoundTrips)
+{
+    // The request log writes a tile back out as degrees, so the inverse has to
+    // land where the forward projection came from -- to within the resolution
+    // the forward projection actually has, which is one world pixel. That is
+    // 360e6 microdegrees spread over (TILE_DIM << z) pixels, so it tightens by
+    // a factor of two per zoom level; a fixed tolerance would either be
+    // meaningless at z16 or unmeetable at z8.
+    //
+    // Latitude is bounded by the same figure rather than its own: in Mercator
+    // the degrees covered by one pixel shrink with cos(lat), so away from the
+    // equator the latitude round-trip is strictly tighter than the longitude
+    // one.
+    for (uint8_t z = 8; z <= 16; ++z) {
+        const double onePixelUDeg = 360.0e6 / static_cast<double>(M::worldSizePx(z));
+        EXPECT_NEAR(M::worldXToLonUDeg(M::lonToWorldX(kLonUDeg, z), z), kLonUDeg,
+                    onePixelUDeg) << "lon at z" << int(z);
+        EXPECT_NEAR(M::worldYToLatUDeg(M::latToWorldY(kLatUDeg, z), z), kLatUDeg,
+                    onePixelUDeg) << "lat at z" << int(z);
+    }
+}
+
+TEST(MapMath, InverseProjectionHitsTheKnownAnchors)
+{
+    const uint8_t z = 12;
+    EXPECT_EQ(M::worldXToLonUDeg(0, z), -180000000);
+    EXPECT_EQ(M::worldXToLonUDeg(M::worldSizePx(z), z), 180000000);
+    EXPECT_EQ(M::worldXToLonUDeg(M::worldSizePx(z) / 2, z), 0);
+    EXPECT_EQ(M::worldYToLatUDeg(M::worldSizePx(z) / 2, z), 0);
+}
+
 TEST(MapMath, ProjectionIsStableAcrossTheHemispheres)
 {
     // Southern latitudes are below the midpoint, northern above it.

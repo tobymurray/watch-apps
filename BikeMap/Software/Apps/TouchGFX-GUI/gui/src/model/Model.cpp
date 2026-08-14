@@ -26,7 +26,7 @@ Model::Model()
     : modelListener(nullptr)
     , mKernel(SDK::KernelProviderGUI::GetInstance().getKernel())
     , mSrvSender(mKernel)
-    , mMap(mKernel, sTileCache)
+    , mMap(mKernel, sTileCache, "BikeMap")
 {
     SDK::TouchGFXCommandProcessor::GetInstance().setAppLifeCycleCallback(this);
     SDK::TouchGFXCommandProcessor::GetInstance().setCustomMessageHandler(this);

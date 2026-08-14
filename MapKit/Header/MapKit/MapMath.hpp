@@ -105,6 +105,25 @@ inline WorldPx toWorldPx(int32_t latUdeg, int32_t lonUdeg, uint8_t z)
     return WorldPx { lonToWorldX(lonUdeg, z), latToWorldY(latUdeg, z) };
 }
 
+/// Inverse of lonToWorldX(). Exact to within a microdegree at every legal
+/// zoom; used to render a tile coordinate back into something a human (or a
+/// pack generator) can read.
+inline int32_t worldXToLonUDeg(int64_t worldX, uint8_t z)
+{
+    const double n   = static_cast<double>(worldSizePx(z));
+    const double lon = static_cast<double>(worldX) / n * 360.0 - 180.0;
+    return static_cast<int32_t>(std::llround(lon / MICRODEG));
+}
+
+/// Inverse of latToWorldY().
+inline int32_t worldYToLatUDeg(int64_t worldY, uint8_t z)
+{
+    const double n    = static_cast<double>(worldSizePx(z));
+    const double merc = (1.0 - 2.0 * static_cast<double>(worldY) / n) * M_PI;
+    const double lat  = std::atan(std::sinh(merc)) * (180.0 / M_PI);
+    return static_cast<int32_t>(std::llround(lat / MICRODEG));
+}
+
 /// Tile coordinate containing a world pixel.
 inline uint32_t tileCoord(int64_t worldPx)
 {

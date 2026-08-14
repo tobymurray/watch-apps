@@ -58,12 +58,14 @@ add_test(NAME mapkit-pure-tests COMMAND mapkit-pure-tests)
 
 add_executable(mapkit-kernel-tests
     MapSession_test.cpp
+    TileRequestLog_test.cpp
     PackCatalog_test.cpp
     PackTrustReader_test.cpp
     "${MAPKIT}/Sources/Container.cpp"
     "${MAPKIT}/Sources/MapSession.cpp"
     "${MAPKIT}/Sources/PackCatalog.cpp"
     "${MAPKIT}/Sources/PackSelection.cpp"
+    "${MAPKIT}/Sources/TileRequestLog.cpp"
     "${UNA_SDK_ROOT}/Tests/Host/support/KernelTestDoubles.cpp"
     "${UNA_SDK_ROOT}/Libs/Source/UnaLogger/Logger.cpp"
     "${UNA_SDK_ROOT}/Libs/Source/Wrappers/StdLibWrappers.c"
