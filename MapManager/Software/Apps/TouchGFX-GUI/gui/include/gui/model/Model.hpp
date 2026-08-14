@@ -52,6 +52,25 @@ public:
         bool     everReceived  = false; ///< False until the first snapshot arrives.
     };
 
+    /// One roster row, as the list shows it.
+    struct PackRow {
+        char    name[CustomMessage::kMaxRowNameLen] = {};
+        uint8_t state = static_cast<uint8_t>(CustomMessage::PackState::Pending);
+    };
+
+    /// The whole roster, held complete rather than windowed.
+    ///
+    /// The list only ever draws the handful of rows that fit, but the data
+    /// behind it stays whole: at this size the array costs well under a
+    /// kilobyte, while fetching rows on demand as the list scrolls would add a
+    /// round-trip per keypress and an awkward question about what to draw when
+    /// the roster changes mid-scroll.
+    struct Roster {
+        PackRow  rows[CustomMessage::kMaxRosterPacks] = {};
+        uint16_t count        = 0;
+        bool     everReceived = false; ///< False until a complete burst arrives.
+    };
+
     Model();
 
     void bind(ModelListener *listener)
@@ -70,6 +89,7 @@ public:
     void exitApp();
 
     const Progress &progress() const { return mProgress; }
+    const Roster   &roster()   const { return mRoster; }
 
 protected:
     ModelListener* modelListener;
@@ -79,6 +99,13 @@ protected:
 
     bool     mInvalidate = false;
     Progress mProgress{};
+    Roster   mRoster{};
+
+    /// Rows of the in-flight burst seen so far. A burst is only swapped into
+    /// mRoster once its last row lands, so a repaint never catches the list
+    /// half-rebuilt -- which would otherwise show rows from two different
+    /// rosters at once while packs are being added.
+    Roster   mIncoming{};
 
     // IGuiLifeCycleCallback
     void onStart()   override;
@@ -88,6 +115,11 @@ protected:
 
     // ICustomMessageHandler
     bool customMessageHandler(SDK::MessageBase *msg) override;
+
+    /// Fold one row of a roster burst in, publishing the result once the
+    /// burst's last row arrives. Always returns true: the message was ours
+    /// whether or not it completed a roster.
+    bool handlePackStatus(const CustomMessage::MapManagerPackStatus *chunk);
 
     void setCapabilities();
 };

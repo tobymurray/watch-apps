@@ -21,9 +21,11 @@ public:
     void exit() { model->exitApp(); }
 
     const Model::Progress &progress() const { return model->progress(); }
+    const Model::Roster   &roster()   const { return model->roster(); }
 
     // ModelListener implementation
     virtual void onProgressChanged(const Model::Progress &progress) override;
+    virtual void onRosterChanged(const Model::Roster &roster) override;
 
 private:
     MainPresenter();

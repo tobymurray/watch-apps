@@ -11,9 +11,11 @@ one once it's checked. Any app reads that marker directly; nothing here is
 specific to the rawtiles format itself — the verifier treats every tracked
 file as an opaque blob with a trailing 4-byte little-endian CRC-32 footer.
 
-Its own screen shows exactly what it's doing: current pack name, percent
-complete, and an ETA computed from this run's *actual observed* throughput —
-not a hardcoded assumption, since storage speed varies by device.
+Its own screen shows exactly what it's doing: a scrolling list of every pack
+it has found and where each one has got to, under a summary line. Focus one
+that is being scanned and the summary becomes that scan's percent complete and
+an ETA computed from this run's *actual observed* throughput — not a hardcoded
+assumption, since storage speed varies by device.
 
 ## Why this exists
 
@@ -109,7 +111,7 @@ upstream**: cherry-pick that probe onto the 1.3 line and cut an
 Software/
 ├── Libs/
 │   ├── Header/
-│   │   ├── Commands.hpp          # MapManagerProgress / MapManagerRequest messages
+│   │   ├── Commands.hpp          # Progress / PackStatus / Request messages
 │   │   ├── ManagerLog.hpp        # diagnostic file log (Debug/mapmanager_verify.log)
 │   │   ├── PackCrcVerifier.hpp   # per-file resumable CRC-32 scanner
 │   │   ├── PackTrustMarker.hpp   # 16-byte tri-state marker (Absent/Bad/Good)
@@ -122,6 +124,31 @@ Software/
     ├── MapManager-CMake/         # build glue
     └── TouchGFX-GUI/             # the one-screen GUI
 ```
+
+### Two messages, on different cadences
+
+Worth knowing before adding a third. The largest block the kernel's message
+pool offers is 256 bytes, and a roster of pack names does not fit one — at
+`kMaxPackNameLen` a single message holds barely three rows, and a watch can
+carry more packs than that. So the service sends two different things:
+
+- **`MapManagerProgress`** — the pack being scanned right now, its byte
+  progress and the aggregate counts. Periodic while a scan runs, because
+  "bytes done" changes continuously.
+- **`MapManagerPackStatus`** — one roster row, sent as a burst of `total` of
+  them, and only when the roster or a verdict actually changes. Each row
+  carries its own `index` and `total`, so the GUI can tell a complete burst
+  from a partial one and repaint once at the end rather than once per row.
+
+The GUI holds the whole roster rather than a window of it: the list only draws
+the five rows that fit, but fetching rows on demand as it scrolls would add a
+round-trip per keypress and an awkward question about what to draw when the
+roster changes mid-scroll. At `kMaxRosterPacks` the array is well under a
+kilobyte.
+
+The burst is skipped entirely while no GUI is attached. That matters more than
+it sounds: the roster changes most during the first seconds after boot, when
+every pack is being discovered and resolved and nothing is watching.
 
 **Service** (`Service::run()`): every loop iteration, reconciles
 `SharedData/maps/` against what it's tracking (throttled to once per
@@ -251,12 +278,22 @@ until the cable comes out, and a scan interrupted that way restarts from byte
 
 ## Buttons
 
-The screen is read-only — verification is autonomous, nothing to command it
-to do.
+The screen is read-only — verification is autonomous, so nothing here commands
+it. The only interaction is choosing what to look at.
 
 | Button | Position | Action |
 | --- | --- | --- |
+| `SW1` / L1 | top left | move the focus up one pack |
+| `SW2` / L2 | bottom left | move the focus down one pack |
 | `SW4` / R2 | bottom right | back — leaves the app |
+
+The focus does not wrap at either end: on a list this short, jumping from the
+last pack to the first reads as a glitch rather than a feature.
+
+Five rows are shown at once — one focused, two above, two below — which is what
+the round panel allows at a legible row height. The list windows over the whole
+roster, so the sixth pack and beyond scroll into view rather than being
+unreachable.
 
 ## A real firmware quirk found while testing this
 
@@ -302,8 +339,11 @@ elsewhere on this SDK works, not despite the display's limits.
 - The inherited Designer-generated stopwatch widgets (title, lap list,
   play/pause icons) are hidden in `MainView::setupScreen()` rather than
   relabeled or removed, to avoid touching the fragile packed string table
-  Designer generates (see the class doc comment on `MainView`). Cosmetically
-  inert, functionally harmless.
+  Designer generates (see the class doc comment on `MainView`). The screen's
+  real widgets — the summary line and the pack list's rows — are hand-built
+  alongside them, which is a supported pattern but does mean the layout lives
+  in code rather than in the `.touchgfx` file. A Designer pass could reconcile
+  the two; nothing is broken until then.
 - No persisted resume checkpoint: an interrupted scan restarts from byte 0
   (only the finished tri-state marker survives, not partial byte progress).
   **Settled 2026-08-13: this stays absent, deliberately** — the earlier note
@@ -347,6 +387,35 @@ step is needed — confirmed via `Debug/mapmanager_verify.log` showing the
 Service start and begin scanning within ~8 seconds of a cold boot, before the
 app was ever opened.
 
+## The simulator
+
+Worth using before deploying anything that touches the screen: it runs the
+**real Service thread alongside the GUI**, so discovery, verification, the
+roster messages and the list are all exercised together on the desktop.
+
+```sh
+export UNA_SDK=/path/to/una-sdk       # checked out at apps-v1.3.0
+cd MapManager/Software/Apps/TouchGFX-GUI
+make -f simulator/gcc/Makefile -j8
+```
+
+Its filesystem root is `../../../../../Output/` **relative to the working
+directory you launch from**, so run it from a scratch directory rather than
+from the source tree, and put packs in `SharedData/maps/` beside that root.
+Buttons are keys `1`=L1, `2`=L2, `3`=R1, `4`=R2, and the window is 240x240 —
+the panel's real size, so what you see is what the watch draws.
+
+This paid for itself immediately. It caught a message-queue overflow that
+neither the host tests nor a glance at the watch would have shown quickly (see
+[Two messages](#two-messages-on-different-cadences)), a list that kept its
+first text forever because `invalidate()` redraws drawables without re-running
+the update callback that fills them — `itemChanged()` is what does that — and
+two column widths that clipped the characters telling one pack from another.
+
+One caveat: **synthetic key injection does not reach the SDL window** (xdotool
+and friends), so button handling has to be checked by pressing keys in the
+window by hand, or on the watch.
+
 ## Tests
 
 `PackCrcVerifier`, `PackTrustMarker` and `Service`'s scan orchestration are
@@ -377,9 +446,20 @@ once everything has settled, and leaving no open file handles behind. The
 verifier tests pin the `(size, crc)` guard on both cached verdicts, the
 footer-size edge cases, and `step()`'s budget behaviour.
 
+The roster the list is drawn from has its own tests (`ServiceRoster`): that a
+burst numbers its rows `0..total-1` and names them without their directory,
+that each pack reports its own verdict rather than the current one's, that an
+empty roster is announced rather than left as silence (which would be
+indistinguishable from a dropped burst), that a deleted pack leaves the roster,
+and that nothing is published at all while no GUI is attached. The stock
+`StubAppComm` discards what it is sent, so these build a `Kernel` around a comm
+that copies each row out first — `Kernel` takes its collaborators by reference,
+so this needs no change to the shared doubles.
+
 What is still **not** covered by host tests: `run()`'s message loop (it
-blocks on the kernel queue and never returns — `poll()` exists as the
-testable seam for the work it does between waits), and the GUI. Both are
+blocks on the kernel queue and never returns — `poll()` and `publishRoster()`
+exist as the testable seams for the work it does between waits), and the GUI
+itself — the list widget, the focus movement and the layout are
 on-device-verified only.
 
 ## Where this should live

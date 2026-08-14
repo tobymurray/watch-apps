@@ -44,6 +44,15 @@ public:
     /// never returns, so it cannot be tested as a unit.
     void poll();
 
+    /// Send one MapManagerPackStatus per tracked pack, in list order. Cheap
+    /// and rare: the roster only changes when a pack appears, disappears or
+    /// reaches a verdict, so this is not on the hot path publish() is.
+    ///
+    /// Public for the same reason poll() is -- run() never returns, so the
+    /// only way a host test can assert what the GUI would actually receive is
+    /// to ask for the burst directly.
+    void publishRoster();
+
     /// Number of packs currently tracked, and how many of those are
     /// Verified. For tests and for publish().
     size_t trackedCount() const { return mEntries.size(); }
@@ -77,6 +86,15 @@ private:
     // throttle -- this one governs kernel message-queue traffic, not the
     // diagnostic log.
     static constexpr uint32_t kPublishPeriodMs = 1000;
+
+    // Shortest gap between roster bursts. The roster changes in clusters --
+    // seven cached markers all resolve within a few hundred milliseconds at
+    // boot -- and the GUI drains its ten-deep message queue only once per
+    // frame at 10Hz, discarding the oldest on overflow. Coalescing those
+    // changes into one burst per period keeps a roster whole; without it the
+    // GUI receives the tail of a burst whose head it already threw away.
+    // Well under the eye's threshold for a list that has visibly changed.
+    static constexpr uint32_t kRosterPeriodMs = 500;
 
     // How many bytes one driveCurrentEntry() call hands to step().
     //
@@ -129,6 +147,17 @@ private:
     bool     mScannedOnce   = false;
     uint32_t mLastScanAtMs  = 0;
     uint32_t mLastPublishAtMs = 0;
+
+    /// Set whenever the roster changes shape (a pack added, dropped or
+    /// re-armed) or an entry reaches a new verdict, and cleared once the
+    /// change has been published. A flag rather than a periodic diff: the two
+    /// places that can change the roster both already know they did, so
+    /// re-deriving it by comparison every poll would be work to learn
+    /// something we were just told.
+    bool     mRosterDirty = true;
+
+    /// When the last roster burst went out, for the coalescing throttle.
+    uint32_t mLastRosterAtMs = 0;
 
     void handleCommand(SDK::MessageBase *msg);
 

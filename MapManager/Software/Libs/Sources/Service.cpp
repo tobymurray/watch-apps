@@ -1,5 +1,6 @@
 #include "Service.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -8,6 +9,25 @@
 #define LOG_MODULE_PRX      "Service"
 #define LOG_MODULE_LEVEL    LOG_LEVEL_INFO
 #include "SDK/UnaLogger/Logger.h"
+
+namespace {
+
+/// The verifier's internal status, as the wire enum. Written as a switch with
+/// no default so that adding a Status the wire does not describe is a compile
+/// error here rather than a pack silently reported as Pending forever.
+CustomMessage::PackState toPackState(PackCrcVerifier::Status status)
+{
+    switch (status) {
+        case PackCrcVerifier::Status::Idle:       return CustomMessage::PackState::Pending;
+        case PackCrcVerifier::Status::InProgress: return CustomMessage::PackState::Scanning;
+        case PackCrcVerifier::Status::Verified:   return CustomMessage::PackState::Verified;
+        case PackCrcVerifier::Status::Mismatched: return CustomMessage::PackState::Mismatched;
+        case PackCrcVerifier::Status::IoError:    return CustomMessage::PackState::Unreadable;
+    }
+    return CustomMessage::PackState::Pending;
+}
+
+} // namespace
 
 Service::Service(SDK::Kernel &kernel)
     : mKernel(kernel)
@@ -33,6 +53,10 @@ void Service::run()
                     LOG_INFO("GUI is now running\n");
                     mGuiStarted = true;
                     publish();
+                    // A GUI that just opened has no roster at all, so send one
+                    // whether or not it changed while nobody was watching.
+                    publishRoster();
+                    mRosterDirty = false;
                     break;
 
                 case SDK::MessageType::COMMAND_APP_NOTIF_GUI_STOP:
@@ -69,6 +93,22 @@ void Service::poll()
 {
     scanForNewPacks();
     driveCurrentEntry();
+
+    // Publish a changed roster only while someone is looking. Without a GUI
+    // there is no consumer, and the flag survives until one opens -- at which
+    // point COMMAND_APP_NOTIF_GUI_RUN publishes unconditionally anyway.
+    //
+    // Throttled, and coalescing: verdicts can land far faster than the GUI
+    // drains its queue (a screenful of cached markers all resolve within a
+    // few hundred milliseconds at boot), and an un-throttled burst per
+    // transition would overrun that queue and lose the head of its own
+    // roster. Sending the latest state a little later is strictly better than
+    // sending every intermediate state and having some of them dropped.
+    if (mRosterDirty && mGuiStarted
+            && (mKernel.sys.getTimeMs() - mLastRosterAtMs) >= kRosterPeriodMs) {
+        publishRoster();
+        mRosterDirty = false;
+    }
 }
 
 uint32_t Service::nextWaitMs() const
@@ -115,6 +155,8 @@ void Service::handleCommand(SDK::MessageBase *msg)
         return; // Not one of ours.
     }
     publish();
+    publishRoster();
+    mRosterDirty = false;
 }
 
 void Service::scanForNewPacks()
@@ -229,6 +271,7 @@ void Service::scanForNewPacks()
     // single cheap pass, and the list holds a handful of packs at most.
     if (structureChanged) {
         mCurrentIndex = 0;
+        mRosterDirty  = true;
     }
 
     if (discovered > 0 || rearmed > 0) {
@@ -249,11 +292,64 @@ void Service::driveCurrentEntry()
     }
 
     PackCrcVerifier &current = mEntries[mCurrentIndex]->verifier;
-    if (current.status() == PackCrcVerifier::Status::Idle) {
+
+    // A transition is what the roster shows, so notice it here rather than
+    // re-deriving it later: start() can go Idle -> InProgress or straight to a
+    // cached verdict, and step() can finish a scan.
+    const PackCrcVerifier::Status before = current.status();
+    if (before == PackCrcVerifier::Status::Idle) {
         current.start(); // Cheap: either resolves via a cached marker, or begins a scan.
-    } else if (current.status() == PackCrcVerifier::Status::InProgress) {
+    } else if (before == PackCrcVerifier::Status::InProgress) {
         current.step(kSliceBudgetBytes);
     }
+
+    if (current.status() != before) {
+        mRosterDirty = true;
+    }
+}
+
+void Service::publishRoster()
+{
+    mLastRosterAtMs = mKernel.sys.getTimeMs();
+
+    const uint16_t total = static_cast<uint16_t>(mEntries.size());
+    uint16_t       sent  = 0;
+
+    // Loops at least once even when there is nothing to describe: an empty
+    // roster is still a roster, and without saying so the GUI could never
+    // learn that the last pack was deleted -- it would keep showing rows for
+    // files that are gone, which silence is indistinguishable from.
+    do {
+        // Allocated per chunk rather than once and reused: send() hands the
+        // message to the kernel, which owns it from then on.
+        auto msg = SDK::make_msg<CustomMessage::MapManagerPackStatus>(mKernel);
+        if (!msg) {
+            // Pool exhausted. Leave the roster dirty so the whole thing is
+            // resent rather than the GUI being left holding half of one.
+            mRosterDirty = true;
+            return;
+        }
+
+        const uint16_t chunk = static_cast<uint16_t>(
+            std::min<size_t>(CustomMessage::kRowsPerMessage, static_cast<size_t>(total - sent)));
+
+        msg->firstIndex = sent;
+        msg->total      = total;
+        msg->count      = static_cast<uint8_t>(chunk);
+
+        for (uint16_t i = 0; i < chunk; ++i) {
+            const PackCrcVerifier &verifier = mEntries[sent + i]->verifier;
+
+            const char *base = std::strrchr(verifier.path().c_str(), '/');
+            base = base ? base + 1 : verifier.path().c_str();
+            std::snprintf(msg->rows[i].name, CustomMessage::kMaxRowNameLen, "%s", base);
+
+            msg->rows[i].state = static_cast<uint8_t>(toPackState(verifier.status()));
+        }
+
+        msg.send();
+        sent = static_cast<uint16_t>(sent + chunk);
+    } while (sent < total);
 }
 
 void Service::publish()

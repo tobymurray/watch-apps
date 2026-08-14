@@ -18,3 +18,8 @@ void MainPresenter::onProgressChanged(const Model::Progress &progress)
 {
     view.onProgressChanged(progress);
 }
+
+void MainPresenter::onRosterChanged(const Model::Roster &roster)
+{
+    view.onRosterChanged(roster);
+}

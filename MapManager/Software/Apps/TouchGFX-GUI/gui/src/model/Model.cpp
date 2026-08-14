@@ -98,6 +98,10 @@ void Model::onStop()
 // ICustomMessageHandler
 bool Model::customMessageHandler(SDK::MessageBase *msg)
 {
+    if (msg->getType() == CustomMessage::MAP_MANAGER_PACK_STATUS) {
+        return handlePackStatus(static_cast<CustomMessage::MapManagerPackStatus *>(msg));
+    }
+
     if (msg->getType() != CustomMessage::MAP_MANAGER_PROGRESS) {
         return false;
     }
@@ -114,6 +118,65 @@ bool Model::customMessageHandler(SDK::MessageBase *msg)
 
     if (modelListener) {
         modelListener->onProgressChanged(mProgress);
+    }
+    return true;
+}
+
+bool Model::handlePackStatus(const CustomMessage::MapManagerPackStatus *chunk)
+{
+    // An empty roster is announced as a single chunk carrying no rows, which
+    // is the only way the GUI learns the last pack went away.
+    if (chunk->total == 0) {
+        mRoster.count        = 0;
+        mRoster.everReceived = true;
+        mIncoming.count      = 0;
+        if (modelListener) {
+            modelListener->onRosterChanged(mRoster);
+        }
+        return true;
+    }
+
+    // A burst always starts at 0 and its chunks abut. Anything else means one
+    // was dropped or two bursts interleaved, so wait for the next complete
+    // burst rather than building a roster out of pieces of two -- the queue
+    // this arrives through discards its oldest entry when it overflows, so a
+    // gap here is a real possibility rather than a theoretical one.
+    if (chunk->firstIndex == 0) {
+        mIncoming.count = 0;
+    } else if (chunk->firstIndex != mIncoming.count) {
+        mIncoming.count = 0;
+        return true;
+    }
+
+    for (uint8_t i = 0; i < chunk->count; ++i) {
+        const uint16_t at = static_cast<uint16_t>(chunk->firstIndex + i);
+        if (at >= CustomMessage::kMaxRosterPacks) {
+            break; // Beyond what this GUI keeps; the counts come from elsewhere.
+        }
+        std::memcpy(mIncoming.rows[at].name, chunk->rows[i].name,
+                    sizeof(mIncoming.rows[at].name));
+        mIncoming.rows[at].name[CustomMessage::kMaxRowNameLen - 1] = '\0';
+        mIncoming.rows[at].state = chunk->rows[i].state;
+    }
+
+    // Count every row through, including those past the array, so the end of
+    // the burst is still recognised on a watch carrying more packs than this
+    // GUI draws.
+    mIncoming.count = static_cast<uint16_t>(chunk->firstIndex + chunk->count);
+
+    if (mIncoming.count < chunk->total) {
+        return true; // More chunks to come.
+    }
+
+    mRoster = mIncoming;
+    if (mRoster.count > CustomMessage::kMaxRosterPacks) {
+        mRoster.count = CustomMessage::kMaxRosterPacks;
+    }
+    mRoster.everReceived = true;
+    mIncoming.count      = 0;
+
+    if (modelListener) {
+        modelListener->onRosterChanged(mRoster);
     }
     return true;
 }

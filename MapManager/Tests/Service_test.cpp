@@ -15,7 +15,9 @@
 
 #include <array>
 #include <string>
+#include <vector>
 
+#include "Commands.hpp"
 #include "KernelTestDoubles.hpp"
 #include "PackTrustMarker.hpp"
 #include "Service.hpp"
@@ -363,6 +365,214 @@ TEST(Service, LeavesNoOpenFileHandlesBehind)
         EXPECT_EQ(kv.second, 0u) << "leaked handle on " << kv.first
                                  << " (a FatFs lock slot on device)";
     }
+}
+
+// --------------------------------------------------------------------------
+// The roster the GUI's list is drawn from.
+//
+// The stock StubAppComm drops whatever it is sent, so these build a Kernel
+// around a comm that copies each roster row out first. Kernel takes its
+// collaborators by reference, so this needs no change to the shared doubles.
+// --------------------------------------------------------------------------
+
+struct SentRow {
+    std::string name;
+    uint16_t    index;
+    uint16_t    total;
+    uint8_t     state;
+};
+
+/// Flattens the chunked burst back into rows, and counts the messages it took
+/// -- the GUI's queue holds ten and drops its oldest, so how many messages a
+/// roster costs is part of what these assert.
+class CapturingComm : public SDK::TestSupport::StubAppComm {
+public:
+    std::vector<SentRow> rows;
+    int                  messages = 0;
+    uint16_t             lastTotal = 0;
+
+    bool sendMessage(SDK::MessageBase* msg, uint32_t timeoutMs = 0) override
+    {
+        if (msg != nullptr && msg->getType() == CustomMessage::MAP_MANAGER_PACK_STATUS) {
+            const auto* chunk = static_cast<CustomMessage::MapManagerPackStatus*>(msg);
+            ++messages;
+            lastTotal = chunk->total;
+            for (uint8_t i = 0; i < chunk->count; ++i) {
+                rows.push_back({chunk->rows[i].name,
+                                static_cast<uint16_t>(chunk->firstIndex + i), chunk->total,
+                                chunk->rows[i].state});
+            }
+        }
+        return SDK::TestSupport::StubAppComm::sendMessage(msg, timeoutMs);
+    }
+
+    void reset()
+    {
+        rows.clear();
+        messages  = 0;
+        lastTotal = 0;
+    }
+};
+
+/// A fixture whose comm records the roster rows the service publishes.
+struct CapturingFixture {
+    KernelFixture base;
+    CapturingComm comm;
+    SDK::Kernel   kernel{base.system, base.logger, base.memory, comm, base.fileSystem};
+};
+
+TEST(ServiceRoster, DescribesEveryTrackedPackInListOrder)
+{
+    CapturingFixture fixture;
+    fixture.base.fileSystem.seedFile(mapPath("athens.rawtiles"), pack(9000, 'A'));
+    fixture.base.fileSystem.seedFile(mapPath("wide.rawtiles"), pack(5000, 'B'));
+
+    Service service(fixture.kernel);
+    settle(service, fixture.base, 200);
+
+    fixture.comm.reset();
+    service.publishRoster();
+
+    ASSERT_EQ(fixture.comm.rows.size(), 2u);
+    for (size_t i = 0; i < fixture.comm.rows.size(); ++i) {
+        EXPECT_EQ(fixture.comm.rows[i].index, i) << "rows must be numbered 0..total-1";
+        EXPECT_EQ(fixture.comm.rows[i].total, 2u)
+            << "every row carries the burst length, so the GUI can tell it has them all";
+    }
+
+    // Names, not paths: the row is what a narrow list draws.
+    EXPECT_EQ(fixture.comm.rows[0].name, "athens.rawtiles");
+    EXPECT_EQ(fixture.comm.rows[1].name, "wide.rawtiles");
+}
+
+TEST(ServiceRoster, ReportsEachPacksOwnVerdict)
+{
+    CapturingFixture fixture;
+    fixture.base.fileSystem.seedFile(mapPath("good.rawtiles"), pack(4000, 'A'));
+    fixture.base.fileSystem.seedFile(mapPath("bad.rawtiles"), corruptPack(4000, 'B'));
+
+    Service service(fixture.kernel);
+    settle(service, fixture.base, 300);
+
+    fixture.comm.reset();
+    service.publishRoster();
+
+    ASSERT_EQ(fixture.comm.rows.size(), 2u);
+    for (const SentRow& row : fixture.comm.rows) {
+        if (row.name == "good.rawtiles") {
+            EXPECT_EQ(row.state, static_cast<uint8_t>(CustomMessage::PackState::Verified));
+        } else if (row.name == "bad.rawtiles") {
+            EXPECT_EQ(row.state, static_cast<uint8_t>(CustomMessage::PackState::Mismatched))
+                << "a corrupt pack must say so, not sit as still-pending";
+        } else {
+            ADD_FAILURE() << "unexpected pack in the roster: " << row.name;
+        }
+    }
+}
+
+TEST(ServiceRoster, AnnouncesAnEmptyRosterRatherThanSayingNothing)
+{
+    CapturingFixture fixture; // no packs seeded at all
+
+    Service service(fixture.kernel);
+    settle(service, fixture.base, 100);
+
+    fixture.comm.reset();
+    service.publishRoster();
+
+    ASSERT_TRUE(fixture.comm.rows.empty())
+        << "an empty roster carries no rows";
+    EXPECT_EQ(fixture.comm.lastTotal, 0u);
+    EXPECT_EQ(fixture.comm.messages, 1) << "one chunk, carrying no rows";
+}
+
+TEST(ServiceRoster, DropsAPackFromTheRosterOnceItsFileIsGone)
+{
+    CapturingFixture fixture;
+    fixture.base.fileSystem.seedFile(mapPath("athens.rawtiles"), pack(4000, 'A'));
+    fixture.base.fileSystem.seedFile(mapPath("doomed.rawtiles"), pack(3000, 'B'));
+
+    Service service(fixture.kernel);
+    settle(service, fixture.base, 200);
+
+    fixture.base.fileSystem.remove(mapPath("doomed.rawtiles").c_str());
+    advancePastRescan(fixture.base);
+    settle(service, fixture.base, 200);
+
+    fixture.comm.reset();
+    service.publishRoster();
+
+    ASSERT_EQ(fixture.comm.rows.size(), 1u);
+    EXPECT_EQ(fixture.comm.rows[0].name, "athens.rawtiles");
+    EXPECT_EQ(fixture.comm.rows[0].total, 1u);
+}
+
+TEST(ServiceRoster, FitsAFullRosterInFewerMessagesThanTheGuiQueueHolds)
+{
+    // The GUI's incoming queue holds ten and discards its *oldest* entry on
+    // overflow, so a burst longer than that could never be delivered whole --
+    // it would arrive as a roster missing its head, every time. This is the
+    // regression test for that: it was a row per message once, and a full
+    // roster could not survive the trip.
+    CapturingFixture fixture;
+    for (size_t i = 0; i < CustomMessage::kMaxRosterPacks; ++i) {
+        const std::string name = "pack-" + std::to_string(i) + ".rawtiles";
+        fixture.base.fileSystem.seedFile(mapPath(name.c_str()),
+                                         pack(1000 + i * 10, static_cast<char>('A' + i)));
+    }
+
+    Service service(fixture.kernel);
+    settle(service, fixture.base, 600);
+    ASSERT_EQ(service.trackedCount(), CustomMessage::kMaxRosterPacks);
+
+    fixture.comm.reset();
+    service.publishRoster();
+
+    EXPECT_EQ(fixture.comm.rows.size(), CustomMessage::kMaxRosterPacks)
+        << "every tracked pack must reach the GUI";
+    EXPECT_LE(fixture.comm.messages, 3)
+        << "a full roster must fit well inside the GUI's ten-deep queue, with room "
+           "for a progress snapshot sharing the same frame";
+}
+
+TEST(ServiceRoster, CoalescesRapidVerdictChangesIntoOneBurst)
+{
+    // Verdicts land in clusters -- a screenful of cached markers all resolve
+    // within a few hundred milliseconds at boot. Publishing per transition
+    // would stack bursts inside one 10Hz frame and overrun the queue, so they
+    // are throttled and coalesced instead.
+    CapturingFixture fixture;
+    for (int i = 0; i < 6; ++i) {
+        const std::string name = "pack-" + std::to_string(i) + ".rawtiles";
+        fixture.base.fileSystem.seedFile(mapPath(name.c_str()),
+                                         pack(1000, static_cast<char>('A' + i)));
+    }
+
+    Service service(fixture.kernel);
+    fixture.comm.reset();
+
+    // 300ms of polling, comfortably inside one throttle period, during which
+    // every pack is discovered and reaches a verdict.
+    for (int i = 0; i < 30; ++i) {
+        service.poll();
+        fixture.base.system.nowMs += 10;
+    }
+
+    EXPECT_LE(fixture.comm.messages, 3)
+        << "many verdicts inside one period must coalesce, not burst per transition";
+}
+
+TEST(ServiceRoster, StaysSilentWhileNoGuiIsAttached)
+{
+    CapturingFixture fixture;
+    fixture.base.fileSystem.seedFile(mapPath("athens.rawtiles"), pack(9000, 'A'));
+
+    Service service(fixture.kernel);
+    settle(service, fixture.base, 300);
+
+    EXPECT_TRUE(fixture.comm.rows.empty())
+        << "the roster changes most at boot, when nothing is watching -- publishing then "
+           "would be message traffic with no consumer";
 }
 
 } // namespace
