@@ -57,6 +57,7 @@ target_link_libraries(mapkit-pure-tests PRIVATE GTest::gtest_main)
 add_test(NAME mapkit-pure-tests COMMAND mapkit-pure-tests)
 
 add_executable(mapkit-kernel-tests
+    Container_test.cpp
     MapSession_test.cpp
     TileRequestLog_test.cpp
     PackCatalog_test.cpp

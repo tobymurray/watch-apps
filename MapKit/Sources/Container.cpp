@@ -279,11 +279,13 @@ void Container::close()
         mFile->close();
         mFile.reset();
     }
-    mMemData  = nullptr;
-    mMemSize  = 0;
-    mFileSize = 0;
-    mBackend  = Backend::None;
-    mHeader   = Header { };
+    mMemData    = nullptr;
+    mMemSize    = 0;
+    mFileSize   = 0;
+    mBackend    = Backend::None;
+    mHeader     = Header { };
+    mAttrOffset = 0;
+    mAttrLength = 0;
 }
 
 OpenResult Container::parseAndValidate(bool skipCrcVerify)
@@ -605,11 +607,16 @@ OpenResult Container::parseAndValidate(bool skipCrcVerify)
     return skipCrcVerify ? OpenResult::Ok : verifyCrc();
 }
 
-OpenResult Container::walkExtensions(uint32_t extensionsOffset, uint32_t crcStart) const
+OpenResult Container::walkExtensions(uint32_t extensionsOffset, uint32_t crcStart)
 {
     bool seenAffn = false;
     bool seenAttr = false;
     bool seenSrcd = false;
+
+    // A re-walk of a Container that already had a pack open must not leave
+    // the previous pack's attribution behind.
+    mAttrOffset = 0;
+    mAttrLength = 0;
 
     uint32_t pos = extensionsOffset;
     while (pos < crcStart) {
@@ -682,6 +689,11 @@ OpenResult Container::walkExtensions(uint32_t extensionsOffset, uint32_t crcStar
                 if (r != OpenResult::Ok) {
                     return r;
                 }
+                // Remember where it is. Validation already proved the bytes
+                // are well-formed; recording the location is what lets a map
+                // app show the credit the pack's licence obliges it to.
+                mAttrOffset = payloadOffset;
+                mAttrLength = length;
             } else if (isAFFN) {
                 if (seenAffn) {
                     return OpenResult::DuplicateExtensionTag;
@@ -926,6 +938,23 @@ bool Container::declaredCrc32(uint32_t &out) const
         return false;
     }
     out = readU32LE(footer);
+    return true;
+}
+
+bool Container::attribution(char *dst, size_t dstSize) const
+{
+    if (!isOpen() || dst == nullptr || mAttrLength == 0) {
+        return false;
+    }
+    // Refuse rather than truncate: half a credit is worse than none, because
+    // it looks like the obligation was met. See the header's note.
+    if (dstSize < static_cast<size_t>(mAttrLength) + 1) {
+        return false;
+    }
+    if (!readAt(mAttrOffset, dst, mAttrLength)) {
+        return false;
+    }
+    dst[mAttrLength] = '\0';
     return true;
 }
 
