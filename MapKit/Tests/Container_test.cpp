@@ -16,6 +16,7 @@
 
 #include <SDK/RawTiles/Container.hpp>
 
+#include "KernelTestDoubles.hpp"
 #include "PackFixture.hpp"
 
 namespace {
@@ -189,6 +190,96 @@ TEST(ContainerAttribution, ReportedLengthIsExactlyWhatACopyNeeds)
         ASSERT_TRUE(c.attribution(&buf[0], buf.size())) << s;
         EXPECT_STREQ(buf.c_str(), s);
     }
+}
+
+// ---------------------------------------------------------------------------
+// peekAttribution -- the same string, without paying for a structural open.
+// ---------------------------------------------------------------------------
+
+const char* const kPackPath = "../SharedData/maps/city.rawtiles";
+
+struct PeekFixture : public ::testing::Test {
+    SDK::TestSupport::KernelFixture fx;
+
+    bool peek(const std::string& packBytes, char* dst, size_t dstSize)
+    {
+        fx.fileSystem.seedFile(kPackPath, packBytes);
+        return Container::peekAttribution(fx.fileSystem, kPackPath, dst, dstSize);
+    }
+};
+
+TEST_F(PeekFixture, ReadsTheSameStringAFullOpenWould)
+{
+    PackSpec spec;
+    spec.attribution = kProtomapsAttr;
+    const std::string bytes = buildPack(spec);
+
+    char peeked[128] = { 'x' };
+    ASSERT_TRUE(peek(bytes, peeked, sizeof peeked));
+
+    // The differential that matters: the cheap path and the thorough path
+    // must agree, or one of them is lying about what the pack credits.
+    OpenResult r;
+    Container  full = openInMemory(bytes, r);
+    ASSERT_EQ(r, OpenResult::Ok);
+    char opened[128] = { 'y' };
+    ASSERT_TRUE(full.attribution(opened, sizeof opened));
+
+    EXPECT_STREQ(peeked, opened);
+    EXPECT_STREQ(peeked, kProtomapsAttr);
+}
+
+TEST_F(PeekFixture, APackWithoutAttrPeeksAsNone)
+{
+    char buf[128] = { 'x' };
+    EXPECT_FALSE(peek(buildPack(PackSpec{}), buf, sizeof buf));
+}
+
+TEST_F(PeekFixture, AMissingFileIsNotAnError)
+{
+    char buf[128];
+    EXPECT_FALSE(Container::peekAttribution(fx.fileSystem, "../SharedData/maps/absent.rawtiles",
+                                            buf, sizeof buf));
+}
+
+TEST_F(PeekFixture, SomethingThatIsNotAPackPeeksAsNone)
+{
+    PackSpec spec;
+    spec.attribution = kProtomapsAttr;
+    spec.goodMagic   = false;
+    char buf[128];
+    EXPECT_FALSE(peek(buildPack(spec), buf, sizeof buf));
+}
+
+/// The peek skips the tile index, so it must not skip the *text* rules too --
+/// otherwise the cheap path would display bytes the thorough path rejects.
+TEST_F(PeekFixture, StillEnforcesTheAttrTextRules)
+{
+    PackSpec spec;
+    spec.attribution = "Map data from OpenStreetMap (ODbL)\n";  // trailing LF
+    char buf[128];
+    EXPECT_FALSE(peek(buildPack(spec), buf, sizeof buf));
+}
+
+TEST_F(PeekFixture, RefusesToTruncateJustAsTheFullPathDoes)
+{
+    PackSpec spec;
+    spec.attribution = kProtomapsAttr;
+    char tooSmall[8] = { 'x' };
+    EXPECT_FALSE(peek(buildPack(spec), tooSmall, sizeof tooSmall));
+    EXPECT_EQ(tooSmall[0], 'x');
+}
+
+/// A truncated file must be refused rather than read past the end.
+TEST_F(PeekFixture, ATruncatedPackPeeksAsNone)
+{
+    PackSpec spec;
+    spec.attribution = kProtomapsAttr;
+    std::string bytes = buildPack(spec);
+    bytes.resize(bytes.size() / 2);
+
+    char buf[128];
+    EXPECT_FALSE(peek(bytes, buf, sizeof buf));
 }
 
 } // namespace

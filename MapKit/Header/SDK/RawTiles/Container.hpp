@@ -373,6 +373,37 @@ public:
     bool attribution(char *dst, size_t dstSize) const;
 
     /**
+     * @brief Reads one pack's `ATTR` **without** a structural open.
+     *
+     * openFromFile() walks the entire tile index — one seek+read per entry,
+     * thousands of them on a real pack — which is why PackCatalog refuses to
+     * do it per candidate on the GUI thread. Attribution does not need any of
+     * that: the extension sections sit between `extensions_offset` and the
+     * CRC footer, so this reads the 292-byte header, checks just enough of it
+     * to walk safely, and validates the extension region alone.
+     *
+     * **Cost is bounded regardless of pack size** — one open, one header
+     * read, and the extension region (tens of bytes in practice) — which is
+     * what makes it usable at app startup across every installed pack. That
+     * is the point: attribution has to be shown before the map is drawn, and
+     * therefore before a GPS fix has chosen which pack to draw.
+     *
+     * The extension region gets the same framing, tag, duplicate and § 11 #38
+     * text validation a full open would apply; only the tile index is
+     * skipped. A pack that fails those checks reports no attribution rather
+     * than a guess.
+     *
+     * @return @c false if the file is unreadable, is not a v1 pack, has no
+     *         valid `ATTR`, or the payload will not fit @p dstSize.
+     *
+     * @note Returns bytes, not a Container, deliberately. A half-validated
+     *       Container whose tile index was never checked is not safe to draw
+     *       from, so this never hands one out.
+     */
+    static bool peekAttribution(SDK::Interface::IFileSystem &fs, const char *path,
+                                char *dst, size_t dstSize);
+
+    /**
      * @brief Byte size of one fully-decoded (compression = None) tile for
      *        this pack's @c pixel_format / @c tile_dim_px.
      */
@@ -474,6 +505,10 @@ private:
     /// Non-const because it records where ATTR lives (mAttrOffset/Length)
     /// as it validates. Everything else it does is read-only.
     OpenResult walkExtensions(uint32_t extensionsOffset, uint32_t crcStart);
+
+    /// The body of peekAttribution(), on an already-open backend, so the
+    /// static entry point can close the file on every path.
+    bool peekAttributionOpened(char *dst, size_t dstSize);
     OpenResult validateAffn(uint32_t payloadOffset, uint32_t length) const;
     OpenResult validateName(uint32_t sectionStart, uint32_t payloadOffset, uint32_t length,
                              uint32_t extensionsOffset) const;
