@@ -43,6 +43,7 @@ void MainView::setupScreen()
         mAttribution.setVisible(true);
         mAttribution.invalidate();
         mAttributionUp = true;
+        mAttributionTicks = 0;
         MapKit::AttributionFace::markShown();
     }
 }
@@ -141,6 +142,38 @@ void MainView::onAnimationMiddle(int16_t index)
     updateBackground(index);
 }
 
+void MainView::dismissAttribution()
+{
+    // Swallow keys for a moment afterwards.
+    //
+    // One physical press arrives as more than one key event -- press and
+    // release, at least. Without this, the first event took the notice down
+    // and the second fell straight through to the menu underneath, so a
+    // BACK press dismissed the notice *and* quit the app in one go. Three
+    // ticks at 10 Hz is 300 ms: long enough to absorb the pair, short enough
+    // that a deliberate second press still lands.
+    mAttributionGuard = 3;
+    mAttribution.setVisible(false);
+    mAttribution.invalidate();
+    remove(mAttribution);
+    mAttributionUp = false;
+    invalidate();
+}
+
+void MainView::handleTickEvent()
+{
+    MainViewBase::handleTickEvent();
+
+    // Auto-advance. The guidelines allow an untouched notice to collapse
+    // after five seconds, so a wearer who does nothing is not left holding a
+    // screen they cannot read any more of.
+    if (mAttributionUp && ++mAttributionTicks >= MapKit::AttributionFace::kAutoDismissTicks) {
+        dismissAttribution();
+    } else if (mAttributionGuard > 0) {
+        --mAttributionGuard;
+    }
+}
+
 void MainView::handleKeyEvent(uint8_t key)
 {
     // Any key dismisses the notice, and that key does nothing else. The
@@ -150,12 +183,11 @@ void MainView::handleKeyEvent(uint8_t key)
     // mean the wearer acted on a screen they had not seen yet.
     if (mAttributionUp) {
         (void)key;
-        mAttribution.setVisible(false);
-        mAttribution.invalidate();
-        remove(mAttribution);
-        mAttributionUp = false;
-        invalidate();
+        dismissAttribution();
         return;
+    }
+    if (mAttributionGuard > 0) {
+        return;     // the tail of the press that dismissed the notice
     }
 
     if (key == SDK::GUI::Button::L1) {

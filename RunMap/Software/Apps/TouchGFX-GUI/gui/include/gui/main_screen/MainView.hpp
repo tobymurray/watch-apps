@@ -33,6 +33,14 @@ protected:
     /// because there is no TouchGFX Designer in this environment.
     MapKit::AttributionFace mAttribution;
     bool                    mAttributionUp = false;
+    uint32_t                mAttributionTicks = 0;
+    /// Ticks left in which key events are swallowed after the notice comes
+    /// down. See dismissAttribution().
+    uint32_t                mAttributionGuard = 0;
+
+    /// Takes the notice down, from either route: a key press or the
+    /// five-second auto-advance. One place, so the two cannot drift.
+    void dismissAttribution();
 
     MenuItemConfig mItems[Menu::ID_COUNT] {};
     MenuItemConfig mCenterItems[Menu::ID_COUNT] {};
@@ -47,6 +55,7 @@ protected:
     void onAnimationMiddle(int16_t index);
 
     virtual void handleKeyEvent(uint8_t key) override;
+    virtual void handleTickEvent() override;
     void onConfirm();
     void updateBackground(int16_t index);
 };

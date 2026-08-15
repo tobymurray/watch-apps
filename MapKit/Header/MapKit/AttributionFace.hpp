@@ -8,14 +8,16 @@
  * pop-up shown when a user starts the app" rather than as an overlay on the
  * map. This is that screen.
  *
- * **It is dismissed by a key press, not by a timer.** The guidelines list
- * three alternative collapse conditions and the first is "immediately with a
- * dismiss interaction" — the five-second floor governs only attribution that
- * fades on its own with nobody touching anything. So there is no countdown
- * here, and the wearer is never made to wait. (An earlier reading of the
- * guideline treated those five seconds as a required duration, which would
- * have meant compositing timed text over a live map on a 240×240 panel with
- * three usable dark codes, for no legal gain.)
+ * **Any key dismisses it at once; otherwise it advances itself after five
+ * seconds.** The guidelines give three alternative collapse conditions, and
+ * this uses two of them: "immediately with a dismiss interaction", and
+ * "automatically after five seconds". Nobody is made to wait, and nobody has
+ * to press anything.
+ *
+ * What the five seconds is *not* is a minimum the wearer must sit through —
+ * that reading would have meant compositing timed text over a live map on a
+ * 240×240 panel with three usable dark codes, for no legal gain. It is the
+ * earliest the notice may take itself away when left alone.
  *
  * Once per app launch is enough: "If attribution is presented to the user upon
  * application startup, it does not need to be presented to the user every time
@@ -48,6 +50,8 @@
 #define MAPKIT_ATTRIBUTIONFACE_HPP
 
 #include <MapKit/MapSession.hpp>
+
+#include <SDK/GUI/Config.hpp>
 
 #include <touchgfx/containers/Container.hpp>
 #include <touchgfx/widgets/Box.hpp>
@@ -86,6 +90,11 @@ public:
     {
         return !sShownThisLaunch && isOwedBy(session);
     }
+
+    /// Ticks before the notice takes itself away, at kFrameRate. Five
+    /// seconds is the earliest the guidelines allow an untouched notice to
+    /// collapse, so this sits exactly on that floor rather than above it.
+    static constexpr uint32_t kAutoDismissTicks = 5 * SDK::GUI::Config::kFrameRate;
 
     /// Record that the wearer has seen it. Called when the screen is put up,
     /// not when it is dismissed: the obligation is discharged by presenting
