@@ -135,10 +135,35 @@ bool PackCatalog::peek(const char* fullPath, PackFacts& out) const
     return true;
 }
 
+void PackCatalog::collectAttribution(const char* fullPath)
+{
+    char attr[kMaxAttrLen];
+    if (!SDK::RawTiles::Container::peekAttribution(mKernel.fs, fullPath, attr, sizeof(attr))) {
+        // No ATTR, a malformed one, or one too long to hold. All three mean
+        // the same thing to the screen that has to show a credit: this pack's
+        // cannot be shown.
+        ++mUnattributed;
+        return;
+    }
+    for (size_t i = 0; i < mAttrCount; ++i) {
+        if (std::strcmp(mAttributions[i], attr) == 0) {
+            return;     // already crediting this source
+        }
+    }
+    if (mAttrCount >= kMaxAttributions) {
+        ++mUnattributed;
+        return;
+    }
+    std::memcpy(mAttributions[mAttrCount], attr, std::strlen(attr) + 1);
+    ++mAttrCount;
+}
+
 size_t PackCatalog::rescan()
 {
-    mCount   = 0;
-    mScanned = true;
+    mCount        = 0;
+    mScanned      = true;
+    mAttrCount    = 0;
+    mUnattributed = 0;
 
     std::unique_ptr<SDK::Interface::IDirectory> dir = mKernel.fs.dir(kMapsDir);
     if (!dir || !dir->open()) {
@@ -189,6 +214,10 @@ size_t PackCatalog::rescan()
         facts.name      = mNames[mCount];
         mFacts[mCount]  = facts;
         ++mCount;
+
+        // After the pack is accepted, so nothing that failed the peek can
+        // contribute a credit — a pack this app will never draw owes none.
+        collectAttribution(fullPath);
     }
 
     dir->close();

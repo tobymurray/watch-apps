@@ -85,6 +85,24 @@ public:
     MapSession(const SDK::Kernel& kernel, TileCache& cache, const char* appTag)
         : mKernel(kernel), mCatalog(kernel), mCache(cache), mRequests(kernel, appTag)
     {
+        // Scan at construction, not on the first GPS fix.
+        //
+        // It used to wait for a fix, on the reasoning that there was nothing
+        // to select against until then. True for *selection* — but the roster
+        // also carries the attribution the app must show, and that cannot
+        // wait: ODbL § 4.3's notice is owed for the data on the watch, not for
+        // the pack a fix happens to choose, and it has to be showable at
+        // startup, before any map is drawn. A wearer who opens the app indoors
+        // must see the same credit as one who opens it under open sky.
+        //
+        // Nothing is lost by moving it. Packs cannot appear while the app runs
+        // — plugging in USB to copy one terminates every running app — so a
+        // scan at launch finds exactly what a scan on the first fix would
+        // have, only sooner. The cost lands on app open instead of on the
+        // first sample: a directory walk plus a bounded read per pack, for at
+        // most kMaxPacks packs. **Unmeasured on hardware**; if app open
+        // becomes visibly slower, this is what to look at first.
+        mCatalog.rescan();
     }
 
     MapSession(const MapSession&)            = delete;
@@ -139,6 +157,25 @@ public:
 
     /// Filename of the selected pack, or nullptr if none is selected.
     const char* packName() const;
+
+    // -- attribution, for the screen that shows it -------------------------
+    //
+    // Available from construction, before any GPS sample: these describe the
+    // packs installed, not the pack selected. That is deliberate and is what
+    // lets a map app credit its data at startup rather than whenever a fix
+    // arrives. See the constructor.
+
+    /// Number of distinct attribution strings across the installed packs.
+    /// Zero means no pack on this watch supplied one — which, if there are
+    /// packs, is worth surfacing rather than hiding.
+    size_t attributionCount() const { return mCatalog.attributionCount(); }
+
+    /// One distinct attribution string, NUL-terminated, or nullptr.
+    const char* attributionAt(size_t i) const { return mCatalog.attributionAt(i); }
+
+    /// Installed packs whose attribution could not be read. See
+    /// PackCatalog::unattributedPacks().
+    size_t unattributedPacks() const { return mCatalog.unattributedPacks(); }
 
 private:
     /// Runs the selection rule against the catalog already in memory and opens
