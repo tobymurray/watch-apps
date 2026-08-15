@@ -4,6 +4,7 @@
 #include <gui_generated/main_screen/MainViewBase.hpp>
 #include <gui/main_screen/MainPresenter.hpp>
 #include <SDK/GUI/SensorStatusRow.hpp>
+#include <MapKit/AttributionFace.hpp>
 
 class MainView : public MainViewBase
 {
@@ -26,6 +27,12 @@ protected:
 
     bool mGpsFix = false;
     SDK::Gui::SensorStatusRow mSensorRow;
+
+    /// The licence notice the map data owes, put up once per app launch and
+    /// dismissed by any key. Owned here rather than in the generated tree
+    /// because there is no TouchGFX Designer in this environment.
+    MapKit::AttributionFace mAttribution;
+    bool                    mAttributionUp = false;
 
     MenuItemConfig mItems[Menu::ID_COUNT] {};
     MenuItemConfig mCenterItems[Menu::ID_COUNT] {};

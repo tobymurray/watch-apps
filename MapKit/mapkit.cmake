@@ -16,6 +16,7 @@
 # Manager's job, and these apps read maps solely to draw them.
 
 set(MAPKIT_SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/Sources/AttributionFace.cpp
     ${CMAKE_CURRENT_LIST_DIR}/Sources/Container.cpp
     ${CMAKE_CURRENT_LIST_DIR}/Sources/MapSession.cpp
     ${CMAKE_CURRENT_LIST_DIR}/Sources/MapTileView.cpp

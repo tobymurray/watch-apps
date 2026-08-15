@@ -1,5 +1,9 @@
 #include <MapKit/PackCatalog.hpp>
 
+#define LOG_MODULE_PRX      "MapKit"
+#define LOG_MODULE_LEVEL    LOG_LEVEL_INFO
+#include "SDK/UnaLogger/Logger.h"
+
 #include <MapKit/MapMath.hpp>
 #include <MapKit/PackTrustReader.hpp>
 #include <SDK/RawTiles/Container.hpp>
@@ -221,6 +225,8 @@ size_t PackCatalog::rescan()
     }
 
     dir->close();
+    LOG_INFO("catalog: %zu pack(s), %zu attribution(s), %zu unattributed\n",
+             mCount, mAttrCount, mUnattributed);
     return mCount;
 }
 

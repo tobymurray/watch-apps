@@ -31,6 +31,20 @@ void MainView::setupScreen()
     mSensorRow.setGps(SDK::Gui::SensorStatusRow::gpsState(mGpsFix));
 
     updateBackground(menuLayout.getSelectedItem());
+
+    // The map data's credit, before anything else is looked at. It does not
+    // wait on a GPS fix: MapSession collects attribution from the packs that
+    // are installed, not from the one a fix selects, precisely so this can
+    // happen here. See AttributionFace's header for why it is a screen and
+    // not a timed overlay.
+    if (MapKit::AttributionFace::shouldShowAtStartup(presenter->mapSession())) {
+        mAttribution.setSources(presenter->mapSession());
+        add(mAttribution);
+        mAttribution.setVisible(true);
+        mAttribution.invalidate();
+        mAttributionUp = true;
+        MapKit::AttributionFace::markShown();
+    }
 }
 
 void MainView::tearDownScreen()
@@ -129,6 +143,21 @@ void MainView::onAnimationMiddle(int16_t index)
 
 void MainView::handleKeyEvent(uint8_t key)
 {
+    // Any key dismisses the notice, and that key does nothing else. The
+    // guidelines permit collapsing attribution "immediately with a dismiss
+    // interaction", so there is no minimum time to sit through -- but a press
+    // that both dismissed the notice and actioned the menu underneath would
+    // mean the wearer acted on a screen they had not seen yet.
+    if (mAttributionUp) {
+        (void)key;
+        mAttribution.setVisible(false);
+        mAttribution.invalidate();
+        remove(mAttribution);
+        mAttributionUp = false;
+        invalidate();
+        return;
+    }
+
     if (key == SDK::GUI::Button::L1) {
         menuLayout.selectPrev();
     }
