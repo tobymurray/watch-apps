@@ -135,8 +135,20 @@ void MapSession::chooseAndOpen()
 
     mSelected = choice;
     // Start at the pack's finest zoom: the wearer is looking at where they
-    // are, and can zoom out from there.
+    // are, and can zoom out from there. "Finest" means the deepest zoom that
+    // has tiles, not the deepest the header declares -- opening on a zoom the
+    // pack carries nothing for is a blank screen the wearer has to guess
+    // their way out of by pressing zoom. See PackDepth.hpp.
     mZoom = mContainer.header().zoomMax;
+    for (uint8_t z = mContainer.header().zoomMax; ; --z) {
+        if (mContainer.tileCountAtZoom(z) != 0) {
+            mZoom = z;
+            break;
+        }
+        if (z == mContainer.header().zoomMin) {
+            break;
+        }
+    }
     LOG_INFO("map: opened %s, z%u..z%u, %lu tiles\n", mPackPath,
              mContainer.header().zoomMin, mContainer.header().zoomMax,
              static_cast<unsigned long>(mContainer.header().tileCount));

@@ -48,8 +48,10 @@ enable_testing()
 
 add_executable(mapkit-pure-tests
     MapMath_test.cpp
+    PackDepth_test.cpp
     PackSelection_test.cpp
     TraceBuffer_test.cpp
+    "${MAPKIT}/Sources/PackDepth.cpp"
     "${MAPKIT}/Sources/PackSelection.cpp"
 )
 target_include_directories(mapkit-pure-tests PRIVATE "${MAPKIT}/Header")
@@ -65,6 +67,7 @@ add_executable(mapkit-kernel-tests
     "${MAPKIT}/Sources/Container.cpp"
     "${MAPKIT}/Sources/MapSession.cpp"
     "${MAPKIT}/Sources/PackCatalog.cpp"
+    "${MAPKIT}/Sources/PackDepth.cpp"
     "${MAPKIT}/Sources/PackSelection.cpp"
     "${MAPKIT}/Sources/TileRequestLog.cpp"
     "${UNA_SDK_ROOT}/Tests/Host/support/KernelTestDoubles.cpp"

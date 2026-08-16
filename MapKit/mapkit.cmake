@@ -21,6 +21,7 @@ set(MAPKIT_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/Sources/MapSession.cpp
     ${CMAKE_CURRENT_LIST_DIR}/Sources/MapTileView.cpp
     ${CMAKE_CURRENT_LIST_DIR}/Sources/PackCatalog.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/Sources/PackDepth.cpp
     ${CMAKE_CURRENT_LIST_DIR}/Sources/PackSelection.cpp
     ${CMAKE_CURRENT_LIST_DIR}/Sources/TileRequestLog.cpp
     ${CMAKE_CURRENT_LIST_DIR}/Sources/TrackFaceMap.cpp

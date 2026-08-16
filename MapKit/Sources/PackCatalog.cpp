@@ -5,6 +5,7 @@
 #include "SDK/UnaLogger/Logger.h"
 
 #include <MapKit/MapMath.hpp>
+#include <MapKit/PackDepth.hpp>
 #include <MapKit/PackTrustReader.hpp>
 #include <SDK/RawTiles/Container.hpp>
 
@@ -124,8 +125,20 @@ bool PackCatalog::peek(const char* fullPath, PackFacts& out) const
         return false;
     }
 
+    // Rank on what the pack can draw, not on what it declares. A pack with
+    // no tiles at any zoom is not a map, and one that declares a deeper
+    // zoom_max than it has tiles for would otherwise outrank a pack that
+    // could actually draw the place. See PackDepth.hpp.
+    uint8_t drawableZoomMax = 0;
+    if (!deepestZoomWithTiles(hdr, sizeof(hdr), drawableZoomMax)) {
+        return false;
+    }
+    if (drawableZoomMax > zoomMax) {
+        return false;   // § 11: no tiles may sit outside the declared range
+    }
+
     PackFacts facts {};
-    facts.zoomMax        = zoomMax;
+    facts.zoomMax        = drawableZoomMax;
     facts.bboxMinLonUDeg = readI32LE(hdr + kOffBbox + 0);
     facts.bboxMinLatUDeg = readI32LE(hdr + kOffBbox + 4);
     facts.bboxMaxLonUDeg = readI32LE(hdr + kOffBbox + 8);

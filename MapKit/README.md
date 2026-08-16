@@ -24,6 +24,7 @@ MapKit/
 │       ├── TileCache.hpp             # fixed-slot LRU of decoded tiles
 │       ├── TileRequestLog.hpp        # where the map was missing
 │       ├── PackTrustReader.hpp       # reader for MapManager's trust marker
+│       ├── PackDepth.hpp             # how deep a pack can *draw*, as pure code
 │       ├── PackSelection.hpp         # *which pack* — the rule, as pure code
 │       ├── PackCatalog.hpp           # what packs exist, cheaply
 │       ├── MapSession.hpp            # all live map state for one app
@@ -33,8 +34,9 @@ MapKit/
 └── Tests/                            # host tests, see below
 ```
 
-The split worth knowing: **`PackSelection` and `MapMath` and `TraceBuffer` are
-pure code** — no SDK, no kernel, no filesystem — and are tested as such.
+The split worth knowing: **`PackSelection`, `PackDepth`, `MapMath` and
+`TraceBuffer` are pure code** — no SDK, no kernel, no filesystem — and are
+tested as such.
 `PackCatalog`, `PackTrustReader` and `MapSession` are the parts that touch
 files. `MapTileView` and `TrackFaceMap` are the parts that touch pixels, and
 are the only parts no host test reaches.
