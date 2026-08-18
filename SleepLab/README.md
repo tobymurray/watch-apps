@@ -555,6 +555,15 @@ would flatter the result.
 Both are checked against the real writer: `night-log-export` writes synthetic
 nights with the real `NightStore` and a ctest parses them with the real script.
 
+## Evaluating it
+
+[`Docs/EVALUATION-PROMPT.md`](Docs/EVALUATION-PROMPT.md) is a self-contained
+brief for adversarially reviewing this app — written around the one constraint
+that shapes everything here: a night of evidence costs a night, so anything
+findable at a desk must be found at a desk. It ranks findings by how *invisible*
+they are rather than how severe they sound, on the grounds that a crash is cheap
+and a silent one-minute bias in every night is not.
+
 ## Known rough edges
 
 - **No night has been recorded on hardware.** Every sensor claim in the ledger's
