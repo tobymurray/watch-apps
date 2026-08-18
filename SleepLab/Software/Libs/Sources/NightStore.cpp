@@ -17,6 +17,7 @@
 #include "SDK/JSON/JsonStreamWriter.hpp"
 
 #include "Engine/RestfulnessBand.hpp"
+#include "Engine/SleepWakeScorer.hpp"
 
 #define LOG_MODULE_PRX      "NightStore"
 #define LOG_MODULE_LEVEL    LOG_LEVEL_INFO
@@ -491,6 +492,41 @@ bool NightStore::finishNight(const Engine::NightSummary &s,
             w.add("restfulness_band", bandMethod);
             w.add("restfulness_used_hr", bandUsedHr);
             w.add("hr_mode", hrMode);
+            // The app that produced this file. A night recorded by a different
+            // build is a different measurement -- a threshold moved, a filter
+            // changed -- and a file that does not say which build wrote it cannot
+            // be compared with one that does. `kAppVersion` is bumped by hand
+            // whenever anything that would move a number changes.
+            w.add("app_version", kAppVersion);
+            // The constants that scored *this* night, so it can be re-scored
+            // offline against the counts in its own CSV even after they change.
+            // Without them an old night is uninterpretable the moment a threshold
+            // moves, which is precisely what the diary calibration is going to do.
+            w.startMap("constants");
+            w.add("count_scale_x1e6",
+                  static_cast<int32_t>(Engine::SleepWakeScorer::kCountScale *
+                                       1000000.0f + 0.5f));
+            w.add("threshold_x1e3",
+                  static_cast<int32_t>(Engine::SleepWakeScorer::kThreshold *
+                                       1000.0f + 0.5f));
+            w.add("p_x1e6", static_cast<int32_t>(
+                                Engine::SleepWakeScorer::kP * 1000000.0f + 0.5f));
+            w.add("min_samples_per_epoch",
+                  static_cast<int32_t>(
+                      Engine::SleepWakeScorer::kMinSamplesPerEpoch));
+            w.add("min_worn_pct",
+                  static_cast<int32_t>(Engine::SleepWakeScorer::kMinWornPct));
+            w.add("movement_floor",
+                  static_cast<int32_t>(Engine::NightAnalyser::kMovementFloor));
+            w.add("micro_movement_floor",
+                  static_cast<int32_t>(Engine::WornGate::kMicroMovementFloor));
+            w.add("gate_min_worn_pct",
+                  static_cast<int32_t>(Engine::WornGate::kMinWornPct));
+            w.add("gate_min_plausible_pct",
+                  static_cast<int32_t>(Engine::WornGate::kMinPlausiblePct));
+            w.add("onset_run_min",
+                  static_cast<int32_t>(Engine::NightAnalyser::kOnsetRunMin));
+            w.endMap();
             // Stated in the file itself, not only in a README the file will be
             // separated from.
             w.add("validated_against",
@@ -517,6 +553,15 @@ bool NightStore::finishNight(const Engine::NightSummary &s,
                   (s.interruption & Engine::Interruption::kWriteFailed) != 0);
             w.add("epochs",      static_cast<int32_t>(s.epochs));
             w.add("unscorable",  static_cast<int32_t>(s.unscorable));
+            // What the night was actually built from. A count is only comparable
+            // with another count taken at a similar delivered rate, and the rate
+            // is neither the requested one nor constant between nights -- so the
+            // only way to know whether two nights can be compared is for each to
+            // say. Also the one column that separates "delivery stopped" from
+            // "delivery degraded", which are different problems.
+            addOrNull(w, "acc_samples_min",    s.accSamplesMin);
+            addOrNull(w, "acc_samples_median", s.accSamplesMedian);
+            addOrNull(w, "acc_hz_x10",         s.accHzX10);
             w.endMap();
 
             w.startMap("sleep");

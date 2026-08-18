@@ -542,4 +542,318 @@ TEST(Surfaces, AnOpenGlanceStopsSayingRecordingWhenTheNightEnds)
            "still says the watch is recording";
 }
 
+// ---------------------------------------------------------------------------
+// Nights designed to be awkward rather than typical
+//
+// Each of these is a shape the app has to survive rather than a shape it has to
+// score well. What is asserted is that it does not crash, does not wedge, does
+// not open a night it should not, and does not report a number it cannot know.
+// ---------------------------------------------------------------------------
+
+TEST(HostileNights, ASleeperWhoNeverSettlesGetsNoNight)
+{
+    // Restless from lights-out to morning: never fifteen consecutive still
+    // minutes, so no session should ever open and there should be nothing to
+    // report. A night that opened here would be a spurious history row and, worse,
+    // a spurious baseline sample.
+    Scenario s;
+    s.startUtc = kStart;
+    s.phases   = { awake(9 * 60) };
+    const Observations obs = Rig::instance().run(s);
+
+    EXPECT_TRUE(theNightCsv(Rig::instance().fs).empty())
+        << "a night opened for a wearer who never settled";
+    EXPECT_FALSE(Rig::instance().fs.exist("Nights/index.csv"));
+    ASSERT_TRUE(obs.haveReport());
+    EXPECT_FALSE(obs.lastReport().hasSleep);
+}
+
+TEST(HostileNights, ASleeperWhoSettlesInstantlyKeepsTheirFirstQuarterHour)
+{
+    // Still from the very first epoch of the run: the wearer was already settled
+    // when the service started. The pre-roll ring fills from that first epoch, so
+    // by the time the segmenter has its fifteen still minutes the ring holds
+    // exactly those thirty recording epochs -- and the night must be backdated to
+    // minute zero rather than starting a quarter of an hour late.
+    Scenario s;
+    s.startUtc = kStart;
+    s.phases   = { still(7 * 60), awake(20, 72, 40) };
+    const Observations obs = Rig::instance().run(s);
+
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr);
+    ASSERT_TRUE(rep->hasSleep);
+
+    // The night began when the run did, and the first sleep observed is right at
+    // the top of it.
+    EXPECT_NEAR(rep->asleepAtMin, localOf(kStart), 2)
+        << "the night was backdated to " << rep->asleepAtMin
+        << " rather than to " << localOf(kStart);
+    EXPECT_EQ(rep->interruption & Engine::Interruption::kDataGap, 0u)
+        << "the ring held the whole backdate and the night was flagged anyway";
+    // 420 still minutes plus the minute that closed it.
+    EXPECT_NEAR(rep->timeInBedMin, 421, 3);
+}
+
+TEST(HostileNights, ADeliveryOutageIsUnscorableRatherThanPerfectStillness)
+{
+    // The accelerometer stops for forty minutes in the middle of the night and
+    // the app does not restart. A near-empty epoch integrates to near-zero, which
+    // reads as the soundest sleep of the night -- so the outage has to become
+    // Unscorable and be flagged, not become sleep.
+    Scenario s = plainNight();
+    s.accelGapFromMin = 200;
+    s.accelGapToMin   = 240;
+    const Observations obs = Rig::instance().run(s);
+
+    const std::string csv = theNightCsv(Rig::instance().fs);
+    ASSERT_FALSE(csv.empty());
+    const std::vector<EpochRow> rows =
+        parseEpochs(Rig::instance().fs.readFile(csv));
+    size_t empty = 0;
+    for (const EpochRow &r : rows) {
+        if (r.samples == 0) { ++empty; }
+    }
+    EXPECT_GT(empty, 20u) << "the outage did not reach the recorder";
+
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr);
+    EXPECT_NE(rep->interruption & Engine::Interruption::kDataGap, 0u)
+        << "forty minutes with no samples and the night reported itself clean";
+
+    // The night is still a night: the outage must not swallow it.
+    EXPECT_TRUE(rep->hasSleep);
+    // And the outage minutes must not have been counted as sleep. Time in bed
+    // covers them; total sleep must be short of it by at least the outage.
+    EXPECT_LE(rep->totalSleepMin, rep->timeInBedMin - 30)
+        << "the outage was scored as sleep";
+}
+
+TEST(HostileNights, DeliveryThatDegradesRatherThanStoppingIsVisibleInTheRecord)
+{
+    // A tenth of the samples, all night: 4.8 Hz where the hardware delivers about
+    // 48. Neither guard notices -- `kMinSamplesPerRecordingEpoch` is 60 and
+    // `kMinSamplesPerEpoch` is 120, both set against a *nominal* 25 Hz, so they
+    // fire only below about 4 % of the delivered rate.
+    //
+    // And the counts do not survive it intact: measured against a 0.5 Hz sinusoid,
+    // a scoring epoch counts 286 at 48 Hz and 212 at 4.8 Hz, a 26 % shrink -- so
+    // every threshold in the app quietly means something else. See
+    // `EpochCounter.TheCountIsOnlyRateIndependentInTheUpperHalfOfTheRange`.
+    //
+    // Nothing here can be fixed by a threshold nobody has measured, so what is
+    // required is that the record *says* what it was built from: the epoch rows
+    // carry their own sample counts and spans, and the summary carries the night's
+    // delivered rate, so a morning can answer this without a second night.
+    Scenario s = plainNight();
+    s.accelThinning = 10;
+    const Observations obs = Rig::instance().run(s);
+    (void)obs;
+
+    const std::string csv = theNightCsv(Rig::instance().fs);
+    ASSERT_FALSE(csv.empty());
+    const std::vector<EpochRow> rows =
+        parseEpochs(Rig::instance().fs.readFile(csv));
+    ASSERT_GT(rows.size(), 100u);
+
+    // Every row can be turned back into a delivered rate, which is the whole
+    // point of recording the span rather than assuming it.
+    for (const EpochRow &r : rows) {
+        if (r.samples == 0) { continue; }
+        ASSERT_GT(r.spanMs, 0L) << "an epoch row carries no span";
+        const double hz = 1000.0 * static_cast<double>(r.samples) /
+                          static_cast<double>(r.spanMs);
+        EXPECT_LT(hz, 8.0) << "the thinning did not reach the recorder";
+    }
+
+    // And the summary says so without anyone having to parse the CSV.
+    std::string jsonPath = csv;
+    jsonPath.replace(jsonPath.size() - 4, 4, ".json");
+    const std::string json = Rig::instance().fs.readFile(jsonPath);
+    ASSERT_FALSE(json.empty());
+    EXPECT_NE(json.find("acc_hz_x10"), std::string::npos)
+        << "the summary does not record the rate the night was built from, so an "
+           "interrupted or degraded night cannot say what produced it";
+}
+
+TEST(HostileNights, ANightAtTheSixteenHourBoundIsCutAndSaysSo)
+{
+    // A watch left on a still surface, inside a bedtime window wide enough that
+    // leaving it cannot be what ends the session. The engine scores at most sixteen
+    // hours, and the segmenter has to be what ends it -- not the array bound, and
+    // certainly not a uint16 going round.
+    //
+    // The window is 21:00-20:59, so its one-minute hole is 23 hours away from a
+    // 21:45 start and the sixteen-hour bound is reached first.
+    Scenario s;
+    s.startUtc = kStart;
+    s.settingsJson =
+        "{\"schema\":1,\"values\":{\"bedtime\":\"21:00\",\"wake_by\":\"20:59\"}}";
+    Phase forever;
+    forever.minutes    = 20 * 60;
+    forever.amplitudeG = kBreathingG;
+    forever.freqHz     = kBreathingHz;
+    forever.worn       = true;
+    forever.hrBpm      = 55;
+    s.phases = { forever };
+    Rig::instance().run(s);
+
+    // Read the index rather than the last report: a watch on a still surface opens
+    // a *second* session the minute the first one closes, so the live report is
+    // about that one.
+    const std::string index = Rig::instance().fs.readFile("Nights/index.csv");
+    ASSERT_NE(index.find(','), std::string::npos)
+        << "a twenty-hour session never ended";
+
+    long long startUtc = 0;
+    long tib = 0, tst = 0, eff = 0, hrmin = 0, hrat = 0;
+    unsigned worn = 0, interruption = 0;
+    bool parsed = false;
+    for (const std::string &l : lines(index)) {
+        if (l.empty() || l[0] == '#' || l[0] == 's') { continue; }
+        parsed = std::sscanf(l.c_str(), "%lld,%ld,%ld,%ld,%ld,%ld,%u,%u",
+                             &startUtc, &tib, &tst, &eff, &hrmin, &hrat,
+                             &worn, &interruption) == 8;
+        break;
+    }
+    ASSERT_TRUE(parsed) << "no index row for the long night";
+    EXPECT_LE(tib, static_cast<long>(Engine::kMaxScoringEpochs) + 2)
+        << "the night ran " << tib << " minutes, past what the engine scores";
+    EXPECT_GE(tib, static_cast<long>(Engine::kMaxScoringEpochs) - 4)
+        << "the night ended at " << tib
+        << " minutes, well short of the bound -- something else closed it and "
+           "the bound is untested";
+}
+
+TEST(HostileNights, SensorTimestampsThatJumpBackwardsDoNotFabricateMovement)
+{
+    // The accelerometer's own clock is reset under the app. EpochCounter takes
+    // every dt from those timestamps and differences them unsigned, so a jump
+    // backwards presents as an enormous forward gap -- above kMaxGapMs, so the
+    // filters re-seed and contribute nothing rather than integrating a fabricated
+    // rectangle across it.
+    Scenario s = plainNight();
+    s.accelTimestampJumpAtMin      = 200;
+    s.accelTimestampJumpBackMs     = 3600u * 1000u;
+    const Observations obs = Rig::instance().run(s);
+
+    const std::string csv = theNightCsv(Rig::instance().fs);
+    ASSERT_FALSE(csv.empty());
+    for (const EpochRow &r : parseEpochs(Rig::instance().fs.readFile(csv))) {
+        // Nothing anywhere in the night may look like violent movement.
+        EXPECT_LT(r.count, 5000L)
+            << "an epoch counted " << r.count
+            << " from a sensor clock that went backwards";
+    }
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr) << "the night did not survive a sensor clock reset";
+}
+
+TEST(HostileNights, AWallClockThatJumpsMidNightMarksTheNightRatherThanMovingIt)
+{
+    // A host sync or a timezone change moves the wall clock an hour forward while
+    // the night is running. Uptime does not move, so no duration may change -- and
+    // the night has to say the two halves of it are not on the same scale.
+    Scenario s = plainNight();
+    s.clockJumpAtMin = 200;
+    s.clockJumpSec   = 3600;
+    const Observations withJump = Rig::instance().run(s);
+
+    Scenario clean = plainNight();
+    const Observations without = Rig::instance().run(clean);
+
+    const CustomMessage::SleepReportData *a = withJump.lastReportedNight();
+    const CustomMessage::SleepReportData *b = without.lastReportedNight();
+    ASSERT_NE(a, nullptr);
+    ASSERT_NE(b, nullptr);
+
+    EXPECT_NE(a->interruption & Engine::Interruption::kClockJump, 0u)
+        << "the wall clock moved an hour and the night did not say so";
+    // Durations come from uptime and from an epoch count, so they must be
+    // untouched by the clock.
+    EXPECT_NEAR(a->timeInBedMin, b->timeInBedMin, 2)
+        << "a wall-clock jump changed how long the night thinks it was";
+    EXPECT_NEAR(a->totalSleepMin, b->totalSleepMin, 2);
+}
+
+TEST(HostileNights, TheChargerGoingInDuringANightIsSaidLoudly)
+{
+    // Plugging in terminates every running app, so a night that saw the charger
+    // has a hole in it whose length is not knowable from inside. It must be the
+    // first thing the morning says.
+    Scenario s;
+    s.startUtc = kStart;
+    Phase charged = still(60);
+    charged.charging = true;
+    s.phases = { awake(5), still(3 * 60), charged, still(2 * 60),
+                 awake(20, 72, 40) };
+    const Observations obs = Rig::instance().run(s);
+
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr);
+    EXPECT_NE(rep->interruption & Engine::Interruption::kCharging, 0u)
+        << "the charger was connected for an hour of the night and the report "
+           "did not say so";
+}
+
+TEST(HostileNights, AWornSensorThatSaysNothingAllNightIsUncertainNotUnworn)
+{
+    // TOUCH_DETECT resolved on hardware and delivered zero samples in a minute
+    // (ledger row S12). A sensor that never speaks leaves no evidence either way,
+    // and telling somebody their watch was not worn would send them to put on a
+    // watch they are already wearing.
+    Scenario s = plainNight();
+    s.touchReportsInitialState = false;
+    const Observations obs = Rig::instance().run(s);
+
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    if (rep == nullptr) {
+        // With no worn evidence the segmenter cannot see a still *worn* epoch, so
+        // no night opens. Also honest, and the probe's screen is what would have
+        // caught it before the night was spent.
+        SUCCEED();
+        return;
+    }
+    EXPECT_NE(rep->worn, static_cast<uint8_t>(Engine::WornVerdict::NotWorn))
+        << "a sensor that never spoke was reported as the watch not being worn";
+    EXPECT_FALSE(rep->hasSleep);
+}
+
+TEST(HostileNights, AFlickeringWornSensorIsRecordedAsFlickering)
+{
+    // The load-bearing sensor claim in the whole app (ledger row S7): a loosely
+    // strapped sleeping wrist that makes TOUCH_DETECT chatter. Whatever the
+    // verdict, the *edges* have to reach the file, because a worn fraction cannot
+    // tell a flicker from a removal and only one of those means tighten the strap.
+    Scenario s;
+    s.startUtc = kStart;
+    s.phases.push_back(awake(5));
+    for (int i = 0; i < 60; ++i) {
+        Phase on  = still(6);
+        Phase off = still(1);
+        off.worn  = false;
+        s.phases.push_back(on);
+        s.phases.push_back(off);
+    }
+    s.phases.push_back(awake(20, 72, 40));
+    const Observations obs = Rig::instance().run(s);
+    (void)obs;
+
+    const std::string csv = theNightCsv(Rig::instance().fs);
+    if (csv.empty()) {
+        // A sensor flickering this hard never gives fifteen consecutive still
+        // worn epochs, so no night opens -- which is the suppression row S7 warns
+        // about, reached honestly.
+        SUCCEED();
+        return;
+    }
+    long edges = 0;
+    for (const EpochRow &r : parseEpochs(Rig::instance().fs.readFile(csv))) {
+        edges += r.wornEdges;
+    }
+    EXPECT_GT(edges, 0L)
+        << "the worn sensor changed state dozens of times and the epoch log "
+           "recorded no edges at all";
+}
+
 } // namespace

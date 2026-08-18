@@ -108,6 +108,16 @@ constexpr uint32_t kIndexCsvSchema = 1;
 /// Schema of the summary JSON.
 constexpr uint32_t kSummaryJsonSchema = 1;
 
+/// The app version written into every summary, so a file says which build
+/// produced it.
+///
+/// Deliberately a literal here rather than the `APP_VERSION` the ARM build
+/// defines: the TouchGFX simulator builds the same sources without it, and a
+/// provenance field that only exists under one of two build systems is worse
+/// than one that is maintained by hand. Bump it whenever anything that would move
+/// a number changes -- a threshold, a filter, an epoch length.
+constexpr char kAppVersion[] = "0.1.0";
+
 /**
  * @brief What a resumed launch found on disk.
  */

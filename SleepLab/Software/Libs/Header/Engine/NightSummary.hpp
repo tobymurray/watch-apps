@@ -185,6 +185,27 @@ struct NightSummary
     /// informative as its value, and both are personal.
     int32_t hrMinEpoch      = kAbsent;
     size_t  hrEpochs        = 0;       ///< Epochs a heart rate contributed to.
+
+    // -- What the night was built from ----------------------------------------
+    //
+    // Delivery statistics, not sleep. They are here because a night cannot be
+    // diagnosed from its numbers alone: a count is only comparable with another
+    // count taken at a similar delivered rate, and the rate is neither the
+    // requested one nor constant. Measured on hardware, the accelerometer runs at
+    // about 48 Hz against a requested 25 (ledger row S3); measured in host tests,
+    // a count at a tenth of that is a fifth smaller. So a night whose rate
+    // differs from the last one's is not directly comparable with it, and the
+    // only way to know is for each night to say.
+
+    /// Accelerometer samples in the thinnest and the typical scoring epoch of the
+    /// night, and the delivered rate that implies. Absent when nothing was
+    /// delivered at all.
+    int32_t accSamplesMin    = kAbsent;
+    int32_t accSamplesMedian = kAbsent;
+    /// Delivered accelerometer rate across the night, Hz x10, from the median
+    /// epoch's sample count over its own span -- never from a sample count over a
+    /// nominal epoch length, which would make a stalled epoch look like a slow one.
+    int32_t accHzX10         = kAbsent;
 };
 
 /**

@@ -162,6 +162,20 @@ struct Scenario
     int accelGapFromMin = -1;
     int accelGapToMin   = -1;
 
+    /// Stamp accelerometer samples with timestamps that run backwards from this
+    /// minute: a sensor whose own clock was reset under the app. Every duration in
+    /// EpochCounter comes from these, and it uses unsigned differences, so a jump
+    /// backwards presents as an enormous forward gap rather than as a negative
+    /// one -- which is the behaviour worth pinning either way.
+    int accelTimestampJumpAtMin = -1;
+    /// How far back, in ms.
+    uint32_t accelTimestampJumpBackMs = 0;
+
+    /// Deliver accelerometer samples this many times thinner than the nominal
+    /// rate, i.e. one sample every `accelPeriodMs * this`. A delivery that
+    /// degrades rather than stopping.
+    int accelThinning = 1;
+
     /// Deliver no TOUCH_DETECT samples ever, after the initial one. Models a
     /// sensor that goes silent mid-night.
     int touchSilentFromMin = -1;
@@ -659,7 +673,10 @@ private:
         // sensor's own timestamps -- late and in a burst, which is what the
         // recorder has to attribute correctly rather than to the instant of
         // delivery.
-        const uint16_t n = static_cast<uint16_t>(mScn->accelLatencyMs / period);
+        const uint32_t thinning =
+            (mScn->accelThinning > 0) ? static_cast<uint32_t>(mScn->accelThinning) : 1;
+        const uint16_t n =
+            static_cast<uint16_t>(mScn->accelLatencyMs / (period * thinning));
         if (n == 0) { return nullptr; }
         auto *e = newBatch(Chan::Accel, n,
                            SDK::SensorDataParser::Accelerometer::Field::COUNT);
@@ -667,8 +684,16 @@ private:
 
         const uint32_t first = at - mScn->accelLatencyMs;
         for (uint16_t i = 0; i < n; i++) {
-            const uint32_t ts = first + i * period;
-            const Phase &p = mScn->at(minuteOf(ts));
+            const uint32_t realTs = first + i * period * thinning;
+            // The phase comes from the real instant, and only the *stamp* is
+            // shifted: a sensor whose clock was reset is wrong about the time, not
+            // about the wrist.
+            const Phase &p = mScn->at(minuteOf(realTs));
+            uint32_t ts = realTs;
+            if (mScn->accelTimestampJumpAtMin >= 0 &&
+                minute >= mScn->accelTimestampJumpAtMin) {
+                ts -= mScn->accelTimestampJumpBackMs;
+            }
             SDK::Sensor::Data *d = sampleAt(e, i);
             d->mTimeStamp   = ts;
             d->mTimeStampUs = 0;
