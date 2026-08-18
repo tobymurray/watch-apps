@@ -139,6 +139,12 @@ struct Scenario
 
     std::vector<Phase> phases;
 
+    /// Index the phase list from this many minutes in. A second launch of the
+    /// *same* night carries on where the first stopped rather than starting the
+    /// sleeper's evening again, and the gap is however long the watch was on the
+    /// charger.
+    int phaseOffsetMin = 0;
+
     /// Delivered accelerometer period, ms. The default is the ~48 Hz measured
     /// on hardware (ledger row S3), NOT the 40 ms requested -- a harness that
     /// fed the requested rate would miss every consequence of the delivered one.
@@ -190,6 +196,22 @@ struct Scenario
     /// settings.json to seed, or empty for none.
     std::string settingsJson;
 
+    // -- Fault injection ----------------------------------------------------
+    //
+    // Applied after the volume is reset, so they survive into the run. All three
+    // hooks already existed on the SDK's InMemoryFileSystem and nothing in this
+    // repository used them.
+
+    /// Refuse every write once this many bytes have been written. A volume that
+    /// fills at 03:00.
+    size_t failWritesAfterBytes = static_cast<size_t>(-1);
+    /// Refuse a write-mode open of any path ending with this. ".json" fails the
+    /// summary while leaving the index row alone.
+    std::string failWriteOpenSuffix;
+    /// Fail `close()` on any path containing this, leaving the handle open --
+    /// FatFs keeps the FIL and its lock-table entry when the sync fails.
+    std::string failCloseContaining;
+
     /// Keep whatever the previous run left on the volume, including
     /// `night_state.txt`. This is how a resumed night is tested: run the first
     /// half for real, stop it the way the USB cable does, then run the second
@@ -205,13 +227,15 @@ struct Scenario
         return m;
     }
 
-    /// The phase covering minute @p m, or the last one past the end.
+    /// The phase covering minute @p m of the *night*, which is @p m plus
+    /// `phaseOffsetMin` minutes into the phase list.
     const Phase &at(int m) const
     {
+        const int want = m + phaseOffsetMin;
         int acc = 0;
         for (const Phase &p : phases) {
             acc += p.minutes;
-            if (m < acc) { return p; }
+            if (want < acc) { return p; }
         }
         return phases.back();
     }
@@ -824,6 +848,15 @@ public:
             fs.failWritesAfterBytes = static_cast<size_t>(-1);
             fs.failWriteOpenSuffix.clear();
             fs.closeGate = nullptr;
+        }
+
+        fs.failWritesAfterBytes = s.failWritesAfterBytes;
+        fs.failWriteOpenSuffix  = s.failWriteOpenSuffix;
+        if (!s.failCloseContaining.empty()) {
+            const std::string needle = s.failCloseContaining;
+            fs.closeGate = [needle](const std::string &path) {
+                return path.find(needle) == std::string::npos;
+            };
         }
 
         Observations obs;

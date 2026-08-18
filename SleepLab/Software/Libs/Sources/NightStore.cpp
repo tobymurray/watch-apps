@@ -509,6 +509,12 @@ bool NightStore::finishNight(const Engine::NightSummary &s,
             w.add("resumed",   (s.interruption & Engine::Interruption::kResumed)   != 0);
             w.add("clock_jump",(s.interruption & Engine::Interruption::kClockJump) != 0);
             w.add("data_gap",  (s.interruption & Engine::Interruption::kDataGap)   != 0);
+            w.add("truncated", (s.interruption & Engine::Interruption::kTruncated) != 0);
+            // The one bit that is about the record rather than about the night:
+            // the numbers below describe minutes that were measured, and the CSV
+            // is missing some of them.
+            w.add("write_failed",
+                  (s.interruption & Engine::Interruption::kWriteFailed) != 0);
             w.add("epochs",      static_cast<int32_t>(s.epochs));
             w.add("unscorable",  static_cast<int32_t>(s.unscorable));
             w.endMap();
@@ -598,28 +604,26 @@ bool NightStore::finishNight(const Engine::NightSummary &s,
         indexOk = append(kIndexPath, row, static_cast<size_t>(n));
     }
 
-    // Cleared last, and only when the night is actually filed. The ordering was
-    // reasoned about for a crash -- state cleared last, so a crash anywhere above
-    // resumes the night rather than losing it -- and a refused write is not a
-    // crash: control reaches here and the state was removed regardless, so a
-    // volume with no room for the summary or the index row lost the night
-    // entirely, with a CSV on disk and nothing anywhere that knew it had run.
+    // Cleared last, and unconditionally, and the difference between those two
+    // words is the finding here.
     //
-    // The index row is the load-bearing one: it is the history and it is the only
-    // thing the baseline is built from. A summary that failed costs the night's
-    // provenance and leaves it in the history; an index row that failed costs the
-    // night. So the state file stays when the index row did not land, and the
-    // relaunch resumes into it -- the cost of that is one duplicate index row if
-    // the write in fact succeeded and only its acknowledgement was lost, which is
-    // visible in the history rather than silent.
-    if (indexOk) {
-        mKernel.fs.remove(kStatePath);
-        mPath[0] = '\0';
-        mEpochs  = 0;
-    } else {
-        LOG_WARNING("index row for %s did not land; keeping the state file so "
-                    "the night is not lost\n", mPath);
-    }
+    // Last, so a *crash* anywhere above resumes the night rather than losing it.
+    // That much holds. But a refused write is not a crash: control reaches this
+    // line, and keeping the state file to protect the night would be worse than
+    // losing the index row. The relaunch resumes into a night that has already
+    // been summarised, and 07:00 is inside a 21:00-11:00 bedtime window, so the
+    // session stays open all morning appending the wearer's breakfast to last
+    // night's CSV and then files a "night" that ran until eleven. Splicing a
+    // morning onto a night is a worse outcome than a missing history row.
+    //
+    // So the night is closed either way, and what changes is that the failure is
+    // no longer silent: the caller raises `kWriteFailed`, the report's first line
+    // becomes INCOMPLETE, and the epoch CSV is still on the volume to be copied
+    // off. What is lost is the history row and the baseline sample, and a missing
+    // night in the history is visible.
+    mKernel.fs.remove(kStatePath);
+    mPath[0] = '\0';
+    mEpochs  = 0;
 
     return jsonOk && indexOk;
 }

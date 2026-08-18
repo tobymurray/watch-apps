@@ -78,6 +78,11 @@ namespace Interruption {
     constexpr uint16_t kDataGap    = 1u << 3;
     /// The night hit the maximum length the engine will score and was cut.
     constexpr uint16_t kTruncated  = 1u << 4;
+    /// A write to the epoch log or the resume state was refused. The record on
+    /// disk is shorter than this summary describes, and by an amount the summary
+    /// cannot state -- so the summary's own numbers are about minutes that were
+    /// measured and not about minutes that were kept.
+    constexpr uint16_t kWriteFailed = 1u << 5;
 }
 
 /**

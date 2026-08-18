@@ -46,6 +46,10 @@ const char *interruptionText(uint16_t bits)
     namespace I = Engine::Interruption;
     if (bits == 0)                { return nullptr; }
     if (bits & I::kCharging)      { return "INTERRUPTED - was charging"; }
+    // Ahead of the rest deliberately: the others say the night had a hole in it,
+    // and this one says the file does. Somebody about to copy a night off the
+    // watch needs to know that first.
+    if (bits & I::kWriteFailed)   { return "INCOMPLETE - could not write"; }
     if (bits & I::kResumed)       { return "INTERRUPTED - app restarted"; }
     if (bits & I::kClockJump)     { return "INTERRUPTED - clock changed"; }
     if (bits & I::kDataGap)       { return "INTERRUPTED - sensor gap"; }

@@ -412,7 +412,18 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
     mAcc.reset();
 
     if (mStore.isOpen()) {
-        mStore.appendEpoch(e, mFlags);
+        // Checked, because the alternative is a night whose record on disk stops
+        // a third of the way through while the summary keeps counting minutes in
+        // RAM -- and describes them as though they had been kept. The write is
+        // not retried: a volume that refused one row will refuse the next, and a
+        // retry loop on the recording path is a way to lose the whole night
+        // rather than part of it.
+        if (!mStore.appendEpoch(e, mFlags)) {
+            if ((mFlags & Engine::Interruption::kWriteFailed) == 0) {
+                LOG_WARNING("epoch write refused; the night is short from here\n");
+            }
+            mFlags |= Engine::Interruption::kWriteFailed;
+        }
     } else {
         // Idle: keep the epoch in the ring, so a night that opens on sustained
         // stillness can be backdated to the minutes it actually began in.
@@ -542,7 +553,9 @@ uint16_t Service::flushPreRoll(uint16_t scoringEpochs)
 
     for (size_t i = 0; i < want; ++i) {
         const Engine::Epoch &e = mPreRoll[(first + i) % kPreRollEpochs];
-        mStore.appendEpoch(e, mFlags);
+        if (!mStore.appendEpoch(e, mFlags)) {
+            mFlags |= Engine::Interruption::kWriteFailed;
+        }
 
         fold(e, acc, halves, steps);
         if (halves >= Engine::kEpochsPerScoringEpoch) {
@@ -741,8 +754,16 @@ void Service::closeNight(bool discard)
         mLastWokeAtMin   = localMinutes(wakeUtc);
     }
 
-    mStore.finishNight(s, Engine::RestfulnessBand::kMethod, mLastBandUsedHr,
-                       SleepLab::toString(mSettings.hrMode));
+    if (!mStore.finishNight(s, Engine::RestfulnessBand::kMethod, mLastBandUsedHr,
+                            SleepLab::toString(mSettings.hrMode))) {
+        // The summary or the index row did not land. The night happened and its
+        // numbers are real; what is missing is the file that would let anyone
+        // else read them, and the history row that would let this app. Said on
+        // the screen rather than only in a UART log nobody has attached.
+        LOG_WARNING("night could not be filed\n");
+        s.interruption |= Engine::Interruption::kWriteFailed;
+        mFlags         |= Engine::Interruption::kWriteFailed;
+    }
 
     // Rebuilt from the index, which now includes tonight. One source of truth:
     // there is no separate baseline file to fall out of step with it.

@@ -334,10 +334,12 @@ TEST(Resume, AResumedNightsTimesAreOnTheOriginalSessionsClock)
     second.keepFilesystem = true;
     second.stopAtMin      = -1;
     second.guiOpensAtEnd  = true;
-    // Twenty minutes on the charger: uptime climbs (the app restarted inside
-    // one boot) and the wall clock moves with it.
+    // Twenty minutes on the charger: uptime climbs (the app restarted inside one
+    // boot) and the wall clock moves with it. The sleeper carries on from where
+    // the first launch stopped rather than starting the evening again.
     second.startUptimeMs  = first.startUptimeMs + 170u * 60000u;
     second.startUtc       = kStart + 170 * 60;
+    second.phaseOffsetMin = 170;
     const Observations obs = Rig::instance().run(second);
 
     const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
@@ -373,9 +375,8 @@ TEST(Storage, AVolumeThatFillsMidNightIsSaidSoInTheMorning)
     const std::string full = theNightCsv(Rig::instance().fs);
     const size_t wholeNight = Rig::instance().fs.readFile(full).size();
 
-    Rig::instance().reset();
     // Fail every write once about a third of the night is on disk.
-    Rig::instance().fs.failWritesAfterBytes = wholeNight / 3;
+    s.failWritesAfterBytes = wholeNight / 3;
     const Observations obs = Rig::instance().run(s);
 
     const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
@@ -385,27 +386,30 @@ TEST(Storage, AVolumeThatFillsMidNightIsSaidSoInTheMorning)
            "reported itself clean";
 }
 
-TEST(Storage, ANightWhoseSummaryAndIndexBothFailIsNotForgotten)
+TEST(Storage, ANightThatCouldNotBeFiledSaysSoOnTheScreen)
 {
-    // The documented ordering is summary, then index row, then clear the state
-    // -- "so a crash anywhere above resumes the night rather than losing it".
-    // A crash is not the only way those writes fail. When both fail the state
-    // is cleared anyway, and the night is gone from the history with no way
-    // back and nothing that says it ever existed.
+    // Room for the epochs, none for the summary or the index row. The night is
+    // real, its numbers are real, and the two files that would let anyone else
+    // read them are missing -- so the one surface that still works has to say so.
+    // Nothing was reading `finishNight`'s return value.
     Scenario s = plainNight();
     const Observations warm = Rig::instance().run(s);
     (void)warm;
     const std::string full = theNightCsv(Rig::instance().fs);
     const size_t wholeNight = Rig::instance().fs.readFile(full).size();
 
-    Rig::instance().reset();
-    // Enough room for the epochs, none for the summary or the index row.
-    Rig::instance().fs.failWritesAfterBytes = wholeNight + 200;
-    Rig::instance().run(s);
+    s.failWritesAfterBytes = wholeNight + 200;
+    const Observations obs = Rig::instance().run(s);
 
-    EXPECT_TRUE(Rig::instance().fs.exist("night_state.txt"))
-        << "the summary and the index row both failed and the state file was "
-           "cleared regardless, so nothing on the volume knows a night ran";
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr);
+    EXPECT_TRUE(rep->interruption & Engine::Interruption::kWriteFailed)
+        << "the summary and the index row both failed and the report said the "
+           "night was clean";
+
+    // And the night is closed rather than left open to be spliced into the
+    // wearer's morning.
+    EXPECT_FALSE(Rig::instance().fs.exist("night_state.txt"));
 }
 
 TEST(Storage, AWholeNightLeaksNoFileHandle)

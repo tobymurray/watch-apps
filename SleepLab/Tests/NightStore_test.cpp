@@ -548,25 +548,38 @@ TEST(NightStore, AStateFileNamingAnOverlongPathIsRefused)
 // ---------------------------------------------------------------------------
 
 /// The documented ordering is: summary JSON, then index row, then clear the
-/// state -- "so a crash anywhere above resumes the night rather than losing
-/// it". The guarantee holds for a crash and not for a refused write: when both
-/// writes fail the state is removed anyway and the night is gone from the
-/// history with nothing on the volume that knows it happened.
-TEST(NightStore, ANightWhoseSummaryAndIndexBothFailKeepsItsStateFile)
+/// state -- "so a crash anywhere above resumes the night rather than losing it".
+/// That guarantee is about a crash, and it holds. A refused write is not a
+/// crash: control reaches the clear, so a volume with no room lost the night
+/// with nothing anywhere that said so.
+///
+/// Keeping the state file is *not* the remedy, and this test is here to pin that
+/// too: a relaunch would resume into a night that has already been summarised,
+/// and 07:00 is inside a 21:00-11:00 window, so the session would stay open all
+/// morning appending breakfast to last night's CSV. So the night closes either
+/// way and the caller is told, which is what `finishNight`'s return value is
+/// for -- and what nothing was reading.
+TEST(NightStore, ANightWhoseSummaryAndIndexBothFailReportsIt)
 {
     KernelFixture fx;
     NightStore store(fx.kernel);
     ASSERT_TRUE(store.beginNight(kStart, 1000));
     ASSERT_TRUE(store.appendEpoch(epoch(30000), 0));
     ASSERT_TRUE(fx.fileSystem.exist("night_state.txt"));
+    const std::string csv = store.path();
 
     // No room for anything more.
     fx.fileSystem.failWritesAfterBytes = fx.fileSystem.bytesWritten;
 
-    EXPECT_FALSE(store.finishNight(goodNight(), "band", true, "off"));
-    EXPECT_TRUE(fx.fileSystem.exist("night_state.txt"))
-        << "the summary and the index row both failed and the state file was "
-           "cleared regardless";
+    EXPECT_FALSE(store.finishNight(goodNight(), "band", true, "off"))
+        << "the summary and the index row both failed and finishNight said the "
+           "night was filed";
+
+    // The night is closed, not left open to be spliced into tomorrow.
+    EXPECT_FALSE(fx.fileSystem.exist("night_state.txt"));
+    EXPECT_FALSE(store.isOpen());
+    // And the record is still on the volume to be copied off.
+    EXPECT_TRUE(fx.fileSystem.exist(csv.c_str()));
 }
 
 /// FatFs's `f_close` keeps the FIL -- and its lock-table entry -- when the sync
