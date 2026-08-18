@@ -640,20 +640,43 @@ void Service::closeNight(bool discard)
     Engine::NightSummary s =
         Engine::NightAnalyser::analyse(mScoring, mVerdicts, n, gate, mFlags);
 
-    // Time in bed has to include the epochs recorded before this launch or
-    // before the backdate -- they are in the CSV and they were part of the
-    // night, they are simply not in the scoring array.
-    //
-    // Keyed on timeInBedMin rather than on hasSleep: a night that passed the
-    // gate but never contained ten consecutive sleep minutes still has a
-    // measured time in bed, and it should be the right one.
-    if (s.timeInBedMin != kAbsent && mEpochsNotInArray > 0) {
-        s.timeInBedMin += static_cast<int32_t>(mEpochsNotInArray);
-        if (s.totalSleepMin != kAbsent) {
-            s.efficiencyPct = (s.timeInBedMin > 0)
-                                  ? (s.totalSleepMin * 100 / s.timeInBedMin)
-                                  : kAbsent;
+    // Epochs that are part of the night and not in the scoring array: recorded
+    // before this launch, or backdated minutes the pre-roll ring could not give
+    // back. They all precede the array, so the array's index 0 is session
+    // minute `mEpochsNotInArray` -- and every index the summary reports has to
+    // be moved onto the session's axis before anything turns it into a time of
+    // day. Leaving them on the array's axis reported a resumed night's final
+    // wake 148 minutes early in the offline harness.
+    if (mEpochsNotInArray > 0) {
+        const int32_t offset = static_cast<int32_t>(mEpochsNotInArray);
+
+        // `epochs` and time in bed are the same count of the same minutes, and
+        // a summary whose two axes disagree cannot be read by anyone.
+        s.epochs += mEpochsNotInArray;
+
+        if (s.onsetEpoch     != kAbsent) { s.onsetEpoch     += offset; }
+        if (s.finalWakeEpoch != kAbsent) { s.finalWakeEpoch += offset; }
+        if (s.hrMinEpoch     != kAbsent) { s.hrMinEpoch     += offset; }
+
+        // Keyed on timeInBedMin rather than on hasSleep: a night that passed the
+        // gate but never contained ten consecutive sleep minutes still has a
+        // measured time in bed, and it should be the right one.
+        if (s.timeInBedMin != kAbsent) {
+            s.timeInBedMin += offset;
+            if (s.totalSleepMin != kAbsent) {
+                s.efficiencyPct = (s.timeInBedMin > 0)
+                                      ? (s.totalSleepMin * 100 / s.timeInBedMin)
+                                      : kAbsent;
+            }
         }
+
+        // Onset latency is session start to onset, and the epochs between them
+        // were never scored -- they are on disk from before the restart and not
+        // in RAM. So the first sleep this launch observed is not necessarily the
+        // night's onset, and a latency computed from it would be a number with a
+        // known sign of error and no way to bound it. Withheld rather than
+        // reported late.
+        s.onsetLatencyMin = kAbsent;
     }
 
     mLastBandUsedHr = Engine::RestfulnessBand::compute(mScoring, mVerdicts, n,
@@ -1131,8 +1154,17 @@ void Service::run()
     const SleepLab::ResumeState resume = mStore.readState(start, nowUtc);
     if (resume.present && mStore.resumeNight(resume)) {
         mFlags         = resume.flags;
-        mEpochsNotInArray = resume.epochs / Engine::kEpochsPerScoringEpoch;
-        mNightStartUtc = resume.wallUtc;
+        // Everything ahead of this launch's own first epoch: the epochs already
+        // on disk, plus the minutes of the night that passed while the app was
+        // not running. Both precede the scoring array, and both have to be
+        // counted or every time of day after the restart lands early.
+        mEpochsNotInArray =
+            resume.epochs / Engine::kEpochsPerScoringEpoch + resume.gapMinutes;
+        // The session's *start*, which is what the state file carries `startUtc`
+        // for. `wallUtc` is the clock at the last flush before the restart, and
+        // using it anchored every reported time of day to the middle of the
+        // night rather than to its beginning.
+        mNightStartUtc = resume.startUtc;
         mSegmenter.resumeOpen(static_cast<uint16_t>(mEpochsNotInArray));
         if (mSettings.rawRecording) {
             mRaw.start(mNightStartUtc, mSettings.rawMaxMb, mSettings.rawMaxMin);

@@ -176,8 +176,18 @@ ResumeState NightStore::readState(uint32_t nowMs, int64_t nowUtc)
     const int32_t elapsed = static_cast<int32_t>(nowMs - s.uptimeMs);
     if (elapsed < 0) {
         s.deviceRebooted = true;
+        // No uptime to measure the outage with -- it reset. The wall clock is
+        // the only witness, and it is allowed to be wrong; a gap it reports as
+        // negative or absurd is treated as unknown rather than as a correction.
+        if (nowUtc > 0 && s.wallUtc > 0 && nowUtc > s.wallUtc) {
+            const int64_t offMin = (nowUtc - s.wallUtc) / 60;
+            if (offMin > 0 && offMin < 24 * 60) {
+                s.gapMinutes = static_cast<uint32_t>(offMin);
+            }
+        }
     } else {
         s.appRestarted = true;
+        s.gapMinutes   = static_cast<uint32_t>(elapsed) / 60000u;
     }
 
     // A wall clock that moved by far more than uptime says it should have.

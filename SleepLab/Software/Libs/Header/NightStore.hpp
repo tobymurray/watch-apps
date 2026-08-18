@@ -130,6 +130,21 @@ struct ResumeState
     /// device restarted. Folded into the night's interruption flags.
     bool     deviceRebooted = false;
     bool     appRestarted   = false;
+
+    /// Minutes of the night that passed while the app was not running.
+    ///
+    /// Real minutes of the session with no record at all: not in the CSV,
+    /// because nothing was recording, and not in RAM either. They have to be
+    /// counted, because every epoch index the summary reports is turned into a
+    /// time of day by counting minutes from the session's start -- and a gap
+    /// nobody counted moves everything after it earlier by the length of the
+    /// gap. A USB session is normally about the length of a copy, and this is
+    /// what stops that length being subtracted from the night.
+    ///
+    /// Taken from uptime for an app restart, and from the wall clock for a
+    /// device reboot, which has no uptime to measure against. Zero when neither
+    /// clock can say.
+    uint32_t gapMinutes    = 0;
 };
 
 /**
