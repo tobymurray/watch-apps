@@ -65,6 +65,31 @@ void EpochCounter::add(uint32_t timestampMs, float x, float y, float z)
 {
     const float in[3] = { x, y, z };
 
+    // A sample that is not a number is not evidence, and it is worse than no
+    // evidence: the filter state deliberately survives an epoch boundary -- which
+    // is right, and which means one bad value reaches all five poles and every
+    // epoch after it for the rest of the night integrates to NaN. The saturation
+    // guard in closeEpoch() tests `>= kMax`, which NaN fails, so the conversion
+    // to uint32_t is undefined and in practice zero.
+    //
+    // Zero is the most dangerous value this class can emit. It is what a rigid
+    // object on furniture looks like and it is what the soundest sleep of the
+    // night looks like, and the sample count stays healthy either way -- so
+    // neither the recorder's data-gap flag nor the scorer's thin-epoch guard
+    // fires and nothing downstream can tell. Measured before this guard: count
+    // and peak both exactly 0, for every subsequent epoch, from one NaN.
+    //
+    // Dropped rather than clamped. There is no value to substitute: the
+    // accelerometer did not report a number, so the honest contribution is none,
+    // and `samples` not being incremented is what carries that forward -- an
+    // epoch that loses enough samples this way becomes a data gap, which is what
+    // it is.
+    for (int a = 0; a < 3; ++a) {
+        if (!std::isfinite(in[a])) {
+            return;
+        }
+    }
+
     if (!mPrimed) {
         // Seed at the current value rather than at zero. Starting from zero
         // would push a full 1 g step through the high-pass and emit a settling
@@ -147,9 +172,15 @@ void EpochCounter::closeEpoch(uint32_t &count, uint32_t &peak, uint16_t &samples
     // Saturate rather than wrap. A count that overflowed to a small number is
     // indistinguishable from a still epoch, and a still epoch is the thing the
     // whole scorer is looking for.
+    //
+    // The test is `!(v < kMax)` rather than `v >= kMax` so that a value which is
+    // neither -- a NaN that reached here despite the guard in add() -- saturates
+    // instead of being cast. Casting it is undefined and in practice yields
+    // zero, which is the one answer that must never come out of arithmetic that
+    // failed: saturated is wrong and obvious, zero is wrong and invisible.
     constexpr float kMax = 4.0e9f;
-    count = (scaledSum  >= kMax) ? 0xFFFFFFFFu : static_cast<uint32_t>(scaledSum);
-    peak  = (scaledPeak >= kMax) ? 0xFFFFFFFFu : static_cast<uint32_t>(scaledPeak);
+    count = !(scaledSum  < kMax) ? 0xFFFFFFFFu : static_cast<uint32_t>(scaledSum);
+    peak  = !(scaledPeak < kMax) ? 0xFFFFFFFFu : static_cast<uint32_t>(scaledPeak);
     samples = mSamples;
 
     for (int a = 0; a < 3; ++a) {
