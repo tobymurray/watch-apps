@@ -423,37 +423,38 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
         }
     }
 
-    // Fold into the scoring epoch in progress. Counts are SUMMED, not
-    // averaged: a count is an integral, so the integral over a minute is the
-    // sum of the integrals over its halves, and averaging would halve every
-    // count and quietly rescale the whole night.
-    mPendingScore.count   += e.count;
-    mPendingScore.samples =
-        static_cast<uint16_t>(mPendingScore.samples + e.samples);
+    fold(e, mPendingScore, mPendingHalves, mPendingSteps);
+    if (mPendingHalves >= Engine::kEpochsPerScoringEpoch) {
+        closeScoringEpoch();
+    }
+}
+
+void Service::fold(const Engine::Epoch &e, Engine::ScoringInput &into,
+                   uint8_t &halves, int32_t &steps)
+{
+    // Counts are SUMMED, not averaged: a count is an integral, so the integral
+    // over a minute is the sum of the integrals over its halves, and averaging
+    // would halve every count and quietly rescale the whole night.
+    into.count   += e.count;
+    into.samples  = static_cast<uint16_t>(into.samples + e.samples);
     // Worn is a mean of the halves; on the first half this is just the value.
-    mPendingScore.wornPct = static_cast<uint8_t>(
-        (mPendingScore.wornPct * mPendingHalves + e.wornPct) /
-        (mPendingHalves + 1));
+    into.wornPct  = static_cast<uint8_t>(
+        (into.wornPct * halves + e.wornPct) / (halves + 1));
     if (e.hrMeanX10 != static_cast<int16_t>(kAbsent)) {
-        mPendingScore.hrMeanX10 =
-            (mPendingScore.hrMeanX10 == static_cast<int16_t>(kAbsent))
+        into.hrMeanX10 =
+            (into.hrMeanX10 == static_cast<int16_t>(kAbsent))
                 ? e.hrMeanX10
-                : static_cast<int16_t>((mPendingScore.hrMeanX10 + e.hrMeanX10) / 2);
+                : static_cast<int16_t>((into.hrMeanX10 + e.hrMeanX10) / 2);
     }
 
     // Steps carry through to the scoring epoch, because that is where the
     // segmenter reads them and steps are the least ambiguous out-of-bed signal
     // there is. Summed across the halves; absent stays absent.
     if (e.stepDelta != kAbsent) {
-        mPendingSteps = (mPendingSteps == kAbsent)
-                            ? e.stepDelta
-                            : mPendingSteps + e.stepDelta;
+        steps = (steps == kAbsent) ? e.stepDelta : steps + e.stepDelta;
     }
 
-    mPendingHalves++;
-    if (mPendingHalves >= Engine::kEpochsPerScoringEpoch) {
-        closeScoringEpoch();
-    }
+    halves++;
 }
 
 void Service::closeScoringEpoch()
@@ -512,7 +513,7 @@ void Service::closeScoringEpoch()
     publishReport();
 }
 
-void Service::flushPreRoll(uint16_t scoringEpochs)
+uint16_t Service::flushPreRoll(uint16_t scoringEpochs)
 {
     // Two recording epochs per scoring epoch, bounded by what the ring holds.
     size_t want = static_cast<size_t>(scoringEpochs) *
@@ -522,11 +523,43 @@ void Service::flushPreRoll(uint16_t scoringEpochs)
     }
 
     const size_t first = (mPreRollNext + kPreRollEpochs - want) % kPreRollEpochs;
+
+    // The backdated minutes are written to the CSV *and* paired into the
+    // scoring array. Writing them without scoring them is what made a night
+    // with no awakenings at all report 95 % efficiency: they counted towards
+    // time in bed and could not count towards sleep, because the scorer never
+    // saw them. It also put the summary's epoch indices on a different axis
+    // from its durations, which reported every sleep onset and every final wake
+    // a quarter of an hour early.
+    //
+    // The last pair in the ring is the scoring epoch that opened the night --
+    // the caller appends that one itself, from the value it already holds -- so
+    // this stops one short of it.
+    const size_t pairs = want / Engine::kEpochsPerScoringEpoch;
+    Engine::ScoringInput acc {};
+    uint8_t halves = 0;
+    int32_t steps  = kAbsent;
+
     for (size_t i = 0; i < want; ++i) {
-        mStore.appendEpoch(mPreRoll[(first + i) % kPreRollEpochs], mFlags);
+        const Engine::Epoch &e = mPreRoll[(first + i) % kPreRollEpochs];
+        mStore.appendEpoch(e, mFlags);
+
+        fold(e, acc, halves, steps);
+        if (halves >= Engine::kEpochsPerScoringEpoch) {
+            if (mScoringCount + 1 < pairs &&
+                mScoringCount < Engine::kMaxScoringEpochs) {
+                mScoring[mScoringCount++] = acc;
+            }
+            acc    = Engine::ScoringInput{};
+            halves = 0;
+            steps  = kAbsent;
+        }
     }
-    LOG_INFO("backdated %u epochs into the night\n",
-             static_cast<unsigned>(want));
+
+    LOG_INFO("backdated %u epochs into the night, %u of them scored\n",
+             static_cast<unsigned>(want),
+             static_cast<unsigned>(mScoringCount));
+    return static_cast<uint16_t>(pairs);
 }
 
 
@@ -550,16 +583,24 @@ void Service::openNight(uint16_t backdateScoringEpochs)
     // minutes now being backdated into the night are part of the night.
     // mFlags stands.
 
+    uint16_t recovered = 0;
     if (!mStore.beginNight(mNightStartUtc, mKernel.sys.getTimeMs())) {
         LOG_WARNING("could not open a night file; recording to RAM only\n");
     } else {
-        flushPreRoll(backdateScoringEpochs);
+        recovered = flushPreRoll(backdateScoringEpochs);
     }
 
-    // The backdated scoring epochs are in the CSV but not in the scoring
-    // array: the ring holds Epochs, and re-pairing them here would duplicate
-    // the pairing logic. They are counted instead, so time in bed is right.
-    mEpochsNotInArray = backdateScoringEpochs;
+    // Whatever the ring could not give back. Zero in every ordinary night --
+    // the ring holds twice `stillnessToOpenMin` scoring epochs -- and non-zero
+    // only when the night file could not be created at all, or when the service
+    // had started so recently that the ring had not filled. Those minutes were
+    // part of the session and have no record, so they count towards time in bed
+    // and mark the night as having a hole in it.
+    if (recovered < backdateScoringEpochs) {
+        mEpochsNotInArray =
+            static_cast<uint32_t>(backdateScoringEpochs - recovered);
+        mFlags |= Engine::Interruption::kDataGap;
+    }
 
     if (mSettings.rawRecording) {
         mRaw.start(mNightStartUtc, mSettings.rawMaxMb, mSettings.rawMaxMin);

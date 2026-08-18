@@ -144,8 +144,23 @@ private:
     /// and check the alarm.
     void closeScoringEpoch();
 
-    /// Write the pre-roll ring into a night that has just opened.
-    void flushPreRoll(uint16_t epochs);
+    /**
+     * @brief Write the pre-roll ring into a night that has just opened, and
+     *        pair it into the scoring array.
+     *
+     * @return Scoring epochs the ring was able to give back, which is normally
+     *         all of them. The caller counts the shortfall, if any.
+     */
+    uint16_t flushPreRoll(uint16_t epochs);
+
+    /// Fold one recording epoch into a scoring epoch under construction.
+    ///
+    /// One function rather than two, because the live path and the pre-roll
+    /// replay must agree exactly: a night whose first quarter hour was summed by
+    /// slightly different arithmetic from the rest of it would have a seam in
+    /// it that nothing downstream could see.
+    static void fold(const Engine::Epoch &e, Engine::ScoringInput &into,
+                     uint8_t &halves, int32_t &steps);
 
     // -- Night lifecycle ------------------------------------------------------
 
