@@ -2,3 +2,4 @@
 build/
 # Packed apps land here; they are outputs, not sources.
 *.uapp
+SleepLab/**/build/
