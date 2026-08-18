@@ -90,6 +90,37 @@ NightSummary NightAnalyser::analyse(const ScoringInput *in, const Verdict *v,
         }
     }
 
+    // Delivery, not sleep -- so it is filled before the gate and stays filled for
+    // a night whose sleep numbers are suppressed. A night that failed the gate is
+    // exactly the night somebody needs to know the delivered rate of.
+    {
+        uint16_t counts[kMaxScoringEpochs];
+        size_t   have = 0;
+        for (size_t i = 0; i < n && i < kMaxScoringEpochs; ++i) {
+            counts[have++] = in[i].samples;
+        }
+        if (have > 0) {
+            // Insertion sort: a night is at most 960 entries, once.
+            for (size_t i = 1; i < have; ++i) {
+                const uint16_t v = counts[i];
+                size_t j = i;
+                while (j > 0 && counts[j - 1] > v) {
+                    counts[j] = counts[j - 1];
+                    --j;
+                }
+                counts[j] = v;
+            }
+            s.accSamplesMin    = static_cast<int32_t>(counts[0]);
+            s.accSamplesMedian = static_cast<int32_t>(counts[(have - 1) / 2]);
+            // Over the scoring epoch's own nominal length, which is what the
+            // pairing guarantees; a *stalled* epoch is visible in the CSV's own
+            // span_ms and is what the data-gap flag is for.
+            s.accHzX10 = static_cast<int32_t>(
+                s.accSamplesMedian * 10 /
+                static_cast<int32_t>(kScoringEpochMs / 1000));
+        }
+    }
+
     // ---- The gate ----------------------------------------------------------
     //
     // This is where the honesty contract is actually enforced, and it is one

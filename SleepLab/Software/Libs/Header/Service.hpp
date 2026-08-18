@@ -75,9 +75,11 @@
 #include "Engine/SleepWakeScorer.hpp"
 
 #include "Commands.hpp"
+#include "Diag.hpp"
 #include "NightStore.hpp"
 #include "RawRecorder.hpp"
 #include "Settings.hpp"
+#include "WallClock.hpp"
 
 /**
  * @brief The recorder.
@@ -125,6 +127,10 @@ private:
     // -- Lifecycle ------------------------------------------------------------
 
     void connectSensors();
+    /// Write the resolved-driver block to the diagnostic log, in the probe's own
+    /// single-letter form. This is the one line that would have caught
+    /// TOUCH_DETECT and SPO2 without spending a night on either.
+    void logSensors();
     void disconnectSensors();
     /// Drive the heart-rate duty cycle. Returns ms to the next transition, or 0.
     uint32_t pumpHrDuty(uint32_t now);
@@ -143,20 +149,44 @@ private:
     /// and check the alarm.
     void closeScoringEpoch();
 
-    /// Write the pre-roll ring into a night that has just opened.
-    void flushPreRoll(uint16_t epochs);
+    /**
+     * @brief Write the pre-roll ring into a night that has just opened, and
+     *        pair it into the scoring array.
+     *
+     * @return Scoring epochs the ring was able to give back, which is normally
+     *         all of them. The caller counts the shortfall, if any.
+     */
+    uint16_t flushPreRoll(uint16_t epochs);
+
+    /// Fold one recording epoch into a scoring epoch under construction.
+    ///
+    /// One function rather than two, because the live path and the pre-roll
+    /// replay must agree exactly: a night whose first quarter hour was summed by
+    /// slightly different arithmetic from the rest of it would have a seam in
+    /// it that nothing downstream could see.
+    static void fold(const Engine::Epoch &e, Engine::ScoringInput &into,
+                     uint8_t &halves, int32_t &steps);
 
     // -- Night lifecycle ------------------------------------------------------
 
     void openNight(uint16_t backdateScoringEpochs);
     void closeNight(bool discard);
+    /// Raise the write-failure flag, and say so once on the volume.
+    void noteWriteFailure(const char *where);
 
     // -- Alarm ----------------------------------------------------------------
 
     /// Fire if the smart window is open and the wearer looks awake, or if the
     /// hard deadline has arrived.
     void checkAlarm();
-    void playAlarm();
+    /// @param why      Which path fired: "deadline" or "smart-window".
+    /// @param atEpoch  The epoch whose verdict fired it, or -1 for the deadline.
+    ///
+    /// Both are recorded on the volume. An alarm is the one output whose silent
+    /// failure is worse than its absence, and it used to leave no trace at all --
+    /// so "it did not go off" and "it went off and you slept through it" were the
+    /// same observation in the morning.
+    void playAlarm(const char *why, int32_t atEpoch);
 
     // -- Glance and home widget -------------------------------------------------
     //
@@ -190,6 +220,7 @@ private:
     SleepLab::Settings  mSettings;
     SleepLab::NightStore mStore;
     SleepLab::RawRecorder mRaw;
+    SleepLab::Diag        mDiag;
 
     /// Counters for the recording epoch in progress.
     Accum mAcc;
@@ -230,6 +261,23 @@ private:
     Engine::Restfulness  mBand[Engine::kMaxScoringEpochs];
     size_t               mScoringCount = 0;
 
+    /// The wall clock at each scoring epoch's *end*, or -1 where it was
+    /// unreadable. Taken from the recording epoch that closed it.
+    ///
+    /// Recorded rather than computed. A time of day derived as "session start
+    /// plus index times sixty" is only right while the array index and the
+    /// session minute are the same number, and three ordinary things break that:
+    /// epochs recorded before a restart, minutes that passed while the app was
+    /// not running, and a loop that woke late and skipped a grid slot. Each of
+    /// those puts a step in the map, and a step in the map moves every event
+    /// after it earlier by the length of the step -- silently, in the one figure
+    /// a person reads off the screen.
+    ///
+    /// 7.7 KB against ~20 KB of night already held in RAM, to make the answer
+    /// structurally right instead of right until the next thing that skips a
+    /// minute.
+    int64_t              mScoringWallEnd[Engine::kMaxScoringEpochs] = {};
+
     /// Recording epochs kept while idle, so a backdated open can recover the
     /// minutes that were already part of the night. Two per scoring epoch.
     static constexpr size_t kPreRollEpochs = 2 * 30;
@@ -265,7 +313,24 @@ private:
     // -- Night state ----------------------------------------------------------
 
     uint16_t mFlags        = 0;   ///< Engine::Interruption bits for this night.
+
+    /// Whether a night is in progress, which is a question about the *session* and
+    /// not about the file.
+    ///
+    /// `mStore.isOpen()` was standing in for this, and it is a different question:
+    /// a night whose CSV could not be created has no open file and is still a
+    /// night. Gating the scoring array on the file meant an unwritable volume
+    /// produced no record and no report either -- the log said "recording to RAM
+    /// only" and nothing was recorded at all.
+    bool     mSessionOpen  = false;
     int64_t  mNightStartUtc = -1;
+    /// Recording epochs the loop lost: it woke later than a whole epoch and
+    /// advanced the grid past the slots it had missed. Real minutes of the night
+    /// with no record, so they count towards time in bed and mark the night as
+    /// having a gap -- what they must not do is shorten it. Counted in halves
+    /// because that is the grid they were lost from.
+    uint32_t mHalvesLost = 0;
+
     /// Scoring epochs that are part of the night but not in `mScoring`.
     ///
     /// Two causes, both meaning the same thing to the summary: epochs
@@ -281,6 +346,10 @@ private:
 
     // -- Clocks ---------------------------------------------------------------
 
+    /// The wall clock at the last recording epoch's end, so the scoring epoch it
+    /// closes can be stamped with a clock that was read rather than derived.
+    int64_t  mLastEpochWallUtc = -1;
+
     uint32_t mNextEpochAt  = 0;
     uint32_t mEpochOpenedAt = 0;
     bool     mHrDutyOn     = false;
@@ -293,6 +362,10 @@ private:
     /// The last completed night, kept so the morning report survives the
     /// service moving on. Cleared only when a new night closes.
     Engine::NightSummary mLastSummary {};
+    /// Verdicts actually computed for the last night, which is `mLastSummary`'s
+    /// epoch count only for a night that did not resume -- and is what bounds
+    /// the strip, because there are no verdicts past it.
+    size_t               mLastScoredCount = 0;
     bool                 mHaveReport   = false;
     bool                 mLastBandUsedHr = false;
     int16_t              mLastAsleepAtMin = -1;

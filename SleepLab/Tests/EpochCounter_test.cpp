@@ -17,6 +17,8 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstdlib>
+#include <limits>
 
 #include "Engine/EpochCounter.hpp"
 
@@ -357,3 +359,166 @@ TEST(EpochCounter, PeakSeparatesOneHardMovementFromContinuousFidgeting)
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// Hostile input
+// ---------------------------------------------------------------------------
+
+/// A count of exactly zero is the most dangerous value this class can produce:
+/// it is what a rigid object on furniture looks like, it is what the soundest
+/// sleep of the night looks like, and it is indistinguishable from either.
+///
+/// The filter state deliberately survives `closeEpoch()` -- which is right, and
+/// which means one bad sample is not one bad epoch. A single non-finite value
+/// propagates into all five filter poles and every subsequent epoch integrates
+/// to NaN, whose conversion to `uint32_t` is undefined and in practice zero.
+/// The sample count stays healthy, so neither the recorder's data-gap flag nor
+/// the scorer's thin-epoch guard notices, and the rest of the night is scored
+/// as perfect stillness.
+TEST(EpochCounter, ANonFiniteSampleDoesNotSilenceTheRestOfTheNight)
+{
+    const uint32_t kPeriodMs = 21;   // ~48 Hz, the delivered rate
+    const size_t   perEpoch  = 30000 / kPeriodMs;
+
+    Engine::EpochCounter c;
+    uint32_t count = 0, peak = 0;
+    uint16_t samples = 0;
+
+    // A clear, ordinary movement: 0.05 g at 1 Hz.
+    auto feedEpoch = [&](size_t base, bool injectNaN) {
+        for (size_t k = 0; k < perEpoch; ++k) {
+            const uint32_t ts = static_cast<uint32_t>((base + k) * kPeriodMs);
+            float x = 0.05f * std::sin(6.28318530718f *
+                                       static_cast<float>(ts) * 0.001f);
+            if (injectNaN && k == 10) {
+                x = std::numeric_limits<float>::quiet_NaN();
+            }
+            c.add(ts, x, 0.0f, 1.0f);
+        }
+        c.closeEpoch(count, peak, samples);
+    };
+
+    feedEpoch(0, false);
+    const uint32_t clean = count;
+    ASSERT_GT(clean, 100u) << "the fixture is not producing a count to lose";
+
+    feedEpoch(perEpoch, true);          // one NaN, somewhere in this epoch
+    feedEpoch(perEpoch * 2, false);     // and then two entirely clean ones
+    const uint32_t afterOne = count;
+    feedEpoch(perEpoch * 3, false);
+    const uint32_t afterTwo = count;
+
+    // The epochs *after* the bad sample are the finding. A single glitch may
+    // cost its own epoch; it must not cost the night.
+    EXPECT_NEAR(afterOne, clean, clean / 2)
+        << "the epoch after a non-finite sample counted " << afterOne
+        << " against " << clean << " for identical movement";
+    EXPECT_NEAR(afterTwo, clean, clean / 2)
+        << "two epochs later the counter is still producing " << afterTwo;
+}
+
+TEST(EpochCounter, AnInfiniteSampleIsRejectedRatherThanSaturating)
+{
+    // The saturation guard tests `scaledSum >= kMax`, which is true for
+    // infinity and false for NaN -- so an infinity saturates the epoch to
+    // 0xFFFFFFFF, which is at least loud, and then leaves the filter state
+    // infinite so every later epoch is NaN, which is silent.
+    const uint32_t kPeriodMs = 21;
+    Engine::EpochCounter c;
+    uint32_t count = 0, peak = 0;
+    uint16_t samples = 0;
+
+    for (uint32_t k = 0; k < 200; ++k) {
+        float x = 0.05f * std::sin(6.28318530718f *
+                                   static_cast<float>(k * kPeriodMs) * 0.001f);
+        if (k == 50) { x = std::numeric_limits<float>::infinity(); }
+        c.add(k * kPeriodMs, x, 0.0f, 1.0f);
+    }
+    c.closeEpoch(count, peak, samples);
+
+    for (uint32_t k = 200; k < 400; ++k) {
+        const float x = 0.05f * std::sin(6.28318530718f *
+                                         static_cast<float>(k * kPeriodMs) * 0.001f);
+        c.add(k * kPeriodMs, x, 0.0f, 1.0f);
+    }
+    c.closeEpoch(count, peak, samples);
+
+    EXPECT_GT(count, 0u) << "an infinite sample silenced the counter for good";
+    EXPECT_LT(count, 0xFFFFFFFFu) << "the counter is stuck saturated";
+}
+
+/// The validation table in `Docs/FEASIBILITY-LEDGER.md` claims "independence
+/// from the delivered sample rate across a 4x span". Measured, against a 0.5 Hz
+/// sinusoid of fixed amplitude, counts per 60 s scoring epoch:
+///
+///     96.0 Hz   291        6.0 Hz   221
+///     48.0 Hz   286        4.8 Hz   212
+///     25.0 Hz   277        3.0 Hz   187
+///     12.5 Hz   259        2.0 Hz   149
+///
+/// So the claim holds in the upper half of the range and not below it. The cause
+/// is the filters themselves rather than the integration: a one-pole high-pass
+/// re-coefficiented as `a = tau / (tau + dt)` stops approximating its continuous
+/// form once dt is comparable to tau, and at dt = 0.5 s the 0.25 Hz corner
+/// attenuates the passband threefold. The dt-weighted integral does its job --
+/// the count is not *proportional* to the rate, which is the failure the header
+/// warns about -- but it is not flat either.
+///
+/// The direction matters: a rate that drops makes every count in the night
+/// smaller, and a smaller count reads as a quieter night, which reads as more
+/// sleep. Same direction as actigraphy's own bias again.
+///
+/// This test pins the shape rather than the values, so it fails if the filter
+/// changes and does not fail because a compiler rounded differently. It is here
+/// so the ledger row can cite a measurement instead of a claim.
+TEST(EpochCounter, TheCountIsOnlyRateIndependentInTheUpperHalfOfTheRange)
+{
+    auto countAt = [](double hz) {
+        const double dtMs = 1000.0 / hz;
+        Engine::EpochCounter c;
+        uint32_t count = 0, peak = 0;
+        uint16_t samples = 0;
+        const int per = static_cast<int>(60000.0 / dtMs);
+        long total = 0;
+        int taken = 0;
+        for (int e = 0; e < 4; ++e) {
+            for (int i = 0; i < per; ++i) {
+                const int k = e * per + i;
+                const double t = k * dtMs / 1000.0;
+                c.add(static_cast<uint32_t>(llround(k * dtMs)),
+                      static_cast<float>(0.01 * std::sin(2.0 * M_PI * 0.5 * t)),
+                      0.0f, 1.0f);
+            }
+            c.closeEpoch(count, peak, samples);
+            if (e >= 2) { total += count; ++taken; }   // let the filters settle
+        }
+        return total / taken;
+    };
+
+    const long at48   = countAt(48.0);
+    const long at25   = countAt(25.0);
+    const long at12_5 = countAt(12.5);
+    const long at4_8  = countAt(4.8);
+
+    ASSERT_GT(at48, 100) << "the fixture produces no count to compare";
+
+    // The claim, in the range where it holds: 48 Hz to 12.5 Hz is a ~4x span and
+    // the counts agree within 10 %.
+    EXPECT_LE(std::abs(at48 - at12_5) * 100 / at48, 10)
+        << at48 << " at 48 Hz against " << at12_5 << " at 12.5 Hz";
+    EXPECT_LE(std::abs(at48 - at25) * 100 / at48, 5)
+        << at48 << " at 48 Hz against " << at25 << " at 25 Hz";
+
+    // And the limit of it, pinned so nobody re-reads the claim as unconditional.
+    // A tenth of the delivered rate loses a fifth of the count or more.
+    EXPECT_GE((at48 - at4_8) * 100 / at48, 15)
+        << "4.8 Hz counted " << at4_8 << " against " << at48
+        << " at 48 Hz; if this has become flat the filter has changed and the "
+           "ledger row can be strengthened";
+
+    // Monotonic: a lower rate never counts *more*. A non-monotonic response would
+    // mean a night's counts could move either way with delivery, which is worse
+    // than moving one way.
+    EXPECT_LE(at12_5, at25 + 2);
+    EXPECT_LE(at4_8, at12_5 + 2);
+}

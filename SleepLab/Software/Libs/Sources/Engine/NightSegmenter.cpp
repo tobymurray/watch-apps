@@ -56,7 +56,15 @@ NightSegmenter::Update NightSegmenter::closeNow(bool clockJumped)
 void NightSegmenter::resumeOpen(uint16_t epochsSoFar)
 {
     mState         = State::Open;
-    mSessionEpochs = epochsSoFar;
+    // Clamped, because this number comes off disk. `night_state.txt` is parsed
+    // with an unbounded `%lu` and is rewritten 1 900 times a night, so a corrupt
+    // count is reachable -- and 65 535 would take one increment to wrap the
+    // counter to zero, after which the session is below `minSessionMin` and cannot
+    // close on activity, cannot close on the length bound, and runs until the
+    // clock takes it out of the window. If it ever does.
+    mSessionEpochs = (mCfg.maxSessionMin > 0 && epochsSoFar > mCfg.maxSessionMin)
+                         ? mCfg.maxSessionMin
+                         : epochsSoFar;
     mStillRun      = 0;
     // Deliberately zero, not carried: whatever the wearer was doing before the
     // restart is not evidence about now, and a resumed session that inherited a
@@ -130,7 +138,10 @@ NightSegmenter::Update NightSegmenter::update(int16_t localMin, bool worn,
 
     // -- Open ----------------------------------------------------------------
 
-    mSessionEpochs++;
+    // Saturating, so the length bound below is reached rather than jumped over.
+    if (mSessionEpochs < 0xFFFFu) {
+        mSessionEpochs++;
+    }
 
     // Leaving the window ends the session unconditionally. A session still
     // open at 11:00 has stopped being a night whatever the accelerometer says,
@@ -141,6 +152,14 @@ NightSegmenter::Update NightSegmenter::update(int16_t localMin, bool worn,
     // control would be the wrong trade.
     if (localMin >= 0 &&
         !inWindow(localMin, mCfg.windowStartMin, mCfg.windowEndMin)) {
+        return closeNow(u.clockJumped);
+    }
+
+    // The backstop, before anything that can be defeated by an unreadable clock
+    // or by a wrist that never moves. A session at this length has stopped being
+    // a night whatever every other signal says, and the alternative to ending it
+    // is a counter that wraps -- see maxSessionMin.
+    if (mCfg.maxSessionMin > 0 && mSessionEpochs >= mCfg.maxSessionMin) {
         return closeNow(u.clockJumped);
     }
 

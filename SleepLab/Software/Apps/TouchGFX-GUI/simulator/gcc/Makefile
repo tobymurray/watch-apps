@@ -37,6 +37,8 @@ ADDITIONAL_SOURCES_UNA :=\
 ../../Libs/Sources/NightStore.cpp\
 ../../Libs/Sources/RawRecorder.cpp\
 ../../Libs/Sources/Settings.cpp\
+../../Libs/Sources/WallClock.cpp\
+../../Libs/Sources/Diag.cpp\
 ../../Libs/Sources/Engine/BaselineStore.cpp\
 ../../Libs/Sources/Engine/EpochCounter.cpp\
 ../../Libs/Sources/Engine/NightSegmenter.cpp\

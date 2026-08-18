@@ -174,11 +174,16 @@ public:
 
     /// Window weights, in order A-4, A-3, A-2, A-1, A0, A+1, A+2.
     ///
-    /// Transcribed from the literature and NOT verified here against Cole et
-    /// al. 1992 -- ledger row A8. The shape is the part that matters and is
-    /// unmistakable: the current epoch dominates at 230, the immediate
-    /// neighbours contribute a third as much, and the tail four minutes back
-    /// still carries weight because waking is a gradual thing.
+    /// Checked against two independent reference implementations -- pyActigraphy
+    /// and `actigraph.sleepr`, which both cite p. 466 of Cole et al. 1992 and both
+    /// carry exactly these seven weights with P = 0.001, this window, and sleep
+    /// below the threshold. Not checked against the paper itself; ledger row A8
+    /// says what that is and is not worth.
+    ///
+    /// The shape is the part that matters and is unmistakable: the current epoch
+    /// dominates at 230, the immediate neighbours contribute a third as much, and
+    /// the tail four minutes back still carries weight because waking is a gradual
+    /// thing.
     static constexpr float kWeights[7] = { 106.0f, 54.0f, 58.0f, 76.0f,
                                            230.0f, 74.0f, 67.0f };
 
@@ -189,10 +194,15 @@ public:
     static constexpr int kLookAhead = 2;
 
     /// Overall scale factor P. Published alongside the weights above; same
-    /// caveat, same ledger row.
+    /// corroboration, same ledger row.
     static constexpr float kP = 0.001f;
 
     /// Threshold on D. Sleep below, wake at or above.
+    ///
+    /// The direction is asserted in the tests, not only stated here. Inverting it
+    /// inverts every verdict in every night and the output would still look like a
+    /// night -- and one widely-read reference does describe it the other way
+    /// round, which is how a reader could talk themselves into flipping it.
     static constexpr float kThreshold = 1.0f;
 
     /// Bridge between this device's count units and the units Cole-Kripke's
@@ -219,6 +229,19 @@ public:
     /// That is a plausible operating point for the difference between a
     /// settled sleeper and someone awake and shifting, and it is nothing more
     /// than plausible. It has never been compared against a person.
+    ///
+    /// One further thing the reference implementations do and this does not: their
+    /// device-to-paper bridge *saturates*. `actigraph.sleepr` maps ActiGraph
+    /// counts with `min(axis1 / 100, 300)`, so an epoch above the ceiling
+    /// contributes as though it were at it. A linear scale with no ceiling lets
+    /// one violent minute dominate the windows of the four epochs after it and the
+    /// two before it, which manufactures wake around every turn-over.
+    ///
+    /// Not added, because the ceiling is only meaningful in the units this
+    /// constant is supposed to bridge to, and this constant is a guess -- a ceiling
+    /// derived from a guess is a second guess wearing the first one's authority. It
+    /// goes in with the calibration, from the same ten diary nights, and the
+    /// ledger's A9 row says so.
     static constexpr float kCountScale = 0.0055f;
 
     // -- Webster rescoring ---------------------------------------------------
@@ -239,9 +262,21 @@ public:
 
     /// Rules 4-5: a sleep block no longer than `sleepMinutes`, with at least
     /// `wakeMinutes` of wake on *both* sides, is rescored as wake.
+    ///
+    /// Rule 4's wake requirement is **15**, not 10. It was transcribed as 10, and
+    /// 10 is a looser precondition -- so the rule fired on patterns the published
+    /// one leaves alone, and short sleep bouts became wake that should have stayed
+    /// sleep. The direction is *against* actigraphy's own bias rather than with
+    /// it, which is why it would not have shown up as an implausible night: it
+    /// made the app under-report sleep in a way that looked like conservatism.
+    ///
+    /// Checked against pyActigraphy's documentation of the rules it implements and
+    /// against the actigraphy-algorithm survey literature, which agree. Not
+    /// against Webster et al. 1982 itself -- see ledger row A8 for what that
+    /// distinction is worth.
     struct ShortBoutRule { int sleepMinutes; int wakeMinutes; };
     static constexpr ShortBoutRule kShortBoutRules[2] = {
-        {  6, 10 },
+        {  6, 15 },
         { 10, 20 },
     };
 

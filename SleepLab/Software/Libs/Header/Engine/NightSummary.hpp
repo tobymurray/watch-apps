@@ -78,6 +78,11 @@ namespace Interruption {
     constexpr uint16_t kDataGap    = 1u << 3;
     /// The night hit the maximum length the engine will score and was cut.
     constexpr uint16_t kTruncated  = 1u << 4;
+    /// A write to the epoch log or the resume state was refused. The record on
+    /// disk is shorter than this summary describes, and by an amount the summary
+    /// cannot state -- so the summary's own numbers are about minutes that were
+    /// measured and not about minutes that were kept.
+    constexpr uint16_t kWriteFailed = 1u << 5;
 }
 
 /**
@@ -180,6 +185,27 @@ struct NightSummary
     /// informative as its value, and both are personal.
     int32_t hrMinEpoch      = kAbsent;
     size_t  hrEpochs        = 0;       ///< Epochs a heart rate contributed to.
+
+    // -- What the night was built from ----------------------------------------
+    //
+    // Delivery statistics, not sleep. They are here because a night cannot be
+    // diagnosed from its numbers alone: a count is only comparable with another
+    // count taken at a similar delivered rate, and the rate is neither the
+    // requested one nor constant. Measured on hardware, the accelerometer runs at
+    // about 48 Hz against a requested 25 (ledger row S3); measured in host tests,
+    // a count at a tenth of that is a fifth smaller. So a night whose rate
+    // differs from the last one's is not directly comparable with it, and the
+    // only way to know is for each night to say.
+
+    /// Accelerometer samples in the thinnest and the typical scoring epoch of the
+    /// night, and the delivered rate that implies. Absent when nothing was
+    /// delivered at all.
+    int32_t accSamplesMin    = kAbsent;
+    int32_t accSamplesMedian = kAbsent;
+    /// Delivered accelerometer rate across the night, Hz x10, from the median
+    /// epoch's sample count over its own span -- never from a sample count over a
+    /// nominal epoch length, which would make a stalled epoch look like a slow one.
+    int32_t accHzX10         = kAbsent;
 };
 
 /**
@@ -203,9 +229,11 @@ public:
     /// that one asks "is anything alive here at all", this one asks "did the
     /// sleeper move". Sharing a constant between the two would tie a
     /// restlessness measure to a hardware-plausibility threshold.
-    /// TODO: set from a diary-validated night -- the value should put a settled
-    /// sleeper's epochs below it and a turn-over above it. 40 is a guess
-    /// against EpochCounter's scale.
+    /// TODO: set from a diary-validated night recorded **with SleepLab**, whose
+    /// epoch CSV carries the `count` column this is expressed in -- the value
+    /// should put a settled sleeper's epochs below it and a turn-over above it.
+    /// `ROLLOUT.md` phases 3 and 4. 40 is a guess against EpochCounter's scale,
+    /// which measures out at about 1.3 mg of 1 Hz wrist movement.
     static constexpr uint32_t kMovementFloor = 40;
 
     /**

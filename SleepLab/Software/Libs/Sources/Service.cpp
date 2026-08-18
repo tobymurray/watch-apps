@@ -9,6 +9,7 @@
 
 #include "Service.hpp"
 
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 
@@ -81,18 +82,72 @@ constexpr char kGlanceName[] = "Sleep Lab";
 /// Read for *labelling only*. No duration anywhere in this app comes from two
 /// wall-clock readings: the clock can jump on a timezone change, a host sync or
 /// DST, and a jump would silently rewrite an interval.
-int16_t localMinutes(std::time_t utc)
+int16_t localMinutes(int64_t utc)
 {
     if (utc <= 0) {
         return -1;
     }
+    std::time_t t = static_cast<std::time_t>(utc);
     std::tm local {};
 #if defined(_WIN32) || defined(_WIN64)
-    if (localtime_s(&local, &utc) != 0) { return -1; }
+    if (localtime_s(&local, &t) != 0) { return -1; }
 #else
-    if (localtime_r(&utc, &local) == nullptr) { return -1; }
+    if (localtime_r(&t, &local) == nullptr) { return -1; }
 #endif
     return static_cast<int16_t>(local.tm_hour * 60 + local.tm_min);
+}
+
+/// Days from 1970-01-01 to the given proleptic Gregorian date.
+///
+/// The standard shift-the-epoch-to-March algorithm, so February and leap years
+/// fall out of the arithmetic instead of being special cases. Integer only: there
+/// is no `timegm` in the watch's newlib, and a routine that exists on the host and
+/// not on the target is a routine that compiles in every build except the one that
+/// ships.
+int32_t daysFromCivil(int y, unsigned m, unsigned d)
+{
+    y -= (m <= 2) ? 1 : 0;
+    const int      era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned yoe = static_cast<unsigned>(y - era * 400);          // 0..399
+    const unsigned doy = (153u * (m + (m > 2 ? -3 : 9)) + 2u) / 5u + d - 1u;
+    const unsigned doe = yoe * 365u + yoe / 4u - yoe / 100u + doy;      // 0..146096
+    return static_cast<int32_t>(era) * 146097 +
+           static_cast<int32_t>(doe) - 719468;
+}
+
+/// The night's own local calendar day, as a count of whole days.
+///
+/// A night's identity is the local evening it began -- that is what names its
+/// file, normatively, and `NightStore.hpp` says why: "a UTC stem would name half
+/// the year's nights with the wrong date". The history list has to agree with the
+/// filenames or the two cannot be matched to a diary, which is the one thing the
+/// calibration needs them for.
+///
+/// `startUtc / 86400` is not that. West of UTC a 23:00 bedtime is already the next
+/// UTC day, so every night in the Americas was listed under tomorrow. The GUI's
+/// side of the contract was already right -- it renders with `gmtime` precisely
+/// because "the value is already a whole local day" -- and this is the half that
+/// was not making it true.
+int32_t localDays(int64_t utc)
+{
+    if (utc <= 0) {
+        return 0;
+    }
+    std::time_t t = static_cast<std::time_t>(utc);
+    std::tm local {};
+#if defined(_WIN32) || defined(_WIN64)
+    if (localtime_s(&local, &t) != 0) { return 0; }
+#else
+    if (localtime_r(&t, &local) == nullptr) { return 0; }
+#endif
+    // The local calendar day as a day number, so the GUI's gmtime renders the
+    // local date back out. Computed from the fields the zone already resolved
+    // rather than by subtracting an offset, which keeps DST out of it.
+    //
+    // Arithmetic rather than `timegm`, which is a GNU extension the watch's newlib
+    // does not have -- found by the ARM build, which is the only place that could
+    // find it: the host tests and the simulator both link glibc.
+    return daysFromCivil(local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
 }
 
 } // namespace
@@ -103,6 +158,7 @@ Service::Service(SDK::Kernel &kernel)
     , mSettings()
     , mStore(kernel)
     , mRaw(kernel)
+    , mDiag(kernel)
     , mCounter()
     , mSegmenter()
     , mBaseline()
@@ -142,6 +198,32 @@ void Service::connectSensors()
         mHrEx.connect();
         mHrDutyOn = true;
     }
+}
+
+void Service::logSensors()
+{
+    // Upper case resolved, lower case did not. The same encoding the probe puts on
+    // its screen, because that block is what turned two ledger rows over in two
+    // minutes on hardware: a lower-case letter means `connect()` was called and
+    // there was nothing to subscribe to, which is a different problem from a
+    // sensor that resolved and then said nothing.
+    struct Entry { const char letter; SDK::Sensor::Connection &conn; };
+    Entry entries[] = {
+        { 'A', mAccel },     { 'T', mTouch },      { 'M', mMotion },
+        { 'R', mActivity },  { 'H', mHr },         { 'X', mHrEx },
+        { 'S', mSteps },     { 'L', mBattLevel },  { 'C', mBattCharge },
+    };
+
+    char block[sizeof(entries) / sizeof(entries[0]) + 1] = {};
+    size_t at = 0;
+    for (Entry &e : entries) {
+        const bool ok = e.conn.isValid();
+        block[at++] = ok ? e.letter
+                         : static_cast<char>(e.letter - 'A' + 'a');
+    }
+    block[at] = '\0';
+
+    mDiag.line("sensors", "%s (ATMRHXSLC upper=resolved)", block);
 }
 
 void Service::disconnectSensors()
@@ -342,8 +424,10 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
 {
     Engine::Epoch e;
     e.uptimeMs = now;
-    const std::time_t wall = std::time(nullptr);
-    e.wallUtc  = (wall > 0) ? static_cast<int64_t>(wall) : -1;
+    e.wallUtc  = SleepLab::wallClockUtc();
+    // Kept for the scoring epoch this half will close, which is where a time of
+    // day is finally read from -- rather than being computed from an index.
+    mLastEpochWallUtc = e.wallUtc;
     e.spanMs   = spanMs;
 
     mCounter.closeEpoch(e.count, e.peak, e.samples);
@@ -412,8 +496,16 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
     mAcc.reset();
 
     if (mStore.isOpen()) {
-        mStore.appendEpoch(e, mFlags);
-    } else {
+        // Checked, because the alternative is a night whose record on disk stops
+        // a third of the way through while the summary keeps counting minutes in
+        // RAM -- and describes them as though they had been kept. The write is
+        // not retried: a volume that refused one row will refuse the next, and a
+        // retry loop on the recording path is a way to lose the whole night
+        // rather than part of it.
+        if (!mStore.appendEpoch(e, mFlags)) {
+            noteWriteFailure("epoch");
+        }
+    } else if (!mSessionOpen) {
         // Idle: keep the epoch in the ring, so a night that opens on sustained
         // stillness can be backdated to the minutes it actually began in.
         mPreRoll[mPreRollNext] = e;
@@ -422,38 +514,44 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
             mPreRollCount++;
         }
     }
+    // The remaining case is a session running with no file to write to. The epoch
+    // still folds into the scoring array below -- that is the night, and it is what
+    // the morning report is built from -- but it must not go into the pre-roll
+    // ring, which exists for a night that has not opened yet and would otherwise
+    // be handed this night's minutes to backdate into the next one.
 
-    // Fold into the scoring epoch in progress. Counts are SUMMED, not
-    // averaged: a count is an integral, so the integral over a minute is the
-    // sum of the integrals over its halves, and averaging would halve every
-    // count and quietly rescale the whole night.
-    mPendingScore.count   += e.count;
-    mPendingScore.samples =
-        static_cast<uint16_t>(mPendingScore.samples + e.samples);
+    fold(e, mPendingScore, mPendingHalves, mPendingSteps);
+    if (mPendingHalves >= Engine::kEpochsPerScoringEpoch) {
+        closeScoringEpoch();
+    }
+}
+
+void Service::fold(const Engine::Epoch &e, Engine::ScoringInput &into,
+                   uint8_t &halves, int32_t &steps)
+{
+    // Counts are SUMMED, not averaged: a count is an integral, so the integral
+    // over a minute is the sum of the integrals over its halves, and averaging
+    // would halve every count and quietly rescale the whole night.
+    into.count   += e.count;
+    into.samples  = static_cast<uint16_t>(into.samples + e.samples);
     // Worn is a mean of the halves; on the first half this is just the value.
-    mPendingScore.wornPct = static_cast<uint8_t>(
-        (mPendingScore.wornPct * mPendingHalves + e.wornPct) /
-        (mPendingHalves + 1));
+    into.wornPct  = static_cast<uint8_t>(
+        (into.wornPct * halves + e.wornPct) / (halves + 1));
     if (e.hrMeanX10 != static_cast<int16_t>(kAbsent)) {
-        mPendingScore.hrMeanX10 =
-            (mPendingScore.hrMeanX10 == static_cast<int16_t>(kAbsent))
+        into.hrMeanX10 =
+            (into.hrMeanX10 == static_cast<int16_t>(kAbsent))
                 ? e.hrMeanX10
-                : static_cast<int16_t>((mPendingScore.hrMeanX10 + e.hrMeanX10) / 2);
+                : static_cast<int16_t>((into.hrMeanX10 + e.hrMeanX10) / 2);
     }
 
     // Steps carry through to the scoring epoch, because that is where the
     // segmenter reads them and steps are the least ambiguous out-of-bed signal
     // there is. Summed across the halves; absent stays absent.
     if (e.stepDelta != kAbsent) {
-        mPendingSteps = (mPendingSteps == kAbsent)
-                            ? e.stepDelta
-                            : mPendingSteps + e.stepDelta;
+        steps = (steps == kAbsent) ? e.stepDelta : steps + e.stepDelta;
     }
 
-    mPendingHalves++;
-    if (mPendingHalves >= Engine::kEpochsPerScoringEpoch) {
-        closeScoringEpoch();
-    }
+    halves++;
 }
 
 void Service::closeScoringEpoch()
@@ -464,8 +562,7 @@ void Service::closeScoringEpoch()
     mPendingSteps  = kAbsent;
     mPendingHalves = 0;
 
-    const std::time_t wall = std::time(nullptr);
-    const int16_t localMin = localMinutes(wall);
+    const int16_t localMin = localMinutes(SleepLab::wallClockUtc());
 
     const bool worn = scored.wornPct >= Engine::SleepWakeScorer::kMinWornPct;
     const Engine::NightSegmenter::Update u =
@@ -482,7 +579,8 @@ void Service::closeScoringEpoch()
         case Engine::NightSegmenter::Event::Closed:
             // The epoch that closed the night is part of it.
             if (mScoringCount < Engine::kMaxScoringEpochs) {
-                mScoring[mScoringCount++] = scored;
+                mScoringWallEnd[mScoringCount] = mLastEpochWallUtc;
+                mScoring[mScoringCount++]      = scored;
             }
             closeNight(false);
             return;
@@ -493,9 +591,10 @@ void Service::closeScoringEpoch()
             break;
     }
 
-    if (mStore.isOpen()) {
+    if (mSessionOpen) {
         if (mScoringCount < Engine::kMaxScoringEpochs) {
-            mScoring[mScoringCount++] = scored;
+            mScoringWallEnd[mScoringCount] = mLastEpochWallUtc;
+            mScoring[mScoringCount++]      = scored;
         } else if ((mFlags & Engine::Interruption::kTruncated) == 0) {
             // A "night" that ran 16 hours is a data-quality problem, and the
             // segmenter should have caught it. Flagged rather than silently
@@ -513,7 +612,7 @@ void Service::closeScoringEpoch()
     publishReport();
 }
 
-void Service::flushPreRoll(uint16_t scoringEpochs)
+uint16_t Service::flushPreRoll(uint16_t scoringEpochs)
 {
     // Two recording epochs per scoring epoch, bounded by what the ring holds.
     size_t want = static_cast<size_t>(scoringEpochs) *
@@ -523,20 +622,69 @@ void Service::flushPreRoll(uint16_t scoringEpochs)
     }
 
     const size_t first = (mPreRollNext + kPreRollEpochs - want) % kPreRollEpochs;
+
+    // The backdated minutes are written to the CSV *and* paired into the
+    // scoring array. Writing them without scoring them is what made a night
+    // with no awakenings at all report 95 % efficiency: they counted towards
+    // time in bed and could not count towards sleep, because the scorer never
+    // saw them. It also put the summary's epoch indices on a different axis
+    // from its durations, which reported every sleep onset and every final wake
+    // a quarter of an hour early.
+    //
+    // The last pair in the ring is the scoring epoch that opened the night --
+    // the caller appends that one itself, from the value it already holds -- so
+    // this stops one short of it.
+    const size_t pairs = want / Engine::kEpochsPerScoringEpoch;
+    Engine::ScoringInput acc {};
+    uint8_t halves = 0;
+    int32_t steps  = kAbsent;
+
     for (size_t i = 0; i < want; ++i) {
-        mStore.appendEpoch(mPreRoll[(first + i) % kPreRollEpochs], mFlags);
+        const Engine::Epoch &e = mPreRoll[(first + i) % kPreRollEpochs];
+        if (!mStore.appendEpoch(e, mFlags)) {
+            noteWriteFailure("backdate");
+        }
+
+        fold(e, acc, halves, steps);
+        if (halves >= Engine::kEpochsPerScoringEpoch) {
+            if (mScoringCount + 1 < pairs &&
+                mScoringCount < Engine::kMaxScoringEpochs) {
+                mScoringWallEnd[mScoringCount] = e.wallUtc;
+                mScoring[mScoringCount++]      = acc;
+            }
+            acc    = Engine::ScoringInput{};
+            halves = 0;
+            steps  = kAbsent;
+        }
     }
-    LOG_INFO("backdated %u epochs into the night\n",
-             static_cast<unsigned>(want));
+
+    LOG_INFO("backdated %u epochs into the night, %u of them scored\n",
+             static_cast<unsigned>(want),
+             static_cast<unsigned>(mScoringCount));
+    return static_cast<uint16_t>(pairs);
 }
 
 
 // -- Night lifecycle ------------------------------------------------------------------
 
+void Service::noteWriteFailure(const char *where)
+{
+    // Once per night. The report's first line carries it to the wearer; this
+    // carries *where* to whoever copies the night off, which is the difference
+    // between losing the last hour and losing the first seven.
+    if ((mFlags & Engine::Interruption::kWriteFailed) == 0) {
+        LOG_WARNING("epoch write refused; the night is short from here\n");
+        mDiag.line("fail", "epoch write refused (%s) at %s after %lu epochs",
+                   (where != nullptr) ? where : "?",
+                   mStore.isOpen() ? mStore.path() : "no file",
+                   static_cast<unsigned long>(mStore.epochsWritten()));
+    }
+    mFlags |= Engine::Interruption::kWriteFailed;
+}
+
 void Service::openNight(uint16_t backdateScoringEpochs)
 {
-    const std::time_t wall = std::time(nullptr);
-    mNightStartUtc = (wall > 0) ? static_cast<int64_t>(wall) : -1;
+    mNightStartUtc = SleepLab::wallClockUtc();
 
     // Backdated: the session began where the still run began, not where it was
     // proved. Adjusting the recorded start by the same amount keeps the file
@@ -547,27 +695,96 @@ void Service::openNight(uint16_t backdateScoringEpochs)
 
     mScoringCount  = 0;
     mEpochsNotInArray = 0;
+    mHalvesLost    = 0;
     mAlarmFired    = false;
-    // Deliberately NOT cleared: charging and clock jumps seen while idle in the
-    // minutes now being backdated into the night are part of the night.
-    // mFlags stands.
 
-    if (!mStore.beginNight(mNightStartUtc, mKernel.sys.getTimeMs())) {
-        LOG_WARNING("could not open a night file; recording to RAM only\n");
-    } else {
-        flushPreRoll(backdateScoringEpochs);
+    // The flags start clean and are rebuilt from the minutes that are actually
+    // part of the night.
+    //
+    // Carrying them forward was deliberate -- charging and gaps seen while idle
+    // in the minutes about to be backdated ARE part of the night -- but nothing
+    // bounded how far back "while idle" reached, and the flags are only cleared
+    // when a night closes. So a charge at six in the evening, or the thin first
+    // epoch of a launch, marked the night five hours later as INTERRUPTED. That
+    // is the first line of the morning report, and a flag that cries wolf is a
+    // flag nobody reads on the night it matters.
+    //
+    // The backdated window is exactly what `flushPreRoll` is about to walk, and
+    // every `Epoch` in the ring carries its own `charging` and its own sample
+    // count -- so the flags for that window are read off the epochs themselves
+    // rather than off a variable that has been accumulating all day.
+    mFlags = 0;
+    {
+        size_t want = static_cast<size_t>(backdateScoringEpochs) *
+                      Engine::kEpochsPerScoringEpoch;
+        if (want > mPreRollCount) {
+            want = mPreRollCount;
+        }
+        const size_t first =
+            (mPreRollNext + kPreRollEpochs - want) % kPreRollEpochs;
+        for (size_t i = 0; i < want; ++i) {
+            const Engine::Epoch &e = mPreRoll[(first + i) % kPreRollEpochs];
+            if (e.charging) {
+                mFlags |= Engine::Interruption::kCharging;
+            }
+            if (e.samples < kMinSamplesPerRecordingEpoch) {
+                mFlags |= Engine::Interruption::kDataGap;
+            }
+        }
+    }
+    // Charging *now* counts whether or not an epoch has closed on it yet: the
+    // charger going in is about to terminate this process.
+    if (mCharging) {
+        mFlags |= Engine::Interruption::kCharging;
     }
 
-    // The backdated scoring epochs are in the CSV but not in the scoring
-    // array: the ring holds Epochs, and re-pairing them here would duplicate
-    // the pairing logic. They are counted instead, so time in bed is right.
-    mEpochsNotInArray = backdateScoringEpochs;
+    // A session, whatever the volume says. The night is happening; whether it can
+    // be written is a separate question with its own flag, and treating the two as
+    // one produced neither a file nor a report.
+    mSessionOpen = true;
+
+    uint16_t recovered = 0;
+    char provenance[160];
+    std::snprintf(provenance, sizeof(provenance),
+                  "SleepLab v%s bed=%d-%d hr=%s alarm=%d epoch_s=%u "
+                  "scoring_epoch_s=%u",
+                  SleepLab::kAppVersion,
+                  static_cast<int>(mSettings.segmenter.windowStartMin),
+                  static_cast<int>(mSettings.segmenter.windowEndMin),
+                  SleepLab::toString(mSettings.hrMode),
+                  mSettings.alarmEnabled ? 1 : 0,
+                  static_cast<unsigned>(Engine::kEpochMs / 1000),
+                  static_cast<unsigned>(Engine::kScoringEpochMs / 1000));
+
+    if (!mStore.beginNight(mNightStartUtc, mKernel.sys.getTimeMs(), provenance)) {
+        LOG_WARNING("could not open a night file; recording to RAM only\n");
+        noteWriteFailure("open");
+    } else {
+        recovered = flushPreRoll(backdateScoringEpochs);
+    }
+
+    // Whatever the ring could not give back. Zero in every ordinary night --
+    // the ring holds twice `stillnessToOpenMin` scoring epochs -- and non-zero
+    // only when the night file could not be created at all, or when the service
+    // had started so recently that the ring had not filled. Those minutes were
+    // part of the session and have no record, so they count towards time in bed
+    // and mark the night as having a hole in it.
+    if (recovered < backdateScoringEpochs) {
+        mEpochsNotInArray =
+            static_cast<uint32_t>(backdateScoringEpochs - recovered);
+        mFlags |= Engine::Interruption::kDataGap;
+    }
 
     if (mSettings.rawRecording) {
         mRaw.start(mNightStartUtc, mSettings.rawMaxMb, mSettings.rawMaxMin);
     }
 
     mPreRollCount = 0;
+    mDiag.line("open", "%s backdated=%umin recovered=%u flags=0x%x",
+               mStore.isOpen() ? mStore.path() : "NO FILE",
+               static_cast<unsigned>(backdateScoringEpochs),
+               static_cast<unsigned>(recovered),
+               static_cast<unsigned>(mFlags));
     LOG_INFO("night opened, backdated %u min\n",
              static_cast<unsigned>(backdateScoringEpochs));
     publishReport();
@@ -579,12 +796,18 @@ void Service::openNight(uint16_t backdateScoringEpochs)
 void Service::closeNight(bool discard)
 {
     mRaw.stop();
+    mSessionOpen = false;
 
     if (discard) {
+        mDiag.line("discard", "%s epochs=%u too short to report",
+                   mStore.path(), static_cast<unsigned>(mScoringCount));
         mStore.discardNight();
         mScoringCount = 0;
         mFlags        = 0;
         publishReport();
+        // Nothing new to show, but the phase changed: a glance that has been
+        // saying "recording" has to stop.
+        glanceRefresh();
         return;
     }
 
@@ -601,58 +824,130 @@ void Service::closeNight(bool discard)
     Engine::NightSummary s =
         Engine::NightAnalyser::analyse(mScoring, mVerdicts, n, gate, mFlags);
 
-    // Time in bed has to include the epochs recorded before this launch or
-    // before the backdate -- they are in the CSV and they were part of the
-    // night, they are simply not in the scoring array.
-    //
-    // Keyed on timeInBedMin rather than on hasSleep: a night that passed the
-    // gate but never contained ten consecutive sleep minutes still has a
-    // measured time in bed, and it should be the right one.
-    if (s.timeInBedMin != kAbsent && mEpochsNotInArray > 0) {
-        s.timeInBedMin += static_cast<int32_t>(mEpochsNotInArray);
-        if (s.totalSleepMin != kAbsent) {
-            s.efficiencyPct = (s.timeInBedMin > 0)
-                                  ? (s.totalSleepMin * 100 / s.timeInBedMin)
-                                  : kAbsent;
+    // Epochs that are part of the night and not in the scoring array: recorded
+    // before this launch, or backdated minutes the pre-roll ring could not give
+    // back. They all precede the array, so the array's index 0 is session
+    // minute `mEpochsNotInArray` -- and every index the summary reports has to
+    // be moved onto the session's axis before anything turns it into a time of
+    // day. Leaving them on the array's axis reported a resumed night's final
+    // wake 148 minutes early in the offline harness.
+    // How far the reported indices were shifted, so the code below can map one
+    // back to the array entry it came from.
+    const size_t arrayBase = mEpochsNotInArray;
+
+    // Minutes of the night the loop lost. Real minutes with no record: they
+    // belong in time in bed and they must not be allowed to shorten it. The
+    // night already carries the data-gap flag from where they were counted.
+    const uint32_t lostEpochs = mHalvesLost / Engine::kEpochsPerScoringEpoch;
+
+    if (mEpochsNotInArray > 0 || lostEpochs > 0) {
+        const int32_t offset = static_cast<int32_t>(mEpochsNotInArray);
+
+        // `epochs` and time in bed are the same count of the same minutes, and
+        // a summary whose two axes disagree cannot be read by anyone.
+        s.epochs += mEpochsNotInArray + lostEpochs;
+
+        if (s.onsetEpoch     != kAbsent) { s.onsetEpoch     += offset; }
+        if (s.finalWakeEpoch != kAbsent) { s.finalWakeEpoch += offset; }
+        if (s.hrMinEpoch     != kAbsent) { s.hrMinEpoch     += offset; }
+
+        // Keyed on timeInBedMin rather than on hasSleep: a night that passed the
+        // gate but never contained ten consecutive sleep minutes still has a
+        // measured time in bed, and it should be the right one.
+        if (s.timeInBedMin != kAbsent) {
+            s.timeInBedMin += offset + static_cast<int32_t>(lostEpochs);
+            if (s.totalSleepMin != kAbsent) {
+                s.efficiencyPct = (s.timeInBedMin > 0)
+                                      ? (s.totalSleepMin * 100 / s.timeInBedMin)
+                                      : kAbsent;
+            }
+        }
+
+        // Onset latency is session start to onset, and for a resumed night the
+        // epochs between them were never scored -- they are on disk from before
+        // the restart and not in RAM. So the first sleep this launch observed is
+        // not necessarily the night's onset, and a latency computed from it would
+        // be a number with a known sign of error and no way to bound it. Withheld
+        // rather than reported late.
+        //
+        // A loop stall does not have that problem: the epochs either side of it
+        // were scored, so onset is still the onset -- it is only its *index* that
+        // no longer counts minutes, and the offset above has moved it.
+        if (mEpochsNotInArray > 0) {
+            s.onsetLatencyMin = kAbsent;
+        } else if (s.onsetLatencyMin != kAbsent) {
+            s.onsetLatencyMin += static_cast<int32_t>(lostEpochs);
         }
     }
 
     mLastBandUsedHr = Engine::RestfulnessBand::compute(mScoring, mVerdicts, n,
                                                        s.hrMinX10, mBand);
 
-    // Times of day, derived here because the service is the only half that
-    // holds both clocks. The GUI must never do wall-clock arithmetic.
+    // Times of day, derived here because the service is the only half that holds
+    // both clocks. The GUI must never do wall-clock arithmetic.
+    //
+    // Read from the clock each epoch recorded for itself, not computed as
+    // "session start plus index times sixty". That arithmetic is right only while
+    // an array index and a session minute are the same number, and three ordinary
+    // things put a step between them: epochs recorded before a restart, minutes
+    // that passed while the app was not running, and a loop that woke late and
+    // skipped a grid slot. Every one of those moved the reported times earlier by
+    // the size of the step, and silently.
+    //
+    // Onset is the START of its epoch -- the first minute observed asleep -- so
+    // the recorded end of that epoch minus a minute.
+    //
+    // Final wake is the END of its epoch. `finalWakeEpoch` is the index of the
+    // *last epoch scored as sleep*, so the wearer was asleep throughout it and
+    // woke at the far edge. Using the epoch's start would report a wake time at
+    // which the app itself scored them asleep, and would make the displayed
+    // interval a minute shorter than the total-sleep figure printed beside it.
     mLastAsleepAtMin = -1;
     mLastWokeAtMin   = -1;
-    if (s.hasSleep && mNightStartUtc > 0) {
-        // Onset is the START of its epoch: the first minute observed asleep.
-        //
-        // Final wake is the END of its epoch, hence the +1. `finalWakeEpoch` is
-        // the index of the *last epoch scored as sleep*, so the wearer was
-        // still asleep throughout it and woke at the far edge. Using the
-        // epoch's start would report a wake time at which the app itself scored
-        // them asleep -- and would make the displayed interval one minute
-        // shorter than the total-sleep figure printed beside it, which is the
-        // kind of internal inconsistency that makes a reader distrust both.
-        const int64_t onsetUtc =
-            mNightStartUtc + static_cast<int64_t>(s.onsetEpoch) * 60;
-        const int64_t wakeUtc =
-            mNightStartUtc + (static_cast<int64_t>(s.finalWakeEpoch) + 1) * 60;
-        mLastAsleepAtMin = localMinutes(static_cast<std::time_t>(onsetUtc));
-        mLastWokeAtMin   = localMinutes(static_cast<std::time_t>(wakeUtc));
+    if (s.hasSleep) {
+        const size_t onsetIdx = static_cast<size_t>(s.onsetEpoch) - arrayBase;
+        const size_t wakeIdx  = static_cast<size_t>(s.finalWakeEpoch) - arrayBase;
+        if (onsetIdx < n && mScoringWallEnd[onsetIdx] > 0) {
+            mLastAsleepAtMin = localMinutes(mScoringWallEnd[onsetIdx] - 60);
+        }
+        if (wakeIdx < n && mScoringWallEnd[wakeIdx] > 0) {
+            mLastWokeAtMin = localMinutes(mScoringWallEnd[wakeIdx]);
+        }
     }
 
-    mStore.finishNight(s, Engine::RestfulnessBand::kMethod, mLastBandUsedHr,
-                       SleepLab::toString(mSettings.hrMode));
+    if (!mStore.finishNight(s, Engine::RestfulnessBand::kMethod, mLastBandUsedHr,
+                            SleepLab::toString(mSettings.hrMode))) {
+        // The summary or the index row did not land. The night happened and its
+        // numbers are real; what is missing is the file that would let anyone
+        // else read them, and the history row that would let this app. Said on
+        // the screen rather than only in a UART log nobody has attached.
+        LOG_WARNING("night could not be filed\n");
+        mDiag.line("fail", "could not write the summary or the index row");
+        s.interruption |= Engine::Interruption::kWriteFailed;
+        mFlags         |= Engine::Interruption::kWriteFailed;
+    }
 
     // Rebuilt from the index, which now includes tonight. One source of truth:
     // there is no separate baseline file to fall out of step with it.
     mStore.loadBaseline(mBaseline);
 
     mLastSummary  = s;
+    mLastScoredCount = n;
     mHaveReport   = true;
     mScoringCount = 0;
     mFlags        = 0;
+
+    mDiag.line("close",
+               "worn=%u sleep=%ld tib=%ld eff=%ld acc_hz_x10=%ld flags=0x%x "
+               "epochs=%u lost=%u",
+               static_cast<unsigned>(s.worn),
+               static_cast<long>(s.totalSleepMin),
+               static_cast<long>(s.timeInBedMin),
+               static_cast<long>(s.efficiencyPct),
+               static_cast<long>(s.accHzX10),
+               static_cast<unsigned>(s.interruption),
+               static_cast<unsigned>(s.epochs),
+               static_cast<unsigned>(lostEpochs));
 
     LOG_INFO("night closed: worn=%u sleep=%ld min eff=%ld%%\n",
              static_cast<unsigned>(s.worn),
@@ -661,6 +956,14 @@ void Service::closeNight(bool discard)
 
     publishReport();
     publishHistory();
+    // The two surfaces that exist so the app need not be opened, and the moment
+    // they exist for. `openNight` refreshed both and this did not, so the morning
+    // widget was only ever claimed by somebody opening the app and closing it
+    // again -- which is the case the widget is there to avoid -- and a glance
+    // opened during the night went on saying "recording" until something else
+    // happened to invalidate it.
+    pumpWidget();
+    glanceRefresh();
 }
 
 
@@ -668,11 +971,11 @@ void Service::closeNight(bool discard)
 
 void Service::checkAlarm()
 {
-    if (!mSettings.alarmEnabled || mAlarmFired || !mStore.isOpen()) {
+    if (!mSettings.alarmEnabled || mAlarmFired || !mSessionOpen) {
         return;
     }
 
-    const int16_t nowMin = localMinutes(std::time(nullptr));
+    const int16_t nowMin = localMinutes(SleepLab::wallClockUtc());
     if (nowMin < 0) {
         return;   // no clock, no deadline
     }
@@ -694,7 +997,7 @@ void Service::checkAlarm()
                          static_cast<int16_t>((mSettings.alarmDeadlineMin + 4) %
                                               Engine::kMinutesPerDay))) {
         LOG_INFO("alarm: deadline\n");
-        playAlarm();
+        playAlarm("deadline", -1);
         return;
     }
 
@@ -719,13 +1022,23 @@ void Service::checkAlarm()
 
     if (v == Engine::Verdict::Wake) {
         LOG_INFO("alarm: wake-ish epoch inside the window\n");
-        playAlarm();
+        playAlarm("smart-window", static_cast<int32_t>(at));
     }
 }
 
-void Service::playAlarm()
+void Service::playAlarm(const char *why, int32_t atEpoch)
 {
     mAlarmFired = true;
+
+    // On the volume, because an alarm is the one output whose failure is worse
+    // than useless and whose failure leaves nothing behind. Before this line, "it
+    // did not go off" and "it went off and you slept through it" were the same
+    // observation in the morning -- and so were "it fired at the deadline" and "it
+    // fired on a wake epoch forty minutes early". The wall clock here is the whole
+    // point: it is the thing the wearer is disputing.
+    mDiag.line("alarm", "fired why=%s epoch=%ld local_min=%d",
+               (why != nullptr) ? why : "?", static_cast<long>(atEpoch),
+               static_cast<int>(localMinutes(SleepLab::wallClockUtc())));
 
     // Backlight, vibro and buzzer, the same three `Alarm`'s service raises --
     // and from a service with no GUI attached, which is the case at 06:30.
@@ -771,10 +1084,34 @@ void Service::buildStrip(CustomMessage::SleepReportData &msg) const
         msg.strip[i] = CustomMessage::Strip::pack(
             CustomMessage::Strip::kVerdictNone, 0);
     }
+    msg.stripUsed = 0;
 
-    const size_t n = mScoringCount > 0 ? mScoringCount : mLastSummary.epochs;
+    // The strip is a per-epoch sleep/wake verdict and restfulness level for
+    // every minute of the night, drawn under a caption that tells the reader it
+    // came from their movement and heart rate. It is a picture of the same claim
+    // the numbers make, so it is subject to the same gate: there are exactly two
+    // states in which those arrays hold verdicts for the night on the screen.
+    //
+    //   - A night that closed and passed the worn gate. `mVerdicts` and `mBand`
+    //     were filled when it closed. A night that FAILED the gate has its
+    //     numbers suppressed and used to have its strip drawn anyway, which is
+    //     the same overclaim in a form nobody thought to check.
+    //
+    //   - Never while a night is in progress. Cole-Kripke needs look-ahead and
+    //     Webster needs whole-night passes, so nothing is scored until the night
+    //     closes -- and until then those arrays hold the *previous* night's
+    //     verdicts, or, on a fresh install, zeroed memory, which decodes as
+    //     "asleep, most settled" for every minute recorded so far.
+    if (mSessionOpen || !mHaveReport || !mLastSummary.hasSleep) {
+        return;
+    }
+
+    // The verdicts that were actually computed, which is not the same as the
+    // night's length: a resumed night's earlier epochs are on disk and were
+    // never scored, so the strip covers the part that was. The night carries the
+    // resumed flag and the report says so above the picture.
+    const size_t n = mLastScoredCount;
     if (n == 0) {
-        msg.stripUsed = 0;
         return;
     }
 
@@ -831,12 +1168,12 @@ void Service::publishReport()
         return;
     }
 
-    if (mStore.isOpen()) {
+    if (mSessionOpen) {
         msg->data.phase = static_cast<uint8_t>(CustomMessage::Phase::Recording);
     } else if (mHaveReport) {
         msg->data.phase = static_cast<uint8_t>(CustomMessage::Phase::Reported);
     } else if (mSegmenter.state() == Engine::NightSegmenter::State::Idle &&
-               Engine::inWindow(localMinutes(std::time(nullptr)),
+               Engine::inWindow(localMinutes(SleepLab::wallClockUtc()),
                                 mSettings.segmenter.windowStartMin,
                                 mSettings.segmenter.windowEndMin)) {
         msg->data.phase = static_cast<uint8_t>(CustomMessage::Phase::Watching);
@@ -920,7 +1257,7 @@ void Service::publishHistory()
         for (size_t i = 0; i < take; i++) {
             const SleepLab::NightStore::IndexRow &r = rows[n - 1 - (sent + i)];
             auto &out = msg->rows[i];
-            out.startUtcDays  = static_cast<int32_t>(r.startUtc / 86400);
+            out.startUtcDays  = localDays(r.startUtc);
             out.totalSleepMin = static_cast<int16_t>(r.totalSleepMin);
             out.efficiencyPct = static_cast<int16_t>(r.efficiencyPct);
             out.hrMinX10      = static_cast<int16_t>(r.hrMinX10);
@@ -988,7 +1325,7 @@ void Service::glanceRefresh()
 
     const Engine::NightSummary &s = mLastSummary;
 
-    if (mStore.isOpen()) {
+    if (mSessionOpen) {
         mGlanceValue.setText("recording");
         mGlanceSub.setText("report in the morning");
     } else if (!mHaveReport) {
@@ -1015,7 +1352,12 @@ void Service::glanceRefresh()
         }
     }
 
-    mGlance.setValid();
+    // Deliberately NOT marked valid here. Setting the texts is what invalidates
+    // the form, and the carousel's tick is the only thing that sends it -- so
+    // marking it valid at the end of building it meant every tick found nothing
+    // to send and the glance was never sent anything at all. Not stale content:
+    // none. `setValid()` belongs after the send, which is where all five of the
+    // SDK's own Glance examples put it.
 }
 
 void Service::pumpWidget()
@@ -1023,7 +1365,7 @@ void Service::pumpWidget()
     // Shown only while a report stands and no night is running: that window is
     // the morning. A widget still showing Tuesday's efficiency on Thursday
     // afternoon is clutter, not information.
-    const bool want = mHaveReport && !mStore.isOpen() && !mGuiStarted &&
+    const bool want = mHaveReport && !mSessionOpen && !mGuiStarted &&
                       mLastSummary.hasSleep;
 
     if (!want) {
@@ -1071,11 +1413,24 @@ void Service::pumpWidget()
 void Service::run()
 {
     const uint32_t start = mKernel.sys.getTimeMs();
-    const std::time_t wall = std::time(nullptr);
-    const int64_t nowUtc = (wall > 0) ? static_cast<int64_t>(wall) : -1;
+    const int64_t nowUtc = SleepLab::wallClockUtc();
 
     const SleepLab::SettingsStatus cfg =
         SleepLab::loadSettings(mKernel, mSettings);
+
+    // First, before anything else can go wrong, and to the volume rather than to
+    // a UART nobody has attached at 03:00. A night that leaves no epoch file at
+    // all used to leave nothing at all; this is what it leaves now.
+    mDiag.line("launch",
+               "v%s uptime=%lu %s bed=%d-%d hr=%s alarm=%d raw=%d",
+               SleepLab::kAppVersion, static_cast<unsigned long>(start),
+               SleepLab::toString(cfg),
+               static_cast<int>(mSettings.segmenter.windowStartMin),
+               static_cast<int>(mSettings.segmenter.windowEndMin),
+               SleepLab::toString(mSettings.hrMode),
+               mSettings.alarmEnabled ? 1 : 0,
+               mSettings.rawRecording ? 1 : 0);
+
     LOG_INFO("%s; bed %d-%d hr=%s alarm=%d raw=%d\n",
              SleepLab::toString(cfg),
              static_cast<int>(mSettings.segmenter.windowStartMin),
@@ -1091,17 +1446,47 @@ void Service::run()
     // worse than one flagged one, and both halves might be short enough to be
     // discarded entirely.
     const SleepLab::ResumeState resume = mStore.readState(start, nowUtc);
+    mDiag.line("resume", "present=%d path=%s epochs=%lu gap=%lumin %s",
+               resume.present ? 1 : 0,
+               resume.present ? resume.path : "-",
+               static_cast<unsigned long>(resume.epochs),
+               static_cast<unsigned long>(resume.gapMinutes),
+               resume.deviceRebooted ? "device-rebooted"
+                                     : (resume.appRestarted ? "app-restarted"
+                                                            : "fresh"));
     if (resume.present && mStore.resumeNight(resume)) {
         mFlags         = resume.flags;
-        mEpochsNotInArray = resume.epochs / Engine::kEpochsPerScoringEpoch;
-        mNightStartUtc = resume.wallUtc;
+        // Everything ahead of this launch's own first epoch: the epochs already
+        // on disk, plus the minutes of the night that passed while the app was
+        // not running. Both precede the scoring array, and both have to be
+        // counted or every time of day after the restart lands early.
+        mEpochsNotInArray =
+            resume.epochs / Engine::kEpochsPerScoringEpoch + resume.gapMinutes;
+        // Both halves of that come off disk -- an unbounded `%lu` in the state
+        // file, and a wall clock that may have moved arbitrarily. A count past the
+        // longest night the engine will score is a corrupt count, and letting it
+        // through would add hours to time in bed and push every reported index
+        // past the end of the array.
+        if (mEpochsNotInArray > Engine::kMaxScoringEpochs) {
+            LOG_WARNING("resume claims %lu prior epochs; clamping\n",
+                        static_cast<unsigned long>(mEpochsNotInArray));
+            mEpochsNotInArray = Engine::kMaxScoringEpochs;
+            mFlags |= Engine::Interruption::kDataGap;
+        }
+        // The session's *start*, which is what the state file carries `startUtc`
+        // for. `wallUtc` is the clock at the last flush before the restart, and
+        // using it anchored every reported time of day to the middle of the
+        // night rather than to its beginning.
+        mNightStartUtc = resume.startUtc;
         mSegmenter.resumeOpen(static_cast<uint16_t>(mEpochsNotInArray));
+        mSessionOpen = true;
         if (mSettings.rawRecording) {
             mRaw.start(mNightStartUtc, mSettings.rawMaxMb, mSettings.rawMaxMin);
         }
     }
 
     connectSensors();
+    logSensors();
 
     mEpochOpenedAt = start;
     mNextEpochAt   = start + Engine::kEpochMs;
@@ -1119,11 +1504,28 @@ void Service::run()
             // Advance the grid by whole epochs rather than re-basing on `now`,
             // so a late epoch does not push every subsequent one late with it.
             // If the loop overslept by more than a whole epoch the catch-up
-            // would spin, so it skips forward -- and the skip is itself the
-            // finding, visible as a jump in uptime_ms in the CSV.
+            // would spin, so it skips forward.
+            //
+            // The skip is counted, not just visible. It used to be neither: one
+            // recording epoch absorbed the whole overshoot with a span_ms far past
+            // 30 000 and a *healthy* sample count -- so the thin-epoch guard never
+            // fired -- and the slots the grid stepped over simply never existed.
+            // Time in bed is an epoch count, so a five-minute stall made the night
+            // five minutes shorter with nothing anywhere saying so. Measured: 418
+            // minutes reported against the 423 the same night reported unstalled.
+            uint32_t skipped = 0;
             do {
                 mNextEpochAt += Engine::kEpochMs;
+                skipped++;
             } while (static_cast<int32_t>(mNextEpochAt - now) <= 0);
+            if (skipped > 1) {
+                // `skipped - 1` is the grid slot this epoch legitimately used.
+                mHalvesLost += skipped - 1;
+                mFlags      |= Engine::Interruption::kDataGap;
+                LOG_WARNING("loop woke %u epochs late; %u lost\n",
+                            static_cast<unsigned>(skipped),
+                            static_cast<unsigned>(skipped - 1));
+            }
             toEpoch = static_cast<int32_t>(mNextEpochAt - now);
         }
 
@@ -1142,6 +1544,12 @@ void Service::run()
                     // leaving it open: the state file is what lets the relaunch
                     // resume, and the raw capture has a buffer to flush.
                     LOG_INFO("stopping\n");
+                // Almost always the USB cable, which is the boundary a resumed
+                // night has to be stitched across -- so the pair of clocks at the
+                // stop is worth as much as the pair at the launch.
+                mDiag.line("stop", "night_open=%d epochs=%lu",
+                           mStore.isOpen() ? 1 : 0,
+                           static_cast<unsigned long>(mStore.epochsWritten()));
                     mRaw.stop();
                     // Leave no stale widget on the home screen.
                     if (mWidgetActive) {
@@ -1171,13 +1579,26 @@ void Service::run()
                     break;
 
                 case SDK::MessageType::EVENT_GLANCE_TICK:
+                    // The tick is the only thing that sends glance content, and
+                    // the form's own validity flag is what decides whether there
+                    // is any to send. Marked valid after the send and not before
+                    // -- see glanceRefresh(), and GlanceHR::onGlanceTick(), which
+                    // is the same six lines.
                     if (mGlanceActive && mGlance.isInvalid()) {
                         if (auto upd =
                                 SDK::make_msg<SDK::Message::RequestGlanceUpdate>(mKernel)) {
                             upd->name           = kGlanceName;
                             upd->controls       = mGlance.data();
                             upd->controlsNumber = static_cast<uint32_t>(mGlance.size());
-                            upd.send(100);
+                            if (upd.send(100)) {
+                                // Only once it has gone. Marking the form valid
+                                // when the allocation or the send failed would
+                                // drop the content and wait for the next change
+                                // to notice -- which is the failure this call
+                                // being in the wrong place caused in the first
+                                // place, in a rarer form.
+                                mGlance.setValid();
+                            }
                         }
                     }
                     break;

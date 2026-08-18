@@ -478,4 +478,170 @@ TEST(NightStore, AnAbsentIndexIsEmptyHistoryRatherThanAFailure)
     EXPECT_EQ(baseline.nights(), 0u);
 }
 
+// ---------------------------------------------------------------------------
+// What the state file is allowed to say
+// ---------------------------------------------------------------------------
+
+/// `night_state.txt` is read with `%63s` and the path it names is used verbatim:
+/// to test for existence, to append every epoch to, and -- with ".csv" replaced
+/// by ".json" -- to write the summary to. Nothing checks that it is a path this
+/// app could have written.
+///
+/// Two consequences. A path that escapes the app's own directory would have a
+/// night appended to it. And a path of the full 63 characters overflows the
+/// 64-byte buffer the summary path is built in, because ".json" is one byte
+/// longer than the ".csv" it replaces.
+///
+/// The file is the app's own and lives in the app's sandbox, so this is not an
+/// attack surface so much as a corruption surface -- which is the one that
+/// actually happens, because the file is rewritten 1 900 times a night and the
+/// power can go at any of them.
+TEST(NightStore, AStateFileNamingSomethingOutsideTheNightsDirectoryIsRefused)
+{
+    KernelFixture fx;
+    fx.fileSystem.seedFile("../SharedData/victim.csv", "not a night\n");
+    fx.fileSystem.seedFile(
+        "night_state.txt",
+        "STATE ../SharedData/victim.csv 10 1000 1755037800 0 1755037800\n");
+
+    NightStore store(fx.kernel);
+    const ResumeState st = store.readState(2000, kStart + 2);
+    EXPECT_FALSE(st.present)
+        << "the state file named " << st.path
+        << ", which is not a path this app writes";
+    EXPECT_FALSE(store.resumeNight(st));
+
+    // And nothing was appended to it.
+    EXPECT_EQ(fx.fileSystem.readFile("../SharedData/victim.csv"),
+              "not a night\n");
+}
+
+TEST(NightStore, AStateFileNamingAnOverlongPathIsRefused)
+{
+    KernelFixture fx;
+    // 63 characters exactly: the most `%63s` will read, and one more than the
+    // summary path can hold once ".csv" becomes ".json".
+    std::string longPath = "Nights/";
+    longPath.append(63 - 7 - 4, 'x');
+    longPath += ".csv";
+    ASSERT_EQ(longPath.size(), 63u);
+
+    fx.fileSystem.seedFile(longPath, "header\n");
+    fx.fileSystem.seedFile("night_state.txt",
+                           "STATE " + longPath +
+                               " 10 1000 1755037800 0 1755037800\n");
+
+    NightStore store(fx.kernel);
+    const ResumeState st = store.readState(2000, kStart + 2);
+    if (st.present && store.resumeNight(st)) {
+        // If it is accepted, finishing it must not write past the end of the
+        // buffer the summary path is built in. There is no portable way to
+        // assert that from inside the process, so the requirement is that such
+        // a path is refused before it gets there.
+        FAIL() << "a 63-character night path was accepted; the summary path is "
+                  "built in a 64-byte buffer and .json is longer than .csv";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Writes that fail
+// ---------------------------------------------------------------------------
+
+/// The documented ordering is: summary JSON, then index row, then clear the
+/// state -- "so a crash anywhere above resumes the night rather than losing it".
+/// That guarantee is about a crash, and it holds. A refused write is not a
+/// crash: control reaches the clear, so a volume with no room lost the night
+/// with nothing anywhere that said so.
+///
+/// Keeping the state file is *not* the remedy, and this test is here to pin that
+/// too: a relaunch would resume into a night that has already been summarised,
+/// and 07:00 is inside a 21:00-11:00 window, so the session would stay open all
+/// morning appending breakfast to last night's CSV. So the night closes either
+/// way and the caller is told, which is what `finishNight`'s return value is
+/// for -- and what nothing was reading.
+TEST(NightStore, ANightWhoseSummaryAndIndexBothFailReportsIt)
+{
+    KernelFixture fx;
+    NightStore store(fx.kernel);
+    ASSERT_TRUE(store.beginNight(kStart, 1000));
+    ASSERT_TRUE(store.appendEpoch(epoch(30000), 0));
+    ASSERT_TRUE(fx.fileSystem.exist("night_state.txt"));
+    const std::string csv = store.path();
+
+    // No room for anything more.
+    fx.fileSystem.failWritesAfterBytes = fx.fileSystem.bytesWritten;
+
+    EXPECT_FALSE(store.finishNight(goodNight(), "band", true, "off"))
+        << "the summary and the index row both failed and finishNight said the "
+           "night was filed";
+
+    // The night is closed, not left open to be spliced into tomorrow.
+    EXPECT_FALSE(fx.fileSystem.exist("night_state.txt"));
+    EXPECT_FALSE(store.isOpen());
+    // And the record is still on the volume to be copied off.
+    EXPECT_TRUE(fx.fileSystem.exist(csv.c_str()));
+}
+
+/// FatFs's `f_close` keeps the FIL -- and its lock-table entry -- when the sync
+/// underneath it fails. A recorder that opens and closes twice per epoch has to
+/// treat a failed close as a failed write, or it reports a night as recorded
+/// while the rows sit in a cache that was never committed.
+TEST(NightStore, AFailedCloseIsAFailedWrite)
+{
+    KernelFixture fx;
+    NightStore store(fx.kernel);
+    ASSERT_TRUE(store.beginNight(kStart, 1000));
+
+    fx.fileSystem.closeGate = [](const std::string &path) {
+        return path.find(".csv") == std::string::npos;
+    };
+
+    EXPECT_FALSE(store.appendEpoch(epoch(30000), 0))
+        << "the epoch's close failed and appendEpoch reported success";
+}
+
+/// A decade of nights is ~400 index rows and the reader takes only the last
+/// 4 096 bytes, which lands mid-row essentially always. A truncated leading field
+/// parses cleanly as a smaller number, so the guard is to skip to the first
+/// newline -- and the guard is what this exercises, by writing more rows than the
+/// tail window can hold.
+TEST(NightStore, AnIndexBiggerThanTheTailWindowIsReadFromAWholeRow)
+{
+    KernelFixture fx;
+
+    std::string index =
+        "start_utc,tib_min,tst_min,eff_pct,hr_min_x10,hr_min_at_pct,worn,"
+        "interruption\n";
+    // Ten years of nights, each with a distinguishable start time so a
+    // half-parsed row would be obvious.
+    constexpr int kNights = 3650;
+    for (int i = 0; i < kNights; ++i) {
+        char row[128];
+        std::snprintf(row, sizeof(row), "%lld,480,430,89,512,50,0,0\n",
+                      static_cast<long long>(kStart) + i * 86400LL);
+        index += row;
+    }
+    ASSERT_GT(index.size(), 4096u * 8u) << "the fixture is not big enough to "
+                                            "make the tail read land mid-row";
+    fx.fileSystem.seedFile("Nights/index.csv", index);
+
+    NightStore store(fx.kernel);
+    NightStore::IndexRow rows[NightStore::kMaxHistory];
+    const size_t n = store.readHistory(rows, NightStore::kMaxHistory);
+
+    ASSERT_EQ(n, NightStore::kMaxHistory)
+        << "the tail read recovered " << n << " rows of a decade of nights";
+
+    // Oldest first, consecutive days, ending on the last night written. A row
+    // parsed from a truncated timestamp would break the sequence.
+    for (size_t i = 0; i < n; ++i) {
+        const int64_t expect =
+            kStart + static_cast<int64_t>(kNights - n + i) * 86400LL;
+        EXPECT_EQ(rows[i].startUtc, expect)
+            << "row " << i << " of the tail read";
+        EXPECT_EQ(rows[i].timeInBedMin, 480);
+        EXPECT_EQ(rows[i].efficiencyPct, 89);
+    }
+}
+
 } // namespace

@@ -155,6 +155,50 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# Tier 1b: the whole pipeline, offline
+#
+# The one target that exercises Service itself -- sample to file to summary --
+# by scripting the kernel message queue rather than by replacing the loop. See
+# NightHarness.hpp for why that choice, and for what a generated night is and
+# is not evidence about. Needs the SDK's SensorConnection because the service
+# resolves nine real sensor handles through it.
+#
+# TZ=UTC is set on the test, not assumed: every time-of-day assertion in the
+# suite -- the bedtime window, the alarm, the reported asleep/woke times -- is
+# meaningless if the machine running it happens to be in another zone.
+# ---------------------------------------------------------------------------
+
+if(EXISTS "${COREJSON_DIR}/core_json.c")
+    file(GLOB SLEEPLAB_ENGINE_SOURCES "${APP_LIBS}/Sources/Engine/*.cpp")
+    add_executable(sleeplab-pipeline-tests
+        Pipeline_test.cpp
+        "${APP_LIBS}/Sources/Service.cpp"
+        "${APP_LIBS}/Sources/NightStore.cpp"
+        "${APP_LIBS}/Sources/RawRecorder.cpp"
+        "${APP_LIBS}/Sources/Settings.cpp"
+        "${APP_LIBS}/Sources/WallClock.cpp"
+        "${APP_LIBS}/Sources/Diag.cpp"
+        ${SLEEPLAB_ENGINE_SOURCES}
+        "${UNA_SDK_ROOT}/Libs/Source/SensorLayer/SensorConnection.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/JSON/JsonStreamReader.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/JSON/JsonStreamWriter.cpp"
+        "${COREJSON_DIR}/core_json.c"
+        ${SDK_DOUBLES}
+    )
+    target_include_directories(sleeplab-pipeline-tests PRIVATE
+        "${APP_LIBS}/Header"
+        "${COREJSON_DIR}/include"
+        "${CMAKE_CURRENT_LIST_DIR}"
+        ${SDK_DOUBLE_INCLUDES}
+    )
+    target_link_libraries(sleeplab-pipeline-tests PRIVATE GTest::gtest_main)
+    add_test(NAME sleeplab-pipeline-tests COMMAND sleeplab-pipeline-tests)
+    set_tests_properties(sleeplab-pipeline-tests PROPERTIES ENVIRONMENT "TZ=UTC")
+else()
+    message(STATUS "SleepLab: no coreJSON submodule, skipping sleeplab-pipeline-tests")
+endif()
+
+# ---------------------------------------------------------------------------
 # Tier 0: the probe's on-disk record
 # ---------------------------------------------------------------------------
 

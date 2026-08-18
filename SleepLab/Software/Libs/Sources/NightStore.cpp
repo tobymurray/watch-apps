@@ -17,6 +17,7 @@
 #include "SDK/JSON/JsonStreamWriter.hpp"
 
 #include "Engine/RestfulnessBand.hpp"
+#include "Engine/SleepWakeScorer.hpp"
 
 #define LOG_MODULE_PRX      "NightStore"
 #define LOG_MODULE_LEVEL    LOG_LEVEL_INFO
@@ -77,6 +78,47 @@ void stemFor(int64_t startUtc, uint32_t seq, char *out, size_t outSize)
                   static_cast<unsigned long>(seq % 1000u));
 }
 
+/// Whether @p path is one this app's own recorder could have created.
+///
+/// `Nights/<stem>.csv`, with no separator or parent reference in the stem, and
+/// short enough that swapping ".csv" for ".json" still fits kMaxNightPath.
+bool isNightPath(const char *path)
+{
+    if (path == nullptr) {
+        return false;
+    }
+    const size_t len = std::strlen(path);
+
+    // ".json" is one byte longer than ".csv", and the summary path is built in a
+    // buffer of kMaxNightPath bytes including its terminator.
+    if (len + 1 + 1 > kMaxNightPath) {
+        return false;
+    }
+
+    const size_t dirLen = std::strlen(kNightsDir);
+    if (len < dirLen + 1 + 1 + 4) {
+        return false;
+    }
+    if (std::strncmp(path, kNightsDir, dirLen) != 0 || path[dirLen] != '/') {
+        return false;
+    }
+    if (std::strcmp(path + len - 4, ".csv") != 0) {
+        return false;
+    }
+
+    // The stem is one path component and nothing else.
+    for (size_t i = dirLen + 1; i < len - 4; ++i) {
+        const char c = path[i];
+        if (c == '/' || c == '\\' || c == ':') {
+            return false;
+        }
+        if (c == '.' && path[i + 1] == '.') {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 NightStore::NightStore(const SDK::Kernel &kernel)
@@ -106,12 +148,19 @@ bool NightStore::append(const char *path, const char *text, size_t len)
     }
 
     size_t     written = 0;
-    const bool ok      = file->write(text, len, written) && written == len;
+    bool       ok      = file->write(text, len, written) && written == len;
 
     // Flush before close, not instead of it: a row still in the FAT cache when
     // the USB cable goes in is a row that never happened.
-    file->flush();
-    file->close();
+    //
+    // And both are part of whether the write happened. FatFs's `f_close` syncs,
+    // and when the sync fails it keeps the FIL valid and its lock-table entry
+    // held -- so a close that fails is both a row that was never committed and a
+    // lock slot that will not come back. Reporting that as a successful write is
+    // how a night ends up shorter than its summary says with nothing to show
+    // why.
+    if (!file->flush()) { ok = false; }
+    if (!file->close()) { ok = false; }
     return ok;
 }
 
@@ -158,6 +207,22 @@ ResumeState NightStore::readState(uint32_t nowMs, int64_t nowUtc)
         return s;
     }
 
+    // The path is used verbatim: to test existence, to append every epoch to,
+    // and -- with ".csv" swapped for ".json" -- to build the summary path in a
+    // buffer of this same size, which ".json" makes one byte longer. So it has
+    // to be a path this app could have written, and the check is on the shape
+    // rather than on a blocklist: `Nights/<stem>.csv`, no path separators in the
+    // stem, and short enough to survive the extension swap.
+    //
+    // The file is the app's own and lives inside the app's sandbox, so the
+    // surface this guards is corruption rather than attack -- it is rewritten
+    // 1 900 times a night and the power can go at any of them.
+    if (!isNightPath(path)) {
+        LOG_WARNING("night_state.txt names %s, which is not a night this app "
+                    "writes; starting fresh\n", path);
+        return ResumeState{};
+    }
+
     s.present  = true;
     std::snprintf(s.path, sizeof(s.path), "%s", path);
     s.epochs   = static_cast<uint32_t>(epochs);
@@ -176,8 +241,18 @@ ResumeState NightStore::readState(uint32_t nowMs, int64_t nowUtc)
     const int32_t elapsed = static_cast<int32_t>(nowMs - s.uptimeMs);
     if (elapsed < 0) {
         s.deviceRebooted = true;
+        // No uptime to measure the outage with -- it reset. The wall clock is
+        // the only witness, and it is allowed to be wrong; a gap it reports as
+        // negative or absurd is treated as unknown rather than as a correction.
+        if (nowUtc > 0 && s.wallUtc > 0 && nowUtc > s.wallUtc) {
+            const int64_t offMin = (nowUtc - s.wallUtc) / 60;
+            if (offMin > 0 && offMin < 24 * 60) {
+                s.gapMinutes = static_cast<uint32_t>(offMin);
+            }
+        }
     } else {
         s.appRestarted = true;
+        s.gapMinutes   = static_cast<uint32_t>(elapsed) / 60000u;
     }
 
     // A wall clock that moved by far more than uptime says it should have.
@@ -203,7 +278,8 @@ ResumeState NightStore::readState(uint32_t nowMs, int64_t nowUtc)
     return s;
 }
 
-bool NightStore::beginNight(int64_t startUtc, uint32_t nowMs)
+bool NightStore::beginNight(int64_t startUtc, uint32_t nowMs,
+                            const char *provenance)
 {
     mKernel.fs.mkdir(kNightsDir);
 
@@ -228,6 +304,19 @@ bool NightStore::beginNight(int64_t startUtc, uint32_t nowMs)
         LOG_WARNING("cannot create %s\n", mPath);
         mPath[0] = '\0';
         return false;
+    }
+
+    // What produced this file, in the file. The summary JSON carries the same and
+    // more, and is written only when the night closes -- so a night the USB cable
+    // ended left a record that could not say which build wrote it or what settings
+    // it ran under. A comment line costs ~120 bytes once and every reader of the
+    // CSV already skips `#`.
+    if (provenance != nullptr && provenance[0] != '\0') {
+        char line[192];
+        const int n = std::snprintf(line, sizeof(line), "# %s\n", provenance);
+        if (n > 0 && static_cast<size_t>(n) < sizeof(line)) {
+            append(mPath, line, static_cast<size_t>(n));
+        }
     }
 
     LOG_INFO("night opened: %s\n", mPath);
@@ -417,6 +506,41 @@ bool NightStore::finishNight(const Engine::NightSummary &s,
             w.add("restfulness_band", bandMethod);
             w.add("restfulness_used_hr", bandUsedHr);
             w.add("hr_mode", hrMode);
+            // The app that produced this file. A night recorded by a different
+            // build is a different measurement -- a threshold moved, a filter
+            // changed -- and a file that does not say which build wrote it cannot
+            // be compared with one that does. `kAppVersion` is bumped by hand
+            // whenever anything that would move a number changes.
+            w.add("app_version", kAppVersion);
+            // The constants that scored *this* night, so it can be re-scored
+            // offline against the counts in its own CSV even after they change.
+            // Without them an old night is uninterpretable the moment a threshold
+            // moves, which is precisely what the diary calibration is going to do.
+            w.startMap("constants");
+            w.add("count_scale_x1e6",
+                  static_cast<int32_t>(Engine::SleepWakeScorer::kCountScale *
+                                       1000000.0f + 0.5f));
+            w.add("threshold_x1e3",
+                  static_cast<int32_t>(Engine::SleepWakeScorer::kThreshold *
+                                       1000.0f + 0.5f));
+            w.add("p_x1e6", static_cast<int32_t>(
+                                Engine::SleepWakeScorer::kP * 1000000.0f + 0.5f));
+            w.add("min_samples_per_epoch",
+                  static_cast<int32_t>(
+                      Engine::SleepWakeScorer::kMinSamplesPerEpoch));
+            w.add("min_worn_pct",
+                  static_cast<int32_t>(Engine::SleepWakeScorer::kMinWornPct));
+            w.add("movement_floor",
+                  static_cast<int32_t>(Engine::NightAnalyser::kMovementFloor));
+            w.add("micro_movement_floor",
+                  static_cast<int32_t>(Engine::WornGate::kMicroMovementFloor));
+            w.add("gate_min_worn_pct",
+                  static_cast<int32_t>(Engine::WornGate::kMinWornPct));
+            w.add("gate_min_plausible_pct",
+                  static_cast<int32_t>(Engine::WornGate::kMinPlausiblePct));
+            w.add("onset_run_min",
+                  static_cast<int32_t>(Engine::NightAnalyser::kOnsetRunMin));
+            w.endMap();
             // Stated in the file itself, not only in a README the file will be
             // separated from.
             w.add("validated_against",
@@ -435,8 +559,23 @@ bool NightStore::finishNight(const Engine::NightSummary &s,
             w.add("resumed",   (s.interruption & Engine::Interruption::kResumed)   != 0);
             w.add("clock_jump",(s.interruption & Engine::Interruption::kClockJump) != 0);
             w.add("data_gap",  (s.interruption & Engine::Interruption::kDataGap)   != 0);
+            w.add("truncated", (s.interruption & Engine::Interruption::kTruncated) != 0);
+            // The one bit that is about the record rather than about the night:
+            // the numbers below describe minutes that were measured, and the CSV
+            // is missing some of them.
+            w.add("write_failed",
+                  (s.interruption & Engine::Interruption::kWriteFailed) != 0);
             w.add("epochs",      static_cast<int32_t>(s.epochs));
             w.add("unscorable",  static_cast<int32_t>(s.unscorable));
+            // What the night was actually built from. A count is only comparable
+            // with another count taken at a similar delivered rate, and the rate
+            // is neither the requested one nor constant between nights -- so the
+            // only way to know whether two nights can be compared is for each to
+            // say. Also the one column that separates "delivery stopped" from
+            // "delivery degraded", which are different problems.
+            addOrNull(w, "acc_samples_min",    s.accSamplesMin);
+            addOrNull(w, "acc_samples_median", s.accSamplesMedian);
+            addOrNull(w, "acc_hz_x10",         s.accHzX10);
             w.endMap();
 
             w.startMap("sleep");
@@ -524,10 +663,23 @@ bool NightStore::finishNight(const Engine::NightSummary &s,
         indexOk = append(kIndexPath, row, static_cast<size_t>(n));
     }
 
-    // Cleared last. The state file is what says "a night is in progress", so a
-    // crash anywhere above resumes the night rather than losing it. The cost of
-    // the state outliving the summary is one duplicate index row, which is
-    // visible; the cost of the reverse is a night that silently vanishes.
+    // Cleared last, and unconditionally, and the difference between those two
+    // words is the finding here.
+    //
+    // Last, so a *crash* anywhere above resumes the night rather than losing it.
+    // That much holds. But a refused write is not a crash: control reaches this
+    // line, and keeping the state file to protect the night would be worse than
+    // losing the index row. The relaunch resumes into a night that has already
+    // been summarised, and 07:00 is inside a 21:00-11:00 bedtime window, so the
+    // session stays open all morning appending the wearer's breakfast to last
+    // night's CSV and then files a "night" that ran until eleven. Splicing a
+    // morning onto a night is a worse outcome than a missing history row.
+    //
+    // So the night is closed either way, and what changes is that the failure is
+    // no longer silent: the caller raises `kWriteFailed`, the report's first line
+    // becomes INCOMPLETE, and the epoch CSV is still on the volume to be copied
+    // off. What is lost is the history row and the baseline sample, and a missing
+    // night in the history is visible.
     mKernel.fs.remove(kStatePath);
     mPath[0] = '\0';
     mEpochs  = 0;

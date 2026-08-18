@@ -108,6 +108,16 @@ constexpr uint32_t kIndexCsvSchema = 1;
 /// Schema of the summary JSON.
 constexpr uint32_t kSummaryJsonSchema = 1;
 
+/// The app version written into every summary, so a file says which build
+/// produced it.
+///
+/// Deliberately a literal here rather than the `APP_VERSION` the ARM build
+/// defines: the TouchGFX simulator builds the same sources without it, and a
+/// provenance field that only exists under one of two build systems is worse
+/// than one that is maintained by hand. Bump it whenever anything that would move
+/// a number changes -- a threshold, a filter, an epoch length.
+constexpr char kAppVersion[] = "0.1.0";
+
 /**
  * @brief What a resumed launch found on disk.
  */
@@ -130,6 +140,21 @@ struct ResumeState
     /// device restarted. Folded into the night's interruption flags.
     bool     deviceRebooted = false;
     bool     appRestarted   = false;
+
+    /// Minutes of the night that passed while the app was not running.
+    ///
+    /// Real minutes of the session with no record at all: not in the CSV,
+    /// because nothing was recording, and not in RAM either. They have to be
+    /// counted, because every epoch index the summary reports is turned into a
+    /// time of day by counting minutes from the session's start -- and a gap
+    /// nobody counted moves everything after it earlier by the length of the
+    /// gap. A USB session is normally about the length of a copy, and this is
+    /// what stops that length being subtracted from the night.
+    ///
+    /// Taken from uptime for an app restart, and from the wall clock for a
+    /// device reboot, which has no uptime to measure against. Zero when neither
+    /// clock can say.
+    uint32_t gapMinutes    = 0;
 };
 
 /**
@@ -158,9 +183,18 @@ public:
      *
      * @param startUtc  Wall clock at session open, or -1. Names the file.
      * @param nowMs     Uptime at session open.
+     * @param provenance One line describing what is recording: the build, the
+     *                  settings in force, the heart-rate mode. Written into the
+     *                  CSV's own header as a comment.
+     *
+     *                  In the CSV rather than only in the summary JSON, because
+     *                  the JSON is written when a night *closes* -- so an
+     *                  interrupted night used to leave a record that could not say
+     *                  what produced it. ~120 bytes, once.
      * @retval true     The file exists and carries its header.
      */
-    bool beginNight(int64_t startUtc, uint32_t nowMs);
+    bool beginNight(int64_t startUtc, uint32_t nowMs,
+                    const char *provenance = nullptr);
 
     /// Continue the night named by @p state.
     bool resumeNight(const ResumeState &state);

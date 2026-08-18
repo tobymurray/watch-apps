@@ -111,17 +111,28 @@ void SleepWakeScorer::rescoreAfterWake(Verdict *v, size_t n)
             }
         }
 
+        int written = 0;
         for (int k = 0; k < rescore && (i + static_cast<size_t>(k)) < n; ++k) {
             const size_t at = i + static_cast<size_t>(k);
             if (v[at] != Verdict::Sleep) {
                 break; // The sleep block ended before the rule ran out.
             }
             v[at] = Verdict::Wake;
+            ++written;
         }
 
-        // Resume scanning *after* what was just rewritten, so those epochs are
-        // not re-read as a fresh wake run.
-        i += static_cast<size_t>(rescore);
+        // Resume scanning after what was actually rewritten, so those epochs are
+        // not re-read as a fresh wake run -- and *only* after them.
+        //
+        // Advancing by the whole rule length instead stepped over epochs the pass
+        // had not touched. When the sleep block ran out before the rule did, the
+        // remainder of the skip landed inside the wake run that followed, and that
+        // run was then measured short: 15 wake, 1 sleep, 11 wake read the
+        // 11-minute run as 8, which drops it from rule 2 (three minutes rescored)
+        // to rule 1 (one), and the two minutes the published algorithm calls wake
+        // are called sleep. Same direction as actigraphy's own bias, which is why
+        // it does not show up in an output.
+        i += static_cast<size_t>(written);
     }
 }
 
