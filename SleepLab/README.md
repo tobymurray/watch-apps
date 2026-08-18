@@ -412,10 +412,17 @@ Needs `$UNA_SDK` pointing at an **`apps-v1.4.0`** checkout. Built in containers,
 so the result does not depend on what happens to be installed:
 
 ```sh
-Tools/docker-build.sh app      # the .uapp
-Tools/docker-build.sh probe    # the Tier 0 probe
-Tools/docker-build.sh tests    # host tests
+Tools/docker-build.sh app       # the .uapp
+Tools/docker-build.sh probe     # the Tier 0 probe
+Tools/docker-build.sh tests     # host tests
+Tools/docker-build.sh sim       # the simulator
+Tools/docker-build.sh sim-run   # build it and run it headless
 ```
+
+Three images, because they are three different jobs — the recipes are in
+[`Tools/docker/`](Tools/docker) and the script's header says how to build them.
+The `.uapp` one is layered on the toolchain Kira publishes binaries with, pinned
+by digest, so a `.uapp` built here is the artifact the catalogue would carry.
 
 or directly:
 

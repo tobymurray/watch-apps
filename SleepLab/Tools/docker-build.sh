@@ -3,7 +3,7 @@
 # Build SleepLab, or its Tier 0 probe, or the host tests -- in containers, so
 # the result does not depend on what happens to be installed on this machine.
 #
-# Two images, because they are two different jobs:
+# Three images, because they are three different jobs:
 #
 #   arm    ghcr.io/tobymurray/kira-toolchain, plus pyelftools and Pillow for
 #          `app_packer.py`. This is the image Kira publishes binaries with, so
@@ -23,6 +23,14 @@
 #   Tools/docker-build.sh sim              # build the simulator
 #   Tools/docker-build.sh sim-run          # build it and run it headless
 #
+# The three images are built from Tools/docker/*.Dockerfile:
+#
+#   docker build --platform linux/amd64 -t sleeplab-arm:latest -f Tools/docker/arm.Dockerfile Tools/docker
+#   docker build                        -t sleeplab-host:latest -f Tools/docker/host.Dockerfile Tools/docker
+#   docker build --platform linux/amd64 -t sleeplab-sim:latest  -f Tools/docker/sim.Dockerfile  Tools/docker
+#
+# Override any of them with $SLEEPLAB_{ARM,HOST,SIM}_IMAGE.
+
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
