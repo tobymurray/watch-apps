@@ -485,10 +485,29 @@ public:
         }
 
         if (!mGlanceSent && static_cast<int32_t>(deadline - mGlanceAtMs) >= 0) {
-            mGlanceSent = true;
+            mGlanceSent  = true;
+            mGlanceTickAt = mGlanceAtMs + kGlanceTickMs;
             advanceTo(mGlanceAtMs);
             msg = control(SDK::MessageType::EVENT_GLANCE_START);
             if (msg != nullptr) { return true; }
+        }
+
+        // The carousel ticks while the glance is on screen, and the tick is the
+        // only thing that sends content: a service that never sees one publishes
+        // nothing, and a service that mishandles one publishes nothing either.
+        //
+        // Never earlier than now -- a tick whose due time has already gone past
+        // is late, not a reason to move the clock backwards.
+        if (mGlanceSent && mGlanceAtMs != 0) {
+            if (static_cast<int32_t>(mGlanceTickAt - now) < 0) {
+                mGlanceTickAt = now;
+            }
+            if (static_cast<int32_t>(deadline - mGlanceTickAt) >= 0) {
+                advanceTo(mGlanceTickAt);
+                mGlanceTickAt += kGlanceTickMs;
+                msg = control(SDK::MessageType::EVENT_GLANCE_TICK);
+                if (msg != nullptr) { return true; }
+            }
         }
 
         // APP_STOP takes priority over anything scheduled after it.
@@ -811,6 +830,12 @@ private:
     bool     mGuiSent      = true;
     uint32_t mGlanceAtMs   = 0;
     bool     mGlanceSent   = true;
+    uint32_t mGlanceTickAt = 0;
+    /// The real carousel ticks faster than this. A minute keeps a scenario to
+    /// hundreds of tick messages rather than tens of thousands, and the contract
+    /// under test -- that a tick is what sends content, and that the form's
+    /// validity flag decides whether anything goes -- does not depend on the rate.
+    static constexpr uint32_t kGlanceTickMs = 60000;
 
 public:
     /// The wall clock the app sees. A plain global because the app's seam is a

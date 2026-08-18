@@ -494,23 +494,48 @@ TEST(Surfaces, TheMorningWidgetIsClaimedWhenTheNightCloses)
         << "the night closed and the home widget was never claimed";
 }
 
-TEST(Surfaces, AnOpenGlanceStopsSayingRecordingWhenTheNightEnds)
+TEST(Surfaces, AnOpenGlanceIsSentItsContentAtAll)
 {
-    // `glanceRefresh()` is not called when a night closes either, so a glance
-    // that was opened during the night keeps reporting "recording" until
-    // something else happens to invalidate it.
+    // The carousel's tick is the only thing that sends glance content, and it
+    // sends it only when the form reports itself invalid. `glanceRefresh()` sets
+    // the three texts -- which invalidates them -- and then calls `setValid()`, so
+    // by the time a tick arrives the form says it has nothing to send. The tick
+    // handler never calls `setValid()` either, which is where all five of the
+    // SDK's own Glance examples put it.
+    //
+    // Net effect: the glance is never sent anything. Not stale content -- none.
     Scenario s = plainNight();
     s.glanceOpensAtMin = 100;
     s.guiOpensAtEnd    = false;
     const Observations obs = Rig::instance().run(s);
 
-    size_t updatesBefore = 0, updatesAfter = 0;
-    // The night closes in the last phase; everything after the last
-    // recording-phase minute is "after".
+    size_t updates = 0;
     for (const Ask &a : obs.glance) {
-        if (a.type != SDK::MessageType::REQUEST_GLANCE_UPDATE) { continue; }
-        (a.uptimeMs < Rig::instance().system.nowMs - 25u * 60000u
-             ? updatesBefore : updatesAfter)++;
+        if (a.type == SDK::MessageType::REQUEST_GLANCE_UPDATE) { ++updates; }
+    }
+    EXPECT_GT(updates, 0u)
+        << "the glance was opened and ticked for hours and was never sent a "
+           "single update";
+}
+
+TEST(Surfaces, AnOpenGlanceStopsSayingRecordingWhenTheNightEnds)
+{
+    // And once it can send at all: a glance opened during the night has to stop
+    // saying "recording" when the night ends. `closeNight()` called neither
+    // `pumpWidget()` nor `glanceRefresh()`.
+    Scenario s = plainNight();
+    s.glanceOpensAtMin = 100;
+    s.guiOpensAtEnd    = false;
+    const Observations obs = Rig::instance().run(s);
+
+    // The night closes in the last phase, twenty minutes before the run ends.
+    const uint32_t closeAbout = Rig::instance().system.nowMs - 21u * 60000u;
+    size_t updatesAfter = 0;
+    for (const Ask &a : obs.glance) {
+        if (a.type == SDK::MessageType::REQUEST_GLANCE_UPDATE &&
+            a.uptimeMs > closeAbout) {
+            ++updatesAfter;
+        }
     }
     EXPECT_GT(updatesAfter, 0u)
         << "the night closed and the open glance was never refreshed, so it "

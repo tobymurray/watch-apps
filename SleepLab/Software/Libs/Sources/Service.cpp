@@ -674,6 +674,9 @@ void Service::closeNight(bool discard)
         mScoringCount = 0;
         mFlags        = 0;
         publishReport();
+        // Nothing new to show, but the phase changed: a glance that has been
+        // saying "recording" has to stop.
+        glanceRefresh();
         return;
     }
 
@@ -782,6 +785,14 @@ void Service::closeNight(bool discard)
 
     publishReport();
     publishHistory();
+    // The two surfaces that exist so the app need not be opened, and the moment
+    // they exist for. `openNight` refreshed both and this did not, so the morning
+    // widget was only ever claimed by somebody opening the app and closing it
+    // again -- which is the case the widget is there to avoid -- and a glance
+    // opened during the night went on saying "recording" until something else
+    // happened to invalidate it.
+    pumpWidget();
+    glanceRefresh();
 }
 
 
@@ -1160,7 +1171,12 @@ void Service::glanceRefresh()
         }
     }
 
-    mGlance.setValid();
+    // Deliberately NOT marked valid here. Setting the texts is what invalidates
+    // the form, and the carousel's tick is the only thing that sends it -- so
+    // marking it valid at the end of building it meant every tick found nothing
+    // to send and the glance was never sent anything at all. Not stale content:
+    // none. `setValid()` belongs after the send, which is where all five of the
+    // SDK's own Glance examples put it.
 }
 
 void Service::pumpWidget()
@@ -1324,6 +1340,11 @@ void Service::run()
                     break;
 
                 case SDK::MessageType::EVENT_GLANCE_TICK:
+                    // The tick is the only thing that sends glance content, and
+                    // the form's own validity flag is what decides whether there
+                    // is any to send. Marked valid after the send and not before
+                    // -- see glanceRefresh(), and GlanceHR::onGlanceTick(), which
+                    // is the same six lines.
                     if (mGlanceActive && mGlance.isInvalid()) {
                         if (auto upd =
                                 SDK::make_msg<SDK::Message::RequestGlanceUpdate>(mKernel)) {
@@ -1332,6 +1353,7 @@ void Service::run()
                             upd->controlsNumber = static_cast<uint32_t>(mGlance.size());
                             upd.send(100);
                         }
+                        mGlance.setValid();
                     }
                     break;
 
