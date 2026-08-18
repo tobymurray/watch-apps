@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "values": {
+    "bedtime": "21:00",
+    "wake_by": "11:00",
+    "min_night_min": 90,
+
+    "hr": "continuous",
+    "hr_duty_on_sec": 60,
+    "hr_duty_per_sec": 300,
+
+    "alarm": "off",
+    "alarm_at": "07:00",
+    "alarm_window_min": 30,
+
+    "raw_recording": "off",
+    "raw_max_mb": 64,
+    "raw_max_min": 120
+  }
+}
