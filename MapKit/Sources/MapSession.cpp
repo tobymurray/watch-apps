@@ -31,24 +31,18 @@ void MapSession::onPosition(float latitude, float longitude, bool fix, bool reco
         return;     // nothing to select against yet
     }
 
-    // Scan the directory exactly once, on the first fix. Packs cannot appear
-    // while the app runs -- plugging in USB to copy one terminates every
-    // running app -- so a rescan could only ever find what this one found.
+    // No scan here. It ran once in the constructor -- see the note there for
+    // why it moved off the first fix.
     //
-    // This has to be separate from re-selection, and the reason is a defect
-    // this code had until the simulator showed it: when no pack covers the
-    // wearer, `mSelected` stays kNoPack forever, so anything keyed on that
-    // runs on every GPS sample. A rescan there would mean a directory walk
-    // plus a header, footer and marker read *per pack, once a second, for the
-    // whole activity*, on the GUI thread, to re-learn what it already knew.
-    if (!mCatalog.scanned()) {
-        mCatalog.rescan();
-    }
-
     // Re-selection, by contrast, is pure: it runs against the catalog already
     // in memory and costs nothing worth throttling. It has to keep running,
     // because walking into a pack's coverage is exactly how a wearer who
-    // started outside every pack gets a map.
+    // started outside every pack gets a map. Keeping these two apart is what
+    // fixed the defect the simulator found: when no pack covers the wearer,
+    // `mSelected` stays kNoPack forever, so anything keyed on that runs on
+    // every GPS sample -- and a rescan there meant a directory walk plus a
+    // read per pack, once a second, for a whole activity, on the GUI thread,
+    // to re-learn what it already knew.
     if (mSelected == kNoPack || !coversCurrentFix()) {
         chooseAndOpen();
     }
@@ -141,8 +135,20 @@ void MapSession::chooseAndOpen()
 
     mSelected = choice;
     // Start at the pack's finest zoom: the wearer is looking at where they
-    // are, and can zoom out from there.
+    // are, and can zoom out from there. "Finest" means the deepest zoom that
+    // has tiles, not the deepest the header declares -- opening on a zoom the
+    // pack carries nothing for is a blank screen the wearer has to guess
+    // their way out of by pressing zoom. See PackDepth.hpp.
     mZoom = mContainer.header().zoomMax;
+    for (uint8_t z = mContainer.header().zoomMax; ; --z) {
+        if (mContainer.tileCountAtZoom(z) != 0) {
+            mZoom = z;
+            break;
+        }
+        if (z == mContainer.header().zoomMin) {
+            break;
+        }
+    }
     LOG_INFO("map: opened %s, z%u..z%u, %lu tiles\n", mPackPath,
              mContainer.header().zoomMin, mContainer.header().zoomMax,
              static_cast<unsigned long>(mContainer.header().tileCount));

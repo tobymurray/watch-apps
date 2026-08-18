@@ -86,6 +86,7 @@ Libs/Source/Fit/RecordingMarker.cpp\
 ../../Libs/Sources/Service.cpp\
 ../../Libs/Sources/SettingsSerializer.cpp\
 ../../Libs/Sources/WristTiltDetector.cpp\
+../../../../MapKit/Sources/AttributionFace.cpp\
 ../../../../MapKit/Sources/Container.cpp\
 ../../../../MapKit/Sources/MapSession.cpp\
 ../../../../MapKit/Sources/MapTileView.cpp\

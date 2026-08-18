@@ -70,6 +70,16 @@ public:
     static constexpr size_t kHeaderBytes = 292;
     static constexpr size_t kMinPackBytes = kHeaderBytes + 4;
 
+    /// Distinct attribution strings the roster holds. Packs from one pipeline
+    /// all carry the same string, so a watch usually has exactly one; four
+    /// covers a wearer with mixed sources (OpenStreetMap alone, plus
+    /// Protomaps, plus OpenMapTiles, plus a terrain credit).
+    static constexpr size_t kMaxAttributions = 4;
+    /// Longest attribution stored. The longest in `MAP_COMPLIANCE_APPENDIX.md`
+    /// § 4's table is ~95 bytes once its `·` and `©` are counted as the
+    /// multi-byte UTF-8 they are.
+    static constexpr size_t kMaxAttrLen      = 160;
+
     explicit PackCatalog(const SDK::Kernel& kernel) : mKernel(kernel) {}
 
     /**
@@ -87,6 +97,41 @@ public:
     size_t count() const { return mCount; }
     const PackFacts* facts() const { return mFacts; }
     const PackFacts& at(size_t i) const { return mFacts[i]; }
+
+    // -- attribution -------------------------------------------------------
+    //
+    // Collected by the same scan, because it is the same question asked of
+    // the same files: what is on this watch. Kept here rather than in a
+    // second pass because a second pass would mean a second directory walk
+    // and a second open per pack, for facts the first walk already had in
+    // its hands.
+    //
+    // Deduplicated: packs from one pipeline carry identical strings, and a
+    // wearer with six regional packs is owed one credit, not six.
+    //
+    // Deliberately NOT keyed to the selected pack. Selection needs a GPS fix;
+    // crediting the data does not, and the credit has to be showable before
+    // any map is drawn. Everything installed is everything that might be
+    // drawn, so crediting all of it is both correct and available at launch.
+
+    /// Number of distinct attribution strings across the installed packs.
+    size_t attributionCount() const { return mAttrCount; }
+
+    /// One distinct attribution string, NUL-terminated. `nullptr` if @p i is
+    /// out of range.
+    const char* attributionAt(size_t i) const
+    {
+        return i < mAttrCount ? mAttributions[i] : nullptr;
+    }
+
+    /// Packs whose attribution could not be read — no `ATTR` section, a
+    /// malformed one, or a string longer than kMaxAttrLen — plus any distinct
+    /// string that arrived after kMaxAttributions were already held.
+    ///
+    /// Reported rather than swallowed. A pack whose data owes credit and
+    /// cannot supply it is a compliance problem, and the app showing the
+    /// attribution screen is the last place that can say so.
+    size_t unattributedPacks() const { return mUnattributed; }
 
     /// True once rescan() has run at least once, whatever it found. Lets a
     /// caller tell "no packs" from "haven't looked yet" -- which matters,
@@ -116,11 +161,19 @@ private:
     /// Reads the pack's own trailing 4-byte declared CRC (rawtiles § 10).
     bool declaredCrc(const char* fullPath, uint64_t& sizeOut, uint32_t& crcOut) const;
 
+    /// Peeks one pack's `ATTR` and folds it into the distinct set, or counts
+    /// the pack as unattributed. Bounded: the peek skips the tile index.
+    void collectAttribution(const char* fullPath);
+
     const SDK::Kernel& mKernel;
     PackFacts          mFacts[kMaxPacks] {};
     char               mNames[kMaxPacks][kMaxNameLen] {};
     size_t             mCount   = 0;
     bool               mScanned = false;
+
+    char               mAttributions[kMaxAttributions][kMaxAttrLen] {};
+    size_t             mAttrCount     = 0;
+    size_t             mUnattributed  = 0;
 };
 
 } // namespace MapKit

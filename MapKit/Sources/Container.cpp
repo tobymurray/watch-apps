@@ -279,11 +279,13 @@ void Container::close()
         mFile->close();
         mFile.reset();
     }
-    mMemData  = nullptr;
-    mMemSize  = 0;
-    mFileSize = 0;
-    mBackend  = Backend::None;
-    mHeader   = Header { };
+    mMemData    = nullptr;
+    mMemSize    = 0;
+    mFileSize   = 0;
+    mBackend    = Backend::None;
+    mHeader     = Header { };
+    mAttrOffset = 0;
+    mAttrLength = 0;
 }
 
 OpenResult Container::parseAndValidate(bool skipCrcVerify)
@@ -605,11 +607,16 @@ OpenResult Container::parseAndValidate(bool skipCrcVerify)
     return skipCrcVerify ? OpenResult::Ok : verifyCrc();
 }
 
-OpenResult Container::walkExtensions(uint32_t extensionsOffset, uint32_t crcStart) const
+OpenResult Container::walkExtensions(uint32_t extensionsOffset, uint32_t crcStart)
 {
     bool seenAffn = false;
     bool seenAttr = false;
     bool seenSrcd = false;
+
+    // A re-walk of a Container that already had a pack open must not leave
+    // the previous pack's attribution behind.
+    mAttrOffset = 0;
+    mAttrLength = 0;
 
     uint32_t pos = extensionsOffset;
     while (pos < crcStart) {
@@ -682,6 +689,11 @@ OpenResult Container::walkExtensions(uint32_t extensionsOffset, uint32_t crcStar
                 if (r != OpenResult::Ok) {
                     return r;
                 }
+                // Remember where it is. Validation already proved the bytes
+                // are well-formed; recording the location is what lets a map
+                // app show the credit the pack's licence obliges it to.
+                mAttrOffset = payloadOffset;
+                mAttrLength = length;
             } else if (isAFFN) {
                 if (seenAffn) {
                     return OpenResult::DuplicateExtensionTag;
@@ -927,6 +939,79 @@ bool Container::declaredCrc32(uint32_t &out) const
     }
     out = readU32LE(footer);
     return true;
+}
+
+bool Container::attribution(char *dst, size_t dstSize) const
+{
+    if (!isOpen() || dst == nullptr || mAttrLength == 0) {
+        return false;
+    }
+    // Refuse rather than truncate: half a credit is worse than none, because
+    // it looks like the obligation was met. See the header's note.
+    if (dstSize < static_cast<size_t>(mAttrLength) + 1) {
+        return false;
+    }
+    if (!readAt(mAttrOffset, dst, mAttrLength)) {
+        return false;
+    }
+    dst[mAttrLength] = '\0';
+    return true;
+}
+
+bool Container::peekAttribution(SDK::Interface::IFileSystem &fs, const char *path,
+                                char *dst, size_t dstSize)
+{
+    Container c;
+    c.mFile = fs.file(path);
+    if (!c.mFile || !c.mFile->open(false, false)) {
+        return false;
+    }
+    c.mFileSize = c.mFile->size();
+    c.mBackend  = Backend::File;
+
+    const bool ok = c.peekAttributionOpened(dst, dstSize);
+    c.close();
+    return ok;
+}
+
+bool Container::peekAttributionOpened(char *dst, size_t dstSize)
+{
+    const uint64_t size = backendSize();
+    if (size < kMinFileSize || size > kMaxFileSize) {
+        return false;
+    }
+
+    uint8_t hdr[kHeaderSize];
+    if (!readAt(0, hdr, kHeaderSize)) {
+        return false;
+    }
+    // Only the fields the extension walk depends on are checked. This is a
+    // peek, not an open: everything the tile index would prove is out of
+    // scope, and the walk bounds-checks its own reads.
+    if (!(hdr[0] == 'R' && hdr[1] == 'A' && hdr[2] == 'W' && hdr[3] == 'T')) {
+        return false;
+    }
+    if (hdr[4] != 1) {
+        return false;
+    }
+    // walkExtensions consults projection to decide whether AFFN is legal
+    // (§ 11 #36), so it has to be populated or a LocalLinear pack's
+    // attribution would be rejected for a rule it satisfies.
+    const uint8_t projByte = hdr[57];
+    if (projByte != 1 && projByte != 3) {
+        return false;
+    }
+    mHeader.projection = static_cast<Projection>(projByte);
+
+    const uint32_t crcStart = static_cast<uint32_t>(size - kFooterSize);
+    const uint32_t extOff   = readU32LE(hdr + 288);
+    if ((extOff & 3u) != 0 || extOff < kHeaderSize || extOff > crcStart) {
+        return false;
+    }
+    if (walkExtensions(extOff, crcStart) != OpenResult::Ok) {
+        return false;
+    }
+    return attribution(dst, dstSize);
 }
 
 TileInfo Container::findTile(uint8_t z, uint32_t x, uint32_t y) const

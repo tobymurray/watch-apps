@@ -83,6 +83,7 @@ Libs/Source/Fit/RecordingMarker.cpp\
 ../../Libs/Sources/ActivityWriter.cpp\
 ../../Libs/Sources/Service.cpp\
 ../../Libs/Sources/SettingsSerializer.cpp\
+../../../../MapKit/Sources/AttributionFace.cpp\
 ../../../../MapKit/Sources/Container.cpp\
 ../../../../MapKit/Sources/MapSession.cpp\
 ../../../../MapKit/Sources/MapTileView.cpp\

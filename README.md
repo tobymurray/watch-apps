@@ -34,13 +34,23 @@ shared directory rather than an app.
 
 Each app is a self-contained app root: a `Software/` directory holding exactly one
 `*-CMake` project, which finds the SDK through `$UNA_SDK` rather than by relative
-path. So an SDK checkout anywhere will do. The three map apps additionally reach
-`MapKit/` by relative path within this repository, which is the arrangement
+path. So an SDK checkout anywhere will do — but **it has to be the right one.**
+
+**`$UNA_SDK` must point at an `apps-v1.3.0` checkout, not at mainline.** An app
+carries the kernel interface version it was built against: `apps-v1.3.0` is
+`KERNEL_INTERFACE_VERSION 2`, mainline is `3`, and the watch runs the 1.3 line.
+The two are not compatible and nothing catches the mistake — the build succeeds,
+the `.uapp` header looks identical (it carries app id, app version and libc
+version, none of which change), and the app simply does not run once installed.
+Chrono's and Map Manager's READMEs explain the pinning; it applies to every app
+here.
+
+The three map apps additionally reach `MapKit/` by relative path within this repository, which is the arrangement
 Kira's registry recommends for a monorepo and which its one-`*-CMake`-per-app
 rule is unaffected by — see [MapKit's README](MapKit/README.md#layout-and-why-kira-is-fine-with-it).
 
 ```sh
-export UNA_SDK=/path/to/una-sdk
+export UNA_SDK=/path/to/una-sdk-apps-v1.3.0    # not mainline; see above
 cd GpsLab/Software/Apps/GpsLab-CMake
 cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=1.0.0 .. && cmake --build build
 ```

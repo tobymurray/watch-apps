@@ -2,6 +2,7 @@
 #define MAINPRESENTER_HPP
 
 #include <gui/model/ModelListener.hpp>
+#include <MapKit/MapSession.hpp>
 #include <mvp/Presenter.hpp>
 
 using namespace touchgfx;
@@ -11,6 +12,10 @@ class MainView;
 class MainPresenter : public touchgfx::Presenter, public ModelListener
 {
 public:
+    /// The map session, for the attribution the app owes at startup.
+    /// Same shape as TrackPresenter's accessor.
+    MapKit::MapSession& mapSession();
+
     MainPresenter(MainView& v);
 
     /**

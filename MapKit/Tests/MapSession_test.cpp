@@ -409,8 +409,11 @@ TEST_F(SessionFixture, WalkingOffOnePackOntoAnotherReselects)
 TEST_F(SessionFixture, TheDirectoryIsScannedExactlyOncePerLaunch)
 {
     // Regression, found by running the simulator with the maps directory
-    // emptied. Nothing keyed on "no pack selected" may rescan, because that
-    // condition persists for as long as the wearer stays outside coverage --
+    // emptied. The scan itself now runs in the constructor rather than on the
+    // first fix (attribution has to be showable before a fix arrives), but the
+    // rule this pins is unchanged: nothing keyed on "no pack selected" may
+    // rescan, because that condition persists for as long as the wearer stays
+    // outside coverage --
     // rescanning there would mean a directory walk plus a header, footer and
     // marker read per pack, once a second, for a whole activity, on the GUI
     // thread, to re-learn what it already knew.
@@ -437,6 +440,42 @@ TEST_F(SessionFixture, TheDirectoryIsScannedExactlyOncePerLaunch)
     EXPECT_EQ(s.status(), MapStatus::NoPack)
         << "a rescan on every sample would have found the late pack";
     EXPECT_EQ(s.packName(), nullptr);
+}
+
+/// The reason the scan moved off the first fix. ODbL section 4.3's notice is
+/// owed for the data on the watch, not for whichever pack a fix happens to
+/// choose, and the app has to be able to show it at startup -- indoors, with
+/// no lock, before a single GPS sample has arrived.
+TEST_F(SessionFixture, AttributionIsAvailableBeforeAnyGpsSample)
+{
+    PackSpec spec;
+    spec.attribution = "Map data from OpenStreetMap (ODbL)";
+    seedPack("city.rawtiles", spec);
+
+    MapSession s(fx.kernel, cache, "TestApp");
+
+    ASSERT_EQ(s.status(), MapStatus::NoFix) << "precondition: no fix has arrived";
+    ASSERT_EQ(s.attributionCount(), 1u);
+    EXPECT_STREQ(s.attributionAt(0), "Map data from OpenStreetMap (ODbL)");
+    EXPECT_EQ(s.unattributedPacks(), 0u);
+}
+
+/// A pack that covers nowhere near the wearer is still installed, and its
+/// data is still credited. Attribution follows what is on the watch, not what
+/// is drawable from here.
+TEST_F(SessionFixture, CreditsPacksThatCoverNowhereNearTheWearer)
+{
+    PackSpec elsewhere;
+    elsewhere.minLon = 130000000; elsewhere.minLat = -40000000;
+    elsewhere.maxLon = 140000000; elsewhere.maxLat = -30000000;
+    elsewhere.attribution = "Map data from OpenStreetMap (ODbL)";
+    seedPack("elsewhere.rawtiles", elsewhere);
+
+    MapSession s(fx.kernel, cache, "TestApp");
+    s.onPosition(kLat, kLon, true, false);
+
+    ASSERT_EQ(s.status(), MapStatus::NoPack) << "precondition: nothing covers here";
+    EXPECT_EQ(s.attributionCount(), 1u) << "still installed, still credited";
 }
 
 TEST_F(SessionFixture, WalkingIntoCoverageStillFindsThePack)

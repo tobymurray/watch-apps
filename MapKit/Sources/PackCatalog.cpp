@@ -1,6 +1,11 @@
 #include <MapKit/PackCatalog.hpp>
 
+#define LOG_MODULE_PRX      "MapKit"
+#define LOG_MODULE_LEVEL    LOG_LEVEL_INFO
+#include "SDK/UnaLogger/Logger.h"
+
 #include <MapKit/MapMath.hpp>
+#include <MapKit/PackDepth.hpp>
 #include <MapKit/PackTrustReader.hpp>
 #include <SDK/RawTiles/Container.hpp>
 
@@ -120,8 +125,20 @@ bool PackCatalog::peek(const char* fullPath, PackFacts& out) const
         return false;
     }
 
+    // Rank on what the pack can draw, not on what it declares. A pack with
+    // no tiles at any zoom is not a map, and one that declares a deeper
+    // zoom_max than it has tiles for would otherwise outrank a pack that
+    // could actually draw the place. See PackDepth.hpp.
+    uint8_t drawableZoomMax = 0;
+    if (!deepestZoomWithTiles(hdr, sizeof(hdr), drawableZoomMax)) {
+        return false;
+    }
+    if (drawableZoomMax > zoomMax) {
+        return false;   // § 11: no tiles may sit outside the declared range
+    }
+
     PackFacts facts {};
-    facts.zoomMax        = zoomMax;
+    facts.zoomMax        = drawableZoomMax;
     facts.bboxMinLonUDeg = readI32LE(hdr + kOffBbox + 0);
     facts.bboxMinLatUDeg = readI32LE(hdr + kOffBbox + 4);
     facts.bboxMaxLonUDeg = readI32LE(hdr + kOffBbox + 8);
@@ -135,10 +152,35 @@ bool PackCatalog::peek(const char* fullPath, PackFacts& out) const
     return true;
 }
 
+void PackCatalog::collectAttribution(const char* fullPath)
+{
+    char attr[kMaxAttrLen];
+    if (!SDK::RawTiles::Container::peekAttribution(mKernel.fs, fullPath, attr, sizeof(attr))) {
+        // No ATTR, a malformed one, or one too long to hold. All three mean
+        // the same thing to the screen that has to show a credit: this pack's
+        // cannot be shown.
+        ++mUnattributed;
+        return;
+    }
+    for (size_t i = 0; i < mAttrCount; ++i) {
+        if (std::strcmp(mAttributions[i], attr) == 0) {
+            return;     // already crediting this source
+        }
+    }
+    if (mAttrCount >= kMaxAttributions) {
+        ++mUnattributed;
+        return;
+    }
+    std::memcpy(mAttributions[mAttrCount], attr, std::strlen(attr) + 1);
+    ++mAttrCount;
+}
+
 size_t PackCatalog::rescan()
 {
-    mCount   = 0;
-    mScanned = true;
+    mCount        = 0;
+    mScanned      = true;
+    mAttrCount    = 0;
+    mUnattributed = 0;
 
     std::unique_ptr<SDK::Interface::IDirectory> dir = mKernel.fs.dir(kMapsDir);
     if (!dir || !dir->open()) {
@@ -189,9 +231,15 @@ size_t PackCatalog::rescan()
         facts.name      = mNames[mCount];
         mFacts[mCount]  = facts;
         ++mCount;
+
+        // After the pack is accepted, so nothing that failed the peek can
+        // contribute a credit — a pack this app will never draw owes none.
+        collectAttribution(fullPath);
     }
 
     dir->close();
+    LOG_INFO("catalog: %zu pack(s), %zu attribution(s), %zu unattributed\n",
+             mCount, mAttrCount, mUnattributed);
     return mCount;
 }
 

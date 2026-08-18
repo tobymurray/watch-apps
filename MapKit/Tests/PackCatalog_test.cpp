@@ -76,6 +76,101 @@ TEST_F(CatalogFixture, FindsPacksAndNamesThemWithoutTheirDirectory)
     EXPECT_NE(indexOf(c, "region.rawtiles"), static_cast<size_t>(-1));
 }
 
+// ---------------------------------------------------------------------------
+// Attribution, collected by the same scan.
+//
+// It rides along with the roster because it is the same question asked of the
+// same files, and because a second pass would mean a second directory walk and
+// a second open per pack for facts the first walk already had in hand.
+// ---------------------------------------------------------------------------
+
+namespace {
+const char* const kOsmProtomaps =
+    "Map data from OpenStreetMap (ODbL) \xC2\xB7 basemap \xC2\xA9 Protomaps";
+const char* const kOsmOnly = "Map data from OpenStreetMap (ODbL)";
+
+PackSpec attributed(const char* attr)
+{
+    PackSpec s;
+    s.attribution = attr;
+    return s;
+}
+} // namespace
+
+TEST_F(CatalogFixture, CollectsTheAttributionOfInstalledPacks)
+{
+    seedPack("city.rawtiles", attributed(kOsmProtomaps));
+    PackCatalog c(fx.kernel);
+    ASSERT_EQ(c.rescan(), 1u);
+
+    ASSERT_EQ(c.attributionCount(), 1u);
+    EXPECT_STREQ(c.attributionAt(0), kOsmProtomaps);
+    EXPECT_EQ(c.unattributedPacks(), 0u);
+}
+
+/// Six regional packs from one pipeline owe one credit, not six.
+TEST_F(CatalogFixture, DeduplicatesIdenticalAttribution)
+{
+    for (const char* n : { "a.rawtiles", "b.rawtiles", "c.rawtiles" }) {
+        seedPack(n, attributed(kOsmProtomaps));
+    }
+    PackCatalog c(fx.kernel);
+    ASSERT_EQ(c.rescan(), 3u);
+
+    EXPECT_EQ(c.attributionCount(), 1u);
+    EXPECT_STREQ(c.attributionAt(0), kOsmProtomaps);
+}
+
+TEST_F(CatalogFixture, KeepsDistinctAttributionsApart)
+{
+    seedPack("proto.rawtiles", attributed(kOsmProtomaps));
+    seedPack("plain.rawtiles", attributed(kOsmOnly));
+    PackCatalog c(fx.kernel);
+    ASSERT_EQ(c.rescan(), 2u);
+
+    ASSERT_EQ(c.attributionCount(), 2u);
+    const std::string first  = c.attributionAt(0);
+    const std::string second = c.attributionAt(1);
+    EXPECT_NE(first, second);
+    EXPECT_TRUE(first == kOsmProtomaps || second == kOsmProtomaps);
+    EXPECT_TRUE(first == kOsmOnly || second == kOsmOnly);
+}
+
+/// A pack that cannot supply a credit is counted, not ignored: if its data
+/// owed one, that is a compliance problem and this is the last place that can
+/// say so.
+TEST_F(CatalogFixture, CountsPacksThatSupplyNoAttribution)
+{
+    seedPack("bare.rawtiles");                              // no ATTR section
+    seedPack("credited.rawtiles", attributed(kOsmOnly));
+    PackCatalog c(fx.kernel);
+    ASSERT_EQ(c.rescan(), 2u);
+
+    EXPECT_EQ(c.attributionCount(), 1u);
+    EXPECT_EQ(c.unattributedPacks(), 1u);
+}
+
+TEST_F(CatalogFixture, AttributionIsClearedByARescan)
+{
+    seedPack("city.rawtiles", attributed(kOsmProtomaps));
+    PackCatalog c(fx.kernel);
+    ASSERT_EQ(c.rescan(), 1u);
+    ASSERT_EQ(c.attributionCount(), 1u);
+
+    ASSERT_EQ(c.rescan(), 1u);
+    EXPECT_EQ(c.attributionCount(), 1u) << "a rescan must not accumulate duplicates";
+    EXPECT_EQ(c.unattributedPacks(), 0u);
+}
+
+TEST_F(CatalogFixture, AnEmptyDirectoryCreditsNobody)
+{
+    PackCatalog c(fx.kernel);
+    ASSERT_EQ(c.rescan(), 0u);
+    EXPECT_EQ(c.attributionCount(), 0u);
+    EXPECT_EQ(c.unattributedPacks(), 0u);
+    EXPECT_EQ(c.attributionAt(0), nullptr);
+}
+
 TEST_F(CatalogFixture, IgnoresTrustMarkersAndUnrelatedFiles)
 {
     // Map Manager writes its markers into the same directory, so this is the

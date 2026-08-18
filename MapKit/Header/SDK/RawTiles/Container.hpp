@@ -332,6 +332,78 @@ public:
     bool declaredCrc32(uint32_t &out) const;
 
     /**
+     * @brief Byte length of the pack's @c ATTR payload, or 0 if it has none.
+     *
+     * The open-time extension walk already locates and validates @c ATTR
+     * (§ 11 #38); this reports what it found, so a caller can size a buffer
+     * before asking for the bytes.
+     */
+    uint32_t attributionLength() const { return isOpen() ? mAttrLength : 0; }
+
+    /**
+     * @brief Copies the pack's @c ATTR payload into @p dst and NUL-terminates it.
+     *
+     * The attribution is a licence obligation that travels with the pack:
+     * ODbL § 4.3 requires a notice wherever the rendered map is publicly
+     * used, and the OSMF Attribution Guidelines let that notice live on a
+     * dismissible screen at app startup rather than as an overlay on the map
+     * itself. This is where a map app gets the text to put on it.
+     *
+     * The string is the pack's own, and consumers must not substitute their
+     * own wording: packs rendered from different sources owe different
+     * credit (OpenStreetMap alone, or OpenStreetMap plus Protomaps, or plus
+     * OpenMapTiles), and only the pack knows which.
+     *
+     * Per spec § 7.3 the payload is NFC UTF-8 with no trailing LF, and LF
+     * separates the per-source strings of a multi-source pack. It is copied
+     * out verbatim, LFs included; splitting those into display lines is the
+     * caller's business.
+     *
+     * @param dst      Destination buffer.
+     * @param dstSize  Its size in bytes, including room for the NUL.
+     * @return @c false if the pack is not open, carries no @c ATTR, or the
+     *         payload plus its NUL will not fit in @p dstSize.
+     *
+     * @note **Never truncates.** A clipped attribution is a licence defect
+     *       rather than a display glitch, so a buffer that is too small is
+     *       refused outright — size it with attributionLength(). A caller
+     *       that cannot fit the string should report the map as unattributed
+     *       rather than show half a credit.
+     */
+    bool attribution(char *dst, size_t dstSize) const;
+
+    /**
+     * @brief Reads one pack's `ATTR` **without** a structural open.
+     *
+     * openFromFile() walks the entire tile index — one seek+read per entry,
+     * thousands of them on a real pack — which is why PackCatalog refuses to
+     * do it per candidate on the GUI thread. Attribution does not need any of
+     * that: the extension sections sit between `extensions_offset` and the
+     * CRC footer, so this reads the 292-byte header, checks just enough of it
+     * to walk safely, and validates the extension region alone.
+     *
+     * **Cost is bounded regardless of pack size** — one open, one header
+     * read, and the extension region (tens of bytes in practice) — which is
+     * what makes it usable at app startup across every installed pack. That
+     * is the point: attribution has to be shown before the map is drawn, and
+     * therefore before a GPS fix has chosen which pack to draw.
+     *
+     * The extension region gets the same framing, tag, duplicate and § 11 #38
+     * text validation a full open would apply; only the tile index is
+     * skipped. A pack that fails those checks reports no attribution rather
+     * than a guess.
+     *
+     * @return @c false if the file is unreadable, is not a v1 pack, has no
+     *         valid `ATTR`, or the payload will not fit @p dstSize.
+     *
+     * @note Returns bytes, not a Container, deliberately. A half-validated
+     *       Container whose tile index was never checked is not safe to draw
+     *       from, so this never hands one out.
+     */
+    static bool peekAttribution(SDK::Interface::IFileSystem &fs, const char *path,
+                                char *dst, size_t dstSize);
+
+    /**
      * @brief Byte size of one fully-decoded (compression = None) tile for
      *        this pack's @c pixel_format / @c tile_dim_px.
      */
@@ -412,6 +484,14 @@ private:
     uint64_t                              mFileSize = 0;
     Header                                mHeader { };
 
+    /// Where the open-time extension walk found this pack's ATTR payload.
+    /// Zero length means the pack carries no ATTR section — legal for a
+    /// pack whose data owes no attribution, and a compliance problem for
+    /// one whose data does. The container cannot tell those apart, so it
+    /// reports and does not judge.
+    uint32_t                              mAttrOffset = 0;
+    uint32_t                              mAttrLength = 0;
+
     /// Reads exactly @p len bytes at absolute @p offset into @p dst from
     /// whichever backend is active. @c false on any short read, seek
     /// failure, or out-of-bounds access — the one place both backends'
@@ -422,7 +502,13 @@ private:
 
     OpenResult parseAndValidate(bool skipCrcVerify);
     OpenResult verifyCrc() const;
-    OpenResult walkExtensions(uint32_t extensionsOffset, uint32_t crcStart) const;
+    /// Non-const because it records where ATTR lives (mAttrOffset/Length)
+    /// as it validates. Everything else it does is read-only.
+    OpenResult walkExtensions(uint32_t extensionsOffset, uint32_t crcStart);
+
+    /// The body of peekAttribution(), on an already-open backend, so the
+    /// static entry point can close the file on every path.
+    bool peekAttributionOpened(char *dst, size_t dstSize);
     OpenResult validateAffn(uint32_t payloadOffset, uint32_t length) const;
     OpenResult validateName(uint32_t sectionStart, uint32_t payloadOffset, uint32_t length,
                              uint32_t extensionsOffset) const;

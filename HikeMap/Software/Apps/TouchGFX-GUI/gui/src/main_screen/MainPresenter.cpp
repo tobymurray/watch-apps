@@ -48,3 +48,8 @@ void MainPresenter::exitApp()
 {
     model->exitApp();
 }
+
+MapKit::MapSession& MainPresenter::mapSession()
+{
+    return model->mapSession();
+}

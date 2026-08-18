@@ -31,6 +31,21 @@ void MainView::setupScreen()
     mSensorRow.setGps(SDK::Gui::SensorStatusRow::gpsState(mGpsFix));
 
     updateBackground(menuLayout.getSelectedItem());
+
+    // The map data's credit, before anything else is looked at. It does not
+    // wait on a GPS fix: MapSession collects attribution from the packs that
+    // are installed, not from the one a fix selects, precisely so this can
+    // happen here. See AttributionFace's header for why it is a screen and
+    // not a timed overlay.
+    if (MapKit::AttributionFace::shouldShowAtStartup(presenter->mapSession())) {
+        mAttribution.setSources(presenter->mapSession());
+        add(mAttribution);
+        mAttribution.setVisible(true);
+        mAttribution.invalidate();
+        mAttributionUp = true;
+        mAttributionTicks = 0;
+        MapKit::AttributionFace::markShown();
+    }
 }
 
 void MainView::tearDownScreen()
@@ -127,8 +142,54 @@ void MainView::onAnimationMiddle(int16_t index)
     updateBackground(index);
 }
 
+void MainView::dismissAttribution()
+{
+    // Swallow keys for a moment afterwards.
+    //
+    // One physical press arrives as more than one key event -- press and
+    // release, at least. Without this, the first event took the notice down
+    // and the second fell straight through to the menu underneath, so a
+    // BACK press dismissed the notice *and* quit the app in one go. Three
+    // ticks at 10 Hz is 300 ms: long enough to absorb the pair, short enough
+    // that a deliberate second press still lands.
+    mAttributionGuard = 3;
+    mAttribution.setVisible(false);
+    mAttribution.invalidate();
+    remove(mAttribution);
+    mAttributionUp = false;
+    invalidate();
+}
+
+void MainView::handleTickEvent()
+{
+    MainViewBase::handleTickEvent();
+
+    // Auto-advance. The guidelines allow an untouched notice to collapse
+    // after five seconds, so a wearer who does nothing is not left holding a
+    // screen they cannot read any more of.
+    if (mAttributionUp && ++mAttributionTicks >= MapKit::AttributionFace::kAutoDismissTicks) {
+        dismissAttribution();
+    } else if (mAttributionGuard > 0) {
+        --mAttributionGuard;
+    }
+}
+
 void MainView::handleKeyEvent(uint8_t key)
 {
+    // Any key dismisses the notice, and that key does nothing else. The
+    // guidelines permit collapsing attribution "immediately with a dismiss
+    // interaction", so there is no minimum time to sit through -- but a press
+    // that both dismissed the notice and actioned the menu underneath would
+    // mean the wearer acted on a screen they had not seen yet.
+    if (mAttributionUp) {
+        (void)key;
+        dismissAttribution();
+        return;
+    }
+    if (mAttributionGuard > 0) {
+        return;     // the tail of the press that dismissed the notice
+    }
+
     if (key == SDK::GUI::Button::L1) {
         menuLayout.selectPrev();
     }

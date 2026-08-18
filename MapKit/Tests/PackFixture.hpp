@@ -4,7 +4,10 @@
  *        markers to sit beside it, for the host tests.
  *
  * The pack is a 292-byte header (Quadtree / WebMercator / ABGR2222, zero
- * tiles, zero extensions) plus a 4-byte CRC-32 footer. With tile_count == 0
+ * tiles), an optional `ATTR` extension section, and a 4-byte CRC-32 footer.
+ * `PackSpec::attribution` is what adds the section; leave it empty and the
+ * pack has zero extensions, which is what it was before attribution
+ * existed and what most of these tests still want. With tile_count == 0
  * the tile-index walk and the zoom_offsets checks degenerate to "everything
  * must be zero", and extensions_offset must equal tile_blob_start (which is
  * index_offset, 292). That is enough for a structural open to succeed, which
@@ -85,13 +88,30 @@ struct PackSpec {
     uint8_t  addressing  = 1;   ///< Quadtree
     uint8_t  formatMajor = 1;
     bool     goodMagic   = true;
+
+    /// When non-empty, the pack carries an `ATTR` extension section with
+    /// exactly these bytes. Empty means no `ATTR` section at all, which is
+    /// the shape every pack in these tests had before attribution existed.
+    ///
+    /// Spec § 7.3 constrains the contents (NFC UTF-8, no trailing LF, no
+    /// C0 controls except the LF that separates a multi-source pack's
+    /// per-source strings). Nothing here enforces that — a fixture that
+    /// could only build *valid* packs would be unable to test the
+    /// validation.
+    std::string attribution;
 };
 
 /// A structurally valid, CRC-correct pack, as a byte string ready to seed into
 /// the in-memory filesystem.
 inline std::string buildPack(const PackSpec& spec = PackSpec{})
 {
-    std::string bytes(kPackSize, '\0');
+    // An extension section is a 4-byte tag, a 4-byte LE payload length, the
+    // payload, then zero padding to the next 4-byte boundary.
+    const size_t attrPayload = spec.attribution.size();
+    const size_t attrPadded  = (attrPayload + 3u) & ~static_cast<size_t>(3u);
+    const size_t attrSection = attrPayload == 0 ? 0 : 8 + attrPadded;
+
+    std::string bytes(kHeaderSize + attrSection + kFooterSize, '\0');
     uint8_t* h = reinterpret_cast<uint8_t*>(&bytes[0]);
 
     if (spec.goodMagic) {
@@ -122,7 +142,16 @@ inline std::string buildPack(const PackSpec& spec = PackSpec{})
     // zoom_offsets[24] (96..287) stay zero, required when every count is 0.
     writeU32LE(h + 288, 292);              // extensions_offset == tile_blob_start
 
-    writeU32LE(h + kHeaderSize, crc32(h, kHeaderSize));
+    if (attrSection != 0) {
+        uint8_t* s = h + kHeaderSize;
+        s[0] = 'A'; s[1] = 'T'; s[2] = 'T'; s[3] = 'R';
+        writeU32LE(s + 4, static_cast<uint32_t>(attrPayload));
+        std::memcpy(s + 8, spec.attribution.data(), attrPayload);
+        // Padding bytes stay 0x00 — the walk rejects anything else.
+    }
+
+    const size_t bodyLen = kHeaderSize + attrSection;
+    writeU32LE(h + bodyLen, crc32(h, bodyLen));
     return bytes;
 }
 
