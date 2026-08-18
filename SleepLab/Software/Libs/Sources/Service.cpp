@@ -98,6 +98,7 @@ Service::Service(SDK::Kernel &kernel)
     , mCounter()
     , mSegmenter()
     , mBaseline()
+    , mWidget(kernel)
     , mAccel(SDK::Sensor::Type::ACCELEROMETER, kAccelPeriodMs, kAccelLatencyMs)
     , mTouch(SDK::Sensor::Type::TOUCH_DETECT, kEventPeriodMs)
     , mMotion(SDK::Sensor::Type::MOTION_DETECT, kEventPeriodMs)
@@ -540,6 +541,9 @@ void Service::openNight(uint16_t backdateScoringEpochs)
     LOG_INFO("night opened, backdated %u min\n",
              static_cast<unsigned>(backdateScoringEpochs));
     publishReport();
+    // The morning's widget goes away the moment the next night starts.
+    pumpWidget();
+    glanceRefresh();
 }
 
 void Service::closeNight(bool discard)
@@ -872,6 +876,140 @@ void Service::publishHistory()
 }
 
 
+
+// -- Glance and home widget -------------------------------------------------------
+
+bool Service::glanceConfig()
+{
+    auto gc = SDK::make_msg<SDK::Message::RequestGlanceConfig>(mKernel);
+    if (!gc || !gc.send(100) || !gc.ok()) {
+        return false;
+    }
+    // Three controls: a title, the headline, and the honesty line. If the
+    // kernel cannot give three, the glance is declined rather than drawn
+    // without the last one -- a sleep figure shown with no indication that it
+    // is an estimate is the one thing this app must not put in front of
+    // somebody.
+    if (gc->maxControls < 3) {
+        LOG_WARNING("glance offers %u controls; declining\n",
+                    static_cast<unsigned>(gc->maxControls));
+        return false;
+    }
+    mGlance.setWidth(gc->width);
+    mGlance.setHeight(gc->height);
+    return true;
+}
+
+void Service::glanceCreate()
+{
+    mGlanceTitle = mGlance.createText();
+    mGlanceTitle.pos({ 18, 0 }, { 205, 26 })
+        .font(GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_20)
+        .color(GlanceColor_t::GLANCE_COLOR_TEAL)
+        .setText("Sleep")
+        .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
+
+    mGlanceValue = mGlance.createText();
+    mGlanceValue.pos({ 18, 26 }, { 205, 36 })
+        .font(GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_30)
+        .color(GlanceColor_t::GLANCE_COLOR_WHITE)
+        .setText("--")
+        .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
+
+    mGlanceSub = mGlance.createText();
+    mGlanceSub.pos({ 8, 62 }, { 225, 22 })
+        .font(GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_18)
+        .color(GlanceColor_t::GLANCE_COLOR_WHITE)
+        .setText("")
+        .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
+}
+
+void Service::glanceRefresh()
+{
+    if (!mGlanceActive) {
+        return;
+    }
+
+    const Engine::NightSummary &s = mLastSummary;
+
+    if (mStore.isOpen()) {
+        mGlanceValue.setText("recording");
+        mGlanceSub.setText("report in the morning");
+    } else if (!mHaveReport) {
+        mGlanceValue.setText("--");
+        mGlanceSub.setText("no night recorded yet");
+    } else if (!s.hasSleep) {
+        // A night with no numbers says so here too. There is no version of
+        // this glance that shows a figure for a night that failed the gate.
+        mGlanceValue.setText("--");
+        mGlanceSub.setText(s.worn == Engine::WornVerdict::NotWorn
+                               ? "not worn"
+                               : "unconfirmed");
+    } else {
+        mGlanceValue.print("%ldh%02ld", static_cast<long>(s.totalSleepMin / 60),
+                           static_cast<long>(s.totalSleepMin % 60));
+        // "est" is not decoration. It is the whole difference between a
+        // measurement and an estimate biased high, in three characters, on the
+        // one surface somebody actually reads.
+        if (s.interruption != 0) {
+            mGlanceSub.print("est - interrupted");
+        } else {
+            mGlanceSub.print("est - eff %ld%%",
+                             static_cast<long>(s.efficiencyPct));
+        }
+    }
+
+    mGlance.setValid();
+}
+
+void Service::pumpWidget()
+{
+    // Shown only while a report stands and no night is running: that window is
+    // the morning. A widget still showing Tuesday's efficiency on Thursday
+    // afternoon is clutter, not information.
+    const bool want = mHaveReport && !mStore.isOpen() && !mGuiStarted &&
+                      mLastSummary.hasSleep;
+
+    if (!want) {
+        if (mWidgetActive) {
+            mWidget.stop();
+            mWidgetActive  = false;
+            mWidgetText[0] = '\0';
+        }
+        return;
+    }
+
+    if (!mWidgetActive) {
+        mWidget.start();
+        mWidgetActive  = true;
+        mWidgetText[0] = '\0';
+    }
+
+    const Engine::NightSummary &s = mLastSummary;
+    char text[16];
+    std::snprintf(text, sizeof(text), "%ldh%02ld",
+                  static_cast<long>(s.totalSleepMin / 60),
+                  static_cast<long>(s.totalSleepMin % 60));
+
+    // Pushed only when the text changes. A morning's report does not move, and
+    // re-sending it every epoch would be an IPC message a minute for hours.
+    if (std::strcmp(text, mWidgetText) == 0) {
+        return;
+    }
+    std::snprintf(mWidgetText, sizeof(mWidgetText), "%s", text);
+
+    // Efficiency as the bar. Clamped rather than trusted: it is a ratio of two
+    // measured values and a resumed night can push it past 100.
+    float pct = (s.efficiencyPct == kAbsent) ? 0.0f
+                                             : static_cast<float>(s.efficiencyPct);
+    if (pct < 0.0f)   { pct = 0.0f; }
+    if (pct > 100.0f) { pct = 100.0f; }
+
+    mWidget.update(SDK::Message::WIDGET_SHOW_TEXT | SDK::Message::WIDGET_SHOW_PERCENT,
+                   pct, text);
+}
+
+
 // -- The loop ------------------------------------------------------------------------
 
 void Service::run()
@@ -949,6 +1087,11 @@ void Service::run()
                     // resume, and the raw capture has a buffer to flush.
                     LOG_INFO("stopping\n");
                     mRaw.stop();
+                    // Leave no stale widget on the home screen.
+                    if (mWidgetActive) {
+                        mWidget.stop();
+                        mWidgetActive = false;
+                    }
                     disconnectSensors();
                     mKernel.comm.releaseMessage(msg);
                     return;
@@ -958,6 +1101,35 @@ void Service::run()
                     mGuiStarted = true;
                     publishReport();
                     publishHistory();
+                    // The widget and the open screen would say the same thing
+                    // in two places; the screen wins while it is up.
+                    pumpWidget();
+                    break;
+
+                case SDK::MessageType::EVENT_GLANCE_START:
+                    if (glanceConfig()) {
+                        glanceCreate();
+                        mGlanceActive = true;
+                        glanceRefresh();
+                    }
+                    break;
+
+                case SDK::MessageType::EVENT_GLANCE_TICK:
+                    if (mGlanceActive && mGlance.isInvalid()) {
+                        if (auto upd =
+                                SDK::make_msg<SDK::Message::RequestGlanceUpdate>(mKernel)) {
+                            upd->name           = APP_NAME;
+                            upd->controls       = mGlance.data();
+                            upd->controlsNumber = static_cast<uint32_t>(mGlance.size());
+                            upd.send(100);
+                        }
+                    }
+                    break;
+
+                case SDK::MessageType::EVENT_GLANCE_STOP:
+                    // The glance going away is not the app going away, unlike
+                    // a Glance-type app. Recording continues.
+                    mGlanceActive = false;
                     break;
 
                 case SDK::MessageType::COMMAND_APP_NOTIF_GUI_STOP:
@@ -966,6 +1138,7 @@ void Service::run()
                     // anyone is looking or not, and closing the screen at 22:45
                     // is the normal case rather than a shutdown.
                     mGuiStarted = false;
+                    pumpWidget();
                     break;
 
                 case SDK::MessageType::EVENT_SENSOR_LAYER_DATA: {

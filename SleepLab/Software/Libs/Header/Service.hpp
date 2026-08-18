@@ -60,6 +60,8 @@
 
 #include <cstdint>
 
+#include "SDK/Glance/GlanceControl.hpp"
+#include "SDK/HomeWidget/HomeWidget.hpp"
 #include "SDK/Kernel/Kernel.hpp"
 #include "SDK/SensorLayer/SensorConnection.hpp"
 #include "SDK/SensorLayer/SensorDataBatch.hpp"
@@ -156,6 +158,25 @@ private:
     void checkAlarm();
     void playAlarm();
 
+    // -- Glance and home widget -------------------------------------------------
+    //
+    // Both exist for the same reason: a sleep report is glanced at once, half
+    // awake, and neither surface needs the app to be opened. `Utility` apps are
+    // marked glance-capable regardless of type -- `una-app.cmake` passes
+    // `-glance_capable` unconditionally -- so this costs no change of app type
+    // and no loss of autostart.
+
+    bool glanceConfig();
+    void glanceCreate();
+    void glanceRefresh();
+
+    /// Claim, update or release the home-screen widget.
+    ///
+    /// Shown only in the morning: from a night closing until the next bedtime
+    /// window opens. A widget still showing last Tuesday's efficiency in
+    /// Thursday's afternoon is clutter, not information.
+    void pumpWidget();
+
     // -- GUI ------------------------------------------------------------------
 
     void publishReport();
@@ -176,6 +197,18 @@ private:
     Engine::EpochCounter   mCounter;
     Engine::NightSegmenter mSegmenter;
     Engine::BaselineStore  mBaseline;
+
+    SDK::Glance::Form        mGlance;
+    SDK::Glance::ControlText mGlanceTitle;
+    SDK::Glance::ControlText mGlanceValue;
+    SDK::Glance::ControlText mGlanceSub;
+    bool                     mGlanceActive = false;
+
+    SDK::HomeWidget mWidget;
+    bool            mWidgetActive = false;
+    /// Last text pushed to the widget, so an unchanged morning pushes once
+    /// rather than once per epoch.
+    char            mWidgetText[16] = {};
 
     SDK::Sensor::Connection mAccel;
     SDK::Sensor::Connection mTouch;

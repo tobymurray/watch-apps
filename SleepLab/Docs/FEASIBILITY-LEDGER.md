@@ -36,6 +36,9 @@ Rows are dated. A row with no date has not been checked since it was written.
 | P8 | Plugging in USB terminates every running app; autostart relaunches on unplug. So a watch charging overnight records nothing. | **CONFIRMED** | Not by this app — by `MapManager`, which recovered the kernel's own log out of `Crash/dump_*.bin`: `UsbDevice::onUsbDetected: USB cable plugged` → `App.Manager::stopAll: Terminate all active applications`. See `MapManager/README.md`. Independently re-checkable from any SleepLab probe log: a run boundary in the middle of a night is this. | 2026-08-13 |
 | P9 | `getTimeMs()` is device uptime: it survives an app restart and resets only on device reboot. It is 32-bit and wraps at ~49.7 days. | **CONFIRMED** | `MapManager/README.md`, from reading its own log across 25 app launches in 10 device boots. The wrap is arithmetic, not measurement: `2^32 ms`. Every duration in SleepLab uses unsigned or signed differences accordingly. | 2026-08-13 |
 | P10 | The largest IPC pool block is 256 bytes. | **LIKELY** | Stated in the SDK docs and relied on by every app in this repo (`Alarm/Commands.hpp` sizes `AlarmList` to 134 bytes against it explicitly). Not measured here. Every SleepLab message carries a `static_assert(sizeof(T) <= 256)` so that being wrong is a build failure rather than a runtime one. | 2026-08-18 |
+| P11 | The whole app builds and packs into a `.uapp` against `apps-v1.4.0`, service and GUI. | **CONFIRMED** | `SleepLab/Tools/docker-build.sh app`, in the container Kira publishes binaries from. 230 740 bytes, `ID E4782CD726259DC6`. | 2026-08-18 |
+| P12 | `SDK::MessageBase` deletes copy-assignment, so a message payload the GUI needs to keep must be a separate plain struct. | **CONFIRMED** | Build failure: `use of deleted function 'SDK::MessageBase& operator=(const SDK::MessageBase&)'`. Correct behaviour — a message is a pooled block with an identity, and copying one would produce a second object claiming the same slot. `SleepReportData` is now separate from `SleepReport`. | 2026-08-18 |
+| P13 | `SleepReport` at 100 strip buckets is 216 bytes and fits the pool block; at 200 it did not. | **CONFIRMED** | Measured with `sizeof` in the host container. `MessageBase` is 40 bytes, not the 32 the older examples' comments imply. The bucket count is set by the panel (200 px usable / 2 px per bucket) rather than by the message size, and fitting is the happy consequence. | 2026-08-18 |
 
 ---
 
@@ -62,6 +65,17 @@ any product code. Each row names the column of `probe_log.csv` that settles it;
 
 ---
 
+## 2a. Tier 4 surfaces
+
+| # | Claim | Tag | Method / what would change it | Date |
+| --- | --- | --- | --- | --- |
+| T1 | As of the 1.4 kernel, mute does not silence app-requested alerts — muting covers alerts the watch raises at the user, not feedback an app produces in a session it owns. | **UNVERIFIED** | Stated upstream (PR #267, una-kernel#260) and not checked on this unit. **An alarm that fails silently is worse than no alarm**, which is why the alarm is off by default and the README says to test it on a weekend. To confirm: mute the watch, set `alarm_at` two minutes ahead inside the bedtime window, and wait. |
+| T2 | The glance and the home widget work from a `Utility` app without changing its type. | **LIKELY** | The flag is CONFIRMED (row P4) and the code builds; neither surface has been seen on hardware. `EVENT_GLANCE_START` / `TICK` / `STOP` are handled in the service exactly as `GlanceHR` handles them, and the widget follows `Timer`'s claim/release pattern. |
+| T3 | `SDK/Fit/FitProfile.hpp` on 1.4 has no monitoring or sleep messages; its `File` enum holds only `Activity = 4`. | **CONFIRMED** | Read directly: `enum class File : uint8_t { Activity = 4 };` at `FitProfile.hpp:45`, and `grep -i "monitor\|sleep"` over the header returns nothing. So there is no FIT export, and the CSV and JSON are the export. | 2026-08-18 |
+| T4 | The BLE File Transfer Service can pull files out of `Apps/SleepLab/` while the service keeps running. | **UNVERIFIED** | `prototype/una_ble_client.py` is validated for `.fit` files under `Apps/GpsLab/` with matching CRC-16, and nothing in the protocol is path-specific — but `Tools/pull_nights.py` has never been run against a watch. Needs Linux with BlueZ, `dbus_fast`, and a bonded device. |
+
+---
+
 ## 3. Sleep science — what the numbers mean
 
 These rows are not about the hardware. They are about whether a number this app
@@ -75,6 +89,8 @@ prints means what its name says, and they are the ones that go stale quietly.
 | A4 | Heart rate is meaningful only relative to the wearer's own baseline. | **LIKELY** | Nocturnal HR minimum, time-to-minimum and the morning rise are real and personal; absolute thresholds copied from a paper are not transferable. No absolute physiological threshold appears anywhere in this app. Deltas are refused until enough of this user's own nights exist — five, chosen as the smallest number that is not one bad night, and itself UNVERIFIED. |
 | A5 | Off-wrist is the failure mode that discredits everything. | **CONFIRMED** | Arithmetic, not measurement: a watch on a nightstand is perfectly still and would score a flawless night. Every sleep claim is gated on worn-detection *plus* a plausibility check (micro-movement and a valid HR reading), and a night failing the gate is reported as *not worn* with its sleep numbers **suppressed**, not annotated. |
 | A6 | Respiratory rate from a wrist accelerometer at these rates is not defensible. | **CONFIRMED** | Not shipped. Recorded here so the absence is a decision rather than an oversight. |
+| A8 | The Cole-Kripke weights, P, and the Webster rescoring thresholds implemented here are the published ones. | **UNVERIFIED** | Transcribed from the literature; nobody here has checked them against Cole *et al.* 1992, *Sleep* 15(5):461-469 or Webster *et al.* 1982, *Sleep* 5(4):389-399. They are gathered in one constant block in `SleepWakeScorer.hpp` precisely so that checking them is a one-block fix. The *shape* is unmistakable and is pinned by tests (the current epoch dominates; the window runs four back and two forward); the exact values are not. |
+| A9 | `kCountScale`, which bridges this device's count units to the units Cole-Kripke was fitted against, is correct. | **UNVERIFIED** | **It is a guess**, and it is the single number standing between "cites a real paper" and "is validated". It cannot be derived, only measured. See the validation table below and the TODO on the constant itself. |
 | A7 | Skin temperature is not available. `AMBIENT_TEMPERATURE` (0x70) is ambient. | **CONFIRMED** | The SDK's own type name and its doc comment. Never labelled as body temperature anywhere in this app. |
 
 ---
@@ -86,7 +102,18 @@ with no row here is a metric the app must not print.
 
 | Metric | What it actually measures | Validation | Known failure modes |
 | --- | --- | --- | --- |
-| *(Tier 1 and 2 metrics land here as they are implemented)* | | | |
+| **activity count** | Integrated band-limited (0.25–3 Hz) acceleration per axis over the epoch, combined as the vector magnitude of the three integrals, in units of g·s × 1000. | *synthetic-only.* Host tests pin stillness near zero, linear scaling with amplitude, the band's rejection of 0.05 Hz drift (20×) and 12 Hz shock (15×), identical response on every axis, and **independence from the delivered sample rate across a 4× span**. | A delivery gap contributes nothing rather than a fabricated rectangle, but an epoch built from a handful of samples still integrates to near-zero — which reads as perfect stillness. Guarded twice: a `kDataGap` flag at the recording epoch and `Unscorable` at the scoring epoch. |
+| **sleep / wake per epoch** | Cole-Kripke over a ±window of counts, with Webster rescoring. | *synthetic-only, and the correspondence to sleep is unestablished* — see A9. | Systematically over-calls sleep: lying still awake scores as sleep. |
+| **estimated total sleep time** | Epochs scored Sleep between onset and final wake. | *synthetic-only.* Exact against nights of known shape. | **Biased high**, direction known. Reported alongside `stillInBedMin` for exactly this reason. |
+| **time in bed still** | Epochs between onset and final wake with counts below the movement floor. | *synthetic-only* for the arithmetic; the floor itself is a guess with a TODO. | Measures stillness, which is what was observed. Does not distinguish a still sleeper from a still reader. |
+| **sleep onset / latency** | First epoch of the first run of 10 consecutive Sleep epochs; session start to there. | *synthetic-only.* | Unscorable epochs break the run, so a delivery outage delays onset rather than declaring it. |
+| **WASO, awakenings** | Wake epochs, and runs of them, between onset and final wake. | *synthetic-only.* Exact, including that wake before onset and after final wake is neither. | An outage inside the night is neither wake nor an awakening — it breaks a run without ending it as one. |
+| **sleep efficiency** | totalSleepMin / timeInBedMin, as a percentage. Against time in **bed**, the conventional denominator. | *synthetic-only.* | Inherits the sleep-time bias exactly. The onset-to-final-wake variant is also called sleep efficiency and gives a flattering number; this is not that one. |
+| **movement index** | Percentage of epochs between onset and final wake above the movement floor. | *synthetic-only.* | Independent of the scorer, so it stays meaningful where the scorer's calibration does not. |
+| **worn verdict** | Worn fraction plus a micro-movement-or-pulse plausibility check. | *synthetic-only.* Host tests pin the nightstand case, mid-night removal, brief dropout tolerance, and the HR-off degradation to `Uncertain`. | **Every threshold is a guess** pending the worn-vs-table probe nights (S7). Too loose and a nightstand passes; too tight and real nights are suppressed. |
+| **restfulness band** | Four-level ordinal index over movement and heart rate relative to the night's own HR minimum. | *speculative.* Well-defined arithmetic; no evidence it corresponds to anything. | **Not a sleep stage.** Comparable in shape between nights, not in level, because the HR reference is per-night. |
+| **nocturnal HR minimum / mean** | Lowest and mean epoch-mean heart rate. | *sensor measurement,* reported as such. | Optical HR degrades with a loose band. Provenance is recorded per epoch via `HEART_RATE_EX`, not assumed. |
+| **HR and efficiency deltas** | Tonight against the median of the wearer's own last 28 recorded nights. | *synthetic-only* for the arithmetic. | Refuses to report below 5 nights. Median, not mean, so one night on a plane does not move it. Nights that failed the worn gate never enter it. |
 
 Legend for **Validation**: *synthetic-only* — pinned by generated fixtures with
 known answers, which prove the arithmetic and nothing about a person.
@@ -105,5 +132,18 @@ anything.
 - **Every row in §2 is UNVERIFIED.** Two probe nights — one worn and unplugged
   with `"hr": "continuous"`, one on a table — settle most of them. See
   `../Probe/README.md`.
-- **A3 and A4's thresholds are unjustified numbers with TODOs against them** in
-  the code. Each carries a comment naming the recording that would justify it.
+- **A3, A4 and A9's thresholds are unjustified numbers with TODOs against them**
+  in the code. Each carries a comment naming the recording that would justify
+  it. The largest is `kCountScale`: sweep it against ten diary-validated nights,
+  report the mean signed error and spread on onset and final wake at each value,
+  and put the minimising value in the code and the residual error in the README.
+- **The diary has not been started.** §6 of the brief asks for at least ten
+  nights of hand-recorded lights-out and wake times. That is the only thing that
+  can turn any row in the validation table from *synthetic-only* into
+  *diary-validated*, and it can be started the same night as the first probe run.
+- **The adversarial nights have not been run.** Each is meant to become a
+  regression fixture: worn but lying awake and still for 30 minutes; not worn on
+  a table; worn while charging; a device reboot mid-night; a clock change
+  mid-night; a deliberate early get-up. The synthetic fixtures already cover the
+  *shapes* — what the real nights would add is whether the thresholds put real
+  data on the right side of them.
