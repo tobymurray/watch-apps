@@ -1346,6 +1346,17 @@ void Service::run()
         // counted or every time of day after the restart lands early.
         mEpochsNotInArray =
             resume.epochs / Engine::kEpochsPerScoringEpoch + resume.gapMinutes;
+        // Both halves of that come off disk -- an unbounded `%lu` in the state
+        // file, and a wall clock that may have moved arbitrarily. A count past the
+        // longest night the engine will score is a corrupt count, and letting it
+        // through would add hours to time in bed and push every reported index
+        // past the end of the array.
+        if (mEpochsNotInArray > Engine::kMaxScoringEpochs) {
+            LOG_WARNING("resume claims %lu prior epochs; clamping\n",
+                        static_cast<unsigned long>(mEpochsNotInArray));
+            mEpochsNotInArray = Engine::kMaxScoringEpochs;
+            mFlags |= Engine::Interruption::kDataGap;
+        }
         // The session's *start*, which is what the state file carries `startUtc`
         // for. `wallUtc` is the clock at the last flush before the restart, and
         // using it anchored every reported time of day to the middle of the
@@ -1455,9 +1466,16 @@ void Service::run()
                             upd->name           = kGlanceName;
                             upd->controls       = mGlance.data();
                             upd->controlsNumber = static_cast<uint32_t>(mGlance.size());
-                            upd.send(100);
+                            if (upd.send(100)) {
+                                // Only once it has gone. Marking the form valid
+                                // when the allocation or the send failed would
+                                // drop the content and wait for the next change
+                                // to notice -- which is the failure this call
+                                // being in the wrong place caused in the first
+                                // place, in a rarer form.
+                                mGlance.setValid();
+                            }
                         }
-                        mGlance.setValid();
                     }
                     break;
 

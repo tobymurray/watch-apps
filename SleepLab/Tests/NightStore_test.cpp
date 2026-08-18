@@ -600,4 +600,48 @@ TEST(NightStore, AFailedCloseIsAFailedWrite)
         << "the epoch's close failed and appendEpoch reported success";
 }
 
+/// A decade of nights is ~400 index rows and the reader takes only the last
+/// 4 096 bytes, which lands mid-row essentially always. A truncated leading field
+/// parses cleanly as a smaller number, so the guard is to skip to the first
+/// newline -- and the guard is what this exercises, by writing more rows than the
+/// tail window can hold.
+TEST(NightStore, AnIndexBiggerThanTheTailWindowIsReadFromAWholeRow)
+{
+    KernelFixture fx;
+
+    std::string index =
+        "start_utc,tib_min,tst_min,eff_pct,hr_min_x10,hr_min_at_pct,worn,"
+        "interruption\n";
+    // Ten years of nights, each with a distinguishable start time so a
+    // half-parsed row would be obvious.
+    constexpr int kNights = 3650;
+    for (int i = 0; i < kNights; ++i) {
+        char row[128];
+        std::snprintf(row, sizeof(row), "%lld,480,430,89,512,50,0,0\n",
+                      static_cast<long long>(kStart) + i * 86400LL);
+        index += row;
+    }
+    ASSERT_GT(index.size(), 4096u * 8u) << "the fixture is not big enough to "
+                                            "make the tail read land mid-row";
+    fx.fileSystem.seedFile("Nights/index.csv", index);
+
+    NightStore store(fx.kernel);
+    NightStore::IndexRow rows[NightStore::kMaxHistory];
+    const size_t n = store.readHistory(rows, NightStore::kMaxHistory);
+
+    ASSERT_EQ(n, NightStore::kMaxHistory)
+        << "the tail read recovered " << n << " rows of a decade of nights";
+
+    // Oldest first, consecutive days, ending on the last night written. A row
+    // parsed from a truncated timestamp would break the sequence.
+    for (size_t i = 0; i < n; ++i) {
+        const int64_t expect =
+            kStart + static_cast<int64_t>(kNights - n + i) * 86400LL;
+        EXPECT_EQ(rows[i].startUtc, expect)
+            << "row " << i << " of the tail read";
+        EXPECT_EQ(rows[i].timeInBedMin, 480);
+        EXPECT_EQ(rows[i].efficiencyPct, 89);
+    }
+}
+
 } // namespace
