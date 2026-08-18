@@ -1,0 +1,516 @@
+/**
+ * A whole night through the real `Service`, at a desk. See NightHarness.hpp
+ * for what the harness is and what it deliberately is not evidence about.
+ *
+ * Every test here is a claim about what the *app* does with a stream of a known
+ * shape -- not a claim about sleep. Where a test asserts a number of minutes,
+ * that number is derived from the scenario by construction and stated in the
+ * test, so a failure says which of the two is wrong.
+ */
+#include <gtest/gtest.h>
+
+#include "NightHarness.hpp"
+
+namespace {
+
+using namespace Harness;
+
+/// The default 21:00-11:00 window, a Tuesday evening at 21:45 UTC.
+/// Local == UTC because the suite runs with TZ=UTC (set in CMake), which is the
+/// only way a time-of-day assertion can mean anything.
+constexpr int64_t kStart = 1755553500;   // 2026-08-18 21:45:00 UTC
+
+// The amplitudes below are chosen against a *measured* count scale rather than
+// guessed, because every threshold in this app lives inside one decade of it.
+// Feeding EpochCounter a sinusoid of amplitude A and taking the count per 60 s
+// scoring epoch gives, at the ~48 Hz the hardware actually delivers:
+//
+//     A (g)     0.3 Hz    1.0 Hz
+//     0.0005        10        14
+//     0.0010        20        30
+//     0.0020        42        60
+//     0.0100       216       300
+//     0.0500      1088      1508
+//     0.3000      6528      9058
+//
+// against which the app's thresholds are: micro-movement floor 8, band
+// "settled" 20, movement floor 40, stillness-to-open 60, band "restless" 120,
+// activity-to-close 250, and Cole-Kripke's own sleep/wake boundary at about
+// 273 counts sustained. So a "still sleeper" and "somebody moving about" are
+// about 0.001 g and 0.05 g respectively -- three milli-g apart, which is worth
+// knowing before a night is spent on it.
+
+/// Respiration on a still, worn wrist: ~20 counts a minute. Below the stillness
+/// ceiling that opens a night and below the movement floor, and above the
+/// micro-movement floor the worn gate needs to see to believe a wrist is alive.
+constexpr float kBreathingG  = 0.0010f;
+constexpr float kBreathingHz = 0.30f;
+
+/// Somebody awake and shifting about: ~1500 counts a minute, six times the
+/// activity floor that closes a night and five times Cole-Kripke's boundary.
+constexpr float kAwakeG  = 0.05f;
+constexpr float kAwakeHz = 1.0f;
+
+Phase still(int minutes, int hr = 55)
+{
+    Phase p;
+    p.minutes    = minutes;
+    p.amplitudeG = kBreathingG;
+    p.freqHz     = kBreathingHz;
+    p.worn       = true;
+    p.hrBpm      = hr;
+    return p;
+}
+
+Phase awake(int minutes, int hr = 68, int steps = 0)
+{
+    Phase p;
+    p.minutes     = minutes;
+    p.amplitudeG  = kAwakeG;
+    p.freqHz      = kAwakeHz;
+    p.worn        = true;
+    p.hrBpm       = hr;
+    p.stepsPerMin = steps;
+    return p;
+}
+
+/// A plain night: five minutes awake, seven hours still, then up and walking.
+Scenario plainNight()
+{
+    Scenario s;
+    s.startUtc = kStart;
+    s.phases   = { awake(5), still(7 * 60), awake(20, 72, 40) };
+    return s;
+}
+
+TEST(Pipeline, APlainNightIsRecordedScoredAndSummarised)
+{
+    const Scenario s = plainNight();
+    const Observations obs = Rig::instance().run(s);
+
+    const std::string csvPath = theNightCsv(Rig::instance().fs);
+    ASSERT_FALSE(csvPath.empty()) << "no epoch CSV was written at all";
+
+    const std::vector<EpochRow> rows =
+        parseEpochs(Rig::instance().fs.readFile(csvPath));
+    EXPECT_GT(rows.size(), 100u) << "the night barely recorded anything";
+
+    // The index is what the history and the baseline are rebuilt from.
+    const std::string index = Rig::instance().fs.readFile("Nights/index.csv");
+    EXPECT_NE(index.find(','), std::string::npos) << "no index row";
+
+    // And the state file is gone, because the night closed cleanly.
+    EXPECT_FALSE(Rig::instance().fs.exist("night_state.txt"));
+
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr) << "the service never published a closed night";
+    EXPECT_TRUE(rep->hasSleep) << "a worn, still night produced no sleep numbers";
+}
+
+// ---------------------------------------------------------------------------
+// The night's own clock
+//
+// These are the expensive bugs. A crash is cheap -- you see it and fix it. A
+// silent offset in every reported sleep time survives review, looks plausible
+// in the morning, and contaminates the diary calibration that every other
+// number in the app is waiting on.
+// ---------------------------------------------------------------------------
+
+/// Local minutes past midnight of a UTC instant. TZ=UTC, so local == UTC; the
+/// helper exists so the arithmetic in the assertions reads as a time of day.
+int16_t localOf(int64_t utc)
+{
+    const std::time_t t = static_cast<std::time_t>(utc);
+    std::tm g {};
+    gmtime_r(&t, &g);
+    return static_cast<int16_t>(g.tm_hour * 60 + g.tm_min);
+}
+
+TEST(NightClock, ReportedWakeTimeIsWhenTheSleeperStoppedBeingStill)
+{
+    // Awake for 5 minutes, still for 300, then up and walking. By construction
+    // the last still minute is run-minute 304 and the wearer is up from 305, so
+    // the honest final wake is 21:45 + 305 = 02:50.
+    Scenario s;
+    s.startUtc = kStart;
+    s.phases   = { awake(5), still(300), awake(30, 72, 40) };
+    const Observations obs = Rig::instance().run(s);
+
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr);
+    ASSERT_TRUE(rep->hasSleep);
+
+    const int16_t expected = localOf(kStart + 305 * 60);
+    // Two minutes of slack: the epoch grid and the ten-minute onset run mean
+    // the last *scored* sleep minute can legitimately be a minute either side.
+    EXPECT_NEAR(rep->wokeAtMin, expected, 2)
+        << "reported wake " << rep->wokeAtMin << ", the sleeper stopped at "
+        << expected << " -- a difference of "
+        << (expected - rep->wokeAtMin) << " minutes in every night";
+}
+
+TEST(NightClock, ReportedSleepOnsetIsWhenTheSleeperSettled)
+{
+    // Same night. Stillness begins at run-minute 5 = 21:50, and the onset
+    // definition needs ten consecutive sleep minutes, so onset is 21:50 and
+    // onset latency is measured from the session start, which is also 21:50.
+    Scenario s;
+    s.startUtc = kStart;
+    s.phases   = { awake(5), still(300), awake(30, 72, 40) };
+    const Observations obs = Rig::instance().run(s);
+
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr);
+    ASSERT_TRUE(rep->hasSleep);
+
+    // Onset latency is session start to onset. Both are 21:50 here, so a
+    // latency near zero is right -- and it must be right *because* the opening
+    // minutes were scored, not because they were skipped. The paired assertion
+    // below is what tells those two apart.
+    EXPECT_LE(rep->onsetLatencyMin, 2);
+    EXPECT_NEAR(rep->asleepAtMin, localOf(kStart + 5 * 60), 2);
+}
+
+TEST(NightClock, TimeInBedIsTheEpochsTheSummaryWasBuiltFrom)
+{
+    // For a night that never restarted, "how many scoring epochs the night
+    // contained" and "how many minutes the wearer was in bed" are the same
+    // number counted twice. A summary whose own two fields disagree cannot be
+    // reconciled by anyone reading the file, and every index the JSON quotes --
+    // onset_epoch, final_wake_epoch, hr min_epoch -- is on one of the two axes
+    // without saying which.
+    const Observations obs = Rig::instance().run(plainNight());
+    (void)obs;
+
+    const std::string csv = theNightCsv(Rig::instance().fs);
+    ASSERT_FALSE(csv.empty());
+    std::string jsonPath = csv;
+    jsonPath.replace(jsonPath.size() - 4, 4, ".json");
+    const std::string json = Rig::instance().fs.readFile(jsonPath);
+    ASSERT_FALSE(json.empty());
+
+    EXPECT_EQ(jsonField(json, "epochs"), jsonField(json, "time_in_bed_min"))
+        << "provenance.epochs and sleep.time_in_bed_min disagree; the epoch "
+           "indices in this file are on neither axis unambiguously";
+}
+
+TEST(NightClock, TheMinutesBackdatedIntoANightAreScoredNotOnlyRecorded)
+{
+    // A night with no awakenings at all. Every minute of it was either scored
+    // as sleep or is a minute the app decided not to look at -- and the second
+    // kind is the finding: the quarter hour the segmenter backdates is written
+    // to the CSV, counted in time in bed, and never passed to the scorer, so it
+    // is missing from total sleep time and drags efficiency down with it.
+    const Observations obs = Rig::instance().run(plainNight());
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr);
+    ASSERT_TRUE(rep->hasSleep);
+
+    // The ten-minute onset run is the only sleep the definition legitimately
+    // declines to count, plus a minute for the grid.
+    const int32_t unaccounted = rep->timeInBedMin - rep->totalSleepMin -
+                                rep->wasoMin;
+    EXPECT_LE(unaccounted, 11)
+        << "time in bed " << rep->timeInBedMin << ", sleep "
+        << rep->totalSleepMin << ", WASO " << rep->wasoMin << ": "
+        << unaccounted << " minutes of this night were recorded and never "
+           "scored";
+
+    // And the consequence a person would actually see.
+    EXPECT_GE(rep->efficiencyPct, 97)
+        << "a night with no awakenings reported " << rep->efficiencyPct
+        << "% efficiency";
+}
+
+// ---------------------------------------------------------------------------
+// The honesty contract, on the surface a person actually reads
+// ---------------------------------------------------------------------------
+
+/// A watch on a nightstand that TOUCH_DETECT wrongly believes is on a wrist:
+/// perfectly still, no pulse. This is the case WornGate exists for.
+Scenario nightstandNight()
+{
+    Scenario s;
+    s.startUtc = kStart;
+    Phase table;
+    table.minutes    = 7 * 60;
+    table.amplitudeG = 0.0f;   // a rigid object
+    table.worn       = true;   // ...that the sensor reports as worn
+    table.hrBpm      = 0;      // optical HR against a hard surface
+    Phase up = awake(30, 72, 40);
+    s.phases = { table, up };
+    return s;
+}
+
+TEST(HonestyContract, ANightThatFailedTheWornGateDrawsNoStrip)
+{
+    const Observations obs = Rig::instance().run(nightstandNight());
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr) << "the nightstand night never closed";
+
+    ASSERT_NE(rep->worn, static_cast<uint8_t>(Engine::WornVerdict::Worn))
+        << "a still, pulseless night passed the worn gate";
+    ASSERT_FALSE(rep->hasSleep);
+
+    // The numbers are suppressed. The picture must be too: the strip is a
+    // per-epoch sleep/wake verdict and restfulness level for every minute of a
+    // night the app has just said it cannot report on, drawn under a caption
+    // that tells the reader it came from their movement and heart rate.
+    EXPECT_EQ(rep->stripUsed, 0)
+        << "the strip published " << rep->stripUsed
+        << " buckets of sleep/wake and restfulness for a night whose numbers "
+           "were suppressed";
+}
+
+TEST(HonestyContract, ANightStillRunningDrawsNoStripFromTheLastOne)
+{
+    // Two nights, the second observed while it is still running. `mVerdicts`
+    // and `mBand` are only filled when a night *closes*, so a strip built
+    // mid-night is drawn from whatever the previous night left in them -- and
+    // on the very first night of a fresh install, from zeroed memory, which
+    // decodes as "asleep, most settled" for every minute so far.
+    Rig::instance().run(plainNight());
+
+    Scenario s = plainNight();
+    s.keepFilesystem = true;
+    s.startUptimeMs  = 3600u * 1000u + 500u * 60000u;
+    s.guiOpensAtMin  = 120;      // somebody checks at 23:45
+    s.guiOpensAtEnd  = false;
+    const Observations obs = Rig::instance().run(s);
+
+    const CustomMessage::SleepReportData *live = nullptr;
+    for (const auto &r : obs.reports) {
+        if (r.phase == static_cast<uint8_t>(CustomMessage::Phase::Recording)) {
+            live = &r;
+        }
+    }
+    ASSERT_NE(live, nullptr) << "no report was published while recording";
+
+    EXPECT_EQ(live->stripUsed, 0)
+        << "a night in progress published " << live->stripUsed
+        << " buckets of verdicts that were never computed for it";
+}
+
+TEST(HonestyContract, ADaytimeChargeDoesNotMarkTheFollowingNightInterrupted)
+{
+    // The charger was on the desk in the evening, forty minutes before the
+    // wearer settled -- outside the pre-roll ring, so outside the night by any
+    // reading. The interruption flags are the first line of the morning report,
+    // and a flag that cries wolf is a flag nobody reads on the night it matters.
+    Scenario s;
+    s.startUtc = kStart;
+    Phase charging = awake(40);
+    charging.charging = true;
+    s.phases = { charging, awake(5), still(6 * 60), awake(20, 72, 40) };
+    const Observations obs = Rig::instance().run(s);
+
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr);
+    EXPECT_EQ(rep->interruption & Engine::Interruption::kCharging, 0u)
+        << "a charge that ended forty minutes before the night began was "
+           "reported as an interruption of it";
+}
+
+// ---------------------------------------------------------------------------
+// Restart survival
+// ---------------------------------------------------------------------------
+
+TEST(Resume, AResumedNightsTimesAreOnTheOriginalSessionsClock)
+{
+    // Run the first two and a half hours for real, stop the way the USB cable
+    // does, then run the rest against the state file the first half actually
+    // wrote. Nothing here is hand-authored: if the app cannot produce the state
+    // file, the test cannot use one.
+    Scenario first;
+    first.startUtc      = kStart;
+    first.phases        = { awake(5), still(400), awake(30, 72, 40) };
+    first.stopAtMin     = 150;             // plugged in at 00:15
+    first.guiOpensAtEnd = false;
+    Rig::instance().run(first);
+    ASSERT_TRUE(Rig::instance().fs.exist("night_state.txt"))
+        << "the first half left nothing to resume";
+
+    Scenario second = first;
+    second.keepFilesystem = true;
+    second.stopAtMin      = -1;
+    second.guiOpensAtEnd  = true;
+    // Twenty minutes on the charger: uptime climbs (the app restarted inside
+    // one boot) and the wall clock moves with it.
+    second.startUptimeMs  = first.startUptimeMs + 170u * 60000u;
+    second.startUtc       = kStart + 170 * 60;
+    const Observations obs = Rig::instance().run(second);
+
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr) << "the resumed night never closed";
+    ASSERT_TRUE(rep->interruption & Engine::Interruption::kResumed);
+
+    // The wearer got up at run-minute 405 of the *original* session, which the
+    // second launch reaches at its own minute 235. Either way the wall clock
+    // says 04:30.
+    const int16_t expected = localOf(kStart + 405 * 60);
+    ASSERT_TRUE(rep->hasSleep)
+        << "a resumed night that ran seven hours reported no sleep at all";
+    EXPECT_NEAR(rep->wokeAtMin, expected, 3)
+        << "reported wake " << rep->wokeAtMin << " against " << expected
+        << ": a resumed night's times are anchored to the last flush before "
+           "the restart rather than to when the night opened";
+}
+
+// ---------------------------------------------------------------------------
+// Storage that fails in the middle of the night
+// ---------------------------------------------------------------------------
+
+TEST(Storage, AVolumeThatFillsMidNightIsSaidSoInTheMorning)
+{
+    // `NightStore::appendEpoch` returns a bool and nothing checks it. So a
+    // volume that fills at 03:00 stops recording, the night carries on
+    // counting minutes in RAM, and the morning summary describes a night whose
+    // record on disk stops a third of the way through -- with nothing anywhere
+    // saying which third.
+    Scenario s = plainNight();
+    const Observations warm = Rig::instance().run(s);
+    (void)warm;
+    const std::string full = theNightCsv(Rig::instance().fs);
+    const size_t wholeNight = Rig::instance().fs.readFile(full).size();
+
+    Rig::instance().reset();
+    // Fail every write once about a third of the night is on disk.
+    Rig::instance().fs.failWritesAfterBytes = wholeNight / 3;
+    const Observations obs = Rig::instance().run(s);
+
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr);
+    EXPECT_NE(rep->interruption, 0u)
+        << "every write after the volume filled was refused and the night "
+           "reported itself clean";
+}
+
+TEST(Storage, ANightWhoseSummaryAndIndexBothFailIsNotForgotten)
+{
+    // The documented ordering is summary, then index row, then clear the state
+    // -- "so a crash anywhere above resumes the night rather than losing it".
+    // A crash is not the only way those writes fail. When both fail the state
+    // is cleared anyway, and the night is gone from the history with no way
+    // back and nothing that says it ever existed.
+    Scenario s = plainNight();
+    const Observations warm = Rig::instance().run(s);
+    (void)warm;
+    const std::string full = theNightCsv(Rig::instance().fs);
+    const size_t wholeNight = Rig::instance().fs.readFile(full).size();
+
+    Rig::instance().reset();
+    // Enough room for the epochs, none for the summary or the index row.
+    Rig::instance().fs.failWritesAfterBytes = wholeNight + 200;
+    Rig::instance().run(s);
+
+    EXPECT_TRUE(Rig::instance().fs.exist("night_state.txt"))
+        << "the summary and the index row both failed and the state file was "
+           "cleared regardless, so nothing on the volume knows a night ran";
+}
+
+TEST(Storage, AWholeNightLeaksNoFileHandle)
+{
+    // FatFs holds a finite lock table and its `f_close` keeps the FIL valid
+    // when a sync fails. A recorder that opens and closes a file twice per
+    // 30 s epoch for eight hours -- 1 900 times -- has to leave none of them
+    // open, and the InMemoryFileSystem counts them.
+    Rig::instance().run(plainNight());
+    for (const auto &kv : Rig::instance().fs.openHandles) {
+        EXPECT_EQ(kv.second, 0u) << kv.first << " left "
+                                 << kv.second << " handles open";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The loop
+// ---------------------------------------------------------------------------
+
+TEST(Loop, AnOversleptLoopDoesNotShortenTheNightItLost)
+{
+    // The epoch grid advances by whole epochs and *skips forward* when the loop
+    // wakes late: one recording epoch absorbs the whole overshoot, with a
+    // span_ms far past 30 000 and a healthy sample count -- so the thin-epoch
+    // guard never fires. Every duration in the night is then short by the
+    // overshoot, because time in bed is an epoch count and the epochs are gone.
+    //
+    // Two runs of the same night, one stalled for five minutes. The same amount
+    // of real time elapsed in both, so both must report the same time in bed.
+    Scenario clean = plainNight();
+    const Observations a = Rig::instance().run(clean);
+    const CustomMessage::SleepReportData *unstalled = a.lastReportedNight();
+    ASSERT_NE(unstalled, nullptr);
+
+    Scenario stalled = plainNight();
+    stalled.oversleepAtMin = 200;
+    stalled.oversleepMs    = 5u * 60u * 1000u;
+    const Observations b = Rig::instance().run(stalled);
+    const CustomMessage::SleepReportData *rep = b.lastReportedNight();
+    ASSERT_NE(rep, nullptr);
+
+    // The stall really happened: one CSV row covers more than an epoch.
+    const std::string csv = theNightCsv(Rig::instance().fs);
+    ASSERT_FALSE(csv.empty());
+    bool sawLongEpoch = false;
+    for (const EpochRow &r : parseEpochs(Rig::instance().fs.readFile(csv))) {
+        if (r.spanMs > static_cast<long>(Engine::kEpochMs) * 3 / 2) {
+            sawLongEpoch = true;
+        }
+    }
+    ASSERT_TRUE(sawLongEpoch) << "the scenario did not actually stall the loop";
+
+    EXPECT_NEAR(rep->timeInBedMin, unstalled->timeInBedMin, 2)
+        << "the same night reported " << rep->timeInBedMin
+        << " minutes in bed when the loop lost five of them and "
+        << unstalled->timeInBedMin << " when it did not";
+
+    EXPECT_NE(rep->interruption, 0u)
+        << "the loop lost five minutes of the night and the summary reported "
+           "it clean";
+}
+
+// ---------------------------------------------------------------------------
+// The surfaces that exist so the app need not be opened
+// ---------------------------------------------------------------------------
+
+TEST(Surfaces, TheMorningWidgetIsClaimedWhenTheNightCloses)
+{
+    // The home widget's whole purpose is a report you do not have to open the
+    // app for. `pumpWidget()` is called from the GUI handlers and from
+    // `openNight()` -- and not from `closeNight()`, so on a morning where
+    // nobody opens the app the widget is never claimed at all.
+    Scenario s = plainNight();
+    s.guiOpensAtEnd = false;     // nobody picks the watch up
+    const Observations obs = Rig::instance().run(s);
+
+    bool started = false;
+    for (const Ask &a : obs.widget) {
+        if (a.type == SDK::MessageType::REQUEST_WIDGET_START) { started = true; }
+    }
+    EXPECT_TRUE(started)
+        << "the night closed and the home widget was never claimed";
+}
+
+TEST(Surfaces, AnOpenGlanceStopsSayingRecordingWhenTheNightEnds)
+{
+    // `glanceRefresh()` is not called when a night closes either, so a glance
+    // that was opened during the night keeps reporting "recording" until
+    // something else happens to invalidate it.
+    Scenario s = plainNight();
+    s.glanceOpensAtMin = 100;
+    s.guiOpensAtEnd    = false;
+    const Observations obs = Rig::instance().run(s);
+
+    size_t updatesBefore = 0, updatesAfter = 0;
+    // The night closes in the last phase; everything after the last
+    // recording-phase minute is "after".
+    for (const Ask &a : obs.glance) {
+        if (a.type != SDK::MessageType::REQUEST_GLANCE_UPDATE) { continue; }
+        (a.uptimeMs < Rig::instance().system.nowMs - 25u * 60000u
+             ? updatesBefore : updatesAfter)++;
+    }
+    EXPECT_GT(updatesAfter, 0u)
+        << "the night closed and the open glance was never refreshed, so it "
+           "still says the watch is recording";
+}
+
+} // namespace
