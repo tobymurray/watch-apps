@@ -309,6 +309,10 @@ private:
     /// The last completed night, kept so the morning report survives the
     /// service moving on. Cleared only when a new night closes.
     Engine::NightSummary mLastSummary {};
+    /// Verdicts actually computed for the last night, which is `mLastSummary`'s
+    /// epoch count only for a night that did not resume -- and is what bounds
+    /// the strip, because there are no verdicts past it.
+    size_t               mLastScoredCount = 0;
     bool                 mHaveReport   = false;
     bool                 mLastBandUsedHr = false;
     int16_t              mLastAsleepAtMin = -1;

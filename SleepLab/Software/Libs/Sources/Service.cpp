@@ -712,6 +712,7 @@ void Service::closeNight(bool discard)
     mStore.loadBaseline(mBaseline);
 
     mLastSummary  = s;
+    mLastScoredCount = n;
     mHaveReport   = true;
     mScoringCount = 0;
     mFlags        = 0;
@@ -833,10 +834,34 @@ void Service::buildStrip(CustomMessage::SleepReportData &msg) const
         msg.strip[i] = CustomMessage::Strip::pack(
             CustomMessage::Strip::kVerdictNone, 0);
     }
+    msg.stripUsed = 0;
 
-    const size_t n = mScoringCount > 0 ? mScoringCount : mLastSummary.epochs;
+    // The strip is a per-epoch sleep/wake verdict and restfulness level for
+    // every minute of the night, drawn under a caption that tells the reader it
+    // came from their movement and heart rate. It is a picture of the same claim
+    // the numbers make, so it is subject to the same gate: there are exactly two
+    // states in which those arrays hold verdicts for the night on the screen.
+    //
+    //   - A night that closed and passed the worn gate. `mVerdicts` and `mBand`
+    //     were filled when it closed. A night that FAILED the gate has its
+    //     numbers suppressed and used to have its strip drawn anyway, which is
+    //     the same overclaim in a form nobody thought to check.
+    //
+    //   - Never while a night is in progress. Cole-Kripke needs look-ahead and
+    //     Webster needs whole-night passes, so nothing is scored until the night
+    //     closes -- and until then those arrays hold the *previous* night's
+    //     verdicts, or, on a fresh install, zeroed memory, which decodes as
+    //     "asleep, most settled" for every minute recorded so far.
+    if (mStore.isOpen() || !mHaveReport || !mLastSummary.hasSleep) {
+        return;
+    }
+
+    // The verdicts that were actually computed, which is not the same as the
+    // night's length: a resumed night's earlier epochs are on disk and were
+    // never scored, so the strip covers the part that was. The night carries the
+    // resumed flag and the report says so above the picture.
+    const size_t n = mLastScoredCount;
     if (n == 0) {
-        msg.stripUsed = 0;
         return;
     }
 
