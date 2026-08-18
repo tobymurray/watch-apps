@@ -87,6 +87,44 @@ target_link_libraries(sleeplab-engine-tests PRIVATE GTest::gtest_main)
 add_test(NAME sleeplab-engine-tests COMMAND sleeplab-engine-tests)
 
 # ---------------------------------------------------------------------------
+# Tier 1: the recorder's storage and settings
+#
+# These write through SDK::Kernel, so they need the kernel doubles. Settings
+# also needs the SDK's JSON reader, which is built on coreJSON -- a submodule,
+# so the whole target is skipped when it has not been initialized rather than
+# failing configure.
+# ---------------------------------------------------------------------------
+
+set(COREJSON_DIR "${UNA_SDK_ROOT}/ThirdParty/coreJSON/source")
+
+if(EXISTS "${COREJSON_DIR}/core_json.c")
+    add_executable(sleeplab-store-tests
+        Settings_test.cpp
+        NightStore_test.cpp
+        "${APP_LIBS}/Sources/Settings.cpp"
+        "${APP_LIBS}/Sources/NightStore.cpp"
+        # The storage layer sits on top of the engine: settings validate a
+        # bedtime window with Engine::inWindow, and the index is what the
+        # baseline is rebuilt from.
+        "${APP_LIBS}/Sources/Engine/NightSegmenter.cpp"
+        "${APP_LIBS}/Sources/Engine/BaselineStore.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/JSON/JsonStreamReader.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/JSON/JsonStreamWriter.cpp"
+        "${COREJSON_DIR}/core_json.c"
+        ${SDK_DOUBLES}
+    )
+    target_include_directories(sleeplab-store-tests PRIVATE
+        "${APP_LIBS}/Header"
+        "${COREJSON_DIR}/include"
+        ${SDK_DOUBLE_INCLUDES}
+    )
+    target_link_libraries(sleeplab-store-tests PRIVATE GTest::gtest_main)
+    add_test(NAME sleeplab-store-tests COMMAND sleeplab-store-tests)
+else()
+    message(STATUS "SleepLab: no coreJSON submodule, skipping sleeplab-store-tests")
+endif()
+
+# ---------------------------------------------------------------------------
 # Tier 0: the probe's on-disk record
 # ---------------------------------------------------------------------------
 

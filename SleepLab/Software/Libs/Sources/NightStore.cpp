@@ -142,17 +142,18 @@ ResumeState NightStore::readState(uint32_t nowMs, int64_t nowUtc)
     }
     buf[read < sizeof(buf) ? read : sizeof(buf) - 1] = '\0';
 
-    // "STATE <path> <epochs> <uptimeMs> <wallUtc> <flags>"
+    // "STATE <path> <epochs> <uptimeMs> <wallUtc> <flags> <startUtc>"
     char          path[kMaxNightPath] = {};
     unsigned long epochs = 0, uptime = 0;
     long long     wall   = 0;
     unsigned      flags  = 0;
+    long long     startUtc = 0;
 
     // The width in the scanf format has to track kMaxNightPath, and there is no
     // way to write that as an expression, so it is asserted instead.
     static_assert(kMaxNightPath == 64, "the %63s below must match kMaxNightPath");
-    if (std::sscanf(buf, "STATE %63s %lu %lu %lld %u",
-                    path, &epochs, &uptime, &wall, &flags) != 5) {
+    if (std::sscanf(buf, "STATE %63s %lu %lu %lld %u %lld",
+                    path, &epochs, &uptime, &wall, &flags, &startUtc) != 6) {
         LOG_WARNING("night_state.txt is unreadable; starting fresh\n");
         return s;
     }
@@ -163,6 +164,7 @@ ResumeState NightStore::readState(uint32_t nowMs, int64_t nowUtc)
     s.uptimeMs = static_cast<uint32_t>(uptime);
     s.wallUtc  = static_cast<int64_t>(wall);
     s.flags    = static_cast<uint16_t>(flags);
+    s.startUtc = static_cast<int64_t>(startUtc);
 
     // Classify the restart. Uptime is the only clock that can do this: it
     // survives an app restart and resets only on a device reboot, so uptime
@@ -209,9 +211,10 @@ bool NightStore::beginNight(int64_t startUtc, uint32_t nowMs)
     stemFor(startUtc, mUnnamedSeq++, stem, sizeof(stem));
     std::snprintf(mPath, sizeof(mPath), "%s/%s.csv", kNightsDir, stem);
 
-    mEpochs       = 0;
-    mLastUptimeMs = nowMs;
-    mLastWallUtc  = startUtc;
+    mEpochs        = 0;
+    mLastUptimeMs  = nowMs;
+    mLastWallUtc   = startUtc;
+    mStartWallUtc  = startUtc;
 
     if (mKernel.fs.exist(mPath)) {
         // Two sessions opening in the same second. Vanishingly unlikely, but
@@ -244,9 +247,10 @@ bool NightStore::resumeNight(const ResumeState &state)
     }
 
     std::snprintf(mPath, sizeof(mPath), "%s", state.path);
-    mEpochs       = state.epochs;
-    mLastUptimeMs = state.uptimeMs;
-    mLastWallUtc  = state.wallUtc;
+    mEpochs        = state.epochs;
+    mLastUptimeMs  = state.uptimeMs;
+    mLastWallUtc   = state.wallUtc;
+    mStartWallUtc  = state.startUtc;
     LOG_INFO("night resumed: %s at %lu epochs\n", mPath,
              static_cast<unsigned long>(mEpochs));
     return true;
@@ -257,13 +261,15 @@ bool NightStore::resumeNight(const ResumeState &state)
 
 bool NightStore::writeState(uint16_t flags)
 {
-    char line[kMaxNightPath + 96];
-    const int n = std::snprintf(line, sizeof(line), "STATE %s %lu %lu %lld %u\n",
+    char line[kMaxNightPath + 128];
+    const int n = std::snprintf(line, sizeof(line),
+                                "STATE %s %lu %lu %lld %u %lld\n",
                                 mPath,
                                 static_cast<unsigned long>(mEpochs),
                                 static_cast<unsigned long>(mLastUptimeMs),
                                 static_cast<long long>(mLastWallUtc),
-                                static_cast<unsigned>(flags));
+                                static_cast<unsigned>(flags),
+                                static_cast<long long>(mStartWallUtc));
     if (n <= 0 || static_cast<size_t>(n) >= sizeof(line)) {
         return false;
     }
@@ -501,7 +507,11 @@ bool NightStore::finishNight(const Engine::NightSummary &s,
     char row[192];
     const int n = std::snprintf(row, sizeof(row),
                                 "%lld,%ld,%ld,%ld,%ld,%ld,%u,%u\n",
-                                static_cast<long long>(mLastWallUtc),
+                                // The session's *start*, which is the night's
+                                // identity: it names the file and it is what
+                                // the history sorts on. Not the last epoch's
+                                // clock.
+                                static_cast<long long>(mStartWallUtc),
                                 static_cast<long>(s.timeInBedMin),
                                 static_cast<long>(s.totalSleepMin),
                                 static_cast<long>(s.efficiencyPct),

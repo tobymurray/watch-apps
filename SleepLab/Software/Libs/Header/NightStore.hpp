@@ -118,6 +118,12 @@ struct ResumeState
     uint32_t epochs    = 0;      ///< Recording epochs already written.
     uint32_t uptimeMs  = 0;      ///< Uptime at the last flush.
     int64_t  wallUtc   = 0;      ///< Wall clock at the last flush, or -1.
+    /// Wall clock when the session *opened*, or -1.
+    ///
+    /// Carried in the state file rather than re-derived, because a resumed
+    /// night's start is otherwise simply lost -- and it is the night's
+    /// identity: it names the file and it is what the history sorts on.
+    int64_t  startUtc  = 0;
     uint16_t flags     = 0;      ///< Interruption bits accumulated so far.
 
     /// Set by `readState()` when the recovered state implies the app or the
@@ -266,6 +272,12 @@ private:
     /// whether it moved under us while we were gone.
     uint32_t mLastUptimeMs = 0;
     int64_t  mLastWallUtc  = 0;
+
+    /// Wall clock when this night opened. The index's `start_utc` column, and
+    /// what the history sorts on -- not the last epoch's clock, which is what
+    /// every night would share if the recorder happened to be fed the same
+    /// epoch twice.
+    int64_t  mStartWallUtc = 0;
 
     /// Distinguishes clockless nights within one launch. Only used to name
     /// them; a night with no readable wall clock still records, it just cannot
