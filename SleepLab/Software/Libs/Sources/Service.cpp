@@ -625,10 +625,19 @@ void Service::closeNight(bool discard)
     mLastAsleepAtMin = -1;
     mLastWokeAtMin   = -1;
     if (s.hasSleep && mNightStartUtc > 0) {
+        // Onset is the START of its epoch: the first minute observed asleep.
+        //
+        // Final wake is the END of its epoch, hence the +1. `finalWakeEpoch` is
+        // the index of the *last epoch scored as sleep*, so the wearer was
+        // still asleep throughout it and woke at the far edge. Using the
+        // epoch's start would report a wake time at which the app itself scored
+        // them asleep -- and would make the displayed interval one minute
+        // shorter than the total-sleep figure printed beside it, which is the
+        // kind of internal inconsistency that makes a reader distrust both.
         const int64_t onsetUtc =
             mNightStartUtc + static_cast<int64_t>(s.onsetEpoch) * 60;
         const int64_t wakeUtc =
-            mNightStartUtc + static_cast<int64_t>(s.finalWakeEpoch) * 60;
+            mNightStartUtc + (static_cast<int64_t>(s.finalWakeEpoch) + 1) * 60;
         mLastAsleepAtMin = localMinutes(static_cast<std::time_t>(onsetUtc));
         mLastWokeAtMin   = localMinutes(static_cast<std::time_t>(wakeUtc));
     }
