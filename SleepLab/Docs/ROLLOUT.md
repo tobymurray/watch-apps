@@ -50,6 +50,9 @@ Answers whether an all-night app is possible on this device at all. If sensor
 delivery stops at 02:00, everything after this is wasted, and that is precisely
 why it comes first.
 
+Install it from [Kira](https://kira.technicallyrural.com) once the registry
+submission lands, or build it:
+
 ```sh
 Tools/docker-build.sh probe
 # copy Sleep_Probe_0.1.0.uapp into Apps/SleepProbe/ on the USB volume

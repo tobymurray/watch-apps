@@ -580,8 +580,10 @@ CONFIRMED / LIKELY / UNVERIFIED / REFUTED convention are all from
 
 ## Installing
 
-**Sleep Probe is on [Kira](https://kira.technicallyrural.com)** — install it
-from there and skip the toolchain entirely. Start with it whatever you intend
+**Sleep Probe is submitted to [Kira](https://kira.technicallyrural.com)**
+([registry PR](https://github.com/tobymurray/kira/pull/new/registry/sleep-probe)).
+Once that lands you can install it from there and skip the toolchain entirely;
+until then, build it below. Either way, start with the probe whatever you intend
 to do next: it answers whether an all-night recording works on your watch, and
 that question is upstream of everything SleepLab claims.
 
