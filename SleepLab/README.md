@@ -53,7 +53,7 @@ be.** There is no sleep laboratory here. So:
 
 | | |
 | --- | --- |
-| **What the arithmetic is validated against** | Synthetic nights with answers known by construction — a known onset, awakenings of known length, a known final wake. 126 host tests. This proves the code computes what it says it computes and **nothing about sleep**. |
+| **What the arithmetic is validated against** | Synthetic nights with answers known by construction — a known onset, awakenings of known length, a known final wake — driven through the **real recorder**, sample to file to summary, in 110 ms a night. 193 host tests. This proves the code computes what it says it computes and **nothing about sleep**. |
 | **What the sleep correspondence is validated against** | *Nothing yet.* The constant that bridges this device's activity counts to the units Cole-Kripke's coefficients were fitted for is currently a guess (`SleepWakeScorer::kCountScale`). Until ten diary-validated nights exist, every sleep/wake figure here is **synthetic-only**. |
 | **The bias, and its direction** | Wrist actigraphy has high sensitivity to sleep (~85–95 %) and poor specificity to wake (often 40–60 %). It reliably notices sleep and **systematically mistakes lying still for sleeping**, so estimated sleep time is biased **high**. |
 
@@ -97,8 +97,19 @@ Still unknown, and what a full night answers:
   every sleep number is gated on it.
 - Does anything contend for the heart-rate sensor?
 
-Run the probe for two nights before trusting this app with anything.
-[`Docs/ROLLOUT.md`](Docs/ROLLOUT.md) is the order.
+**Do not run the probe for two nights.** That was the plan and it was wrong: the
+probe records per-sensor delivery statistics and **no activity counts at all**, so
+it cannot set the four movement thresholds whose TODOs point at it. Record the worn
+night and the table night with SleepLab. Ledger row S13, refuted by reading rather
+than by spending the two nights, and
+[`Docs/ADVERSARIAL-REVIEW.md`](Docs/ADVERSARIAL-REVIEW.md) has the shortest sequence
+of nights that settles the most, with a success criterion for each that is decidable
+at breakfast.
+
+What the probe is still for is its **screen**, for two minutes, before the first
+night: it says which sensor drivers resolved, which is what caught two of the four
+rows above. `Debug/sleeplab.log` now carries the same block, but a line you read in
+the morning is not the same instrument as a block you read before bed.
 
 ## The nightstand problem
 
@@ -240,10 +251,11 @@ Everything lands in `Apps/SleepLab/` on the USB-MSC volume.
 | Path | What it is |
 | --- | --- |
 | `Nights/<start>.csv` | One row per 30 s recording epoch. The record. |
-| `Nights/<start>.json` | The summary, written when the night closes. |
+| `Nights/<start>.json` | The summary, written when the night closes. Carries the method, the app version and **the constants that scored that night**, so an old night can be re-scored after a threshold moves. |
 | `Nights/index.csv` | One row per completed night. The history and the baseline. |
 | `Raw/raw_<start>.csv` | Raw accelerometer, only if you asked for it. |
 | `night_state.txt` | Present only while a night is in progress. |
+| `Debug/sleeplab.log` | ~20 lines a launch: which sensor drivers resolved, the settings in force, and one line per night opening, closing, being discarded or failing to be written. **The file you read when there is no night file at all** — see [`Docs/POST-MORTEM.md`](Docs/POST-MORTEM.md). |
 | `settings.json` | Yours to write. |
 
 `<start>` is `YYYYMMDDTHHMMSS` **local**, from the session's start — so a night
@@ -346,7 +358,16 @@ it says, before anything else — a night with a hole in it that looks like a wh
 night is the second-worst thing this app could produce. If the watch was not
 worn, it says that and there are no numbers below it.
 
-The strip is 100 buckets at two pixels, which is what divides the panel's usable
+The strip is drawn only for a night that has closed **and passed the worn gate**.
+It is a per-epoch sleep/wake verdict and restfulness level, so it is a picture of
+exactly the claim the numbers make, and it is gated with them: a night reported as
+NOT WORN gets no strip, and neither does a night still in progress, because
+nothing is scored until a night closes. Both used to draw one — an unworn night
+drew its full strip under the numbers it had just suppressed, and a first-ever
+night in progress drew a solid block of the most settled tone out of zeroed
+memory.
+
+It is 100 buckets at two pixels, which is what divides the panel's usable
 width evenly. A bucket takes the **worst** verdict in its range rather than the
 majority: a five-minute bucket containing one minute awake should show that you
 woke, and a majority vote would hide every short awakening in the night — which
@@ -368,6 +389,15 @@ Both, because a sleep report is glanced at once, half awake. The glance shows
 last night's headline with `est` in front of it; the home widget shows it in the
 morning only — from a night closing until the next bedtime window opens, because
 a widget still showing Tuesday's efficiency on Thursday afternoon is clutter.
+
+Both were broken until 2026-08-18 and neither failure was visible from the code
+building. The glance was never sent anything at all: setting a control's text is
+what invalidates it, the carousel's tick is the only thing that sends the form,
+and `glanceRefresh()` marked the form *valid* at the end of building it — so every
+tick found nothing to send. And `pumpWidget()` was called when a night *opened*
+and not when one closed, so the only way to get a morning widget was to open the
+app and close it again, which is the one thing the widget exists to avoid. Ledger
+row T2 was LIKELY on the grounds that "the code builds". It did.
 
 Neither required changing the app type: `una-app.cmake` passes `-glance_capable`
 unconditionally, so a `Utility` app is already glance-capable and keeps
@@ -527,9 +557,17 @@ it does mean a simulator run's exit status says nothing.
 Tools/docker-build.sh tests
 ```
 
-126 tests across four suites — see [`Tests/README.md`](Tests/README.md), which
-also explains what the evidence actually is and the two tests worth knowing
-about before changing anything.
+193 tests across five suites — see [`Tests/README.md`](Tests/README.md), which
+explains what the evidence actually is and which tests are worth knowing about
+before changing anything.
+
+One of the five is the important one. `sleeplab-pipeline-tests` drives whole
+nights through the **real** `Service` — sample to file to summary — by scripting
+the kernel's message queue rather than by replacing the loop, so a night costs
+110 ms instead of eight hours. Its first fifteen scenarios failed eleven times;
+see [`Docs/ADVERSARIAL-REVIEW.md`](Docs/ADVERSARIAL-REVIEW.md) for what they
+found. If you change anything in `Service.cpp`, that suite is the one that will
+tell you.
 
 ## Turning the guesses into measurements
 
@@ -547,7 +585,10 @@ python3 Tools/night_report.py diary ./nights --diary diary.csv
 The first prints the count distribution for a worn night against a nightstand
 night and suggests a value for each threshold — and says so plainly when the two
 distributions overlap and *no* value separates them, which is a finding rather
-than a failure. The second reports mean signed error and spread on onset and
+than a failure. Note that **both nights have to be recorded with SleepLab, not
+with the probe**: the probe records delivery statistics and no activity counts,
+so there is no distribution in a probe night to separate. That is ledger row S13,
+and it was refuted by reading rather than by spending the two nights. The second reports mean signed error and spread on onset and
 final wake, refuses to quote an accuracy figure off fewer than ten nights, and
 excludes nights the worn gate suppressed, because folding those in as zero error
 would flatter the result.

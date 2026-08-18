@@ -11,15 +11,46 @@ export UNA_SDK=/path/to/una-sdk          # apps-v1.4.0
 cmake -B build . && cmake --build build && (cd build && ctest --output-on-failure)
 ```
 
-Three suites, split because they need very different things.
+Five suites plus two round trips, split because they need very different things.
 
 | Suite | Needs | Covers |
 | --- | --- | --- |
-| `sleeplab-engine-tests` | GoogleTest only | Everything in Tier 2. The engine includes no SDK header, so this builds and runs anywhere. |
-| `sleeplab-store-tests` | the kernel doubles, coreJSON | Tier 1: the settings reader and a night on disk. |
+| `sleeplab-engine-tests` | GoogleTest only | Everything in Tier 2. The engine includes no SDK header, so this builds and runs anywhere. 107 tests. |
+| `sleeplab-store-tests` | the kernel doubles, coreJSON | Tier 1: the settings reader and a night on disk. 43 tests. |
+| **`sleeplab-pipeline-tests`** | the kernel doubles, coreJSON, `TZ=UTC` | **Whole nights through the real `Service`**, sample to file to summary, at 110 ms a night. 37 scenarios. See below. |
 | `sleeplab-probe-tests` | the kernel doubles | The Tier 0 probe's on-disk record. |
 | `sleeplab-probe-report-roundtrip` | python3 as well | The probe's real writer parsed by the real host script. |
 | `sleeplab-night-report-roundtrip` | python3 as well | The night writer parsed by the real host script, both subcommands. |
+
+## The pipeline suite is the one that matters
+
+Until 2026-08-18 nothing exercised the recorder's own path. The engine had tests
+over synthetic scoring inputs, the store over synthetic epochs, and the simulator
+had a screen and no sensors. Everything between a sample arriving and a summary
+being written — the epoch grid, the 30 s/60 s pairing, the pre-roll ring, the
+backdate, the segmenter, the resume classification, the alarm, the files — was
+reachable only by wearing the watch for eight hours.
+
+`NightHarness.hpp` runs a night in 110 ms. It drives the real `Service::run()`
+**unmodified**, by being the kernel: `StubAppComm::getMessage` is virtual, so the
+harness answers the sensor layer's handshake, delivers batches on a schedule,
+advances uptime by exactly the timeout the loop asked to sleep for, and finally
+hands back an `APP_STOP`. It captures every `SLEEP_REPORT` the service publishes,
+so an assertion in this suite is an assertion about what a person would have been
+shown.
+
+Extracting a `poll()` seam as `MapManager`'s service has was the alternative and
+was rejected: the loop is one of the things under suspicion, and a test that
+replaces the loop cannot find a bug in the loop. One was there.
+
+**Its first fifteen scenarios failed eleven times.** See
+[`../Docs/ADVERSARIAL-REVIEW.md`](../Docs/ADVERSARIAL-REVIEW.md). If you change
+anything in `Service.cpp`, this is the suite that will tell you.
+
+The scenarios are hostile rather than typical, and their amplitudes come from a
+**measured** count scale rather than a guess — every threshold in this app lives
+inside one decade of it, so a fixture built on a guess would prove nothing. The
+table is at the top of `Pipeline_test.cpp`.
 
 ## What the evidence actually is
 
@@ -34,7 +65,7 @@ The number that would say something about sleep is `SleepWakeScorer::kCountScale
 and it is currently a guess. See §6 of the implementation brief and the
 validation table in [`../Docs/FEASIBILITY-LEDGER.md`](../Docs/FEASIBILITY-LEDGER.md).
 
-## Two tests worth knowing about before you change anything
+## Four tests worth knowing about before you change anything
 
 **`HrvChannel.SupplyingHrvChangesNothingToday`** is meant to *fail* the day
 someone wires HRV into the scorer. That day is the day clause A2 of the ledger —
@@ -93,3 +124,16 @@ Both are skipped, not failed, when there is no python3.
 - **`Service::run()`**, in either app. It blocks on the kernel message queue and
   never returns; the testable seams are the pieces it calls between waits.
 - **The GUI.** On-device and simulator verified only.
+
+**`HonestyContract.ANightThatFailedTheWornGateDrawsNoStrip`** is the nightstand
+test's other half, and the half that was missing. The numbers were suppressed for
+an unworn night and the epoch strip was drawn in full — 100 buckets of per-epoch
+sleep, wake and restfulness, under a caption telling the reader it came from their
+movement and heart rate. A picture of a claim is the claim. If a future change
+makes the strip available earlier or more often, this is what should stop it.
+
+**`PublishedConstants.SleepIsBelowTheThresholdAndWakeAtOrAboveIt`** asserts a
+direction rather than a value, because inverting Cole-Kripke's threshold inverts
+every verdict in every night and the output would still look like a night. One
+widely-read reference implementation's documentation states it the other way round,
+which is exactly how somebody could talk themselves into flipping it.
