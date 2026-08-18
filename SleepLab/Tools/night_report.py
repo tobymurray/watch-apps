@@ -349,8 +349,14 @@ def cmd_diary(args):
         # wall-clock minutes-of-day rather than as instants, which is what the
         # diary actually recorded.
         d_lights, d_woke = diary[date]
+        # Onset is the start of its epoch; final wake is the END of its epoch,
+        # hence the +1 -- `final_wake_epoch` is the last epoch scored as sleep,
+        # so waking happened at its far edge. Without the +1 every final-wake
+        # error here would carry a constant one-minute bias, which is small
+        # enough to survive a review and large enough to matter once the mean
+        # of ten nights is being quoted as an accuracy figure.
         app_onset = start.timestamp() + onset_idx * SCORING_SEC
-        app_wake = start.timestamp() + wake_idx * SCORING_SEC
+        app_wake = start.timestamp() + (wake_idx + 1) * SCORING_SEC
 
         o = (app_onset - d_lights.timestamp()) / 60.0
         w = (app_wake - d_woke.timestamp()) / 60.0
