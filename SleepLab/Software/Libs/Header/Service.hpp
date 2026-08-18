@@ -246,6 +246,23 @@ private:
     Engine::Restfulness  mBand[Engine::kMaxScoringEpochs];
     size_t               mScoringCount = 0;
 
+    /// The wall clock at each scoring epoch's *end*, or -1 where it was
+    /// unreadable. Taken from the recording epoch that closed it.
+    ///
+    /// Recorded rather than computed. A time of day derived as "session start
+    /// plus index times sixty" is only right while the array index and the
+    /// session minute are the same number, and three ordinary things break that:
+    /// epochs recorded before a restart, minutes that passed while the app was
+    /// not running, and a loop that woke late and skipped a grid slot. Each of
+    /// those puts a step in the map, and a step in the map moves every event
+    /// after it earlier by the length of the step -- silently, in the one figure
+    /// a person reads off the screen.
+    ///
+    /// 7.7 KB against ~20 KB of night already held in RAM, to make the answer
+    /// structurally right instead of right until the next thing that skips a
+    /// minute.
+    int64_t              mScoringWallEnd[Engine::kMaxScoringEpochs] = {};
+
     /// Recording epochs kept while idle, so a backdated open can recover the
     /// minutes that were already part of the night. Two per scoring epoch.
     static constexpr size_t kPreRollEpochs = 2 * 30;
@@ -282,6 +299,13 @@ private:
 
     uint16_t mFlags        = 0;   ///< Engine::Interruption bits for this night.
     int64_t  mNightStartUtc = -1;
+    /// Recording epochs the loop lost: it woke later than a whole epoch and
+    /// advanced the grid past the slots it had missed. Real minutes of the night
+    /// with no record, so they count towards time in bed and mark the night as
+    /// having a gap -- what they must not do is shorten it. Counted in halves
+    /// because that is the grid they were lost from.
+    uint32_t mHalvesLost = 0;
+
     /// Scoring epochs that are part of the night but not in `mScoring`.
     ///
     /// Two causes, both meaning the same thing to the summary: epochs
@@ -296,6 +320,10 @@ private:
     bool mAlarmFired = false;
 
     // -- Clocks ---------------------------------------------------------------
+
+    /// The wall clock at the last recording epoch's end, so the scoring epoch it
+    /// closes can be stamped with a clock that was read rather than derived.
+    int64_t  mLastEpochWallUtc = -1;
 
     uint32_t mNextEpochAt  = 0;
     uint32_t mEpochOpenedAt = 0;

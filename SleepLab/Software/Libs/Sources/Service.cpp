@@ -344,6 +344,9 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
     Engine::Epoch e;
     e.uptimeMs = now;
     e.wallUtc  = SleepLab::wallClockUtc();
+    // Kept for the scoring epoch this half will close, which is where a time of
+    // day is finally read from -- rather than being computed from an index.
+    mLastEpochWallUtc = e.wallUtc;
     e.spanMs   = spanMs;
 
     mCounter.closeEpoch(e.count, e.peak, e.samples);
@@ -493,7 +496,8 @@ void Service::closeScoringEpoch()
         case Engine::NightSegmenter::Event::Closed:
             // The epoch that closed the night is part of it.
             if (mScoringCount < Engine::kMaxScoringEpochs) {
-                mScoring[mScoringCount++] = scored;
+                mScoringWallEnd[mScoringCount] = mLastEpochWallUtc;
+                mScoring[mScoringCount++]      = scored;
             }
             closeNight(false);
             return;
@@ -506,7 +510,8 @@ void Service::closeScoringEpoch()
 
     if (mStore.isOpen()) {
         if (mScoringCount < Engine::kMaxScoringEpochs) {
-            mScoring[mScoringCount++] = scored;
+            mScoringWallEnd[mScoringCount] = mLastEpochWallUtc;
+            mScoring[mScoringCount++]      = scored;
         } else if ((mFlags & Engine::Interruption::kTruncated) == 0) {
             // A "night" that ran 16 hours is a data-quality problem, and the
             // segmenter should have caught it. Flagged rather than silently
@@ -561,7 +566,8 @@ uint16_t Service::flushPreRoll(uint16_t scoringEpochs)
         if (halves >= Engine::kEpochsPerScoringEpoch) {
             if (mScoringCount + 1 < pairs &&
                 mScoringCount < Engine::kMaxScoringEpochs) {
-                mScoring[mScoringCount++] = acc;
+                mScoringWallEnd[mScoringCount] = e.wallUtc;
+                mScoring[mScoringCount++]      = acc;
             }
             acc    = Engine::ScoringInput{};
             halves = 0;
@@ -591,6 +597,7 @@ void Service::openNight(uint16_t backdateScoringEpochs)
 
     mScoringCount  = 0;
     mEpochsNotInArray = 0;
+    mHalvesLost    = 0;
     mAlarmFired    = false;
 
     // The flags start clean and are rebuilt from the minutes that are actually
@@ -700,12 +707,21 @@ void Service::closeNight(bool discard)
     // be moved onto the session's axis before anything turns it into a time of
     // day. Leaving them on the array's axis reported a resumed night's final
     // wake 148 minutes early in the offline harness.
-    if (mEpochsNotInArray > 0) {
+    // How far the reported indices were shifted, so the code below can map one
+    // back to the array entry it came from.
+    const size_t arrayBase = mEpochsNotInArray;
+
+    // Minutes of the night the loop lost. Real minutes with no record: they
+    // belong in time in bed and they must not be allowed to shorten it. The
+    // night already carries the data-gap flag from where they were counted.
+    const uint32_t lostEpochs = mHalvesLost / Engine::kEpochsPerScoringEpoch;
+
+    if (mEpochsNotInArray > 0 || lostEpochs > 0) {
         const int32_t offset = static_cast<int32_t>(mEpochsNotInArray);
 
         // `epochs` and time in bed are the same count of the same minutes, and
         // a summary whose two axes disagree cannot be read by anyone.
-        s.epochs += mEpochsNotInArray;
+        s.epochs += mEpochsNotInArray + lostEpochs;
 
         if (s.onsetEpoch     != kAbsent) { s.onsetEpoch     += offset; }
         if (s.finalWakeEpoch != kAbsent) { s.finalWakeEpoch += offset; }
@@ -715,7 +731,7 @@ void Service::closeNight(bool discard)
         // gate but never contained ten consecutive sleep minutes still has a
         // measured time in bed, and it should be the right one.
         if (s.timeInBedMin != kAbsent) {
-            s.timeInBedMin += offset;
+            s.timeInBedMin += offset + static_cast<int32_t>(lostEpochs);
             if (s.totalSleepMin != kAbsent) {
                 s.efficiencyPct = (s.timeInBedMin > 0)
                                       ? (s.totalSleepMin * 100 / s.timeInBedMin)
@@ -723,38 +739,56 @@ void Service::closeNight(bool discard)
             }
         }
 
-        // Onset latency is session start to onset, and the epochs between them
-        // were never scored -- they are on disk from before the restart and not
-        // in RAM. So the first sleep this launch observed is not necessarily the
-        // night's onset, and a latency computed from it would be a number with a
-        // known sign of error and no way to bound it. Withheld rather than
-        // reported late.
-        s.onsetLatencyMin = kAbsent;
+        // Onset latency is session start to onset, and for a resumed night the
+        // epochs between them were never scored -- they are on disk from before
+        // the restart and not in RAM. So the first sleep this launch observed is
+        // not necessarily the night's onset, and a latency computed from it would
+        // be a number with a known sign of error and no way to bound it. Withheld
+        // rather than reported late.
+        //
+        // A loop stall does not have that problem: the epochs either side of it
+        // were scored, so onset is still the onset -- it is only its *index* that
+        // no longer counts minutes, and the offset above has moved it.
+        if (mEpochsNotInArray > 0) {
+            s.onsetLatencyMin = kAbsent;
+        } else if (s.onsetLatencyMin != kAbsent) {
+            s.onsetLatencyMin += static_cast<int32_t>(lostEpochs);
+        }
     }
 
     mLastBandUsedHr = Engine::RestfulnessBand::compute(mScoring, mVerdicts, n,
                                                        s.hrMinX10, mBand);
 
-    // Times of day, derived here because the service is the only half that
-    // holds both clocks. The GUI must never do wall-clock arithmetic.
+    // Times of day, derived here because the service is the only half that holds
+    // both clocks. The GUI must never do wall-clock arithmetic.
+    //
+    // Read from the clock each epoch recorded for itself, not computed as
+    // "session start plus index times sixty". That arithmetic is right only while
+    // an array index and a session minute are the same number, and three ordinary
+    // things put a step between them: epochs recorded before a restart, minutes
+    // that passed while the app was not running, and a loop that woke late and
+    // skipped a grid slot. Every one of those moved the reported times earlier by
+    // the size of the step, and silently.
+    //
+    // Onset is the START of its epoch -- the first minute observed asleep -- so
+    // the recorded end of that epoch minus a minute.
+    //
+    // Final wake is the END of its epoch. `finalWakeEpoch` is the index of the
+    // *last epoch scored as sleep*, so the wearer was asleep throughout it and
+    // woke at the far edge. Using the epoch's start would report a wake time at
+    // which the app itself scored them asleep, and would make the displayed
+    // interval a minute shorter than the total-sleep figure printed beside it.
     mLastAsleepAtMin = -1;
     mLastWokeAtMin   = -1;
-    if (s.hasSleep && mNightStartUtc > 0) {
-        // Onset is the START of its epoch: the first minute observed asleep.
-        //
-        // Final wake is the END of its epoch, hence the +1. `finalWakeEpoch` is
-        // the index of the *last epoch scored as sleep*, so the wearer was
-        // still asleep throughout it and woke at the far edge. Using the
-        // epoch's start would report a wake time at which the app itself scored
-        // them asleep -- and would make the displayed interval one minute
-        // shorter than the total-sleep figure printed beside it, which is the
-        // kind of internal inconsistency that makes a reader distrust both.
-        const int64_t onsetUtc =
-            mNightStartUtc + static_cast<int64_t>(s.onsetEpoch) * 60;
-        const int64_t wakeUtc =
-            mNightStartUtc + (static_cast<int64_t>(s.finalWakeEpoch) + 1) * 60;
-        mLastAsleepAtMin = localMinutes(onsetUtc);
-        mLastWokeAtMin   = localMinutes(wakeUtc);
+    if (s.hasSleep) {
+        const size_t onsetIdx = static_cast<size_t>(s.onsetEpoch) - arrayBase;
+        const size_t wakeIdx  = static_cast<size_t>(s.finalWakeEpoch) - arrayBase;
+        if (onsetIdx < n && mScoringWallEnd[onsetIdx] > 0) {
+            mLastAsleepAtMin = localMinutes(mScoringWallEnd[onsetIdx] - 60);
+        }
+        if (wakeIdx < n && mScoringWallEnd[wakeIdx] > 0) {
+            mLastWokeAtMin = localMinutes(mScoringWallEnd[wakeIdx]);
+        }
     }
 
     if (!mStore.finishNight(s, Engine::RestfulnessBand::kMethod, mLastBandUsedHr,
@@ -1288,11 +1322,28 @@ void Service::run()
             // Advance the grid by whole epochs rather than re-basing on `now`,
             // so a late epoch does not push every subsequent one late with it.
             // If the loop overslept by more than a whole epoch the catch-up
-            // would spin, so it skips forward -- and the skip is itself the
-            // finding, visible as a jump in uptime_ms in the CSV.
+            // would spin, so it skips forward.
+            //
+            // The skip is counted, not just visible. It used to be neither: one
+            // recording epoch absorbed the whole overshoot with a span_ms far past
+            // 30 000 and a *healthy* sample count -- so the thin-epoch guard never
+            // fired -- and the slots the grid stepped over simply never existed.
+            // Time in bed is an epoch count, so a five-minute stall made the night
+            // five minutes shorter with nothing anywhere saying so. Measured: 418
+            // minutes reported against the 423 the same night reported unstalled.
+            uint32_t skipped = 0;
             do {
                 mNextEpochAt += Engine::kEpochMs;
+                skipped++;
             } while (static_cast<int32_t>(mNextEpochAt - now) <= 0);
+            if (skipped > 1) {
+                // `skipped - 1` is the grid slot this epoch legitimately used.
+                mHalvesLost += skipped - 1;
+                mFlags      |= Engine::Interruption::kDataGap;
+                LOG_WARNING("loop woke %u epochs late; %u lost\n",
+                            static_cast<unsigned>(skipped),
+                            static_cast<unsigned>(skipped - 1));
+            }
             toEpoch = static_cast<int32_t>(mNextEpochAt - now);
         }
 
