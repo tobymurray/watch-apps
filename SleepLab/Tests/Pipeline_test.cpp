@@ -1179,4 +1179,72 @@ TEST(Diagnosis, TheLogDoesNotGrowWithoutBound)
     EXPECT_NE(log.find("launch"), std::string::npos);
 }
 
+TEST(Diagnosis, TheAlarmLeavesATrace)
+{
+    // The one output whose silent failure is worse than its absence, and it used
+    // to leave nothing at all: "it did not go off" and "it went off and you slept
+    // through it" were the same observation in the morning, and so were "it fired
+    // at the deadline" and "it fired forty minutes early on a wake epoch".
+    //
+    // A night that is restless from 06:00, with the alarm set for 07:00 and a
+    // thirty-minute smart window: the smart path should take it.
+    Scenario s;
+    s.startUtc = kStart;
+    s.settingsJson = "{\"schema\":1,\"values\":{\"alarm\":\"on\","
+                     "\"alarm_at\":\"07:00\",\"alarm_window_min\":\"30\"}}";
+    // 21:45 start: still until 06:35, then awake inside the smart window.
+    s.phases = { awake(5), still(8 * 60 + 45), awake(40, 72, 0),
+                 awake(20, 72, 40) };
+    const Observations obs = Rig::instance().run(s);
+
+    ASSERT_FALSE(obs.alarms.empty())
+        << "the alarm was enabled, the window was open and the wearer was moving, "
+           "and nothing was raised";
+
+    const std::string log = Rig::instance().fs.readFile("Debug/sleeplab.log");
+    ASSERT_FALSE(log.empty());
+    EXPECT_NE(log.find(" alarm "), std::string::npos)
+        << "the alarm fired and the volume has no record of it:\n" << log;
+    EXPECT_NE(log.find("fired why="), std::string::npos) << log;
+
+    // And the time it fired is in there, which is the thing a wearer disputes.
+    EXPECT_NE(log.find("local_min="), std::string::npos) << log;
+}
+
+TEST(Diagnosis, AnInterruptedNightsCsvSaysWhatProducedIt)
+{
+    // The summary JSON carries the build, the settings and the constants -- and is
+    // written only when the night *closes*. So a night the USB cable ended left a
+    // CSV that could not say which build wrote it or what window it ran under, and
+    // that is the night most likely to need explaining.
+    Scenario s = plainNight();
+    s.settingsJson = "{\"schema\":1,\"values\":{\"bedtime\":\"22:00\","
+                     "\"wake_by\":\"08:30\",\"hr\":\"off\"}}";
+    s.stopAtMin     = 200;      // plugged in mid-night
+    s.guiOpensAtEnd = false;
+    Rig::instance().run(s);
+
+    const std::string csv = theNightCsv(Rig::instance().fs);
+    ASSERT_FALSE(csv.empty()) << "nothing was recorded at all";
+
+    // No summary, because the night never closed. That is the case under test.
+    std::string jsonPath = csv;
+    jsonPath.replace(jsonPath.size() - 4, 4, ".json");
+    ASSERT_FALSE(Rig::instance().fs.exist(jsonPath.c_str()))
+        << "the night closed, so this is not the interrupted case";
+
+    const std::string body = Rig::instance().fs.readFile(csv);
+    EXPECT_NE(body.find("SleepLab v"), std::string::npos)
+        << "the CSV does not say which build wrote it";
+    EXPECT_NE(body.find("bed=1320-510"), std::string::npos)
+        << "the CSV does not say what window it ran under";
+    EXPECT_NE(body.find("hr=off"), std::string::npos) << "no heart-rate mode";
+    EXPECT_NE(body.find("epoch_s=30"), std::string::npos)
+        << "the CSV does not say what an epoch is, so its rows cannot be paired";
+    // And it is a comment, so every existing reader skips it.
+    EXPECT_EQ(body.find("SleepLab v") > 0 &&
+                  body[body.rfind('\n', body.find("SleepLab v")) + 1] == '#',
+              true);
+}
+
 } // namespace

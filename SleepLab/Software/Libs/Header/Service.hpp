@@ -179,7 +179,14 @@ private:
     /// Fire if the smart window is open and the wearer looks awake, or if the
     /// hard deadline has arrived.
     void checkAlarm();
-    void playAlarm();
+    /// @param why      Which path fired: "deadline" or "smart-window".
+    /// @param atEpoch  The epoch whose verdict fired it, or -1 for the deadline.
+    ///
+    /// Both are recorded on the volume. An alarm is the one output whose silent
+    /// failure is worse than its absence, and it used to leave no trace at all --
+    /// so "it did not go off" and "it went off and you slept through it" were the
+    /// same observation in the morning.
+    void playAlarm(const char *why, int32_t atEpoch);
 
     // -- Glance and home widget -------------------------------------------------
     //

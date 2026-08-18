@@ -183,9 +183,18 @@ public:
      *
      * @param startUtc  Wall clock at session open, or -1. Names the file.
      * @param nowMs     Uptime at session open.
+     * @param provenance One line describing what is recording: the build, the
+     *                  settings in force, the heart-rate mode. Written into the
+     *                  CSV's own header as a comment.
+     *
+     *                  In the CSV rather than only in the summary JSON, because
+     *                  the JSON is written when a night *closes* -- so an
+     *                  interrupted night used to leave a record that could not say
+     *                  what produced it. ~120 bytes, once.
      * @retval true     The file exists and carries its header.
      */
-    bool beginNight(int64_t startUtc, uint32_t nowMs);
+    bool beginNight(int64_t startUtc, uint32_t nowMs,
+                    const char *provenance = nullptr);
 
     /// Continue the night named by @p state.
     bool resumeNight(const ResumeState &state);

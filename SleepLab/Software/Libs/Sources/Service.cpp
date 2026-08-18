@@ -9,6 +9,7 @@
 
 #include "Service.hpp"
 
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 
@@ -743,7 +744,19 @@ void Service::openNight(uint16_t backdateScoringEpochs)
     mSessionOpen = true;
 
     uint16_t recovered = 0;
-    if (!mStore.beginNight(mNightStartUtc, mKernel.sys.getTimeMs())) {
+    char provenance[160];
+    std::snprintf(provenance, sizeof(provenance),
+                  "SleepLab v%s bed=%d-%d hr=%s alarm=%d epoch_s=%u "
+                  "scoring_epoch_s=%u",
+                  SleepLab::kAppVersion,
+                  static_cast<int>(mSettings.segmenter.windowStartMin),
+                  static_cast<int>(mSettings.segmenter.windowEndMin),
+                  SleepLab::toString(mSettings.hrMode),
+                  mSettings.alarmEnabled ? 1 : 0,
+                  static_cast<unsigned>(Engine::kEpochMs / 1000),
+                  static_cast<unsigned>(Engine::kScoringEpochMs / 1000));
+
+    if (!mStore.beginNight(mNightStartUtc, mKernel.sys.getTimeMs(), provenance)) {
         LOG_WARNING("could not open a night file; recording to RAM only\n");
         noteWriteFailure("open");
     } else {
@@ -984,7 +997,7 @@ void Service::checkAlarm()
                          static_cast<int16_t>((mSettings.alarmDeadlineMin + 4) %
                                               Engine::kMinutesPerDay))) {
         LOG_INFO("alarm: deadline\n");
-        playAlarm();
+        playAlarm("deadline", -1);
         return;
     }
 
@@ -1009,13 +1022,23 @@ void Service::checkAlarm()
 
     if (v == Engine::Verdict::Wake) {
         LOG_INFO("alarm: wake-ish epoch inside the window\n");
-        playAlarm();
+        playAlarm("smart-window", static_cast<int32_t>(at));
     }
 }
 
-void Service::playAlarm()
+void Service::playAlarm(const char *why, int32_t atEpoch)
 {
     mAlarmFired = true;
+
+    // On the volume, because an alarm is the one output whose failure is worse
+    // than useless and whose failure leaves nothing behind. Before this line, "it
+    // did not go off" and "it went off and you slept through it" were the same
+    // observation in the morning -- and so were "it fired at the deadline" and "it
+    // fired on a wake epoch forty minutes early". The wall clock here is the whole
+    // point: it is the thing the wearer is disputing.
+    mDiag.line("alarm", "fired why=%s epoch=%ld local_min=%d",
+               (why != nullptr) ? why : "?", static_cast<long>(atEpoch),
+               static_cast<int>(localMinutes(SleepLab::wallClockUtc())));
 
     // Backlight, vibro and buzzer, the same three `Alarm`'s service raises --
     // and from a service with no GUI attached, which is the case at 06:30.

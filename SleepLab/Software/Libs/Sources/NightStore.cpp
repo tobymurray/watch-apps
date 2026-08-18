@@ -278,7 +278,8 @@ ResumeState NightStore::readState(uint32_t nowMs, int64_t nowUtc)
     return s;
 }
 
-bool NightStore::beginNight(int64_t startUtc, uint32_t nowMs)
+bool NightStore::beginNight(int64_t startUtc, uint32_t nowMs,
+                            const char *provenance)
 {
     mKernel.fs.mkdir(kNightsDir);
 
@@ -303,6 +304,19 @@ bool NightStore::beginNight(int64_t startUtc, uint32_t nowMs)
         LOG_WARNING("cannot create %s\n", mPath);
         mPath[0] = '\0';
         return false;
+    }
+
+    // What produced this file, in the file. The summary JSON carries the same and
+    // more, and is written only when the night closes -- so a night the USB cable
+    // ended left a record that could not say which build wrote it or what settings
+    // it ran under. A comment line costs ~120 bytes once and every reader of the
+    // CSV already skips `#`.
+    if (provenance != nullptr && provenance[0] != '\0') {
+        char line[192];
+        const int n = std::snprintf(line, sizeof(line), "# %s\n", provenance);
+        if (n > 0 && static_cast<size_t>(n) < sizeof(line)) {
+            append(mPath, line, static_cast<size_t>(n));
+        }
     }
 
     LOG_INFO("night opened: %s\n", mPath);
