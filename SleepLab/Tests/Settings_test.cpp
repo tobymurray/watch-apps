@@ -212,6 +212,72 @@ TEST(Settings, AnAlarmInsideTheWindowSurvives)
     EXPECT_EQ(s.alarmDeadlineMin, 6 * 60 + 30);
 }
 
+// -- What Kira's install page actually writes ---------------------------------
+
+TEST(Settings, ADocumentWithEveryFieldBlankChangesNothing)
+{
+    // THE compatibility test. Kira's install page writes **every** field the
+    // registry declares -- `config::document` errors rather than omitting one --
+    // so a form somebody filled in one box of arrives with the rest as empty
+    // strings. coreJSON reads `""` as the number 0, so without the blank check
+    // a blank box would silently *set* every numeric field to zero and look
+    // perfectly healthy doing it.
+    KernelFixture fx;
+    Settings s;
+    ASSERT_EQ(load(fx, R"({"schema":1,"values":{
+        "bedtime":"","wake_by":"","alarm_at":"","min_night_min":"",
+        "alarm_window_min":"","hr":"","hr_duty_on_sec":"","hr_duty_per_sec":"",
+        "alarm":"","raw_recording":"","raw_max_mb":"","raw_max_min":""}})", s),
+        SettingsStatus::Ok);
+
+    const Settings def;
+    EXPECT_EQ(s.segmenter.windowStartMin, def.segmenter.windowStartMin);
+    EXPECT_EQ(s.segmenter.windowEndMin,   def.segmenter.windowEndMin);
+    EXPECT_EQ(s.segmenter.minSessionMin,  def.segmenter.minSessionMin);
+    EXPECT_EQ(s.alarmDeadlineMin,         def.alarmDeadlineMin);
+    EXPECT_EQ(s.alarmWindowMin,           def.alarmWindowMin);
+    EXPECT_EQ(s.hrMode,                   def.hrMode);
+    EXPECT_EQ(s.hrDutyOnSec,              def.hrDutyOnSec);
+    EXPECT_EQ(s.hrDutyPerSec,             def.hrDutyPerSec);
+    EXPECT_EQ(s.alarmEnabled,             def.alarmEnabled);
+    EXPECT_EQ(s.rawRecording,             def.rawRecording);
+    EXPECT_EQ(s.rawMaxMb,                 def.rawMaxMb);
+    EXPECT_EQ(s.rawMaxMin,                def.rawMaxMin);
+}
+
+TEST(Settings, NumbersWrittenAsStringsAreRead)
+{
+    // Kira writes every value as a JSON string -- its form has one input type
+    // and its own checks screen for printable ASCII. A reader that only
+    // accepted bare numbers would ignore half the form.
+    KernelFixture fx;
+    Settings s;
+    ASSERT_EQ(load(fx, R"({"schema":1,"values":{
+        "min_night_min":"120","alarm_window_min":"45","raw_max_mb":"32"}})", s),
+        SettingsStatus::Ok);
+
+    EXPECT_EQ(s.segmenter.minSessionMin, 120);
+    EXPECT_EQ(s.alarmWindowMin,          45);
+    EXPECT_EQ(s.rawMaxMb,                32);
+}
+
+TEST(Settings, OneFilledFieldAmongBlanksIsTheOnlyOneApplied)
+{
+    // The realistic case: somebody sets a bedtime on the install page and
+    // leaves everything else alone.
+    KernelFixture fx;
+    Settings s;
+    ASSERT_EQ(load(fx, R"({"schema":1,"values":{
+        "bedtime":"22:45","wake_by":"","hr":"","alarm":"","raw_recording":"",
+        "min_night_min":""}})", s), SettingsStatus::Ok);
+
+    const Settings def;
+    EXPECT_EQ(s.segmenter.windowStartMin, 22 * 60 + 45);
+    EXPECT_EQ(s.segmenter.windowEndMin,   def.segmenter.windowEndMin);
+    EXPECT_EQ(s.segmenter.minSessionMin,  def.segmenter.minSessionMin);
+    EXPECT_EQ(s.hrMode,                   def.hrMode);
+}
+
 TEST(Settings, UnknownKeysAreIgnoredRatherThanRejected)
 {
     // The app never writes this file back, so a key it does not recognise is

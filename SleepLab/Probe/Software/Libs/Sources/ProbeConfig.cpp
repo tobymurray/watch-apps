@@ -46,8 +46,23 @@ const char *toString(Status status)
 
 namespace {
 
-/// Read a bounded unsigned into @p out, leaving it alone if the key is absent
-/// or the value is outside [lo, hi].
+/// Whether @p query is present but blank.
+///
+/// A blank field means "leave the default alone", and it is the normal case
+/// rather than a mistake: Kira's install page writes **every** field the
+/// registry declares, so a form somebody filled in one box of arrives with the
+/// rest as empty strings. coreJSON reads `""` as the number 0, so without this
+/// a blank box would silently *set* any field whose valid range includes zero
+/// -- `accel_latency_ms` blank would disable batching -- and would look
+/// perfectly healthy doing it.
+bool isBlank(const SDK::JsonStreamReader &json, const char *query)
+{
+    std::string_view sv;
+    return json.get(query, sv) && sv.empty();
+}
+
+/// Read a bounded unsigned into @p out, leaving it alone if the key is absent,
+/// blank, or outside [lo, hi].
 ///
 /// Out of range is treated as absent rather than clamped. Clamping turns a
 /// typo into a silently different experiment: `"accel_period_ms": 4000`
@@ -56,6 +71,9 @@ namespace {
 void readBounded(const SDK::JsonStreamReader &json, const char *query,
                  uint16_t lo, uint16_t hi, uint16_t &out)
 {
+    if (isBlank(json, query)) {
+        return;
+    }
     uint32_t raw = 0;
     if (!json.get(query, raw)) {
         return;
@@ -78,7 +96,7 @@ void readBounded(const SDK::JsonStreamReader &json, const char *query,
 void readFlag(const SDK::JsonStreamReader &json, const char *query, bool &out)
 {
     std::string_view sv;
-    if (!json.get(query, sv)) {
+    if (!json.get(query, sv) || sv.empty()) {
         return;
     }
 
@@ -113,7 +131,7 @@ void apply(const char *buffer, size_t len, Config &out)
     SDK::JsonStreamReader json(buffer, len);
 
     std::string_view hr;
-    if (json.get("values.hr", hr)) {
+    if (json.get("values.hr", hr) && !hr.empty()) {
         if (hr == "continuous") {
             out.hrMode = HrMode::Continuous;
         } else if (hr == "off") {

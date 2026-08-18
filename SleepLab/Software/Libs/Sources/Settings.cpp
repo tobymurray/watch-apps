@@ -46,8 +46,23 @@ const char *toString(SettingsStatus status)
 
 namespace {
 
-/// Read a bounded unsigned, leaving @p out alone if the key is absent or the
-/// value is outside [lo, hi].
+/// Whether @p query is present but blank.
+///
+/// A blank field means "leave the default alone", and it is the normal case
+/// rather than a mistake: Kira's install page writes **every** field the
+/// registry declares, so a form somebody filled in one box of arrives with the
+/// rest as empty strings. coreJSON reads `""` as the number 0, so without this
+/// a blank box would silently *set* any field whose valid range includes zero
+/// -- `accel_latency_ms` blank would disable batching -- and would look
+/// perfectly healthy doing it.
+bool isBlank(const SDK::JsonStreamReader &json, const char *query)
+{
+    std::string_view sv;
+    return json.get(query, sv) && sv.empty();
+}
+
+/// Read a bounded unsigned, leaving @p out alone if the key is absent, blank,
+/// or outside [lo, hi].
 ///
 /// Refused rather than clamped -- see the header. Every rejection carries the
 /// value and the range into the log, because on a watch with no keyboard that
@@ -56,6 +71,9 @@ template <typename T>
 void readBounded(const SDK::JsonStreamReader &json, const char *query,
                  uint32_t lo, uint32_t hi, T &out)
 {
+    if (isBlank(json, query)) {
+        return;
+    }
     uint32_t raw = 0;
     if (!json.get(query, raw)) {
         return;
@@ -79,7 +97,7 @@ void readTimeOfDay(const SDK::JsonStreamReader &json, const char *query,
                    int16_t &out)
 {
     std::string_view sv;
-    if (!json.get(query, sv)) {
+    if (!json.get(query, sv) || sv.empty()) {
         return;
     }
 
@@ -124,7 +142,7 @@ void readTimeOfDay(const SDK::JsonStreamReader &json, const char *query,
 void readFlag(const SDK::JsonStreamReader &json, const char *query, bool &out)
 {
     std::string_view sv;
-    if (!json.get(query, sv)) {
+    if (!json.get(query, sv) || sv.empty()) {
         return;
     }
 
@@ -165,7 +183,7 @@ void apply(const char *buffer, size_t len, Settings &out)
     readBounded(json, "values.alarm_window_min",    5, 120, out.alarmWindowMin);
 
     std::string_view hr;
-    if (json.get("values.hr", hr)) {
+    if (json.get("values.hr", hr) && !hr.empty()) {
         if (hr == "continuous") {
             out.hrMode = HrMode::Continuous;
         } else if (hr == "off") {
