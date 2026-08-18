@@ -229,9 +229,17 @@ quoting a range from the literature.
 
 At that point the constants come from measurements, the accuracy statement
 comes from your own nights, and the ledger's validation column says something
-other than *synthetic-only*. Bump the version, add a `[[versions]]` row to the
-Kira manifest saying what changed, and the notes can finally drop
-"not yet run on hardware".
+other than *synthetic-only*.
+
+[`kira-sleep-lab.toml`](kira-sleep-lab.toml) is SleepLab's Kira manifest,
+written and validated but deliberately not submitted — the probe is on the
+catalogue and the two cannot be installed together. Its header says what to
+change before submitting it: the commit, the version, and notes that say what
+the nights settled rather than "not yet run on hardware".
+
+Consider retiring Sleep Probe from the catalogue in the same pull request. By
+then it has done its job, and leaving both listed is an invitation to install
+both.
 
 Everything before that point is honest software with unvalidated numbers, which
 is exactly what the README and the card both say it is.

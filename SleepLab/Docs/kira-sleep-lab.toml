@@ -1,0 +1,167 @@
+# Kira registry manifest for SleepLab -- PREPARED, NOT SUBMITTED.
+#
+# Written and validated (`registry validate --catalog` against the published
+# catalogue, and `registry plan`) at the same time as Sleep Probe's, which was
+# submitted. This one is deliberately held back, for two reasons:
+#
+#   1. **The two must not be installed together.** Both start themselves at boot
+#      and both subscribe the accelerometer and the heart-rate sensor. What the
+#      sensor layer does when two apps want the same sensor is ledger row S8 and
+#      it is unverified. Publishing both means somebody installs both and meets
+#      a contention bug neither card warned them about.
+#   2. The probe's value is complete today -- hardware is its input, not its
+#      missing piece. SleepLab's is not: the constant relating this watch's
+#      movement counts to Cole-Kripke's units is still an estimate, so it prints
+#      sleep efficiencies calibrated by a guess. Honest on screen, in the README
+#      and in these notes -- but a catalogue card is read by people who do not
+#      read READMEs.
+#
+# To submit it, once ../Docs/ROLLOUT.md's phases have run:
+#
+#   cp this file to <kira>/registry/sleep-lab.toml
+#   set `rev` to the watch-apps commit being published
+#   bump `version` to 0.2.0 and rewrite `notes` to say what the nights settled
+#   registry validate --dir registry --catalog catalog.json
+#
+# and consider whether Sleep Probe should be retired from the catalogue at the
+# same time, since by then it has done its job and the two cannot coexist.
+#
+# The `rev` below is the commit this was prepared against and WILL be stale.
+
+# Records a night of wrist movement and heart rate and scores it with a
+# published actigraphy algorithm -- Cole-Kripke with Webster's rescoring rules,
+# cited in the source next to the coefficients.
+#
+# What it will not tell you is the point of it. No sleep stages: no light, no
+# deep, no REM, no minutes-in-stage. Staging needs heart-rate variability and
+# multi-channel PPG, and this watch has neither -- the beat-event channel emits
+# nothing at all, so there are no beat-to-beat intervals to build variability
+# from. It draws a four-level band across the night and labels it, on the screen
+# and in every file, as movement and heart rate rather than stages, because
+# anything four-level drawn across a night looks like a hypnogram and this one
+# is not.
+#
+# No sleep numbers at all for a night the watch was not on a wrist. A watch on a
+# nightstand is perfectly still and would report a flawless eight hours -- the
+# failure that would discredit everything else, because it is silent and the
+# output looks better than a real night rather than worse. So every claim is
+# gated on worn-detection plus a check for the two things a living wrist
+# produces that furniture cannot: micro-movement and a pulse. A night that fails
+# is reported as not worn, with the numbers suppressed rather than caveated, and
+# it never reaches the personal baseline.
+#
+# No absolute physiological judgements. Heart rate is reported against your own
+# recorded nights and nothing is said until there are five of them.
+#
+# Two numbers are shown side by side, always: the scorer's estimate of sleep,
+# and the minutes actually measured as still. Wrist actigraphy reliably notices
+# sleep and systematically mistakes lying still for sleeping, so the first is
+# biased high by a known amount in a known direction and the second is what was
+# observed. Showing only the first is the overclaim the whole app is built
+# against.
+#
+# The report is written as a file whether or not anyone opens the app, and
+# surfaces on the glance and the home screen without a launch.
+#
+# Charge before bed, not during: plugging in stops every app on the watch, so a
+# night on the charger records nothing. The app notices and marks the night
+# interrupted, prominently, but it cannot record through it.
+#
+# DO NOT INSTALL ALONGSIDE Sleep Probe. Both start themselves at boot and both
+# subscribe the accelerometer and the heart-rate sensor, and what the sensor
+# layer does when two apps want the same sensor is not yet known.
+app_id     = "E4782CD726259DC6"
+source     = "https://github.com/tobymurray/watch-apps"
+subdir     = "SleepLab"
+folder     = "SleepLab"
+licence    = "MIT"
+maintainer = "tobymurray"
+
+# Nothing here is required -- the defaults record a usable night, and the app is
+# autostart, so a settings file that could stop it starting would stop it
+# starting for ever with no screen to say why. Every failure falls back.
+#
+# Leave a box blank and the default stands. A value outside its range is refused
+# rather than clamped, because clamping turns a typo into a night recorded on
+# settings nobody chose while the log looks perfectly healthy.
+[config]
+file   = "settings.json"
+schema = 1
+
+[[config.fields]]
+path      = "values.bedtime"
+title     = "Bedtime, earliest"
+help      = "As hh:mm, 24-hour, e.g. 22:30. The earliest a night may start; nothing is recorded before it. Leave blank for 21:00."
+maxLength = 5
+
+[[config.fields]]
+path      = "values.wake_by"
+title     = "Wake by, latest"
+help      = "As hh:mm, 24-hour, e.g. 09:00. A night still running at this time is closed -- the usual cause is a watch left on a desk. May be earlier in the day than the bedtime above; the window crosses midnight. Leave blank for 11:00."
+maxLength = 5
+
+[[config.fields]]
+path      = "values.min_night_min"
+title     = "Shortest night to keep (min)"
+help      = "A session shorter than this is discarded rather than reported, so an afternoon nap does not join your sleep history. Leave blank for 90."
+maxLength = 3
+
+[[config.fields]]
+path      = "values.hr"
+title     = "Heart rate"
+help      = "Type continuous, off, or duty. Leave blank for continuous. Turning it off costs the nocturnal heart-rate figures and half the not-worn check, so a night recorded that way can only ever be reported as unconfirmed."
+maxLength = 10
+
+[[config.fields]]
+path      = "values.hr_duty_on_sec"
+title     = "Duty: seconds on"
+help      = "Only read when heart rate is set to duty. Leave blank for 60. Must be less than the period below."
+maxLength = 4
+
+[[config.fields]]
+path      = "values.hr_duty_per_sec"
+title     = "Duty: seconds per cycle"
+help      = "Only read when heart rate is set to duty. Leave blank for 300, so heart rate runs one minute in five."
+maxLength = 4
+
+[[config.fields]]
+path      = "values.alarm"
+title     = "Smart alarm"
+help      = "Type on to enable it. Leave blank for off. Test it on a weekend before trusting it: whether muting the watch silences an alarm an app raises has not been checked on hardware, and an alarm that fails silently is worse than no alarm."
+maxLength = 8
+
+[[config.fields]]
+path      = "values.alarm_at"
+title     = "Alarm deadline"
+help      = "As hh:mm, 24-hour. The latest it will wake you, whatever it thinks you are doing. Must fall inside the bedtime window above or it is disabled, since it could never fire. Leave blank for 07:00."
+maxLength = 5
+
+[[config.fields]]
+path      = "values.alarm_window_min"
+title     = "Alarm window (min)"
+help      = "How long before the deadline it may wake you early, at the first minute you look awake. Leave blank for 30. Much longer and woken-at-the-best-moment becomes woken-early."
+maxLength = 3
+
+[[config.fields]]
+path      = "values.raw_recording"
+title     = "Record raw accelerometer"
+help      = "Type on to stream every accelerometer sample to a CSV as well, for developing sample-level work later. Leave blank for off: a night of epochs costs about 46 KB and a night of raw costs about 31 MB. Stops itself at the caps below."
+maxLength = 8
+
+[[config.fields]]
+path      = "values.raw_max_mb"
+title     = "Raw cap (MB)"
+help      = "Only read when raw recording is on. Leave blank for 64. The watch cannot tell how much space is free, so this cap is the only thing that stops it."
+maxLength = 3
+
+[[config.fields]]
+path      = "values.raw_max_min"
+title     = "Raw cap (minutes)"
+help      = "Only read when raw recording is on. Leave blank for 120."
+maxLength = 4
+
+[[versions]]
+version = "0.1.0"
+rev     = "1d6fe742bab043cd2897b5cdda6d69b511181000"
+sdk_rev = "apps-v1.4.0"
+notes   = "First build. Records 30-second epochs all night and survives the restart a USB connection causes. Scores with Cole-Kripke plus Webster rescoring; estimated sleep and measured stillness are always shown together, and a night the watch was not worn reports no sleep numbers at all. No stages, no SpO2, no absolute heart-rate judgements. Not yet run on hardware: the arithmetic is pinned by host tests, but the constant scaling this watch's counts to the algorithm is an estimate."

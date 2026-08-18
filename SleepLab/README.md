@@ -578,6 +578,20 @@ The `HEART_BEAT` / PPG answer, the BLE File Transfer client, and the
 CONFIRMED / LIKELY / UNVERIFIED / REFUTED convention are all from
 `una-sdk@research` — referenced, not copied.
 
+## Installing
+
+**Sleep Probe is on [Kira](https://kira.technicallyrural.com)** — install it
+from there and skip the toolchain entirely. Start with it whatever you intend
+to do next: it answers whether an all-night recording works on your watch, and
+that question is upstream of everything SleepLab claims.
+
+SleepLab itself is **not** on the catalogue yet, deliberately. The two must not
+be installed at once — both autostart and both subscribe the accelerometer and
+the heart-rate sensor, and what the sensor layer does with two claimants is
+unverified (ledger row S8). Build SleepLab yourself for now; its manifest is
+prepared at [`Docs/kira-sleep-lab.toml`](Docs/kira-sleep-lab.toml) and
+[`Docs/ROLLOUT.md`](Docs/ROLLOUT.md) says when it is ready to submit.
+
 ## Licence
 
 MIT.
