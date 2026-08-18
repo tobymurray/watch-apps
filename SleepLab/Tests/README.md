@@ -16,8 +16,10 @@ Three suites, split because they need very different things.
 | Suite | Needs | Covers |
 | --- | --- | --- |
 | `sleeplab-engine-tests` | GoogleTest only | Everything in Tier 2. The engine includes no SDK header, so this builds and runs anywhere. |
-| `sleeplab-probe-tests` | the SDK's kernel doubles | The Tier 0 probe's on-disk record. |
-| `sleeplab-probe-report-roundtrip` | python3 as well | The real writer's output parsed by the real host script. |
+| `sleeplab-store-tests` | the kernel doubles, coreJSON | Tier 1: the settings reader and a night on disk. |
+| `sleeplab-probe-tests` | the kernel doubles | The Tier 0 probe's on-disk record. |
+| `sleeplab-probe-report-roundtrip` | python3 as well | The probe's real writer parsed by the real host script. |
+| `sleeplab-night-report-roundtrip` | python3 as well | The night writer parsed by the real host script, both subcommands. |
 
 ## What the evidence actually is
 
@@ -70,7 +72,21 @@ report detects the awkward cases the fixture deliberately contains — a
 twelve-minute delivery hole, two launches, and the expected `HEART_BEAT`
 verdict. Same two-level check `FwDump` uses against `reassemble_dump.py`.
 
-It is skipped, not failed, when there is no python3.
+`sleeplab-night-report-roundtrip` does the same for the night format:
+`night-log-export` writes three worn nights, one nightstand night and a matching
+diary with the real `NightStore`, and `Tools/night_report.py` reads them.
+
+Its assertions are about the *conclusions*, not the parse, because a script that
+reads a file and says nothing useful about it has not been tested. It must
+separate the wrist from the table on a fixture built to separate; it must pair
+all three diary nights; and every error must be two digits of minutes. That last
+one exists because the first version of this fixture had its diary dates a year
+out and the round trip passed anyway — the assertion at the time was that the
+script declined to quote an accuracy figure off three nights, and it declines off
+zero too. The diary dates are derived from the night timestamps now, so they
+cannot drift again.
+
+Both are skipped, not failed, when there is no python3.
 
 ## What is not covered
 

@@ -95,6 +95,10 @@ add_test(NAME sleeplab-engine-tests COMMAND sleeplab-engine-tests)
 # failing configure.
 # ---------------------------------------------------------------------------
 
+# Both round-trip tests below run the real host scripts, which need python3.
+# Skipped, not failed, without it -- the C++ halves still run.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+
 set(COREJSON_DIR "${UNA_SDK_ROOT}/ThirdParty/coreJSON/source")
 
 if(EXISTS "${COREJSON_DIR}/core_json.c")
@@ -120,6 +124,32 @@ if(EXISTS "${COREJSON_DIR}/core_json.c")
     )
     target_link_libraries(sleeplab-store-tests PRIVATE GTest::gtest_main)
     add_test(NAME sleeplab-store-tests COMMAND sleeplab-store-tests)
+    # Not a test: writes real nights with the real writer so the real host
+    # script can be run against them. Same two-level check as the probe's.
+    add_executable(night-log-export
+        night_log_export.cpp
+        "${APP_LIBS}/Sources/NightStore.cpp"
+        "${APP_LIBS}/Sources/Engine/BaselineStore.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/JSON/JsonStreamReader.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/JSON/JsonStreamWriter.cpp"
+        "${COREJSON_DIR}/core_json.c"
+        ${SDK_DOUBLES}
+    )
+    target_include_directories(night-log-export PRIVATE
+        "${APP_LIBS}/Header"
+        "${COREJSON_DIR}/include"
+        ${SDK_DOUBLE_INCLUDES}
+    )
+
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME sleeplab-night-report-roundtrip
+                 COMMAND ${CMAKE_COMMAND}
+                         -DEXPORT=$<TARGET_FILE:night-log-export>
+                         -DPYTHON=${Python3_EXECUTABLE}
+                         -DSCRIPT=${CMAKE_CURRENT_LIST_DIR}/../Tools/night_report.py
+                         -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/nights
+                         -P ${CMAKE_CURRENT_LIST_DIR}/cmake/RunNightReportRoundtrip.cmake)
+    endif()
 else()
     message(STATUS "SleepLab: no coreJSON submodule, skipping sleeplab-store-tests")
 endif()
@@ -154,9 +184,7 @@ target_include_directories(probe-log-export PRIVATE
 )
 
 # Run the export through the real script, so "the format is a contract" is a
-# thing CI checks rather than a thing the README claims. Skipped, not failed,
-# when there is no python3 -- the C++ half still runs.
-find_package(Python3 COMPONENTS Interpreter QUIET)
+# thing CI checks rather than a thing the README claims.
 if(Python3_Interpreter_FOUND)
     add_test(NAME sleeplab-probe-report-roundtrip
              COMMAND ${CMAKE_COMMAND}

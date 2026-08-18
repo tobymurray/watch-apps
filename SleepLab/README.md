@@ -71,6 +71,10 @@ Every claim, and what earned it, is in
 [`Docs/FEASIBILITY-LEDGER.md`](Docs/FEASIBILITY-LEDGER.md), tagged CONFIRMED /
 LIKELY / UNVERIFIED / REFUTED with the method behind the tag.
 
+**[`Docs/ROLLOUT.md`](Docs/ROLLOUT.md) is the ordered path from here to numbers
+that mean something** — which probe nights answer what, which constants each
+phase sets, and where the diary comes in.
+
 ## Status: measured on the bench, not yet on a wrist
 
 Everything below builds, and all 126 host tests pass. **No night has been
@@ -508,6 +512,30 @@ Tools/docker-build.sh tests
 126 tests across four suites — see [`Tests/README.md`](Tests/README.md), which
 also explains what the evidence actually is and the two tests worth knowing
 about before changing anything.
+
+## Turning the guesses into measurements
+
+Two host scripts, and between them they set every unjustified constant in the
+app. [`Docs/ROLLOUT.md`](Docs/ROLLOUT.md) says when to run each.
+
+```sh
+# where the movement thresholds belong, from nights you recorded
+python3 Tools/night_report.py thresholds --worn ./nights/worn --table ./nights/table
+
+# the honest accuracy number, against times you wrote down by hand
+python3 Tools/night_report.py diary ./nights --diary diary.csv
+```
+
+The first prints the count distribution for a worn night against a nightstand
+night and suggests a value for each threshold — and says so plainly when the two
+distributions overlap and *no* value separates them, which is a finding rather
+than a failure. The second reports mean signed error and spread on onset and
+final wake, refuses to quote an accuracy figure off fewer than ten nights, and
+excludes nights the worn gate suppressed, because folding those in as zero error
+would flatter the result.
+
+Both are checked against the real writer: `night-log-export` writes synthetic
+nights with the real `NightStore` and a ctest parses them with the real script.
 
 ## Known rough edges
 
