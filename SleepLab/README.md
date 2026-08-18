@@ -75,22 +75,30 @@ LIKELY / UNVERIFIED / REFUTED with the method behind the tag.
 that mean something** — which probe nights answer what, which constants each
 phase sets, and where the diary comes in.
 
-## Status: measured on the bench, not yet on a wrist
+## Status: two minutes on hardware, no night yet
 
-Everything below builds, and all 126 host tests pass. **No night has been
-recorded on hardware yet.** Every sensor claim in §2 of the ledger is
-UNVERIFIED, which is why the [Tier 0 probe](Probe/README.md) exists and why it
-should be run for two nights before this app is trusted with anything.
+Everything below builds and the host tests pass. **No night has been recorded
+on hardware.** But the [Tier 0 probe](Probe/README.md) has been run for two
+minutes on a real watch, and that alone settled four ledger rows and found one
+bug that would have broken every night:
 
-What is genuinely unknown, and what the probe answers:
+| | |
+| --- | --- |
+| `SPO2` | **No driver at all.** Not "produces nothing" — `connect()` is refused. Nothing is built on it and now nothing can be. |
+| `HEART_BEAT` | **No driver at all**, so no RR intervals, so no HRV, so no stages. UNA's 1.3-line answer holds on 1.4. |
+| Accelerometer rate | **~48 Hz delivered against 25 Hz requested** — nearly double, and the opposite direction to the thinning the simulator does. Heart rate honoured its period exactly in the same minute. Nothing downstream is wrong, because the count derivation is rate-independent by construction; the cost is roughly double the sample-path power that was budgeted. |
+| `TOUCH_DETECT` | **An event sensor**, not a clocked one: zero samples in a minute while perfectly happily subscribed. SleepLab read that as 0 % worn, which would have reported **every night as NOT WORN**. Fixed — see [the nightstand problem](#the-nightstand-problem). |
 
-- Does a Service keep receiving sensor batches through a whole night, or does
-  delivery stop at 02:00?
+Still unknown, and what a full night answers:
+
+- Does delivery survive eight hours, or stop at 02:00?
 - What does continuous optical heart rate cost overnight?
-- Does `TOUCH_DETECT` hold "worn" on a loosely-strapped sleeping wrist, or
-  flicker? This one is load-bearing: every sleep number is gated on it.
-- Does `HEART_BEAT` still emit nothing on 1.4 firmware? A single event reopens
-  overnight HRV, and overnight HRV reopens the staging clause above.
+- Does `TOUCH_DETECT` flicker on a loosely-strapped sleeping wrist? Load-bearing:
+  every sleep number is gated on it.
+- Does anything contend for the heart-rate sensor?
+
+Run the probe for two nights before trusting this app with anything.
+[`Docs/ROLLOUT.md`](Docs/ROLLOUT.md) is the order.
 
 ## The nightstand problem
 
@@ -118,6 +126,16 @@ poison it for four weeks and make every real night afterwards look bad.
 With heart rate switched off, half the check is unavailable. The verdict is then
 `Uncertain`, which suppresses the numbers exactly as `NotWorn` does. "Probably
 worn" is not a basis for printing a sleep efficiency.
+
+**Worn state is sticky, and that is not a refinement.** `TOUCH_DETECT` turned
+out on hardware to be an event sensor — it publishes when the state *changes*,
+not on a clock, and it delivered nothing at all across a whole minute while
+subscribed and working. Reading a sample-less epoch as 0 % worn put every epoch
+below the worn floor, made every epoch unscorable, and would have reported every
+night as not worn. The last known state is carried forward now; and a sensor
+that says nothing for a whole night yields `Uncertain` with its own wording,
+because telling somebody their watch was not worn would send them to put on a
+watch they are already wearing.
 
 ## Charge before bed, not during
 

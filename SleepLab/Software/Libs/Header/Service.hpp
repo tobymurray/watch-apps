@@ -250,6 +250,13 @@ private:
 
     bool     mTouchLastWorn  = false;
     bool     mTouchLastValid = false;
+    /// Whether TOUCH_DETECT has ever delivered a single sample.
+    ///
+    /// Distinct from mTouchLastValid only in that it is never reset. A worn
+    /// sensor that said nothing all night is a broken sensor, and telling
+    /// somebody their watch was not worn would send them to put on a watch
+    /// they are already wearing.
+    bool     mTouchEverReported = false;
     int64_t  mStepTotal      = Engine::kAbsent;
     int64_t  mStepAtEpoch    = Engine::kAbsent;
     int32_t  mBattPctX10     = Engine::kAbsent;

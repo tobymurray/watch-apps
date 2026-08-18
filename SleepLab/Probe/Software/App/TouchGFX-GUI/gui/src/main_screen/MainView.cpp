@@ -52,7 +52,8 @@ void MainView::onStatusChanged(const Model::Status &)
     refresh();
 }
 
-void MainView::formatSensors(char *out, size_t outSize, uint16_t subscribed) const
+void MainView::formatSensors(char *out, size_t outSize, uint16_t subscribed,
+                             uint16_t requested) const
 {
     namespace Sub = CustomMessage::Sub;
 
@@ -79,8 +80,14 @@ void MainView::formatSensors(char *out, size_t outSize, uint16_t subscribed) con
         if (n + 1 >= outSize) {
             break;
         }
-        const bool on = (subscribed & e.bit) != 0;
-        out[n++] = on ? e.letter : static_cast<char>(e.letter - 'A' + 'a');
+        if ((requested & e.bit) == 0) {
+            out[n++] = '.';                       // never asked for
+        } else if ((subscribed & e.bit) != 0) {
+            out[n++] = e.letter;                  // resolved
+        } else {
+            // Asked for and refused: no driver. The interesting case.
+            out[n++] = static_cast<char>(e.letter - 'A' + 'a');
+        }
     }
     out[n < outSize ? n : outSize - 1] = '\0';
 }
@@ -109,7 +116,7 @@ void MainView::refresh()
                       static_cast<unsigned long>(mins % 60u), hr);
 
         char sensors[24];
-        formatSensors(sensors, sizeof(sensors), s.subscribed);
+        formatSensors(sensors, sizeof(sensors), s.subscribed, s.requested);
         std::snprintf(text[1], kLineBufSize, "%s", sensors);
 
         // Failures first when there are any: a run writing nothing to storage

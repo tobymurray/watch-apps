@@ -104,6 +104,7 @@ bool Model::customMessageHandler(SDK::MessageBase *msg)
     mStatus.bytesWritten  = s->bytesWritten;
     mStatus.runningMs     = s->runningMs;
     mStatus.subscribed    = s->subscribed;
+    mStatus.requested     = s->requested;
     mStatus.hrMode        = s->hrMode;
     mStatus.lastAccN      = s->lastAccN;
     mStatus.lastHrN       = s->lastHrN;

@@ -61,13 +61,19 @@ private:
 
     void refresh();
 
-    /// Render the subscription bitmask as a fixed-width block of letters, one
-    /// per sensor, upper case for resolved and lower for not.
+    /// Render the subscription bitmask as a fixed-width block, one character
+    /// per sensor: upper case resolved, lower case **asked for and refused**,
+    /// and a dot for one the config never asked for.
     ///
-    /// Case rather than presence, so the block is the same width and the same
-    /// letters in the same places every time -- a missing sensor is then a
-    /// change you can see at a glance instead of one you have to read.
-    void formatSensors(char *out, size_t outSize, uint16_t subscribed) const;
+    /// Three states rather than two, because two conflated the finding with
+    /// the setting: a lower-case letter used to mean both "you turned this off"
+    /// and "the firmware has no driver for it", and on 1.4 hardware three
+    /// sensors turn out to be the second.
+    ///
+    /// Fixed width, so the block is the same characters in the same places
+    /// every time and a change is something you see rather than read.
+    void formatSensors(char *out, size_t outSize, uint16_t subscribed,
+                       uint16_t requested) const;
 
     touchgfx::TextAreaWithOneWildcard mLine[kLines];
     touchgfx::Unicode::UnicodeChar    mBuf[kLines][kLineBufSize];

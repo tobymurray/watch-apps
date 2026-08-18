@@ -44,22 +44,40 @@ Rows are dated. A row with no date has not been checked since it was written.
 
 ## 2. Sensors — what the Tier 0 probe is for
 
-**Every row in this section is UNVERIFIED until a probe night has run.** That is
-the honest state of this app today and it is the reason the probe exists before
-any product code. Each row names the column of `probe_log.csv` that settles it;
-`Tools/probe_report.py` prints them grouped the same way.
+**A two-minute hardware run on 2026-08-18 settled four of these**, from the
+probe's own screen rather than from a log. The rest still need a night. Each row
+names the column of `probe_log.csv` that settles it; `Tools/probe_report.py`
+prints them grouped the same way.
+
+The screen read:
+
+```
+run 0h02m hr:cont
+ATMRHXbpoSLCE
+rows 3 ok
+last acc 2875 hr 60
+beat 0 spo2 0
+batt 100.0%
+```
+
+Lower case in the block means the driver did not resolve, so `b`, `p` and `o`
+are `HEART_BEAT`, `PPG` and `SPO2`. The absent `worn` line means TOUCH_DETECT
+delivered nothing that minute -- which turned out to be the most consequential
+thing on the screen. See S12.
 
 | # | Claim | Tag | What would settle it |
 | --- | --- | --- | --- |
 | S1 | A Service keeps receiving sensor batches through a whole night of screen-off low-power operation. | **UNVERIFIED** | One unplugged, worn night. The report's `continuity` section: gaps in `uptime_ms` longer than 90 s. A gap is the failure — a stalled service writes no rows at all rather than rows of zeroes. |
 | S2 | Continuous optical HR costs less than about a third of the battery overnight. | **UNVERIFIED** | Two nights, `probe.json` `"hr": "continuous"` then `"hr": "off"`, the report's `power` section. `batt_pct_x10` gives percent; `batt_avg_ma_x10` gives mA directly. If the answer is "more than a third", HR sampling becomes periodic and `"hr": "duty"` is already there to measure the alternative. |
-| S3 | The delivered accelerometer rate is close to the requested one. | **UNVERIFIED** | The report's `delivered rates`. Expected to be **false**: the per-listener gate thins on a boundary at *half* the expected period, an exact ratio falls on the thinner side, and the thinning is quantised into bands rather than being proportional to rate. Nothing in SleepLab infers elapsed time from a sample count. |
-| S4 | `SPO2` (0xF1) produces at least one sample. | **UNVERIFIED** | One night with `"spo2": "on"`. Non-zero `spo2_n` anywhere in the file. Nothing is built on SpO2 until this is CONFIRMED — §3 of the implementation brief forbids it. |
-| S5 | `HEART_BEAT` (0x40) still emits nothing on 1.4 firmware. | **UNVERIFIED** | Non-zero `beat_n` anywhere in a probe night. UNA answered "no events at all — it's more of a frequency domain algorithm" against the 1.3 line (PR #167, recorded in `una-sdk@research`). Firmware moved on 2026-08-17 and UNA describe a higher-rate PPG mode and on-chip HRV as things they are working on, so the answer has an expiry date. **A non-zero count here reopens overnight HRV, and overnight HRV reopens the staging clause in §3.** The probe subscribes to `HEART_BEAT` in every mode, including `"hr": "off"`, because a stream that emits nothing costs nothing to listen to. |
-| S6 | The PPG waveform is 20 Hz, single channel. | **LIKELY** | UNA maintainer, PR #167, 2026-07-01. Re-measurable here as `ppg_n / ppg_ts_span_ms` with `"ppg": "on"`. Above 20 Hz would mean the higher-frequency mode landed. |
+| S3 | The delivered accelerometer rate is close to the requested one. | **REFUTED** | 2026-08-18, on hardware: **2875 accelerometer samples in a minute against a requested 40 ms period**. That is ~48 Hz delivered where 25 Hz was asked for -- nearly *double*, and in the opposite direction to the thinning the simulator's gate does. Heart rate in the same minute delivered exactly 60 samples against a requested 1 s period, so the period is honoured there and not here; the likeliest reading is that the accelerometer runs at a native rate it will not go below. **Nothing downstream is wrong because of it**: EpochCounter is rate-independent by construction and a host test pins that across a 4x span, which is precisely the design decision this measurement justifies. What it does cost is roughly double the IPC and sample-path power that was budgeted for. |
+| S3a | The requested accelerometer period does anything at all. | **UNVERIFIED** | Follows from S3. Ask for 80 ms and 20 ms in two short runs and compare `acc_n`: if all three land near 2875, the period is ignored and `kAccelPeriodMs` is decoration. That matters for power, since it decides whether the sample rate is a lever or a given. |
+| S4 | `SPO2` (0xF1) produces at least one sample. | **REFUTED** | 2026-08-18, on hardware. It does not even resolve a driver: `spo2` defaults to on, so `connect()` was called and returned false, and the screen showed lower-case `o`. There is no firmware producer to ask. Nothing is built on SpO2 and now nothing can be. |
+| S5 | `HEART_BEAT` (0x40) still emits nothing on 1.4 firmware. | **CONFIRMED**, and more strongly than expected | 2026-08-18, on hardware. It does not resolve a driver at all — lower-case `b` on the screen — so the question is not "does it emit events" but "there is nothing to subscribe to". UNA answered "no events at all" against the 1.3 line (PR #167); 1.4 has not changed it. **The staging clause in §3 stands**, and the HRV fields stay reserved and absent. Re-check after any firmware bump: UNA describe a higher-rate PPG mode and on-chip HRV as things they are working on, so this row has an expiry date even though it is CONFIRMED today. |
+| S6 | The PPG waveform is 20 Hz, single channel. | **UNVERIFIED**, and possibly unreachable | UNA maintainer, PR #167, 2026-07-01. On the 2026-08-18 run `ppg` was off in config, so the lower-case `p` proves nothing -- but given `HEART_BEAT` and `SPO2` both failed to resolve, there is a real chance `PPG` has no app-facing driver either. Settle it with `"ppg": "on"` for one short run and read the block: an upper-case `P` means a driver exists, lower-case means the raw waveform is not available to apps at all, which would close the on-device HRV route for good. |
+| S12 | `TOUCH_DETECT` publishes on a clock, so an epoch with no samples means "not worn". | **REFUTED**, and it was a bug | 2026-08-18, on hardware: it resolved (upper-case `T`) and delivered **zero samples in a minute**. It is an event sensor — it publishes on a change of state. SleepLab read a sample-less epoch as 0 % worn, which put every epoch below the scorer's worn floor, which made every epoch Unscorable, which would have reported **every night as NOT WORN** with its numbers suppressed. Fixed: worn state is sticky across epochs now, and a sensor that never speaks at all yields `Uncertain` with its own reason rather than `NotWorn` — telling somebody their watch was not worn would send them to put on a watch they are already wearing. Found in two minutes of hardware, by the app that exists to find it. |
 | S7 | `TOUCH_DETECT` holds "worn" for a loosely-strapped sleeping wrist without flickering. | **UNVERIFIED** | The report's `worn detection`: transitions per hour, and how many rows contain one. This is the single most load-bearing sensor claim in the app — §3.4 makes every sleep number conditional on the worn gate, so a sensor that flickers thirty times an hour would suppress every night. A worn *fraction* cannot answer it; that is why `touch_edges` is its own column. |
 | S8 | Nothing else on the device contends for the HR sensor. | **UNVERIFIED** | `hrex_opt` / `hrex_ext` / `hrex_unk` across a night with no other app installed, then again with one. `HEART_RATE_EX` is subscribed precisely so HR provenance is recorded rather than assumed. |
-| S9 | The user volume has room for a decade of nights, and sustained append throughput is not a constraint. | **UNVERIFIED** | `bytesWritten` against elapsed time, and the file size after a night. Arithmetic says ~46 KB/night at 30 s epochs and ~17 MB/decade, against a volume `MapManager` CRC-verified 160.5 MiB of map packs on — but measured, not assumed. |
+| S9 | The user volume has room for a decade of nights, and sustained append throughput is not a constraint. | **LIKELY** | 2026-08-18: three rows written and none failed (`rows 3 ok`), so the open-seek-write-flush-close cycle works against the real filesystem -- which is the half that could have been silently broken. Throughput and free space still need a night: `bytesWritten` against elapsed time, and the file size afterwards. Arithmetic says ~46 KB/night and ~17 MB/decade, against a volume `MapManager` CRC-verified 160.5 MiB of map packs on. |
 | S10 | An idle service that sleeps to its next deadline does not wake often enough to matter. | **UNVERIFIED** | The report's `loop` section: `wakes` per row. The probe sleeps to its next row boundary and should wake roughly once per delivered batch. The report flags above 2000 wakes/row as a spinning loop. |
 | S11 | The sample-rate thinning rule (S3) applies on hardware and not only in the simulator. | **UNVERIFIED** | The rule is CONFIRMED *for the simulator* — pinned by `Tests/Host/simulator/SampleRateAdapter_test.cpp` on `una-sdk`'s `feat/sample-rate-adapter-rule`, which asserts the half-period boundary, the exact-ratio edge and the quantised bands. Whether the kernel's own gate behaves identically is not known. `acc_n` against `acc_ts_span_ms` on hardware is the check. |
 

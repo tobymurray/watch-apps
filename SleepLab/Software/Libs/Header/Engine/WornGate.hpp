@@ -139,6 +139,8 @@ public:
     {
         WornVerdict verdict    = WornVerdict::Uncertain;
         HrEvidence  hrEvidence = HrEvidence::Absent;
+        /// False when TOUCH_DETECT said nothing at all. See evaluate().
+        bool        wornReported = true;
 
         size_t   epochs           = 0; ///< Epochs examined.
         size_t   wornEpochs       = 0; ///< ...reporting worn at or above the scorer's floor.
@@ -168,8 +170,19 @@ public:
      *                    during the night. Distinguishes "HR delivered nothing"
      *                    -- which is evidence of a table -- from "HR was never
      *                    asked for", which is evidence of nothing.
+     * @param wornReported Whether TOUCH_DETECT delivered a single sample all
+     *                    night. It is an event sensor -- it publishes on a
+     *                    change of state, not on a clock -- so silence normally
+     *                    means "unchanged" and the recorder carries the last
+     *                    state forward. Total silence across a whole night is
+     *                    different: nothing was ever heard, so there is no
+     *                    state to carry, and the honest verdict is Uncertain
+     *                    rather than NotWorn. Telling somebody their watch was
+     *                    not worn would send them to put on a watch they are
+     *                    already wearing.
      */
-    static Result evaluate(const ScoringInput *in, size_t n, bool hrSampled);
+    static Result evaluate(const ScoringInput *in, size_t n, bool hrSampled,
+                           bool wornReported = true);
 };
 
 } // namespace Engine
