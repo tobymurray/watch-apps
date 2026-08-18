@@ -96,6 +96,59 @@ int16_t localMinutes(int64_t utc)
     return static_cast<int16_t>(local.tm_hour * 60 + local.tm_min);
 }
 
+/// Days from 1970-01-01 to the given proleptic Gregorian date.
+///
+/// The standard shift-the-epoch-to-March algorithm, so February and leap years
+/// fall out of the arithmetic instead of being special cases. Integer only: there
+/// is no `timegm` in the watch's newlib, and a routine that exists on the host and
+/// not on the target is a routine that compiles in every build except the one that
+/// ships.
+int32_t daysFromCivil(int y, unsigned m, unsigned d)
+{
+    y -= (m <= 2) ? 1 : 0;
+    const int      era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned yoe = static_cast<unsigned>(y - era * 400);          // 0..399
+    const unsigned doy = (153u * (m + (m > 2 ? -3 : 9)) + 2u) / 5u + d - 1u;
+    const unsigned doe = yoe * 365u + yoe / 4u - yoe / 100u + doy;      // 0..146096
+    return static_cast<int32_t>(era) * 146097 +
+           static_cast<int32_t>(doe) - 719468;
+}
+
+/// The night's own local calendar day, as a count of whole days.
+///
+/// A night's identity is the local evening it began -- that is what names its
+/// file, normatively, and `NightStore.hpp` says why: "a UTC stem would name half
+/// the year's nights with the wrong date". The history list has to agree with the
+/// filenames or the two cannot be matched to a diary, which is the one thing the
+/// calibration needs them for.
+///
+/// `startUtc / 86400` is not that. West of UTC a 23:00 bedtime is already the next
+/// UTC day, so every night in the Americas was listed under tomorrow. The GUI's
+/// side of the contract was already right -- it renders with `gmtime` precisely
+/// because "the value is already a whole local day" -- and this is the half that
+/// was not making it true.
+int32_t localDays(int64_t utc)
+{
+    if (utc <= 0) {
+        return 0;
+    }
+    std::time_t t = static_cast<std::time_t>(utc);
+    std::tm local {};
+#if defined(_WIN32) || defined(_WIN64)
+    if (localtime_s(&local, &t) != 0) { return 0; }
+#else
+    if (localtime_r(&t, &local) == nullptr) { return 0; }
+#endif
+    // The local calendar day as a day number, so the GUI's gmtime renders the
+    // local date back out. Computed from the fields the zone already resolved
+    // rather than by subtracting an offset, which keeps DST out of it.
+    //
+    // Arithmetic rather than `timegm`, which is a GNU extension the watch's newlib
+    // does not have -- found by the ARM build, which is the only place that could
+    // find it: the host tests and the simulator both link glibc.
+    return daysFromCivil(local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
+}
+
 } // namespace
 
 
@@ -1110,7 +1163,7 @@ void Service::publishHistory()
         for (size_t i = 0; i < take; i++) {
             const SleepLab::NightStore::IndexRow &r = rows[n - 1 - (sent + i)];
             auto &out = msg->rows[i];
-            out.startUtcDays  = static_cast<int32_t>(r.startUtc / 86400);
+            out.startUtcDays  = localDays(r.startUtc);
             out.totalSleepMin = static_cast<int16_t>(r.totalSleepMin);
             out.efficiencyPct = static_cast<int16_t>(r.efficiencyPct);
             out.hrMinX10      = static_cast<int16_t>(r.hrMinX10);

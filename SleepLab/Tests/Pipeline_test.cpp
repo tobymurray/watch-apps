@@ -9,6 +9,8 @@
  */
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+
 #include "NightHarness.hpp"
 
 namespace {
@@ -854,6 +856,62 @@ TEST(HostileNights, AFlickeringWornSensorIsRecordedAsFlickering)
     EXPECT_GT(edges, 0L)
         << "the worn sensor changed state dozens of times and the epoch log "
            "recorded no edges at all";
+}
+
+// ---------------------------------------------------------------------------
+// The history's dates
+// ---------------------------------------------------------------------------
+
+/// A night's identity is the local evening it began: that is what names its file,
+/// and `NightStore.hpp` says so normatively -- "a UTC stem would name half the
+/// year's nights with the wrong date".
+///
+/// The history list is on a different calendar. `publishHistory` sends
+/// `startUtc / 86400`, whole UTC days, and `MainView::formatDay` renders it with
+/// `gmtime` under a comment asserting "the value is already a whole local day,
+/// computed service-side from the night's own start". Nothing computes that. West
+/// of UTC a 23:00 bedtime is the next UTC day, so every night in the Americas is
+/// listed under tomorrow's date while its own file is named for today -- and a
+/// history whose dates disagree with the filenames is a history nobody can match
+/// to a diary, which is the one thing the calibration needs it for.
+TEST(History, ANightIsListedUnderTheLocalDayItsFileIsNamedFor)
+{
+    // Only meaningful away from UTC, and the suite runs at UTC by default.
+    ASSERT_EQ(setenv("TZ", "America/New_York", 1), 0);
+    tzset();
+
+    // 2025-08-18 23:30 local = 2025-08-19 03:30 UTC. The file is named for the
+    // 18th; the UTC day is the 19th.
+    const int64_t bedtime = 1755574200;   // 23:30 EDT on the 18th
+
+    Scenario s;
+    s.startUtc = bedtime;
+    s.phases   = { awake(5), still(6 * 60), awake(20, 72, 40) };
+    const Observations obs = Rig::instance().run(s);
+
+    const std::string csv = theNightCsv(Rig::instance().fs);
+    ASSERT_FALSE(csv.empty());
+
+    ASSERT_FALSE(obs.historyRows.empty()) << "no history row was published";
+    const int32_t days = obs.historyRows.back().startUtcDays;
+
+    // The day the list will render, and the day the file is named for.
+    char listed[16];
+    const std::time_t t = static_cast<std::time_t>(days) * 86400;
+    std::tm g {};
+    ASSERT_NE(gmtime_r(&t, &g), nullptr);
+    std::snprintf(listed, sizeof(listed), "%04d%02d%02d",
+                  g.tm_year + 1900, g.tm_mon + 1, g.tm_mday);
+
+    // "Nights/YYYYMMDDTHHMMSS.csv"
+    const std::string stem = csv.substr(std::string("Nights/").size(), 8);
+
+    EXPECT_EQ(std::string(listed), stem)
+        << "the history lists this night under " << listed
+        << " and its file is named " << stem;
+
+    ASSERT_EQ(setenv("TZ", "UTC", 1), 0);
+    tzset();
 }
 
 } // namespace
