@@ -77,6 +77,47 @@ void stemFor(int64_t startUtc, uint32_t seq, char *out, size_t outSize)
                   static_cast<unsigned long>(seq % 1000u));
 }
 
+/// Whether @p path is one this app's own recorder could have created.
+///
+/// `Nights/<stem>.csv`, with no separator or parent reference in the stem, and
+/// short enough that swapping ".csv" for ".json" still fits kMaxNightPath.
+bool isNightPath(const char *path)
+{
+    if (path == nullptr) {
+        return false;
+    }
+    const size_t len = std::strlen(path);
+
+    // ".json" is one byte longer than ".csv", and the summary path is built in a
+    // buffer of kMaxNightPath bytes including its terminator.
+    if (len + 1 + 1 > kMaxNightPath) {
+        return false;
+    }
+
+    const size_t dirLen = std::strlen(kNightsDir);
+    if (len < dirLen + 1 + 1 + 4) {
+        return false;
+    }
+    if (std::strncmp(path, kNightsDir, dirLen) != 0 || path[dirLen] != '/') {
+        return false;
+    }
+    if (std::strcmp(path + len - 4, ".csv") != 0) {
+        return false;
+    }
+
+    // The stem is one path component and nothing else.
+    for (size_t i = dirLen + 1; i < len - 4; ++i) {
+        const char c = path[i];
+        if (c == '/' || c == '\\' || c == ':') {
+            return false;
+        }
+        if (c == '.' && path[i + 1] == '.') {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 NightStore::NightStore(const SDK::Kernel &kernel)
@@ -106,12 +147,19 @@ bool NightStore::append(const char *path, const char *text, size_t len)
     }
 
     size_t     written = 0;
-    const bool ok      = file->write(text, len, written) && written == len;
+    bool       ok      = file->write(text, len, written) && written == len;
 
     // Flush before close, not instead of it: a row still in the FAT cache when
     // the USB cable goes in is a row that never happened.
-    file->flush();
-    file->close();
+    //
+    // And both are part of whether the write happened. FatFs's `f_close` syncs,
+    // and when the sync fails it keeps the FIL valid and its lock-table entry
+    // held -- so a close that fails is both a row that was never committed and a
+    // lock slot that will not come back. Reporting that as a successful write is
+    // how a night ends up shorter than its summary says with nothing to show
+    // why.
+    if (!file->flush()) { ok = false; }
+    if (!file->close()) { ok = false; }
     return ok;
 }
 
@@ -156,6 +204,22 @@ ResumeState NightStore::readState(uint32_t nowMs, int64_t nowUtc)
                     path, &epochs, &uptime, &wall, &flags, &startUtc) != 6) {
         LOG_WARNING("night_state.txt is unreadable; starting fresh\n");
         return s;
+    }
+
+    // The path is used verbatim: to test existence, to append every epoch to,
+    // and -- with ".csv" swapped for ".json" -- to build the summary path in a
+    // buffer of this same size, which ".json" makes one byte longer. So it has
+    // to be a path this app could have written, and the check is on the shape
+    // rather than on a blocklist: `Nights/<stem>.csv`, no path separators in the
+    // stem, and short enough to survive the extension swap.
+    //
+    // The file is the app's own and lives inside the app's sandbox, so the
+    // surface this guards is corruption rather than attack -- it is rewritten
+    // 1 900 times a night and the power can go at any of them.
+    if (!isNightPath(path)) {
+        LOG_WARNING("night_state.txt names %s, which is not a night this app "
+                    "writes; starting fresh\n", path);
+        return ResumeState{};
     }
 
     s.present  = true;
@@ -534,13 +598,28 @@ bool NightStore::finishNight(const Engine::NightSummary &s,
         indexOk = append(kIndexPath, row, static_cast<size_t>(n));
     }
 
-    // Cleared last. The state file is what says "a night is in progress", so a
-    // crash anywhere above resumes the night rather than losing it. The cost of
-    // the state outliving the summary is one duplicate index row, which is
-    // visible; the cost of the reverse is a night that silently vanishes.
-    mKernel.fs.remove(kStatePath);
-    mPath[0] = '\0';
-    mEpochs  = 0;
+    // Cleared last, and only when the night is actually filed. The ordering was
+    // reasoned about for a crash -- state cleared last, so a crash anywhere above
+    // resumes the night rather than losing it -- and a refused write is not a
+    // crash: control reaches here and the state was removed regardless, so a
+    // volume with no room for the summary or the index row lost the night
+    // entirely, with a CSV on disk and nothing anywhere that knew it had run.
+    //
+    // The index row is the load-bearing one: it is the history and it is the only
+    // thing the baseline is built from. A summary that failed costs the night's
+    // provenance and leaves it in the history; an index row that failed costs the
+    // night. So the state file stays when the index row did not land, and the
+    // relaunch resumes into it -- the cost of that is one duplicate index row if
+    // the write in fact succeeded and only its acknowledgement was lost, which is
+    // visible in the history rather than silent.
+    if (indexOk) {
+        mKernel.fs.remove(kStatePath);
+        mPath[0] = '\0';
+        mEpochs  = 0;
+    } else {
+        LOG_WARNING("index row for %s did not land; keeping the state file so "
+                    "the night is not lost\n", mPath);
+    }
 
     return jsonOk && indexOk;
 }
