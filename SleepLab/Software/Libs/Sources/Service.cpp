@@ -81,16 +81,17 @@ constexpr char kGlanceName[] = "Sleep Lab";
 /// Read for *labelling only*. No duration anywhere in this app comes from two
 /// wall-clock readings: the clock can jump on a timezone change, a host sync or
 /// DST, and a jump would silently rewrite an interval.
-int16_t localMinutes(std::time_t utc)
+int16_t localMinutes(int64_t utc)
 {
     if (utc <= 0) {
         return -1;
     }
+    std::time_t t = static_cast<std::time_t>(utc);
     std::tm local {};
 #if defined(_WIN32) || defined(_WIN64)
-    if (localtime_s(&local, &utc) != 0) { return -1; }
+    if (localtime_s(&local, &t) != 0) { return -1; }
 #else
-    if (localtime_r(&utc, &local) == nullptr) { return -1; }
+    if (localtime_r(&t, &local) == nullptr) { return -1; }
 #endif
     return static_cast<int16_t>(local.tm_hour * 60 + local.tm_min);
 }
@@ -342,8 +343,7 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
 {
     Engine::Epoch e;
     e.uptimeMs = now;
-    const std::time_t wall = std::time(nullptr);
-    e.wallUtc  = (wall > 0) ? static_cast<int64_t>(wall) : -1;
+    e.wallUtc  = SleepLab::wallClockUtc();
     e.spanMs   = spanMs;
 
     mCounter.closeEpoch(e.count, e.peak, e.samples);
@@ -464,8 +464,7 @@ void Service::closeScoringEpoch()
     mPendingSteps  = kAbsent;
     mPendingHalves = 0;
 
-    const std::time_t wall = std::time(nullptr);
-    const int16_t localMin = localMinutes(wall);
+    const int16_t localMin = localMinutes(SleepLab::wallClockUtc());
 
     const bool worn = scored.wornPct >= Engine::SleepWakeScorer::kMinWornPct;
     const Engine::NightSegmenter::Update u =
@@ -535,8 +534,7 @@ void Service::flushPreRoll(uint16_t scoringEpochs)
 
 void Service::openNight(uint16_t backdateScoringEpochs)
 {
-    const std::time_t wall = std::time(nullptr);
-    mNightStartUtc = (wall > 0) ? static_cast<int64_t>(wall) : -1;
+    mNightStartUtc = SleepLab::wallClockUtc();
 
     // Backdated: the session began where the still run began, not where it was
     // proved. Adjusting the recorded start by the same amount keeps the file
@@ -638,8 +636,8 @@ void Service::closeNight(bool discard)
             mNightStartUtc + static_cast<int64_t>(s.onsetEpoch) * 60;
         const int64_t wakeUtc =
             mNightStartUtc + (static_cast<int64_t>(s.finalWakeEpoch) + 1) * 60;
-        mLastAsleepAtMin = localMinutes(static_cast<std::time_t>(onsetUtc));
-        mLastWokeAtMin   = localMinutes(static_cast<std::time_t>(wakeUtc));
+        mLastAsleepAtMin = localMinutes(onsetUtc);
+        mLastWokeAtMin   = localMinutes(wakeUtc);
     }
 
     mStore.finishNight(s, Engine::RestfulnessBand::kMethod, mLastBandUsedHr,
@@ -672,7 +670,7 @@ void Service::checkAlarm()
         return;
     }
 
-    const int16_t nowMin = localMinutes(std::time(nullptr));
+    const int16_t nowMin = localMinutes(SleepLab::wallClockUtc());
     if (nowMin < 0) {
         return;   // no clock, no deadline
     }
@@ -836,7 +834,7 @@ void Service::publishReport()
     } else if (mHaveReport) {
         msg->data.phase = static_cast<uint8_t>(CustomMessage::Phase::Reported);
     } else if (mSegmenter.state() == Engine::NightSegmenter::State::Idle &&
-               Engine::inWindow(localMinutes(std::time(nullptr)),
+               Engine::inWindow(localMinutes(SleepLab::wallClockUtc()),
                                 mSettings.segmenter.windowStartMin,
                                 mSettings.segmenter.windowEndMin)) {
         msg->data.phase = static_cast<uint8_t>(CustomMessage::Phase::Watching);
@@ -1071,8 +1069,7 @@ void Service::pumpWidget()
 void Service::run()
 {
     const uint32_t start = mKernel.sys.getTimeMs();
-    const std::time_t wall = std::time(nullptr);
-    const int64_t nowUtc = (wall > 0) ? static_cast<int64_t>(wall) : -1;
+    const int64_t nowUtc = SleepLab::wallClockUtc();
 
     const SleepLab::SettingsStatus cfg =
         SleepLab::loadSettings(mKernel, mSettings);

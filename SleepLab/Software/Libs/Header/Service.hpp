@@ -78,6 +78,7 @@
 #include "NightStore.hpp"
 #include "RawRecorder.hpp"
 #include "Settings.hpp"
+#include "WallClock.hpp"
 
 /**
  * @brief The recorder.
