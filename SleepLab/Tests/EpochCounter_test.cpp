@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <limits>
 
 #include "Engine/EpochCounter.hpp"
 
@@ -357,3 +358,90 @@ TEST(EpochCounter, PeakSeparatesOneHardMovementFromContinuousFidgeting)
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// Hostile input
+// ---------------------------------------------------------------------------
+
+/// A count of exactly zero is the most dangerous value this class can produce:
+/// it is what a rigid object on furniture looks like, it is what the soundest
+/// sleep of the night looks like, and it is indistinguishable from either.
+///
+/// The filter state deliberately survives `closeEpoch()` -- which is right, and
+/// which means one bad sample is not one bad epoch. A single non-finite value
+/// propagates into all five filter poles and every subsequent epoch integrates
+/// to NaN, whose conversion to `uint32_t` is undefined and in practice zero.
+/// The sample count stays healthy, so neither the recorder's data-gap flag nor
+/// the scorer's thin-epoch guard notices, and the rest of the night is scored
+/// as perfect stillness.
+TEST(EpochCounter, ANonFiniteSampleDoesNotSilenceTheRestOfTheNight)
+{
+    const uint32_t kPeriodMs = 21;   // ~48 Hz, the delivered rate
+    const size_t   perEpoch  = 30000 / kPeriodMs;
+
+    Engine::EpochCounter c;
+    uint32_t count = 0, peak = 0;
+    uint16_t samples = 0;
+
+    // A clear, ordinary movement: 0.05 g at 1 Hz.
+    auto feedEpoch = [&](size_t base, bool injectNaN) {
+        for (size_t k = 0; k < perEpoch; ++k) {
+            const uint32_t ts = static_cast<uint32_t>((base + k) * kPeriodMs);
+            float x = 0.05f * std::sin(6.28318530718f *
+                                       static_cast<float>(ts) * 0.001f);
+            if (injectNaN && k == 10) {
+                x = std::numeric_limits<float>::quiet_NaN();
+            }
+            c.add(ts, x, 0.0f, 1.0f);
+        }
+        c.closeEpoch(count, peak, samples);
+    };
+
+    feedEpoch(0, false);
+    const uint32_t clean = count;
+    ASSERT_GT(clean, 100u) << "the fixture is not producing a count to lose";
+
+    feedEpoch(perEpoch, true);          // one NaN, somewhere in this epoch
+    feedEpoch(perEpoch * 2, false);     // and then two entirely clean ones
+    const uint32_t afterOne = count;
+    feedEpoch(perEpoch * 3, false);
+    const uint32_t afterTwo = count;
+
+    // The epochs *after* the bad sample are the finding. A single glitch may
+    // cost its own epoch; it must not cost the night.
+    EXPECT_NEAR(afterOne, clean, clean / 2)
+        << "the epoch after a non-finite sample counted " << afterOne
+        << " against " << clean << " for identical movement";
+    EXPECT_NEAR(afterTwo, clean, clean / 2)
+        << "two epochs later the counter is still producing " << afterTwo;
+}
+
+TEST(EpochCounter, AnInfiniteSampleIsRejectedRatherThanSaturating)
+{
+    // The saturation guard tests `scaledSum >= kMax`, which is true for
+    // infinity and false for NaN -- so an infinity saturates the epoch to
+    // 0xFFFFFFFF, which is at least loud, and then leaves the filter state
+    // infinite so every later epoch is NaN, which is silent.
+    const uint32_t kPeriodMs = 21;
+    Engine::EpochCounter c;
+    uint32_t count = 0, peak = 0;
+    uint16_t samples = 0;
+
+    for (uint32_t k = 0; k < 200; ++k) {
+        float x = 0.05f * std::sin(6.28318530718f *
+                                   static_cast<float>(k * kPeriodMs) * 0.001f);
+        if (k == 50) { x = std::numeric_limits<float>::infinity(); }
+        c.add(k * kPeriodMs, x, 0.0f, 1.0f);
+    }
+    c.closeEpoch(count, peak, samples);
+
+    for (uint32_t k = 200; k < 400; ++k) {
+        const float x = 0.05f * std::sin(6.28318530718f *
+                                         static_cast<float>(k * kPeriodMs) * 0.001f);
+        c.add(k * kPeriodMs, x, 0.0f, 1.0f);
+    }
+    c.closeEpoch(count, peak, samples);
+
+    EXPECT_GT(count, 0u) << "an infinite sample silenced the counter for good";
+    EXPECT_LT(count, 0xFFFFFFFFu) << "the counter is stuck saturated";
+}

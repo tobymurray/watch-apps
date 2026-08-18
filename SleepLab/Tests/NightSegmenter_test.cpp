@@ -11,6 +11,7 @@
 
 #include "Engine/Epoch.hpp"
 #include "Engine/NightSegmenter.hpp"
+#include "Engine/SleepWakeScorer.hpp"
 
 namespace {
 
@@ -361,3 +362,81 @@ TEST(Segmenter, FinishOnAnIdleSegmenterDoesNothing)
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// A session that cannot end
+// ---------------------------------------------------------------------------
+
+/// `SleepWakeScorer.hpp` says of its 16-hour bound: "a 'night' that ran 16 hours
+/// is already a data-quality problem, and the segmenter is what should catch it,
+/// not an array bound silently truncating it."
+///
+/// There is no such rule here. Leaving the bedtime window is the only thing that
+/// ends a long session, and that needs a readable wall clock -- which an open
+/// session deliberately does not require, because losing real data over a clock
+/// the app does not control would be the wrong trade. So a session opened while
+/// the clock was readable and continued after it stopped being readable never
+/// ends: it keeps counting, `mSessionEpochs` is a uint16 and wraps at 45 days,
+/// and once it has wrapped below `minSessionMin` the session can no longer even
+/// close on activity.
+TEST(NightSegmenter, ASessionCannotRunForEver)
+{
+    Engine::NightSegmenter seg;
+
+    // Open it honestly: fifteen still, worn epochs inside the window.
+    for (int i = 0; i < 15; ++i) {
+        seg.update(22 * 60, true, 10, Engine::kAbsent);
+    }
+    ASSERT_EQ(seg.state(), Engine::NightSegmenter::State::Open);
+
+    // Then the wall clock stops being readable -- a device that lost its clock,
+    // or a launch before the host has synced one.
+    bool closed = false;
+    for (long i = 0; i < 40000 && !closed; ++i) {
+        const Engine::NightSegmenter::Update u =
+            seg.update(-1, true, 10, Engine::kAbsent);
+        if (u.event == Engine::NightSegmenter::Event::Closed ||
+            u.event == Engine::NightSegmenter::Event::Discarded) {
+            closed = true;
+        }
+    }
+
+    EXPECT_TRUE(closed)
+        << "the session was still open after 40 000 epochs -- 28 days -- with "
+           "sessionEpochs at " << seg.sessionEpochs();
+    // And whenever it does end, its length must be a real length rather than one
+    // that has been round a uint16.
+    EXPECT_LE(seg.sessionEpochs(), Engine::kMaxScoringEpochs);
+}
+
+/// The bound has to be a bound on the *session*, not only a guard on the clock:
+/// a window wide enough to hold sixteen hours must not produce a night longer
+/// than the engine will score.
+TEST(NightSegmenter, ASessionInAVeryWideWindowIsStillBounded)
+{
+    Engine::SegmenterConfig cfg;
+    cfg.windowStartMin = 0;
+    cfg.windowEndMin   = 23 * 60 + 59;   // very nearly all day
+    Engine::NightSegmenter seg(cfg);
+
+    for (int i = 0; i < 15; ++i) {
+        seg.update(60, true, 10, Engine::kAbsent);
+    }
+    ASSERT_EQ(seg.state(), Engine::NightSegmenter::State::Open);
+
+    bool closed = false;
+    int16_t minute = 60;
+    for (long i = 0; i < 40000 && !closed; ++i) {
+        minute = static_cast<int16_t>((minute + 1) % Engine::kMinutesPerDay);
+        const Engine::NightSegmenter::Update u =
+            seg.update(minute, true, 10, Engine::kAbsent);
+        if (u.event == Engine::NightSegmenter::Event::Closed ||
+            u.event == Engine::NightSegmenter::Event::Discarded) {
+            closed = true;
+            EXPECT_LE(u.sessionEpochs, Engine::kMaxScoringEpochs)
+                << "the session ran " << u.sessionEpochs
+                << " epochs, past what the engine will score";
+        }
+    }
+    EXPECT_TRUE(closed);
+}

@@ -351,3 +351,77 @@ TEST(ColeKripke, NullInputsAreRefusedRatherThanDereferenced)
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// Webster rules 1-3, on a pattern designed to make the bookkeeping matter
+// ---------------------------------------------------------------------------
+
+/// Webster's rules 1-3 are stated against the *original* scoring: a wake run of
+/// at least 4, 10 or 15 minutes rescores the first 1, 3 or 4 minutes of the
+/// sleep that follows it. The pass therefore has to keep measuring the original
+/// wake runs at their original lengths.
+///
+/// It does not. After rescoring a sleep block that ran out before the rule did,
+/// it advances the cursor by the full rule length rather than by what it
+/// actually rewrote -- stepping over the first minutes of the next wake run and
+/// measuring that run short. A run of 11 measured as 8 drops from rule 2 (three
+/// minutes rescored) to rule 1 (one), and the two minutes lost are scored as
+/// sleep. The direction is the same direction as actigraphy's own bias, which is
+/// what makes it hard to see in an output.
+TEST(SleepWakeScorer, RescoringAdvancesOnlyPastWhatItRewrote)
+{
+    // 15 wake | 1 sleep | 11 wake | 30 sleep.
+    //
+    // Rule 3 fires on the 15-run and wants 4 minutes of sleep; only 1 is there.
+    // The 11-minute wake run then fires rule 2, which wants 3 minutes of the
+    // long sleep block.
+    std::vector<Engine::Verdict> v;
+    auto push = [&v](size_t n, Engine::Verdict x) {
+        for (size_t i = 0; i < n; ++i) { v.push_back(x); }
+    };
+    push(15, Engine::Verdict::Wake);
+    push(1,  Engine::Verdict::Sleep);
+    push(11, Engine::Verdict::Wake);
+    push(30, Engine::Verdict::Sleep);
+
+    const size_t longBlock = 27;   // where the 30-minute sleep block starts
+    Engine::SleepWakeScorer::rescoreAfterWake(v.data(), v.size());
+
+    size_t rescored = 0;
+    for (size_t i = longBlock; i < v.size(); ++i) {
+        if (v[i] == Engine::Verdict::Wake) { ++rescored; }
+    }
+    EXPECT_EQ(rescored, 3u)
+        << "an 11-minute wake run rescored " << rescored
+        << " minutes of the sleep after it; rule 2 asks for 3";
+}
+
+/// The same bookkeeping, seen from the other side: the epochs the pass steps
+/// over must not lose their own identity. Nothing between the two wake runs
+/// should end up as sleep.
+TEST(SleepWakeScorer, RescoringDoesNotStepOverWakeEpochs)
+{
+    std::vector<Engine::Verdict> v;
+    auto push = [&v](size_t n, Engine::Verdict x) {
+        for (size_t i = 0; i < n; ++i) { v.push_back(x); }
+    };
+    push(15, Engine::Verdict::Wake);
+    push(2,  Engine::Verdict::Sleep);
+    push(12, Engine::Verdict::Wake);
+    push(30, Engine::Verdict::Sleep);
+
+    Engine::SleepWakeScorer::rescoreAfterWake(v.data(), v.size());
+
+    // Everything up to the long sleep block is now wake: the two sleep minutes
+    // were rescored and the twelve after them were already wake.
+    for (size_t i = 0; i < 29; ++i) {
+        EXPECT_EQ(v[i], Engine::Verdict::Wake) << "at " << i;
+    }
+    size_t rescored = 0;
+    for (size_t i = 29; i < v.size(); ++i) {
+        if (v[i] == Engine::Verdict::Wake) { ++rescored; }
+    }
+    EXPECT_EQ(rescored, 3u)
+        << "a 12-minute wake run rescored " << rescored
+        << " minutes; rule 2 asks for 3";
+}
