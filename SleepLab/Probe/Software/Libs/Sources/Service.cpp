@@ -580,11 +580,26 @@ void Service::publishStatus()
     if (mHas.battCharge)  { subs |= CustomMessage::Sub::kBattCharge; }
     if (mHas.battMetrics) { subs |= CustomMessage::Sub::kBattMetrics; }
 
+    // What the config asked for, as opposed to what resolved. Everything not
+    // behind a flag is always requested.
+    uint16_t asked = CustomMessage::Sub::kAccel | CustomMessage::Sub::kTouch |
+                     CustomMessage::Sub::kMotion | CustomMessage::Sub::kActivity |
+                     CustomMessage::Sub::kBeat | CustomMessage::Sub::kSteps |
+                     CustomMessage::Sub::kBattLevel |
+                     CustomMessage::Sub::kBattCharge |
+                     CustomMessage::Sub::kBattMetrics;
+    if (mConfig.hrMode != Probe::HrMode::Off) {
+        asked |= CustomMessage::Sub::kHr | CustomMessage::Sub::kHrEx;
+    }
+    if (mConfig.ppgEnabled)  { asked |= CustomMessage::Sub::kPpg; }
+    if (mConfig.spo2Enabled) { asked |= CustomMessage::Sub::kSpo2; }
+
     auto msg = SDK::make_msg<CustomMessage::ProbeStatus>(mKernel);
     if (!msg) {
         return;
     }
 
+    msg->requested     = asked;
     msg->rowsWritten   = mRowsWritten;
     msg->rowFailures   = mLog.failures();
     msg->bytesWritten  = static_cast<uint32_t>(mLog.bytesWritten());

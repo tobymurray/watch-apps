@@ -46,6 +46,7 @@ public:
         uint32_t bytesWritten  = 0;
         uint32_t runningMs     = 0;
         uint16_t subscribed    = 0;
+        uint16_t requested     = 0;
         uint16_t hrMode        = 0;
         int32_t  lastAccN      = -1;
         int32_t  lastHrN       = -1;

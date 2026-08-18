@@ -139,6 +139,37 @@ TEST(WornGate, WithHeartRateOffATableStillFails)
     EXPECT_EQ(r.verdict, WornVerdict::NotWorn);
 }
 
+TEST(WornGate, AWornSensorThatSaidNothingIsUncertainNotNotWorn)
+{
+    // Measured on hardware 2026-08-18: TOUCH_DETECT is an event sensor and can
+    // deliver nothing for a whole minute while perfectly happily subscribed. If
+    // it says nothing for a whole *night* there is no state to carry forward,
+    // every epoch's worn fraction is a default rather than a measurement, and
+    // reading that as "taken off" would send somebody to put on a watch they
+    // are already wearing.
+    auto night = wornNight(400);
+    for (auto &e : night) {
+        e.wornPct = 0;   // never set, because nothing was ever heard
+    }
+
+    const auto r = WornGate::evaluate(night.data(), night.size(),
+                                      /*hrSampled=*/true,
+                                      /*wornReported=*/false);
+    EXPECT_EQ(r.verdict, WornVerdict::Uncertain);
+    EXPECT_FALSE(r.mayReportSleep()) << "it still suppresses the numbers";
+    EXPECT_STREQ(r.reason(), "worn sensor said nothing all night");
+}
+
+TEST(WornGate, ASilentSensorIsNotAnExcuseToPassANightstand)
+{
+    // The new branch must not become a way through. Uncertain suppresses the
+    // numbers exactly as NotWorn does -- what changes is only what the screen
+    // says about why.
+    const auto night = tableNight();
+    const auto r = WornGate::evaluate(night.data(), night.size(), true, false);
+    EXPECT_FALSE(r.mayReportSleep());
+}
+
 TEST(WornGate, ATooShortNightIsUncertainRatherThanJudged)
 {
     // A handful of epochs can be unanimous by chance, and a night that short

@@ -227,8 +227,9 @@ void Service::onSensorData(uint16_t handle, SDK::Sensor::DataBatch &batch)
                 mAcc.touchEdges < 255) {
                 mAcc.touchEdges++;
             }
-            mTouchLastWorn  = worn;
-            mTouchLastValid = true;
+            mTouchLastWorn    = worn;
+            mTouchLastValid   = true;
+            mTouchEverReported = true;
         }
         return;
     }
@@ -372,8 +373,26 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
         }
     }
 
+    // Worn state is STICKY across epochs, and this is not a refinement -- the
+    // app is broken without it.
+    //
+    // TOUCH_DETECT is an event sensor: it publishes when the state *changes*,
+    // not on a clock. Measured on hardware 2026-08-18, it delivered zero
+    // samples in a minute while sitting there perfectly happily subscribed. So
+    // "no samples this epoch" means "unchanged since the last one", and reading
+    // it as 0 % worn -- which is what an unset default does -- made every epoch
+    // fall below the scorer's worn floor, which made every epoch Unscorable,
+    // which made every night report as NOT WORN with its numbers suppressed.
+    // Every night. Silently correct-looking, and completely wrong.
     if (mAcc.touchN > 0) {
         e.wornPct = static_cast<uint8_t>(mAcc.touchWornN * 100u / mAcc.touchN);
+    } else if (mTouchLastValid) {
+        e.wornPct = mTouchLastWorn ? 100 : 0;
+    } else {
+        // Nothing has ever been heard from the sensor. Not the same as "not
+        // worn" -- see mTouchEverReported, which is what turns this into an
+        // Uncertain verdict rather than a NotWorn one.
+        e.wornPct = 0;
     }
     e.wornEdges  = mAcc.touchEdges;
     e.battPctX10 = static_cast<int16_t>(mBattPctX10);
@@ -577,7 +596,7 @@ void Service::closeNight(bool discard)
 
     const bool hrSampled = (mSettings.hrMode != SleepLab::HrMode::Off);
     const Engine::WornGate::Result gate =
-        Engine::WornGate::evaluate(mScoring, n, hrSampled);
+        Engine::WornGate::evaluate(mScoring, n, hrSampled, mTouchEverReported);
 
     Engine::NightSummary s =
         Engine::NightAnalyser::analyse(mScoring, mVerdicts, n, gate, mFlags);

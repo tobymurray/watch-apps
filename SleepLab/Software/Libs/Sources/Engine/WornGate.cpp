@@ -32,6 +32,9 @@ const char *WornGate::Result::reason() const
             if (epochs < kMinEpochs) {
                 return "too short to judge";
             }
+            if (!wornReported) {
+                return "worn sensor said nothing all night";
+            }
             if (hrEvidence == HrEvidence::Absent) {
                 return "heart rate was off - cannot confirm it was worn";
             }
@@ -39,10 +42,12 @@ const char *WornGate::Result::reason() const
     }
 }
 
-WornGate::Result WornGate::evaluate(const ScoringInput *in, size_t n, bool hrSampled)
+WornGate::Result WornGate::evaluate(const ScoringInput *in, size_t n,
+                                    bool hrSampled, bool wornReported)
 {
     Result r;
-    r.hrEvidence = hrSampled ? HrEvidence::Present : HrEvidence::Absent;
+    r.hrEvidence   = hrSampled ? HrEvidence::Present : HrEvidence::Absent;
+    r.wornReported = wornReported;
 
     if (in == nullptr || n < kMinEpochs) {
         r.epochs  = (in == nullptr) ? 0 : n;
@@ -77,6 +82,15 @@ WornGate::Result WornGate::evaluate(const ScoringInput *in, size_t n, bool hrSam
 
     r.wornPct      = static_cast<uint8_t>(r.wornEpochs * 100u / n);
     r.plausiblePct = static_cast<uint8_t>(r.plausibleEpochs * 100u / n);
+
+    // Before anything else: a worn sensor that never spoke leaves no evidence
+    // either way, and every epoch's worn fraction is a default rather than a
+    // measurement. Reading that as "taken off" would send somebody to put on a
+    // watch they are already wearing.
+    if (!wornReported) {
+        r.verdict = WornVerdict::Uncertain;
+        return r;
+    }
 
     // Order matters. A watch that was clearly taken off is NotWorn whatever the
     // plausibility numbers say, because "you took it off" is actionable and

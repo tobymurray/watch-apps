@@ -66,7 +66,14 @@ struct ProbeStatus : public SDK::MessageBase {
     uint32_t bytesWritten  = 0;   ///< Bytes this launch has appended.
     uint32_t runningMs     = 0;   ///< Uptime since this launch started.
 
-    uint16_t subscribed    = 0;   ///< Bitmask of Sub::*.
+    uint16_t subscribed    = 0;   ///< Bitmask of Sub::*: resolved a driver.
+    /// Bitmask of Sub::*: the config asked for this sensor at all.
+    ///
+    /// Without it the screen cannot tell "you turned PPG off" from "the
+    /// firmware has no PPG driver", because both leave the subscribed bit
+    /// clear -- and on 1.4 hardware three of these turn out to be the second
+    /// case, which is a finding worth being able to read at a glance.
+    uint16_t requested     = 0;
     uint16_t hrMode        = 0;   ///< Probe::HrMode, as its underlying value.
 
     /// Counts from the last completed row, so "nothing is arriving" is visible
