@@ -914,4 +914,129 @@ TEST(History, ANightIsListedUnderTheLocalDayItsFileIsNamedFor)
     tzset();
 }
 
+// ---------------------------------------------------------------------------
+// The uptime wrap
+// ---------------------------------------------------------------------------
+
+/// `getTimeMs()` is device uptime: 32-bit, wrapping at ~49.7 days (ledger row P9,
+/// CONFIRMED). Every comparison against it has to be a signed or unsigned
+/// *difference*, never a magnitude compare -- and there are four: the epoch grid's
+/// advance, the heart-rate duty cycle, the resume classification, and the sample
+/// path's own dt.
+///
+/// A magnitude compare would not fail once at 49.7 days and recover. The epoch
+/// grid would decide the next epoch was due in 49 days and the service would sleep
+/// through the night; the duty cycle would stall for weeks or spin; the resume
+/// classification would call every relaunch a device reboot. So it is constructed
+/// here rather than reasoned about: a night that straddles the wrap has to be an
+/// ordinary night.
+TEST(UptimeWrap, ANightStraddlingTheWrapIsAnOrdinaryNight)
+{
+    // Start four minutes before 2^32 ms, so the wrap lands inside the opening
+    // stillness -- which is where the grid, the duty cycle and the pre-roll ring
+    // are all live at once.
+    Scenario s;
+    s.startUtc      = kStart;
+    s.startUptimeMs = 0xFFFFFFFFu - 4u * 60u * 1000u;
+    s.phases        = { awake(2), still(6 * 60), awake(20, 72, 40) };
+    const Observations obs = Rig::instance().run(s);
+
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr) << "the service did not survive the uptime wrap";
+    ASSERT_TRUE(rep->hasSleep)
+        << "a night across the uptime wrap produced no sleep numbers";
+
+    // The same night, well away from the wrap, must give the same answer.
+    Scenario ref = s;
+    ref.startUptimeMs = 3600u * 1000u;
+    const Observations refObs = Rig::instance().run(ref);
+    const CustomMessage::SleepReportData *refRep = refObs.lastReportedNight();
+    ASSERT_NE(refRep, nullptr);
+
+    EXPECT_NEAR(rep->timeInBedMin, refRep->timeInBedMin, 2)
+        << "across the wrap: " << rep->timeInBedMin << " minutes in bed, away "
+           "from it " << refRep->timeInBedMin;
+    EXPECT_NEAR(rep->totalSleepMin, refRep->totalSleepMin, 2);
+    EXPECT_EQ(rep->wokeAtMin, refRep->wokeAtMin);
+
+    // And no epoch may have absorbed 49 days.
+    const std::string csv = theNightCsv(Rig::instance().fs);
+    ASSERT_FALSE(csv.empty());
+    for (const EpochRow &r : parseEpochs(Rig::instance().fs.readFile(csv))) {
+        EXPECT_LT(r.spanMs, static_cast<long>(Engine::kEpochMs) * 3)
+            << "an epoch spanned " << r.spanMs << " ms across the wrap";
+    }
+}
+
+TEST(UptimeWrap, TheHeartRateDutyCycleKeepsCyclingAcrossTheWrap)
+{
+    // The duty cycle is the one clock comparison with nothing else watching it: a
+    // stalled cycle leaves heart rate off for the rest of the night, and the night
+    // then degrades to Uncertain -- which looks exactly like a night where heart
+    // rate was configured off on purpose.
+    Scenario s;
+    s.startUtc      = kStart;
+    s.startUptimeMs = 0xFFFFFFFFu - 6u * 60u * 1000u;
+    s.settingsJson  = "{\"schema\":1,\"values\":{\"hr\":\"duty\","
+                      "\"hr_duty_on_sec\":\"60\",\"hr_duty_per_sec\":\"300\"}}";
+    s.phases        = { awake(3), still(5 * 60), awake(20, 72, 40) };
+    const Observations obs = Rig::instance().run(s);
+
+    const std::string csv = theNightCsv(Rig::instance().fs);
+    ASSERT_FALSE(csv.empty());
+    const std::vector<EpochRow> rows =
+        parseEpochs(Rig::instance().fs.readFile(csv));
+    ASSERT_GT(rows.size(), 100u);
+
+    // Heart rate has to come and go across the whole night rather than stopping.
+    size_t withHr = 0, withoutHr = 0, lateWithHr = 0;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const bool has = rows[i].hrSamples > 0;
+        if (has) { ++withHr; } else { ++withoutHr; }
+        if (has && i > rows.size() / 2) { ++lateWithHr; }
+    }
+    EXPECT_GT(withHr, 0u)    << "the duty cycle never turned heart rate on";
+    EXPECT_GT(withoutHr, 0u) << "the duty cycle never turned heart rate off";
+    EXPECT_GT(lateWithHr, 0u)
+        << "heart rate stopped in the first half of the night and never came "
+           "back: the duty cycle stalled";
+}
+
+TEST(UptimeWrap, AResumeAcrossTheWrapIsARestartNotAReboot)
+{
+    // The resume classification is the only thing that can tell an app relaunch
+    // from a device reboot, and it does it with a signed uptime difference for
+    // exactly this reason. An unsigned magnitude compare would call every relaunch
+    // across the wrap a reboot -- which discards the gap measurement, so a resumed
+    // night's times would land early again.
+    Scenario first;
+    first.startUtc      = kStart;
+    first.startUptimeMs = 0xFFFFFFFFu - 90u * 60u * 1000u;
+    first.phases        = { awake(5), still(400), awake(30, 72, 40) };
+    first.stopAtMin     = 60;
+    first.guiOpensAtEnd = false;
+    Rig::instance().run(first);
+    ASSERT_TRUE(Rig::instance().fs.exist("night_state.txt"));
+
+    // Relaunched twenty minutes later, on the far side of the wrap.
+    Scenario second = first;
+    second.keepFilesystem = true;
+    second.stopAtMin      = -1;
+    second.guiOpensAtEnd  = true;
+    second.startUptimeMs  = first.startUptimeMs + 80u * 60u * 1000u;
+    second.startUtc       = kStart + 80 * 60;
+    second.phaseOffsetMin = 80;
+    const Observations obs = Rig::instance().run(second);
+
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr) << "the resumed night never closed";
+    EXPECT_NE(rep->interruption & Engine::Interruption::kResumed, 0u);
+
+    // The wearer got up at run-minute 405 of the original session: 04:30.
+    EXPECT_NEAR(rep->wokeAtMin, localOf(kStart + 405 * 60), 3)
+        << "reported wake " << rep->wokeAtMin
+        << ": the relaunch across the wrap was misclassified, so the twenty "
+           "minutes off were not counted";
+}
+
 } // namespace
