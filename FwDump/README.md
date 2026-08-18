@@ -140,8 +140,16 @@ rather than in `0x08000000`–`0x08400000`:
   inferred from the image's structure.
 - **The option bytes** — RDP level, TrustZone, dual-bank, boot addresses. Option
   bytes are a *separate flash area* and are not inside the dumped region.
-- **A raw sweep of `RCC`, `GPIOA`–`GPIOH` and `NVIC_ISER`** — which clocks and
-  peripherals are enabled, the pin-mux, and which interrupts are on.
+- **The kernel's own version string**, asked for over the message queue
+  (`REQUEST_SYSTEM_INFO`) rather than read from a register — the one statement of
+  what firmware this is that does not need `strings` run over the image
+  afterwards. Bounded by a 250 ms timeout, so a kernel that does not answer
+  records `firmware=unavailable` instead of stalling startup.
+- **A raw sweep** of `SCB`, `NVIC_ISER`, `NVIC_IPR`, `RCC`, `GPIOA`–`GPIOH`,
+  `I2C1`–`I2C6`, `SPI1`/`SPI3`, `USART3` and `LPUART1` — which clocks and
+  peripherals are enabled, the pin-mux, which interrupts are on, and the bus
+  speeds (`TIMINGR`) and baud rates (`BRR`). Every base was read successfully on
+  this unit by the prior investigation.
 
 It is written **at app start, before any dump**, and rewritten on every launch.
 So merely opening the app captures the hardware context, which makes it cheap to
@@ -310,6 +318,24 @@ number of sub-writes, `subwrite` no larger than 16 KB.
 **A configured region is read exactly as flash is — read-only.** What changes is
 the chance that an address does not decode, which faults rather than returning an
 error. The default is a region already known to be readable.
+
+### Where a non-default region writes
+
+The default flash region writes flat into `Apps/FwDump/`, with exactly the names
+the host reassembler expects. **Any other region gets its own
+`region_<base>/` subdirectory** holding the same names —
+`Apps/FwDump/region_20000000/dump_000000.bin` and so on.
+
+That is not tidiness. Chunk filenames are derived from the offset *within* the
+region and the manifest name is fixed, so without the split an SRAM dump at
+`0x20000000` would write the very same `dump_000000.bin` as a flash dump and
+destroy it — and resume would then re-verify the survivors against the wrong
+memory. Keeping the names identical inside the subdirectory means
+`reassemble_dump.py` needs no changes: it takes a directory, so point it at the
+subdirectory instead.
+
+So SRAM, the ST ROM bootloader at `0x0BF90000` and the system-information area
+are all dumpable today with no code change — only a config file.
 
 ## Tests
 

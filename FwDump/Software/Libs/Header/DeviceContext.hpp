@@ -111,6 +111,16 @@ struct Result {
     uint32_t nsBootAdd0   = 0; ///< 0x40022044.
     uint32_t nsBootAdd1   = 0; ///< 0x40022048.
 
+    // -- What the kernel says about itself -----------------------------------
+    // Asked for over the message queue rather than read from a register, so it
+    // is the only field here the firmware could in principle lie about -- but
+    // it is also the only one that names the firmware without anyone having to
+    // run `strings` over the image. Empty when the kernel did not answer.
+    char firmwareVersion[16] = {};
+    char hardwareVersion[16] = {};
+    uint32_t uptimeSeconds   = 0;
+    bool     systemInfoOk    = false;
+
     /// False on a build with no such registers (the host simulator). Callers
     /// must not present the zeros above as measurements in that case: "not
     /// measured" and "measured as zero" are opposite conclusions here.
@@ -138,7 +148,12 @@ struct Result {
 bool available();
 
 /// Reads the registers, or returns a Result with measured == false.
-Result read();
+///
+/// Also asks the kernel for its own firmware version, which is a bounded
+/// request/response over the message queue (see IAppComm::sendMessage's
+/// timeoutMs) rather than a register read -- so it cannot hang, and a kernel
+/// that does not answer simply leaves systemInfoOk false.
+Result read(const SDK::Kernel& kernel);
 
 /// One decoded line to the log, so a UART capture carries it too.
 void log(const Result& result);

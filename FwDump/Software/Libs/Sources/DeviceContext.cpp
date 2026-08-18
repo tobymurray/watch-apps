@@ -11,6 +11,7 @@
 #include <memory>
 
 #include "SDK/Interfaces/IFileSystem.hpp"
+#include "SDK/Messages/CommandMessages.hpp"
 
 #define LOG_MODULE_PRX      "Context"
 #define LOG_MODULE_LEVEL    LOG_LEVEL_INFO
@@ -50,6 +51,12 @@ inline uint32_t read32(uint32_t address)
 }
 #endif
 
+/// How long to wait for the kernel to answer the system-info request. Short:
+/// this runs before the app is usable, so a kernel that does not implement the
+/// message must cost a blink rather than a visible stall. Everything it would
+/// have told us is also recoverable from the image itself.
+constexpr uint32_t kSystemInfoTimeoutMs = 250;
+
 /// One block of the raw sweep: a name, a base, and how many 32-bit words.
 struct SweepBlock {
     const char* name;
@@ -68,7 +75,10 @@ struct SweepBlock {
 /// GPIOH read back all-ones (absent or unclocked) last time; recorded anyway,
 /// because "still absent" is itself a comparison worth being able to make.
 constexpr SweepBlock kSweep[] = {
+    // ARM System Control Space first: architectural, identical on every M33.
+    {"SCB",       0xE000ED00u, 8},
     {"NVIC_ISER", 0xE000E100u, 8},
+    {"NVIC_IPR",  0xE000E400u, 32},
     {"RCC",       0x46020C00u, 64},
     {"GPIOA",     0x42020000u, 12},
     {"GPIOB",     0x42020400u, 12},
@@ -78,6 +88,21 @@ constexpr SweepBlock kSweep[] = {
     {"GPIOF",     0x42021400u, 12},
     {"GPIOG",     0x42021800u, 12},
     {"GPIOH",     0x42021C00u, 12},
+    // Peripherals last. Every base below was read successfully on this unit by
+    // the 2026-07-29 investigation; I2C4/5/6 were added by its sweep #7 after
+    // RM0456 confirmed they exist on this device group. TIMINGR (word 4 of an
+    // I2C block) is the bus speed, BRR (word 3 of a USART) the baud -- both
+    // things a firmware update can change without the flash diff showing why.
+    {"I2C1",      0x40005400u, 8},
+    {"I2C2",      0x40005800u, 8},
+    {"I2C3",      0x46002800u, 8},
+    {"I2C4",      0x40008400u, 8},
+    {"I2C5",      0x40009800u, 8},
+    {"I2C6",      0x40009C00u, 8},
+    {"SPI1",      0x40013000u, 8},
+    {"SPI3",      0x46002000u, 8},
+    {"USART3",    0x40004800u, 8},
+    {"LPUART1",   0x46002400u, 12},
 };
 
 } // namespace
@@ -87,9 +112,28 @@ namespace DeviceContext
 
 bool available() { return kHasRegisters; }
 
-Result read()
+Result read(const SDK::Kernel& kernel)
 {
     Result result;
+
+    // Ask the kernel what firmware it is. A bounded request/response: with a
+    // non-zero timeout sendMessage returns only once the kernel has filled the
+    // message in place, so this cannot hang -- and a kernel that does not
+    // implement it just leaves systemInfoOk false rather than blocking startup.
+    // Worth having because it is the one statement of the firmware version that
+    // does not require running `strings` over the dump afterwards.
+    if (auto* info = kernel.comm.allocateMessage<SDK::Message::RequestSystemInfo>()) {
+        if (kernel.comm.sendMessage(info, kSystemInfoTimeoutMs)
+                && info->getResult() == SDK::MessageResult::SUCCESS) {
+            std::snprintf(result.firmwareVersion, sizeof(result.firmwareVersion), "%s",
+                          info->firmwareVersion);
+            std::snprintf(result.hardwareVersion, sizeof(result.hardwareVersion), "%s",
+                          info->hardwareVersion);
+            result.uptimeSeconds = info->uptimeSeconds;
+            result.systemInfoOk  = true;
+        }
+        kernel.comm.releaseMessage(info);
+    }
 
 #if defined(SIMULATOR) || !defined(__ARM_ARCH)
     // Nothing to read. measured stays false, which is what callers check --
@@ -225,6 +269,16 @@ bool write(const SDK::Kernel& kernel, const Result& result, const DumpRegion& re
         static_cast<unsigned long>(region.chunk), static_cast<unsigned long>(region.subwrite),
         region.nchunks(), regionSource);
     add("CTX uptime_ms=%lu\n", static_cast<unsigned long>(uptimeMs));
+
+    // The kernel's own account of what it is. Absent rather than blank when it
+    // did not answer, so nobody reads an empty string as "version unknown to
+    // the kernel" when it means "the kernel was never asked successfully".
+    if (result.systemInfoOk) {
+        add("CTX kernel firmware=%s hardware=%s uptime_s=%lu\n", result.firmwareVersion,
+            result.hardwareVersion, static_cast<unsigned long>(result.uptimeSeconds));
+    } else {
+        add("CTX kernel firmware=unavailable (no answer to REQUEST_SYSTEM_INFO)\n");
+    }
 
     if (!result.measured) {
         // Says so explicitly rather than emitting zeros: zero is the permissive

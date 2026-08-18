@@ -51,11 +51,29 @@ std::vector<uint8_t> syntheticFlash(size_t size)
     return flash;
 }
 
-std::string chunkName(uint32_t off)
+/// The path a chunk lands at, including the region's directory prefix. Built
+/// via FlashDumper::regionPrefix rather than hardcoded, so these tests assert
+/// the *contract* (default region flat, others scoped) instead of quietly
+/// depending on which region smallRegion() happens to be.
+std::string chunkName(uint32_t off, const DumpRegion& region = smallRegion())
 {
+    char prefix[64];
+    if (!FlashDumper::regionPrefix(region, prefix, sizeof(prefix))) {
+        prefix[0] = '\0';
+    }
     char name[32];
     std::snprintf(name, sizeof(name), "dump_%06lX.bin", static_cast<unsigned long>(off));
-    return name;
+    return std::string(prefix) + name;
+}
+
+/// Likewise for the manifest.
+std::string manifestName(const DumpRegion& region = smallRegion())
+{
+    char prefix[64];
+    if (!FlashDumper::regionPrefix(region, prefix, sizeof(prefix))) {
+        prefix[0] = '\0';
+    }
+    return std::string(prefix) + FlashDumper::kManifestName;
 }
 
 /// Runs a dumper to a terminal state, with a step budget small enough that the
@@ -145,7 +163,7 @@ TEST(FlashDumperTest, WritesEveryChunkAndACompleteManifest)
     // The whole-image CRC is the CRC of the region, in order.
     EXPECT_EQ(Crc32::of(flash.data(), flash.size()), dumper.wholeCrc());
 
-    const std::string manifest = fixture.fileSystem.readFile(FlashDumper::kManifestName);
+    const std::string manifest = fixture.fileSystem.readFile(manifestName());
     EXPECT_NE(std::string::npos, manifest.find("nchunks=4"));
     EXPECT_NE(std::string::npos, manifest.find("DUMP whole_image_crc32="));
     EXPECT_NE(std::string::npos, manifest.find("DUMP spot addr=08000000 "));
@@ -163,14 +181,14 @@ TEST(FlashDumperTest, ManifestGainsALinePerChunkAsItGoes)
 
     // The header must be on disk before any chunk is: without it the host
     // cannot interpret whatever chunk files an interrupted run left behind.
-    std::string manifest = fixture.fileSystem.readFile(FlashDumper::kManifestName);
+    std::string manifest = fixture.fileSystem.readFile(manifestName());
     EXPECT_NE(std::string::npos, manifest.find("DUMP base=08000000"));
     EXPECT_EQ(std::string::npos, manifest.find("DUMP chunk="));
 
     unsigned seen = 0;
     while (dumper.state() == FlashDumper::State::Dumping) {
         dumper.step(region.chunk);
-        manifest = fixture.fileSystem.readFile(FlashDumper::kManifestName);
+        manifest = fixture.fileSystem.readFile(manifestName());
 
         // Whatever is on disk is always a whole number of lines, and never
         // describes more chunks than have actually finished.
@@ -384,4 +402,72 @@ TEST(FlashDumperTest, EachChunkFileIsFlushedBeforeTheNextIsOpened)
         const std::string name = chunkName(i * region.chunk);
         EXPECT_GE(fixture.fileSystem.flushCounts[name], 1u) << "never flushed: " << name;
     }
+}
+
+// The default region must keep writing exactly the names the host reassembler
+// derives -- `dump_<off:06X>.bin` and `dump_manifest.txt`, flat in the app's own
+// folder. This is the contract, so it gets a test of its own rather than being
+// implied by the tests above.
+TEST(FlashDumperTest, DefaultRegionWritesFlatContractNames)
+{
+    char prefix[64];
+    ASSERT_TRUE(FlashDumper::regionPrefix(DumpRegion{}, prefix, sizeof(prefix)));
+    EXPECT_STREQ("", prefix) << "the default region must not be relocated";
+}
+
+// A non-default region gets its own subdirectory. Without this, dumping SRAM at
+// 0x20000000 writes the same dump_000000.bin as a flash dump and destroys it --
+// the chunk name comes from the offset *within* the region, not the address.
+TEST(FlashDumperTest, NonDefaultRegionIsScopedToItsOwnDirectory)
+{
+    DumpRegion sram;
+    sram.base = 0x20000000u;
+    ASSERT_TRUE(sram.valid());
+
+    char prefix[64];
+    ASSERT_TRUE(FlashDumper::regionPrefix(sram, prefix, sizeof(prefix)));
+    EXPECT_STREQ("region_20000000/", prefix);
+}
+
+TEST(FlashDumperTest, TwoRegionsDoNotOverwriteEachOther)
+{
+    SDK::TestSupport::KernelFixture fixture;
+    const DumpRegion flash = smallRegion();          // pretends to be the default
+    DumpRegion other = smallRegion();
+    other.base = 0x20000000u;                        // a different window
+
+    const std::vector<uint8_t> flashBytes = syntheticFlash(flash.size);
+    std::vector<uint8_t> otherBytes(other.size);
+    for (size_t i = 0; i < otherBytes.size(); ++i) {
+        otherBytes[i] = static_cast<uint8_t>(0xFF - (i & 0xFF));   // plainly different
+    }
+
+    // smallRegion() is not the built-in default, so both get their own
+    // directory and neither can tread on the other.
+    char p1[64], p2[64];
+    ASSERT_TRUE(FlashDumper::regionPrefix(flash, p1, sizeof(p1)));
+    ASSERT_TRUE(FlashDumper::regionPrefix(other, p2, sizeof(p2)));
+    EXPECT_STRNE(p1, p2) << "distinct bases must not share an output directory";
+
+    FlashDumper a(fixture.kernel, flash, flashBytes.data());
+    a.beginDump();
+    runToCompletion(a);
+    ASSERT_EQ(FlashDumper::State::Done, a.state());
+    const uint32_t flashCrc = a.wholeCrc();
+
+    FlashDumper b(fixture.kernel, other, otherBytes.data());
+    b.beginDump();
+    runToCompletion(b);
+    ASSERT_EQ(FlashDumper::State::Done, b.state());
+
+    // The first dump's whole-image CRC must still describe its own bytes: if the
+    // second run had reused its filenames, re-running the first would now find
+    // "matching" files full of the other region's content.
+    FlashDumper again(fixture.kernel, flash, flashBytes.data());
+    again.beginDump();
+    runToCompletion(again);
+    ASSERT_EQ(FlashDumper::State::Done, again.state());
+    EXPECT_EQ(flashCrc, again.wholeCrc());
+    EXPECT_EQ(flash.nchunks(), again.chunksVerified())
+        << "every chunk should still be on disk and still match memory";
 }
