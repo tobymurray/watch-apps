@@ -809,14 +809,29 @@ TEST(HostileNights, AWornSensorThatSaysNothingAllNightIsUncertainNotUnworn)
     s.touchReportsInitialState = false;
     const Observations obs = Rig::instance().run(s);
 
+    // Two honest outcomes, and which one happens is worth pinning rather than
+    // accepting either: with no worn evidence at all the segmenter never sees a
+    // still *worn* epoch, so no night opens -- and the diagnostic log is then the
+    // only thing that distinguishes "nobody went to bed" from "the worn sensor is
+    // mute", which is exactly what it exists for.
     const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    const std::string log = Rig::instance().fs.readFile("Debug/sleeplab.log");
+    ASSERT_FALSE(log.empty());
+
     if (rep == nullptr) {
-        // With no worn evidence the segmenter cannot see a still *worn* epoch, so
-        // no night opens. Also honest, and the probe's screen is what would have
-        // caught it before the night was spent.
-        SUCCEED();
+        EXPECT_TRUE(theNightCsv(Rig::instance().fs).empty())
+            << "no night was reported and yet one was recorded";
+        // The log has to say the sensor resolved, so a reader can tell this from a
+        // sensor that was never subscribed.
+        EXPECT_NE(log.find("ATMRHXSLC"), std::string::npos)
+            << "the log cannot distinguish a mute worn sensor from an absent "
+               "one:\n" << log;
         return;
     }
+
+    // If a night did open, the verdict must be Uncertain rather than NotWorn:
+    // telling somebody their watch was not worn would send them to put on a watch
+    // they are already wearing.
     EXPECT_NE(rep->worn, static_cast<uint8_t>(Engine::WornVerdict::NotWorn))
         << "a sensor that never spoke was reported as the watch not being worn";
     EXPECT_FALSE(rep->hasSleep);
@@ -844,10 +859,15 @@ TEST(HostileNights, AFlickeringWornSensorIsRecordedAsFlickering)
 
     const std::string csv = theNightCsv(Rig::instance().fs);
     if (csv.empty()) {
-        // A sensor flickering this hard never gives fifteen consecutive still
-        // worn epochs, so no night opens -- which is the suppression row S7 warns
-        // about, reached honestly.
-        SUCCEED();
+        // A sensor flickering this hard never gives fifteen consecutive still worn
+        // epochs, so no night opens. That is the suppression ledger row S7 warns
+        // about, reached honestly -- and the *reason* has to be on the volume, or
+        // it is indistinguishable from a wearer who did not go to bed.
+        const std::string log = Rig::instance().fs.readFile("Debug/sleeplab.log");
+        ASSERT_FALSE(log.empty());
+        EXPECT_NE(log.find(" launch "), std::string::npos) << log;
+        EXPECT_EQ(log.find(" open "), std::string::npos)
+            << "no CSV was written and the log says a night opened:\n" << log;
         return;
     }
     long edges = 0;
