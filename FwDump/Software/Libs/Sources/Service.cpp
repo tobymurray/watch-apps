@@ -113,7 +113,7 @@ void Service::run()
     // Done at start, so merely launching the app records the context even if no
     // dump is ever run -- which also makes it cheap to capture the same data
     // from a firmware version you are about to replace.
-    const DeviceContext::Result context = DeviceContext::read();
+    const DeviceContext::Result context = DeviceContext::read(mKernel);
     DeviceContext::log(context);
     if (!DeviceContext::write(mKernel, context, mRegion, DumpConfig::describe(mConfigStatus),
                               mKernel.sys.getTimeMs())) {

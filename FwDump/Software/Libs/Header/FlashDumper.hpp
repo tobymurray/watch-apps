@@ -121,6 +121,24 @@ public:
     /// filename from the `off` field as `dump_%06X.bin`.
     static constexpr const char* kManifestName = "dump_manifest.txt";
 
+    /// Where a region's files go, relative to the app's own folder.
+    ///
+    /// The default flash region writes flat into `Apps/FwDump/`, with exactly
+    /// the names the host reassembler expects. A **non-default** region instead
+    /// gets its own `region_<base>/` subdirectory, holding the same names.
+    ///
+    /// That split is not cosmetic. Chunk filenames are derived from the offset
+    /// *within* the region, and the manifest and context names are fixed -- so
+    /// without it, dumping SRAM at 0x20000000 would write the very same
+    /// `dump_000000.bin` and `dump_manifest.txt` as a flash dump and quietly
+    /// destroy it, with resume then re-verifying the survivors against the wrong
+    /// memory. Keeping the *names* identical inside the subdirectory means
+    /// `reassemble_dump.py` still works unchanged: it takes a directory, so it
+    /// is simply pointed at the subdirectory instead.
+    ///
+    /// Writes into @p out, and returns false if the name would not fit.
+    static bool regionPrefix(const DumpRegion& region, char* out, size_t outLen);
+
     /**
      * @param window Base of the region in this process's address space. Must
      *               remain valid and readable for at least region.size bytes
@@ -268,9 +286,19 @@ private:
     /// 10 kB, and kMaxSubwrite alone is 16.
     uint8_t mReadBuf[DumpRegion::kMaxSubwrite];
 
+    /// Longest path this app builds: `region_XXXXXXXX/dump_XXXXXX.bin` and a
+    /// NUL, with room to spare, and well inside IFileSystem::skMaxPathLen.
+    static constexpr size_t kPathLen = 64;
+
     /// `dump_%06X.bin` for a chunk offset, into a caller-owned buffer. The
     /// format is the reassembler's, not ours.
     static void chunkFileName(uint32_t off, char* out, size_t outLen);
+
+    /// The chunk's full path: regionPrefix() followed by chunkFileName().
+    void chunkPath(uint32_t off, char* out, size_t outLen) const;
+
+    /// The manifest's full path, likewise prefixed.
+    void manifestPath(char* out, size_t outLen) const;
 
     /// Memory address of a chunk's first byte, for spot lines and logging.
     const uint8_t* chunkPtr(unsigned index) const

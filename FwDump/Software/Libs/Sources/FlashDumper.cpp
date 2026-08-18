@@ -8,6 +8,7 @@
 #include "FlashDumper.hpp"
 
 #include <cstdio>
+#include <cstring>
 
 #include "Crc32.hpp"
 
@@ -21,6 +22,18 @@ FlashDumper::FlashDumper(const SDK::Kernel& kernel, const DumpRegion& region,
 {
 }
 
+bool FlashDumper::regionPrefix(const DumpRegion& region, char* out, size_t outLen)
+{
+    const DumpRegion defaults;
+    if (region.base == defaults.base && region.size == defaults.size) {
+        out[0] = '\0'; // Default region: flat, and byte-compatible with before.
+        return true;
+    }
+    const int n = std::snprintf(out, outLen, "region_%08lX/",
+                                static_cast<unsigned long>(region.base));
+    return n > 0 && static_cast<size_t>(n) < outLen;
+}
+
 void FlashDumper::chunkFileName(uint32_t off, char* out, size_t outLen)
 {
     // Six uppercase hex digits, matching the reassembler's `dump_{off:06X}.bin`
@@ -28,6 +41,26 @@ void FlashDumper::chunkFileName(uint32_t off, char* out, size_t outLen)
     // truncation) which matters for a config-file region whose size exceeds
     // 16 MB -- Python's :06X behaves the same way, so the two stay in step.
     std::snprintf(out, outLen, "dump_%06lX.bin", static_cast<unsigned long>(off));
+}
+
+void FlashDumper::chunkPath(uint32_t off, char* out, size_t outLen) const
+{
+    char prefix[kPathLen];
+    if (!regionPrefix(mRegion, prefix, sizeof(prefix))) {
+        prefix[0] = '\0';
+    }
+    char name[32];
+    chunkFileName(off, name, sizeof(name));
+    std::snprintf(out, outLen, "%s%s", prefix, name);
+}
+
+void FlashDumper::manifestPath(char* out, size_t outLen) const
+{
+    char prefix[kPathLen];
+    if (!regionPrefix(mRegion, prefix, sizeof(prefix))) {
+        prefix[0] = '\0';
+    }
+    std::snprintf(out, outLen, "%s%s", prefix, kManifestName);
 }
 
 uint64_t FlashDumper::bytesDone() const
@@ -89,8 +122,8 @@ void FlashDumper::advanceScan(unsigned budgetEntries)
     const unsigned total = mRegion.nchunks();
 
     for (unsigned done = 0; done < budgetEntries && mScanIndex < total; ++done, ++mScanIndex) {
-        char name[32];
-        chunkFileName(mScanIndex * mRegion.chunk, name, sizeof(name));
+        char name[kPathLen];
+        chunkPath(mScanIndex * mRegion.chunk, name, sizeof(name));
 
         // objectInfo rather than exist(): a file of the wrong size is not a
         // chunk that can be skipped, so the size is the whole question and
@@ -138,6 +171,21 @@ void FlashDumper::beginDump()
     mErrorChunk     = 0;
     mVerifyReadFailed = false;
     mFile.reset();
+
+    // A non-default region writes into its own subdirectory; make it before the
+    // first file lands in it. mkdir is create-or-exists, so a resumed run is
+    // fine, and a failure here surfaces as the OpenFailed that follows rather
+    // than being guessed at now.
+    char prefix[kPathLen];
+    if (regionPrefix(mRegion, prefix, sizeof(prefix)) && prefix[0] != '\0') {
+        char dir[kPathLen];
+        std::snprintf(dir, sizeof(dir), "%s", prefix);
+        const size_t len = std::strlen(dir);
+        if (len > 0 && dir[len - 1] == '/') {
+            dir[len - 1] = '\0'; // mkdir wants the directory, not a trailing slash.
+        }
+        mKernel.fs.mkdir(dir);
+    }
 
     mManifest.reset();
     mManifest.addHeader(mRegion.base, mRegion.size, mRegion.chunk, mRegion.subwrite,
@@ -187,8 +235,8 @@ bool FlashDumper::openChunk()
 {
     const uint32_t off = mChunkIndex * mRegion.chunk;
 
-    char name[32];
-    chunkFileName(off, name, sizeof(name));
+    char name[kPathLen];
+    chunkPath(off, name, sizeof(name));
 
     mChunkPos         = 0;
     mChunkBw          = 0;
@@ -317,8 +365,8 @@ bool FlashDumper::finishChunk()
             // firmware. Rewrite it, without re-hashing: mChunkCrc and mWholeCrc
             // already describe this chunk's memory.
             LOG_INFO("chunk %u on disk does not match memory, rewriting\n", mChunkIndex);
-            char name[32];
-            chunkFileName(off, name, sizeof(name));
+            char name[kPathLen];
+            chunkPath(off, name, sizeof(name));
             mFile = mKernel.fs.file(name);
             if (!mFile || !mFile->open(true, true)) {
                 mFile.reset();
@@ -391,7 +439,10 @@ bool FlashDumper::flushManifest()
         return false;
     }
 
-    std::unique_ptr<SDK::Interface::IFile> f = mKernel.fs.file(kManifestName);
+    char path[kPathLen];
+    manifestPath(path, sizeof(path));
+
+    std::unique_ptr<SDK::Interface::IFile> f = mKernel.fs.file(path);
     if (!f || !f->open(true, true)) {
         fail(Error::ManifestFailed);
         return false;
