@@ -55,6 +55,38 @@ set(SDK_DOUBLE_INCLUDES
 )
 
 # ---------------------------------------------------------------------------
+# Tier 2: the engine
+#
+# Zero SDK headers by construction, so this target links against GoogleTest and
+# nothing else. That is not tidiness: it is what lets every sleep-science
+# decision in the app be argued about at a desk, against fixtures whose answers
+# are known, with no simulator and no hardware in the loop.
+# ---------------------------------------------------------------------------
+
+add_executable(sleeplab-engine-tests
+    EpochCounter_test.cpp
+    SleepWakeScorer_test.cpp
+    WornGate_test.cpp
+    NightSummary_test.cpp
+    NightSegmenter_test.cpp
+    BaselineStore_test.cpp
+    RestfulnessBand_test.cpp
+    "${APP_LIBS}/Sources/Engine/EpochCounter.cpp"
+    "${APP_LIBS}/Sources/Engine/SleepWakeScorer.cpp"
+    "${APP_LIBS}/Sources/Engine/WornGate.cpp"
+    "${APP_LIBS}/Sources/Engine/NightSummary.cpp"
+    "${APP_LIBS}/Sources/Engine/NightSegmenter.cpp"
+    "${APP_LIBS}/Sources/Engine/BaselineStore.cpp"
+    "${APP_LIBS}/Sources/Engine/RestfulnessBand.cpp"
+)
+target_include_directories(sleeplab-engine-tests PRIVATE
+    "${APP_LIBS}/Header"
+    "${CMAKE_CURRENT_LIST_DIR}"
+)
+target_link_libraries(sleeplab-engine-tests PRIVATE GTest::gtest_main)
+add_test(NAME sleeplab-engine-tests COMMAND sleeplab-engine-tests)
+
+# ---------------------------------------------------------------------------
 # Tier 0: the probe's on-disk record
 # ---------------------------------------------------------------------------
 
