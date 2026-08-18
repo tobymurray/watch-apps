@@ -422,6 +422,15 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
                 : static_cast<int16_t>((mPendingScore.hrMeanX10 + e.hrMeanX10) / 2);
     }
 
+    // Steps carry through to the scoring epoch, because that is where the
+    // segmenter reads them and steps are the least ambiguous out-of-bed signal
+    // there is. Summed across the halves; absent stays absent.
+    if (e.stepDelta != kAbsent) {
+        mPendingSteps = (mPendingSteps == kAbsent)
+                            ? e.stepDelta
+                            : mPendingSteps + e.stepDelta;
+    }
+
     mPendingHalves++;
     if (mPendingHalves >= Engine::kEpochsPerScoringEpoch) {
         closeScoringEpoch();
@@ -431,19 +440,13 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
 void Service::closeScoringEpoch()
 {
     const Engine::ScoringInput scored = mPendingScore;
+    const int32_t stepDelta = mPendingSteps;
     mPendingScore  = Engine::ScoringInput{};
+    mPendingSteps  = kAbsent;
     mPendingHalves = 0;
 
     const std::time_t wall = std::time(nullptr);
     const int16_t localMin = localMinutes(wall);
-
-    // The most recent recording epoch carries the step delta the segmenter
-    // wants; a scoring epoch is two of them, and either half walking is
-    // walking.
-    int32_t stepDelta = kAbsent;
-    if (mPreRollCount > 0 || mStore.isOpen()) {
-        stepDelta = (mStepAtEpoch >= 0) ? 0 : kAbsent;
-    }
 
     const bool worn = scored.wornPct >= Engine::SleepWakeScorer::kMinWornPct;
     const Engine::NightSegmenter::Update u =
@@ -524,7 +527,7 @@ void Service::openNight(uint16_t backdateScoringEpochs)
     }
 
     mScoringCount  = 0;
-    mResumedEpochs = 0;
+    mEpochsNotInArray = 0;
     mAlarmFired    = false;
     // Deliberately NOT cleared: charging and clock jumps seen while idle in the
     // minutes now being backdated into the night are part of the night.
@@ -539,7 +542,7 @@ void Service::openNight(uint16_t backdateScoringEpochs)
     // The backdated scoring epochs are in the CSV but not in the scoring
     // array: the ring holds Epochs, and re-pairing them here would duplicate
     // the pairing logic. They are counted instead, so time in bed is right.
-    mResumedEpochs = backdateScoringEpochs;
+    mEpochsNotInArray = backdateScoringEpochs;
 
     if (mSettings.rawRecording) {
         mRaw.start(mNightStartUtc, mSettings.rawMaxMb, mSettings.rawMaxMin);
@@ -582,11 +585,17 @@ void Service::closeNight(bool discard)
     // Time in bed has to include the epochs recorded before this launch or
     // before the backdate -- they are in the CSV and they were part of the
     // night, they are simply not in the scoring array.
-    if (s.hasSleep && mResumedEpochs > 0) {
-        s.timeInBedMin += static_cast<int32_t>(mResumedEpochs);
-        s.efficiencyPct = (s.timeInBedMin > 0)
-                              ? (s.totalSleepMin * 100 / s.timeInBedMin)
-                              : kAbsent;
+    //
+    // Keyed on timeInBedMin rather than on hasSleep: a night that passed the
+    // gate but never contained ten consecutive sleep minutes still has a
+    // measured time in bed, and it should be the right one.
+    if (s.timeInBedMin != kAbsent && mEpochsNotInArray > 0) {
+        s.timeInBedMin += static_cast<int32_t>(mEpochsNotInArray);
+        if (s.totalSleepMin != kAbsent) {
+            s.efficiencyPct = (s.timeInBedMin > 0)
+                                  ? (s.totalSleepMin * 100 / s.timeInBedMin)
+                                  : kAbsent;
+        }
     }
 
     mLastBandUsedHr = Engine::RestfulnessBand::compute(mScoring, mVerdicts, n,
@@ -646,7 +655,16 @@ void Service::checkAlarm()
 
     // The deadline first: it fires whatever the scorer thinks, which is the
     // whole point of having one.
-    if (nowMin == mSettings.alarmDeadlineMin) {
+    //
+    // A window rather than equality. Epochs land on the loop's schedule, not
+    // on the clock's, so an epoch that runs late can step straight over the
+    // deadline minute -- and an alarm that silently does not go off is the
+    // worst failure this app has. Three minutes is enough slack for a late
+    // epoch and short enough that a genuinely missed deadline still reads as
+    // missed.
+    if (Engine::inWindow(nowMin, mSettings.alarmDeadlineMin,
+                         static_cast<int16_t>((mSettings.alarmDeadlineMin + 4) %
+                                              Engine::kMinutesPerDay))) {
         LOG_INFO("alarm: deadline\n");
         playAlarm();
         return;
@@ -1047,9 +1065,9 @@ void Service::run()
     const SleepLab::ResumeState resume = mStore.readState(start, nowUtc);
     if (resume.present && mStore.resumeNight(resume)) {
         mFlags         = resume.flags;
-        mResumedEpochs = resume.epochs / Engine::kEpochsPerScoringEpoch;
+        mEpochsNotInArray = resume.epochs / Engine::kEpochsPerScoringEpoch;
         mNightStartUtc = resume.wallUtc;
-        mSegmenter.resumeOpen(static_cast<uint16_t>(mResumedEpochs));
+        mSegmenter.resumeOpen(static_cast<uint16_t>(mEpochsNotInArray));
         if (mSettings.rawRecording) {
             mRaw.start(mNightStartUtc, mSettings.rawMaxMb, mSettings.rawMaxMin);
         }

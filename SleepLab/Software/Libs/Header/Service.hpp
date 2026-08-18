@@ -241,6 +241,10 @@ private:
 
     Engine::ScoringInput mPendingScore {};
     uint8_t              mPendingHalves = 0;
+    /// Steps across the scoring epoch in progress, summed from its halves.
+    /// The segmenter reads this; steps are the least ambiguous out-of-bed
+    /// signal there is, because a sleeping wrist does not accumulate them.
+    int32_t              mPendingSteps  = Engine::kAbsent;
 
     // -- Sticky sensor state --------------------------------------------------
 
@@ -255,9 +259,14 @@ private:
 
     uint16_t mFlags        = 0;   ///< Engine::Interruption bits for this night.
     int64_t  mNightStartUtc = -1;
-    /// Scoring epochs the night contained before this launch. Non-zero only
-    /// for a resumed night; added to mScoringCount for time in bed.
-    uint32_t mResumedEpochs = 0;
+    /// Scoring epochs that are part of the night but not in `mScoring`.
+    ///
+    /// Two causes, both meaning the same thing to the summary: epochs
+    /// backdated into a night when it opened (they are in the CSV, but the
+    /// pre-roll ring holds `Epoch`s rather than paired scoring inputs), and
+    /// epochs recorded before a restart (on disk, not in RAM). Added to the
+    /// scored count so time in bed is the night's real length.
+    uint32_t mEpochsNotInArray = 0;
 
     // -- Alarm ----------------------------------------------------------------
 
