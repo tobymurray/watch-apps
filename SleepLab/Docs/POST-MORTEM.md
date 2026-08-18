@@ -109,8 +109,10 @@ corroborate each other.
 
 **G6 — per-sensor delivery is not recorded.** The epoch row has accelerometer
 `samples` and `hr_samples`. It does not say whether touch, motion, activity
-recognition or steps delivered anything at all. The probe records all of it; see
-the next section, which argues this should move rather than be duplicated.
+recognition or steps delivered anything at all, and it records battery percent
+rather than current. The probe records all of it — which is why the probe's nights
+are still needed rather than optional. See the next section: the recommendation is
+that these columns *move*, and until they do, both sets of nights have to be run.
 
 ## Should the probe and SleepLab stay separate?
 
@@ -118,21 +120,29 @@ They cannot be installed together: both autostart and both claim the acceleromet
 and heart rate (ledger row S8). So every question that needs the probe's diagnostic
 depth *and* real scoring costs two nights instead of one.
 
-**The separation should not persist, and the reason is stronger than convenience:
-the probe cannot answer the questions the ledger assigns to it.**
+**The separation should eventually be collapsed, but not yet, and not for the
+reason this section first gave.**
 
-`WornGate::kMicroMovementFloor` carries a TODO reading "this is the constant the
-*table night* exists to set. Record one night worn and one night on a nightstand
-with the Tier 0 probe, and put the floor between the two distributions." The probe
-records `acc_n`, `acc_ts_span_ms`, `acc_max_gap_ms` and `acc_batches` — delivery
-statistics. **It records no activity counts at all.** There is no count distribution
-in a probe night to put a floor between. The same is true of
-`NightAnalyser::kMovementFloor`, `SegmenterConfig::stillnessCountMax` and
-`activityCountMin`: four constants, all pointed at a night that cannot set them.
+Each app records something the other cannot, and until that is fixed both sets of
+nights are needed:
 
-So the merge direction is settled by which app can produce what the other cannot.
-SleepLab computes counts and already writes them per epoch; the probe's missing
-columns are per-sensor delivery counters, which are mechanical to add.
+| Only the probe records | Only SleepLab records |
+| --- | --- |
+| `batt_mv`, `batt_ma_x10`, `batt_avg_ma_x10`, `batt_mah` — so **S2** (what continuous HR costs) is precise only here; SleepLab has battery *percent* | `count`, `peak` — so the four movement thresholds' distributions exist only here |
+| `wakes`, `msgs` — **S10** in its entirety; SleepLab records nothing about the loop | the scored night: verdicts, the gate, the summary, the index, the baseline |
+| per-sensor delivery counts: `touch_n`, `motion_n`, `ar_*`, `hrex_opt/ext/unk`, `beat_n`, `ppg_n`, `spo2_n` | `worn_edges` — the flicker rate S7 needs — and `hr_source` per epoch for S8 |
+
+**One correction to the first version of this section**, which claimed the probe
+"cannot answer the questions the ledger assigns to it" and named four constants.
+Only `WornGate::kMicroMovementFloor`'s TODO actually named the probe (with
+`kMinPlausiblePct` inheriting it); the other two said "a diary-validated recording"
+and named nothing. And `ROLLOUT.md` phases 3 and 4 *already* took those
+distributions from SleepLab nights. So the plan was right and one comment was wrong.
+Ledger rows S13 and S16.
+
+The merge direction is still clear, because the asymmetry is: SleepLab cannot be
+replaced by the probe for anything, and the probe's unique columns are per-sensor
+counters and battery telemetry that are mechanical to add.
 
 **Recommendation: add the probe's delivery columns to SleepLab's epoch row behind
 a `"diagnostics": "on"` setting, and keep the probe only for the one job that is
@@ -158,13 +168,19 @@ Unmeasured, and the probe's `batt_avg_ma_x10` column is what would measure it.
 *Complexity.* SleepLab's `Accum` has ten fields; the probe's `MinuteRow` has about
 forty. Adding the delivery counters is additive and touches nothing that scores.
 
-*Nights bought.* The current plan is two probe nights (worn, table) plus a SleepLab
-worn night plus a SleepLab table night for the counts plus ten diary nights —
-fourteen, of which **two are assigned questions they cannot answer**. Merged, it is
-a SleepLab worn night with diagnostics on, a SleepLab table night, one HR-off night
-for the power comparison, and nine more diary nights — twelve, with every row
-answerable by the night it is assigned to. The saving is two nights, and the real
-gain is removing two nights that would have been spent and wasted.
+*Nights bought.* The plan as it stands is three probe nights (worn, HR-off, table)
+plus a SleepLab worn night, a SleepLab table night and nine more diary nights —
+**fourteen**, every one of which answers something, once the TODO in S13 is
+corrected. Merged, probe nights 1–3 collapse into the SleepLab nights: a worn night
+with diagnostics on, an HR-off night, a table night, and nine diary nights —
+**twelve**. The saving is two nights.
+
+That is a smaller prize than this section first claimed, because the first version
+counted two nights as *wasted* rather than as merely separate. They are not wasted;
+they answer S2 and S10, which nothing else here can. Two nights is still two nights,
+and the diagnostic columns are worth having for their own sake — a night that can
+report its own per-sensor delivery is a night that can be diagnosed without a second
+one, which is what this whole document is about.
 
 ## A caveat this document should carry
 

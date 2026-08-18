@@ -97,17 +97,22 @@ Still unknown, and what a full night answers:
   every sleep number is gated on it.
 - Does anything contend for the heart-rate sensor?
 
-**Do not run the probe for two nights.** That was the plan and it was wrong: the
-probe records per-sensor delivery statistics and **no activity counts at all**, so
-it cannot set the four movement thresholds whose TODOs point at it. Record the worn
-night and the table night with SleepLab. Ledger row S13, refuted by reading rather
-than by spending the two nights, and
-[`Docs/ADVERSARIAL-REVIEW.md`](Docs/ADVERSARIAL-REVIEW.md) has the shortest sequence
-of nights that settles the most, with a success criterion for each that is decidable
-at breakfast.
+Run the probe for its nights before trusting this app with anything.
+[`Docs/ROLLOUT.md`](Docs/ROLLOUT.md) is the order, and it is unchanged: the probe
+answers whether an all-night app is possible on this device at all, and it is the
+only thing here that records battery current (`batt_ma_x10`, `batt_avg_ma_x10`) or
+loop wakes. SleepLab records battery *percent* and nothing about wakes, so it
+cannot answer S2 or S10 in the probe's place.
 
-What the probe is still for is its **screen**, for two minutes, before the first
-night: it says which sensor drivers resolved, which is what caught two of the four
+One correction to the plan, and it is narrow. `WornGate::kMicroMovementFloor`'s
+TODO used to say to set it "with the Tier 0 probe" — the probe records delivery
+statistics and **no activity counts**, so there is no count distribution in a probe
+night to put a floor between. Rollout phases 3 and 4 already assign that to
+*SleepLab* nights, correctly; it was one comment pointing two constants at the
+wrong instrument. Ledger row S13.
+
+Also read the probe's **screen** for thirty seconds before bed on each of its
+nights: it says which sensor drivers resolved, which is what caught two of the four
 rows above. `Debug/sleeplab.log` now carries the same block, but a line you read in
 the morning is not the same instrument as a block you read before bed.
 
@@ -585,10 +590,9 @@ python3 Tools/night_report.py diary ./nights --diary diary.csv
 The first prints the count distribution for a worn night against a nightstand
 night and suggests a value for each threshold — and says so plainly when the two
 distributions overlap and *no* value separates them, which is a finding rather
-than a failure. Note that **both nights have to be recorded with SleepLab, not
-with the probe**: the probe records delivery statistics and no activity counts,
-so there is no distribution in a probe night to separate. That is ledger row S13,
-and it was refuted by reading rather than by spending the two nights. The second reports mean signed error and spread on onset and
+than a failure. Both nights have to be recorded **with SleepLab**, which is what
+rollout phase 3 does: the probe records delivery statistics and no activity counts,
+so there is no distribution in a probe night to separate. Ledger row S13. The second reports mean signed error and spread on onset and
 final wake, refuses to quote an accuracy figure off fewer than ten nights, and
 excludes nights the worn gate suppressed, because folding those in as zero error
 would flatter the result.

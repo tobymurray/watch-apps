@@ -278,15 +278,39 @@ night if the hardware ever honoured the 25 Hz it was asked for, which is exactly
 them is the delivered-rate distribution across the first two nights, which is what
 both TODOs already say.
 
-### 18. A Tier 0 probe night cannot set the thresholds it is assigned
+### 18. One threshold's TODO named the wrong instrument
 
-Four constants carry TODOs pointing at a probe worn night and a probe table night.
-The probe records `acc_n`, `acc_ts_span_ms`, `acc_max_gap_ms`, `acc_batches` —
-delivery statistics — and **no activity counts at all**. There is no count
-distribution in a probe night to put a floor between.
+`WornGate::kMicroMovementFloor`'s TODO said to set it from a worn night and a table
+night recorded "with the Tier 0 probe". The probe records `acc_n`,
+`acc_ts_span_ms`, `acc_max_gap_ms`, `acc_batches` — delivery statistics — and **no
+activity counts at all**, so there is no count distribution in a probe night to put
+a floor between. `kMinPlausiblePct` inherited it by reference.
 
-Two nights would have been spent finding that out. The worn and table nights have to
-be recorded with SleepLab.
+*A correction to my own first version of this finding.* I read that TODO, confirmed
+the probe records no counts, and wrote it up as though the whole probe-first plan
+were misconceived — "four constants pointed at a night that cannot set them", plus a
+recommendation to drop the probe's nights. That was wrong twice over, and I found it
+only when asked the obvious operational question: *do I still start with the probe?*
+
+- **`ROLLOUT.md` phases 3 and 4 already assign the movement thresholds to SleepLab
+  nights**, fed through `night_report.py thresholds`. The plan was right. One comment
+  was wrong, and two of the four constants I named never mentioned the probe at all —
+  they said "a diary-validated recording", which is what let the confusion spread
+  rather than what caused it.
+- **The probe's nights are not droppable.** It uniquely records `batt_mv`,
+  `batt_ma_x10`, `batt_avg_ma_x10` and `batt_mah` — SleepLab records battery
+  *percent* only — and `wakes`/`msgs`, which is the whole of ledger row S10. So S2 is
+  answerable coarsely from SleepLab and precisely only from the probe, and S10 not at
+  all. My first night sequence dropped both.
+
+The lesson is the one the ledger's convention exists for, turned on myself: I
+verified that the probe records no counts, and then *read* a conclusion about the
+rollout plan off a code comment instead of reading the plan. Ledger rows S13 and S16.
+
+All four count thresholds now name SleepLab, the `count` column and the rollout
+phase, and `kMinWornPct` says explicitly that the probe *is* the right instrument for
+it — `touch_n`, `touch_worn_n` and `touch_edges` are exactly a worn fraction and a
+flicker rate. The distinction is written where somebody would get it wrong again.
 
 ### 19. Nothing on the volume said why a night had not happened
 
@@ -313,7 +337,12 @@ created is still a night.
   computes what it claims to compute and nothing whatever about sleep. Nothing here
   moves any row in the validation table off *synthetic-only*.
 - **Anything about this hardware.** No watch was involved. Every §2 sensor row that
-  was UNVERIFIED still is, except the three this review refuted by reading.
+  was UNVERIFIED still is, except the ones this review refuted by reading.
+- **`ROLLOUT.md`'s phase order, until it was pointed out to me.** Finding #18 is a
+  correction to my own earlier write-up: I read a conclusion about the rollout plan
+  off a code comment instead of reading the plan. It is the same failure the ledger's
+  convention is designed to catch, and it caught it — one question later than it
+  should have.
 - **Cole *et al.* 1992 and Webster *et al.* 1982 themselves.** I checked against two
   reference implementations that cite them and agree with each other. That is why A8
   is LIKELY and not CONFIRMED, and it is why finding #6 should be re-checked by
@@ -337,49 +366,75 @@ created is still a night.
 Ordered so each night settles the most, and every night has a success criterion
 decidable in the morning rather than after a week of analysis.
 
+**This section replaces an earlier version that dropped the probe's nights.** See
+finding #18: doing so would have lost ledger row S10 entirely and reduced S2 to a
+battery-percentage estimate. `ROLLOUT.md`'s phase order is right. What follows is that
+order with a success criterion added to each night, because a night should be callable
+wasted the morning after rather than after a week of analysis.
+
 **Before any of them, at a desk, minutes each:** promote P1 by reading the firmware
-revision; run the probe for two minutes and read its screen for resolved drivers;
-run `docker-build.sh app`, `tests` and `sim-run`, all three, because each catches
-things the other two cannot (P14); mute the watch and set `alarm_at` two minutes
-ahead to settle T1.
+revision; run `docker-build.sh app`, `tests` and `sim-run`, all three, because each
+catches things the other two cannot (P14); mute the watch, set `alarm_at` two minutes
+ahead inside the window, and wait — that settles T1, and it is five minutes rather
+than a night.
 
-**Night 1 — worn, unplugged, `"hr": "continuous"`, diary kept.**
-Settles S1 (continuity), S7 (worn flicker), S8 (HR provenance), S9 (throughput),
-S10 (loop wakes), S11 (delivered rate on hardware), the worn-night count
-distribution for finding #15, and diary night 1 of 10.
-*Success criterion, decidable at breakfast:* a summary JSON exists; `worn` is
-`worn`; `acc_hz_x10` is within 20 % of 480; no epoch row has `samples` 0; `interruption`
-is 0. Anything else and the night is diagnostic rather than calibration data — which
-is still worth having, but say so before analysing it.
+### Probe nights — `ROLLOUT.md` phase 1, unchanged
 
-**Night 2 — on a nightstand, unplugged, HR continuous.**
-The other half of finding #15 and of A5: the table-night count distribution.
-*Success criterion:* the report says NOT WORN, and the night's count distribution's
-95th percentile is below the worn night's 5th. If those distributions overlap,
-`kMicroMovementFloor` cannot be set from movement alone and the gate has to lean on
-heart rate — which is a design finding, not a threshold.
+Read the probe's screen for thirty seconds before bed each time: upper case is a
+resolved driver, lower case is not. Delete `Apps/SleepProbe/` before installing
+SleepLab; both autostart and neither has a stop button.
 
-**Night 3 — worn, unplugged, `"hr": "off"`.**
-Settles S2 (the HR power cost) against night 1, and exercises the gate's documented
-degradation to `Uncertain`.
-*Success criterion:* battery consumed differs measurably from night 1's; the report
-says `heart rate was off - cannot confirm it was worn`.
+**Probe night 1 — worn, unplugged, defaults.** S1, S3, S5, S7, S9, S10, and the
+expensive half of S2.
+*Success criterion:* `probe_report.py` shows one run spanning the night with no
+`uptime_ms` gap over 90 s. A run boundary mid-night is the charger (P8) and the night
+is void.
 
-**Nights 4–12 — worn, unplugged, HR continuous, diary kept.**
-Nine more diary nights. These are not experiments; they are the sample the A9
-calibration needs. They can be ordinary nights.
+**Probe night 2 — worn, unplugged, `"hr": "off"`.** The cheap half of S2. The
+difference in `batt_avg_ma_x10` is what heart rate costs.
+*Success criterion:* one run, and a measurably different average current from night 1.
+
+**Probe night 3 — on a nightstand, defaults.** The false-worn half of S7 — whether
+`TOUCH_DETECT` reports worn for a watch on furniture.
+*Success criterion:* `touch_worn_n` against `touch_n` answers it either way. No
+failing outcome here, only an informative one.
+
+**Stop if the answer is bad.** Delivery dying at 02:00, or continuous HR costing most
+of the battery, is a finding about the design rather than a wasted night.
+
+### SleepLab nights — phases 3 to 5, with criteria
+
+**Night 4 — worn, unplugged, HR continuous, diary kept.** The worn-night count
+distribution for finding #15, plus diary night 1 of 10.
+*Success criterion, decidable at breakfast:* a summary JSON exists; `worn` is `worn`;
+`acc_hz_x10` within 20 % of 480; no epoch row has `samples` 0; `interruption` is 0.
+Anything else and the night is diagnostic rather than calibration data — still worth
+having, but say so before analysing it.
+
+**Night 5 — on a nightstand, HR continuous.** The table-night count distribution:
+the other half of finding #15 and of A5.
+*Success criterion:* the report says NOT WORN, **and** this night's counts' 95th
+percentile is below night 4's 5th. If they overlap, `kMicroMovementFloor` cannot be
+set from movement alone and the gate has to lean on heart rate — a design finding, not
+a threshold. `night_report.py thresholds` says so in those words.
+
+**Nights 6–14 — worn, unplugged, HR continuous, diary kept.** Nine more diary
+nights. Not experiments: the sample the A9 calibration needs. Ordinary nights.
 *Success criterion per night:* a summary exists and `worn` is `worn`. A night that
-fails that is replaced, not analysed.
+fails is replaced, not analysed.
 
-**Then, at a desk:** build `night_report.py rescore` (gap G4) and sweep
-`kCountScale` against the ten diary nights. That is the one number standing between
-"cites a real paper" and "is validated", and it is the only thing on this list that
-can move a validation-table row.
+**Then, at a desk:** build `night_report.py rescore` (gap G4) and sweep `kCountScale`
+against the ten diary nights. That is the one number standing between "cites a real
+paper" and "is validated", and the only thing on this list that can move a
+validation-table row.
 
-**Nights that can share:** 1 and 3 cannot (they differ in the variable under test).
-2 cannot share with anything. 4–12 share everything. Total: **12 nights**, against
-14 in the plan the ledger had, two of which were assigned questions they could not
-answer.
+**What can share:** the three probe nights cannot share with each other or with
+SleepLab's, because a different app is installed. Night 5 cannot share with anything.
+Nights 6–14 share everything. **Total 14 nights** — which is what `ROLLOUT.md`
+already implied. The two-night saving my first version claimed was not real. What
+would make it real is the merge in `POST-MORTEM.md` § "Should the probe and SleepLab
+stay separate?", which collapses probe nights 1–3 into SleepLab nights 4–5. It is
+unbuilt.
 
 ---
 
