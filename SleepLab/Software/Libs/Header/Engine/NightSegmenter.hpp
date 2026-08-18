@@ -102,11 +102,20 @@ struct SegmenterConfig
     /// Counts per scoring epoch at or below which an epoch counts as still,
     /// for the purpose of opening a night.
     ///
-    /// TODO: set from a diary-validated recording -- the value should sit above
-    /// a settled sleeper's epochs and below someone lying awake reading. 60 is
-    /// a guess against EpochCounter's scale, deliberately looser than
+    /// TODO: set from a diary-validated recording made **with SleepLab**, whose
+    /// epoch CSV carries the `count` column this is expressed in -- the value
+    /// should sit above a settled sleeper's epochs and below someone lying awake
+    /// reading. `ROLLOUT.md` phases 3 and 4. 60 is a guess against
+    /// EpochCounter's scale, deliberately looser than
     /// NightAnalyser::kMovementFloor because opening a night should tolerate
     /// the shuffling that precedes sleep.
+    ///
+    /// Measured, 60 counts is about 2 mg of 1 Hz wrist movement. **This is the
+    /// constant that decides whether a night opens at all**, so if the sensor's
+    /// own noise in the 0.25-3 Hz band exceeds that, no night ever opens and the
+    /// symptom is indistinguishable from a wearer who did not go to bed. Check
+    /// `Debug/sleeplab.log` an hour into the first night: a `launch` line with no
+    /// `open` line, while lying still inside the window, is that failure.
     uint32_t stillnessCountMax = 60;
 
     /// Counts per scoring epoch above which an epoch counts as active, for the

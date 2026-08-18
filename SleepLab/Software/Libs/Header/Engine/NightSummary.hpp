@@ -229,9 +229,11 @@ public:
     /// that one asks "is anything alive here at all", this one asks "did the
     /// sleeper move". Sharing a constant between the two would tie a
     /// restlessness measure to a hardware-plausibility threshold.
-    /// TODO: set from a diary-validated night -- the value should put a settled
-    /// sleeper's epochs below it and a turn-over above it. 40 is a guess
-    /// against EpochCounter's scale.
+    /// TODO: set from a diary-validated night recorded **with SleepLab**, whose
+    /// epoch CSV carries the `count` column this is expressed in -- the value
+    /// should put a settled sleeper's epochs below it and a turn-over above it.
+    /// `ROLLOUT.md` phases 3 and 4. 40 is a guess against EpochCounter's scale,
+    /// which measures out at about 1.3 mg of 1 Hz wrist movement.
     static constexpr uint32_t kMovementFloor = 40;
 
     /**

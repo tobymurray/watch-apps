@@ -99,6 +99,11 @@ public:
     /// measures across a worn night and a table night (ledger row S7). 80 is a
     /// placeholder chosen to tolerate roughly an hour and a half of dropout in
     /// an eight-hour night.
+    ///
+    /// The probe is the right instrument for *this* one: `touch_n`,
+    /// `touch_worn_n` and `touch_edges` are exactly a worn fraction and a
+    /// flicker rate. It is the wrong instrument for anything expressed in
+    /// counts -- see kMicroMovementFloor below, whose TODO used to name it.
     static constexpr uint8_t kMinWornPct = 80;
 
     /// Counts per scoring epoch below which an epoch shows no micro-movement.
@@ -108,10 +113,22 @@ public:
     /// furniture produces sensor noise and nothing else, and the 0.25-3 Hz band
     /// rejects most of that.
     /// TODO: this is the constant the *table night* exists to set. Record one
-    /// night worn and one night on a nightstand with the Tier 0 probe, and put
-    /// the floor between the two distributions -- it should be comfortably
-    /// above the table night's 95th percentile and below the worn night's 5th.
-    /// 8 is a guess against EpochCounter's scale and nothing more.
+    /// night worn and one night on a nightstand **with SleepLab** and put the
+    /// floor between the two count distributions -- comfortably above the table
+    /// night's 95th percentile and below the worn night's 5th. That is
+    /// `ROLLOUT.md` phases 3 and 4, and `Tools/night_report.py thresholds`
+    /// prints both distributions and suggests the value.
+    ///
+    /// **Not with the Tier 0 probe**, which is what this TODO used to say. The
+    /// probe records delivery statistics -- `acc_n`, `acc_ts_span_ms`,
+    /// `acc_max_gap_ms`, `acc_batches` -- and no activity counts at all, so
+    /// there is no count distribution in a probe night to put a floor between.
+    /// Ledger row S13.
+    ///
+    /// 8 is a guess against EpochCounter's scale and nothing more. Measured,
+    /// that scale puts it at about 0.3 mg of 1 Hz wrist movement, which is the
+    /// same order as the sensor's own in-band noise -- so this floor is the one
+    /// most likely to be in the wrong place, in either direction.
     static constexpr uint32_t kMicroMovementFloor = 8;
 
     /// Fraction of epochs, in percent, that must show *either* micro-movement
@@ -119,7 +136,8 @@ public:
     ///
     /// Both absent together is the table signature; this is how much of the
     /// night has to look alive.
-    /// TODO: same recording as kMicroMovementFloor.
+    /// TODO: same recording as kMicroMovementFloor -- a worn night and a table
+    /// night recorded with SleepLab, not with the probe.
     static constexpr uint8_t kMinPlausiblePct = 70;
 
     /// Shortest night this gate will pass, in scoring epochs.
