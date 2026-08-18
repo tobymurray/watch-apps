@@ -242,16 +242,20 @@ TEST(Webster, ShortBoutsAreJudgedAgainstTheOriginalNightNotACascade)
     // activity fixture that produces it, which tests the scorer's calibration
     // at the same time and breaks for the wrong reason when a constant moves.
     //
-    // The pattern: 25 wake | 6 sleep | 11 wake | 10 sleep | 25 wake.
+    // The pattern: 25 wake | 6 sleep | 16 wake | 10 sleep | 25 wake.
     //
-    //   Bout A (6 min) has >=10 min wake on both sides, so rule 4 removes it.
-    //   Bout B (10 min) has only 11 min of wake before it in the ORIGINAL, so
+    //   Bout A (6 min) has >=15 min wake on both sides, so rule 4 removes it.
+    //   Bout B (10 min) has only 16 min of wake before it in the ORIGINAL, so
     //   rule 5 -- which needs 20 on both sides -- must leave it alone.
     //
-    // A cascading implementation would see 25+6+11 = 42 minutes of wake before
+    // A cascading implementation would see 25+6+16 = 47 minutes of wake before
     // B once A had been rewritten, and eat B too.
+    //
+    // The middle run was 11 when rule 4's wake requirement was transcribed as 10.
+    // Widened to 16 with the correction, which keeps both discriminations: the
+    // rule fires on A, and a cascade would still take B.
     auto v = pattern({ {25, Verdict::Wake}, {6,  Verdict::Sleep},
-                       {11, Verdict::Wake}, {10, Verdict::Sleep},
+                       {16, Verdict::Wake}, {10, Verdict::Sleep},
                        {25, Verdict::Wake} });
 
     SleepWakeScorer::rescoreShortBouts(v.data(), v.size());
@@ -260,7 +264,7 @@ TEST(Webster, ShortBoutsAreJudgedAgainstTheOriginalNightNotACascade)
         EXPECT_EQ(v[i], Verdict::Wake) << "bout A, epoch " << i
                                        << ": six minutes between two long wakes";
     }
-    for (size_t i = 42; i < 52; ++i) {
+    for (size_t i = 47; i < 57; ++i) {
         EXPECT_EQ(v[i], Verdict::Sleep)
             << "bout B, epoch " << i
             << ": condemned by wake that bout A was rewritten into";
@@ -348,6 +352,111 @@ TEST(ColeKripke, NullInputsAreRefusedRatherThanDereferenced)
 
     std::vector<ScoringInput> in(10);
     EXPECT_EQ(SleepWakeScorer::score(in.data(), 10, nullptr), 0u);
+}
+
+// ---------------------------------------------------------------------------
+// The published constants, stated as the literature states them
+//
+// Ledger row A8 tagged the whole block UNVERIFIED: "transcribed from the
+// literature and NOT verified here". This is the check, against two independent
+// reference implementations rather than against the primary source -- see the
+// ledger row for exactly what that is and is not worth.
+//
+// The rules are asserted as *values* rather than exercised through the scorer,
+// because that is what a transcription check is: a bug in the scorer would fail
+// the behavioural tests above, and a bug in the transcription fails only here.
+// ---------------------------------------------------------------------------
+
+TEST(PublishedConstants, ColeKripkeWeightsAndScaleAreTheOnesInTheLiterature)
+{
+    // D = 0.001 * (106*A-4 + 54*A-3 + 58*A-2 + 76*A-1 + 230*A0 + 74*A+1 + 67*A+2)
+    // -- the optimal parameters for mean activity per minute, Cole et al. 1992,
+    // Sleep 15(5):461-469, p. 466.
+    EXPECT_FLOAT_EQ(Engine::SleepWakeScorer::kWeights[0], 106.0f);
+    EXPECT_FLOAT_EQ(Engine::SleepWakeScorer::kWeights[1],  54.0f);
+    EXPECT_FLOAT_EQ(Engine::SleepWakeScorer::kWeights[2],  58.0f);
+    EXPECT_FLOAT_EQ(Engine::SleepWakeScorer::kWeights[3],  76.0f);
+    EXPECT_FLOAT_EQ(Engine::SleepWakeScorer::kWeights[4], 230.0f);
+    EXPECT_FLOAT_EQ(Engine::SleepWakeScorer::kWeights[5],  74.0f);
+    EXPECT_FLOAT_EQ(Engine::SleepWakeScorer::kWeights[6],  67.0f);
+    EXPECT_FLOAT_EQ(Engine::SleepWakeScorer::kP, 0.001f);
+    EXPECT_EQ(Engine::SleepWakeScorer::kLookBack,  4);
+    EXPECT_EQ(Engine::SleepWakeScorer::kLookAhead, 2);
+}
+
+TEST(PublishedConstants, SleepIsBelowTheThresholdAndWakeAtOrAboveIt)
+{
+    // "D < 1 == sleep, D >= 1 == wake". The direction is worth an assertion of
+    // its own because inverting it inverts every verdict in every night, and the
+    // result would still look like a night.
+    EXPECT_FLOAT_EQ(Engine::SleepWakeScorer::kThreshold, 1.0f);
+
+    Engine::ScoringInput quiet[9];
+    Engine::ScoringInput loud[9];
+    for (int i = 0; i < 9; ++i) {
+        quiet[i] = Fixture::epoch(Fixture::kQuiet);
+        loud[i]  = Fixture::epoch(Fixture::kActive);
+    }
+    EXPECT_EQ(Engine::SleepWakeScorer::rawVerdict(quiet, 9, 4),
+              Engine::Verdict::Sleep)
+        << "stillness scored as wake: the threshold is the wrong way round";
+    EXPECT_EQ(Engine::SleepWakeScorer::rawVerdict(loud, 9, 4),
+              Engine::Verdict::Wake)
+        << "movement scored as sleep: the threshold is the wrong way round";
+}
+
+TEST(PublishedConstants, WebsterRulesAreTheOnesInTheLiterature)
+{
+    // Webster et al. 1982, Sleep 5(4):389-399, as stated by pyActigraphy's own
+    // documentation of the rules it implements and by the actigraphy-algorithm
+    // survey literature:
+    //
+    //   1. after >= 4 minutes of wake, the next 1 minute of sleep -> wake
+    //   2. after >= 10 minutes of wake, the next 3 minutes of sleep -> wake
+    //   3. after >= 15 minutes of wake, the next 4 minutes of sleep -> wake
+    //   4. a sleep bout of <= 6 minutes surrounded by >= 15 minutes of wake -> wake
+    //   5. a sleep bout of <= 10 minutes surrounded by >= 20 minutes of wake -> wake
+    EXPECT_EQ(Engine::SleepWakeScorer::kAfterWakeRules[0].wakeMinutes,     4);
+    EXPECT_EQ(Engine::SleepWakeScorer::kAfterWakeRules[0].rescoreMinutes, 1);
+    EXPECT_EQ(Engine::SleepWakeScorer::kAfterWakeRules[1].wakeMinutes,    10);
+    EXPECT_EQ(Engine::SleepWakeScorer::kAfterWakeRules[1].rescoreMinutes, 3);
+    EXPECT_EQ(Engine::SleepWakeScorer::kAfterWakeRules[2].wakeMinutes,    15);
+    EXPECT_EQ(Engine::SleepWakeScorer::kAfterWakeRules[2].rescoreMinutes, 4);
+
+    EXPECT_EQ(Engine::SleepWakeScorer::kShortBoutRules[0].sleepMinutes,  6);
+    EXPECT_EQ(Engine::SleepWakeScorer::kShortBoutRules[0].wakeMinutes,  15);
+    EXPECT_EQ(Engine::SleepWakeScorer::kShortBoutRules[1].sleepMinutes, 10);
+    EXPECT_EQ(Engine::SleepWakeScorer::kShortBoutRules[1].wakeMinutes,  20);
+}
+
+/// Rule 4 at its stated boundary, behaviourally: fourteen minutes of wake either
+/// side is *not* enough, fifteen is. Pins the constant against a pattern rather
+/// than only against its own value, so a future edit has to break two tests.
+TEST(Webster, RuleFourNeedsFifteenMinutesOfWakeOnBothSides)
+{
+    auto build = [](size_t wakeEitherSide) {
+        std::vector<Engine::Verdict> v;
+        auto push = [&v](size_t n, Engine::Verdict x) {
+            for (size_t i = 0; i < n; ++i) { v.push_back(x); }
+        };
+        push(wakeEitherSide, Engine::Verdict::Wake);
+        push(5,              Engine::Verdict::Sleep);   // a 5-minute bout
+        push(wakeEitherSide, Engine::Verdict::Wake);
+        return v;
+    };
+
+    std::vector<Engine::Verdict> justShort = build(14);
+    Engine::SleepWakeScorer::rescoreShortBouts(justShort.data(), justShort.size());
+    EXPECT_EQ(justShort[14 + 2], Engine::Verdict::Sleep)
+        << "fourteen minutes of wake either side rescored the bout; rule 4 asks "
+           "for fifteen";
+
+    std::vector<Engine::Verdict> justEnough = build(15);
+    Engine::SleepWakeScorer::rescoreShortBouts(justEnough.data(),
+                                               justEnough.size());
+    EXPECT_EQ(justEnough[15 + 2], Engine::Verdict::Wake)
+        << "fifteen minutes of wake either side did not rescore a five-minute "
+           "bout";
 }
 
 } // namespace
