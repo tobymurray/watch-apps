@@ -34,7 +34,19 @@ VPATH := $(SDK)\
 #If you want to add a source file from UNA-SDK, just write the path starting with the internal UNA-SDK folder
 ADDITIONAL_SOURCES_UNA :=\
 ../../Libs/Sources/Service.cpp\
-../../Libs/Sources/PackCrcVerifier.cpp\
+../../Libs/Sources/NightStore.cpp\
+../../Libs/Sources/RawRecorder.cpp\
+../../Libs/Sources/Settings.cpp\
+../../Libs/Sources/Engine/BaselineStore.cpp\
+../../Libs/Sources/Engine/EpochCounter.cpp\
+../../Libs/Sources/Engine/NightSegmenter.cpp\
+../../Libs/Sources/Engine/NightSummary.cpp\
+../../Libs/Sources/Engine/RestfulnessBand.cpp\
+../../Libs/Sources/Engine/SleepWakeScorer.cpp\
+../../Libs/Sources/Engine/WornGate.cpp\
+Libs/Source/JSON/JsonStreamReader.cpp\
+Libs/Source/JSON/JsonStreamWriter.cpp\
+Libs/Source/SensorLayer/SensorConnection.cpp\
 Libs/Source/Simulator/Kernel/Mock/FileSystem.cpp\
 Libs/Source/Simulator/OS/OS.cpp\
 Libs/Source/UnaLogger/Logger.cpp\
@@ -47,8 +59,9 @@ Libs/Source/Simulator/App/AppMessageCore.cpp\
 Libs/Source/Simulator/App/MessageManager.cpp\
 Libs/Source/Simulator/Kernel/Kernel.cpp\
 Libs/Source/Simulator/Kernel/Mock/System.cpp
-ADDITIONAL_SOURCES :=
+ADDITIONAL_SOURCES := $(SDK)/ThirdParty/coreJSON/source/core_json.c
 ADDITIONAL_INCLUDE_PATHS := $(SDK)/Libs/Header\
+$(SDK)/ThirdParty/coreJSON/source/include\
 ../../Libs/Header
 ADDITIONAL_LIBRARY_PATHS :=
 ADDITIONAL_LIBRARIES :=

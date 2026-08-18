@@ -465,10 +465,32 @@ UNA_SDK=/path/to/una-sdk make -f simulator/gcc/Makefile -j8
 Buttons are keys `1`=L1, `2`=L2, `3`=R1, `4`=R2, and the window is 240×240 — the
 panel's real size.
 
-One caveat worth stating plainly: **the simulator has no sensors and no
-battery.** It exercises the screen, the message contract and the file writing,
-and it proves nothing whatever about whether an eight-hour recording survives on
-hardware. That is what the [probe](Probe/README.md) is for.
+Or, in a container, with a seeded history so the screens have something to draw:
+
+```sh
+Tools/docker-build.sh sim-run
+```
+
+It needs SDL2, Ruby (the TouchGFX asset generators are Ruby scripts) and amd64
+(some of them are amd64-only binaries), which is why that target uses a
+different image from the host tests.
+
+Two caveats worth stating plainly.
+
+**The simulator has no sensors and no battery.** It exercises the screen, the
+message contract and the file reading, and proves nothing whatever about whether
+an eight-hour recording survives on hardware. That is what the
+[probe](Probe/README.md) is for.
+
+**It does not deliver `COMMAND_APP_NOTIF_GUI_RUN`.** Found by running it: the
+service never learned a GUI was attached, never published, and the screen sat on
+"waiting for service..." for the whole run. The service now treats a
+`SLEEP_REQUEST` as that evidence instead — only a GUI sends one, so it is
+better evidence than the notification, and nothing depends on the notification
+any more. Every simulator run also ends with `pure virtual method called` after
+the app has stopped; that is the SDK's own teardown order (fixed on
+`una-sdk`'s `fix/simulator-shutdown-pure-virtual`, PR #214), not this app's, but
+it does mean a simulator run's exit status says nothing.
 
 ## Tests
 

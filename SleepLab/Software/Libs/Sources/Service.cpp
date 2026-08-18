@@ -68,6 +68,14 @@ constexpr float kBatteryPeriodMs = 30000.0f;
 /// TODO: set from the delivered-rate column of the first probe nights.
 constexpr uint16_t kMinSamplesPerRecordingEpoch = 60;
 
+/// The name the glance registers under.
+///
+/// A literal rather than the `APP_NAME` macro `una-app.cmake` defines: the
+/// TouchGFX simulator Makefile builds the same Service.cpp without it, and a
+/// service that only compiles under one of its two build systems is a service
+/// whose GUI cannot be exercised at a desk.
+constexpr char kGlanceName[] = "Sleep Lab";
+
 /// Local minutes past midnight, or -1 if the wall clock is unreadable.
 ///
 /// Read for *labelling only*. No duration anywhere in this app comes from two
@@ -834,6 +842,8 @@ void Service::publishHistory()
     SleepLab::NightStore::IndexRow rows[SleepLab::NightStore::kMaxHistory];
     const size_t n = mStore.readHistory(rows, SleepLab::NightStore::kMaxHistory);
 
+    LOG_INFO("publishing %u nights of history\n", static_cast<unsigned>(n));
+
     // Always sent, even when empty. An empty history and a dropped burst look
     // identical to the GUI otherwise, and only one of them means "you have not
     // recorded a night yet".
@@ -1118,7 +1128,7 @@ void Service::run()
                     if (mGlanceActive && mGlance.isInvalid()) {
                         if (auto upd =
                                 SDK::make_msg<SDK::Message::RequestGlanceUpdate>(mKernel)) {
-                            upd->name           = APP_NAME;
+                            upd->name           = kGlanceName;
                             upd->controls       = mGlance.data();
                             upd->controlsNumber = static_cast<uint32_t>(mGlance.size());
                             upd.send(100);
@@ -1150,8 +1160,16 @@ void Service::run()
                 }
 
                 case CustomMessage::SLEEP_REQUEST:
+                    // Only a GUI sends this, so receiving one *is* the
+                    // evidence that a GUI is attached -- and it is better
+                    // evidence than COMMAND_APP_NOTIF_GUI_RUN, which the
+                    // simulator was found not to deliver at all. Without this
+                    // the screen sits on "waiting for service..." for ever
+                    // there, and the whole GUI is unexercisable at a desk.
+                    mGuiStarted = true;
                     publishReport();
                     publishHistory();
+                    pumpWidget();
                     break;
 
                 default:

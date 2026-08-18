@@ -11,11 +11,17 @@
 #          amd64 only, so it runs emulated on Apple silicon -- slow, correct.
 #   host   cmake, a C++17 g++, and python3 -- the last of those so the probe
 #          report round-trip test runs the real script rather than skipping.
+#   sim    the TouchGFX Linux simulator, which needs SDL2 *and* Ruby (its asset
+#          generators are Ruby scripts) *and* amd64 (some of them are amd64-only
+#          binaries). So it is layered on the amd64 base rather than the native
+#          one, and runs emulated on Apple silicon.
 #
 # Usage:
 #   Tools/docker-build.sh probe            # the Tier 0 probe .uapp
 #   Tools/docker-build.sh app              # the SleepLab .uapp
 #   Tools/docker-build.sh tests            # host tests, configure + build + ctest
+#   Tools/docker-build.sh sim              # build the simulator
+#   Tools/docker-build.sh sim-run          # build it and run it headless
 #
 set -euo pipefail
 
@@ -26,6 +32,7 @@ VERSION="${BUILD_VERSION:-0.1.0}"
 
 ARM_IMAGE="${SLEEPLAB_ARM_IMAGE:-sleeplab-arm:latest}"
 HOST_IMAGE="${SLEEPLAB_HOST_IMAGE:-sleeplab-host:latest}"
+SIM_IMAGE="${SLEEPLAB_SIM_IMAGE:-sleeplab-sim:latest}"
 
 run_arm() {
     docker run --rm --platform linux/amd64 \
@@ -37,6 +44,13 @@ run_host() {
     docker run --rm \
         -v "$REPO:/w" -v "$SDK:/sdk" -e UNA_SDK=/sdk -w /w \
         "$HOST_IMAGE" bash -lc "$1"
+}
+
+run_sim() {
+    docker run --rm --platform linux/amd64 \
+        -v "$REPO:/w" -v "$SDK:/sdk" -e UNA_SDK=/sdk \
+        -w /w/SleepLab/Software/Apps/TouchGFX-GUI \
+        "$SIM_IMAGE" bash -lc "$1"
 }
 
 case "${1:-}" in
@@ -52,8 +66,24 @@ case "${1:-}" in
     run_host \
       "cmake -S SleepLab/Tests -B /tmp/slt -DCMAKE_BUILD_TYPE=Debug && cmake --build /tmp/slt -j\$(nproc) && cd /tmp/slt && ctest --output-on-failure"
     ;;
+  sim)
+    run_sim "make -f simulator/gcc/Makefile -j\$(nproc)"
+    ;;
+  sim-run)
+    # Headless, with a seeded history so the report and history screens have
+    # something to draw. The simulator has no sensors and no battery, so this
+    # exercises the screen, the message contract and the file reading -- and
+    # proves nothing whatever about whether an eight-hour recording survives on
+    # hardware. That is what the Tier 0 probe is for.
+    run_sim "make -f simulator/gcc/Makefile -j\$(nproc) >/dev/null \
+        && mkdir -p /tmp/a/b/c/d/e /tmp/Output/Nights \
+        && cp /w/SleepLab/Tests/fixtures/index.csv /tmp/Output/Nights/ \
+        && cd /tmp/a/b/c/d/e \
+        && SDL_VIDEODRIVER=dummy timeout \${SIM_SECONDS:-12} \
+             /w/SleepLab/Software/Apps/TouchGFX-GUI/build/bin/simulator.out 2>&1 | head -40"
+    ;;
   *)
-    sed -n '2,30p' "$0"
+    sed -n '2,34p' "$0"
     exit 2
     ;;
 esac
