@@ -114,6 +114,24 @@ struct SegmenterConfig
     /// `stillnessCountMax`, so the two do not chatter around one boundary.
     /// TODO: same recording.
     uint32_t activityCountMin = 250;
+
+    /// Longest a session may run, in scoring epochs. Sixteen hours.
+    ///
+    /// Not a threshold about sleep -- it is the backstop that makes the other
+    /// rules' failure survivable. Leaving the window is what ends a long session,
+    /// and that needs a readable wall clock, which an open session deliberately
+    /// does not require: ending a night because the clock became unreadable would
+    /// lose real data over something the app does not control. So a session that
+    /// outlives its clock had nothing to close it at all -- it ran until
+    /// `mSessionEpochs` went round a uint16 at 45 days, after which it was below
+    /// `minSessionMin` and could no longer close on activity either, while the CSV
+    /// grew without bound.
+    ///
+    /// Sixteen hours is `kMaxScoringEpochs`, which is where the engine stops
+    /// scoring, so a session can no longer outlive the array that holds it. A
+    /// night this long is a data-quality problem either way; the point is that it
+    /// is reported as one rather than never reported at all.
+    uint16_t maxSessionMin = 16 * 60;
 };
 
 /**

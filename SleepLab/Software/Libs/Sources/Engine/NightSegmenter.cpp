@@ -144,6 +144,14 @@ NightSegmenter::Update NightSegmenter::update(int16_t localMin, bool worn,
         return closeNow(u.clockJumped);
     }
 
+    // The backstop, before anything that can be defeated by an unreadable clock
+    // or by a wrist that never moves. A session at this length has stopped being
+    // a night whatever every other signal says, and the alternative to ending it
+    // is a counter that wraps -- see maxSessionMin.
+    if (mCfg.maxSessionMin > 0 && mSessionEpochs >= mCfg.maxSessionMin) {
+        return closeNow(u.clockJumped);
+    }
+
     if (mSessionEpochs >= mCfg.minSessionMin) {
         // Steps are unambiguous: a sleeping wrist does not accumulate them.
         if (walked) {
