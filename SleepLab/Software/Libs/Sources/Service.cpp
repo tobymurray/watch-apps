@@ -157,6 +157,7 @@ Service::Service(SDK::Kernel &kernel)
     , mSettings()
     , mStore(kernel)
     , mRaw(kernel)
+    , mDiag(kernel)
     , mCounter()
     , mSegmenter()
     , mBaseline()
@@ -196,6 +197,32 @@ void Service::connectSensors()
         mHrEx.connect();
         mHrDutyOn = true;
     }
+}
+
+void Service::logSensors()
+{
+    // Upper case resolved, lower case did not. The same encoding the probe puts on
+    // its screen, because that block is what turned two ledger rows over in two
+    // minutes on hardware: a lower-case letter means `connect()` was called and
+    // there was nothing to subscribe to, which is a different problem from a
+    // sensor that resolved and then said nothing.
+    struct Entry { const char letter; SDK::Sensor::Connection &conn; };
+    Entry entries[] = {
+        { 'A', mAccel },     { 'T', mTouch },      { 'M', mMotion },
+        { 'R', mActivity },  { 'H', mHr },         { 'X', mHrEx },
+        { 'S', mSteps },     { 'L', mBattLevel },  { 'C', mBattCharge },
+    };
+
+    char block[sizeof(entries) / sizeof(entries[0]) + 1] = {};
+    size_t at = 0;
+    for (Entry &e : entries) {
+        const bool ok = e.conn.isValid();
+        block[at++] = ok ? e.letter
+                         : static_cast<char>(e.letter - 'A' + 'a');
+    }
+    block[at] = '\0';
+
+    mDiag.line("sensors", "%s (ATMRHXSLC upper=resolved)", block);
 }
 
 void Service::disconnectSensors()
@@ -475,12 +502,9 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
         // retry loop on the recording path is a way to lose the whole night
         // rather than part of it.
         if (!mStore.appendEpoch(e, mFlags)) {
-            if ((mFlags & Engine::Interruption::kWriteFailed) == 0) {
-                LOG_WARNING("epoch write refused; the night is short from here\n");
-            }
-            mFlags |= Engine::Interruption::kWriteFailed;
+            noteWriteFailure("epoch");
         }
-    } else {
+    } else if (!mSessionOpen) {
         // Idle: keep the epoch in the ring, so a night that opens on sustained
         // stillness can be backdated to the minutes it actually began in.
         mPreRoll[mPreRollNext] = e;
@@ -489,6 +513,11 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
             mPreRollCount++;
         }
     }
+    // The remaining case is a session running with no file to write to. The epoch
+    // still folds into the scoring array below -- that is the night, and it is what
+    // the morning report is built from -- but it must not go into the pre-roll
+    // ring, which exists for a night that has not opened yet and would otherwise
+    // be handed this night's minutes to backdate into the next one.
 
     fold(e, mPendingScore, mPendingHalves, mPendingSteps);
     if (mPendingHalves >= Engine::kEpochsPerScoringEpoch) {
@@ -561,7 +590,7 @@ void Service::closeScoringEpoch()
             break;
     }
 
-    if (mStore.isOpen()) {
+    if (mSessionOpen) {
         if (mScoringCount < Engine::kMaxScoringEpochs) {
             mScoringWallEnd[mScoringCount] = mLastEpochWallUtc;
             mScoring[mScoringCount++]      = scored;
@@ -612,7 +641,7 @@ uint16_t Service::flushPreRoll(uint16_t scoringEpochs)
     for (size_t i = 0; i < want; ++i) {
         const Engine::Epoch &e = mPreRoll[(first + i) % kPreRollEpochs];
         if (!mStore.appendEpoch(e, mFlags)) {
-            mFlags |= Engine::Interruption::kWriteFailed;
+            noteWriteFailure("backdate");
         }
 
         fold(e, acc, halves, steps);
@@ -636,6 +665,21 @@ uint16_t Service::flushPreRoll(uint16_t scoringEpochs)
 
 
 // -- Night lifecycle ------------------------------------------------------------------
+
+void Service::noteWriteFailure(const char *where)
+{
+    // Once per night. The report's first line carries it to the wearer; this
+    // carries *where* to whoever copies the night off, which is the difference
+    // between losing the last hour and losing the first seven.
+    if ((mFlags & Engine::Interruption::kWriteFailed) == 0) {
+        LOG_WARNING("epoch write refused; the night is short from here\n");
+        mDiag.line("fail", "epoch write refused (%s) at %s after %lu epochs",
+                   (where != nullptr) ? where : "?",
+                   mStore.isOpen() ? mStore.path() : "no file",
+                   static_cast<unsigned long>(mStore.epochsWritten()));
+    }
+    mFlags |= Engine::Interruption::kWriteFailed;
+}
 
 void Service::openNight(uint16_t backdateScoringEpochs)
 {
@@ -693,9 +737,15 @@ void Service::openNight(uint16_t backdateScoringEpochs)
         mFlags |= Engine::Interruption::kCharging;
     }
 
+    // A session, whatever the volume says. The night is happening; whether it can
+    // be written is a separate question with its own flag, and treating the two as
+    // one produced neither a file nor a report.
+    mSessionOpen = true;
+
     uint16_t recovered = 0;
     if (!mStore.beginNight(mNightStartUtc, mKernel.sys.getTimeMs())) {
         LOG_WARNING("could not open a night file; recording to RAM only\n");
+        noteWriteFailure("open");
     } else {
         recovered = flushPreRoll(backdateScoringEpochs);
     }
@@ -717,6 +767,11 @@ void Service::openNight(uint16_t backdateScoringEpochs)
     }
 
     mPreRollCount = 0;
+    mDiag.line("open", "%s backdated=%umin recovered=%u flags=0x%x",
+               mStore.isOpen() ? mStore.path() : "NO FILE",
+               static_cast<unsigned>(backdateScoringEpochs),
+               static_cast<unsigned>(recovered),
+               static_cast<unsigned>(mFlags));
     LOG_INFO("night opened, backdated %u min\n",
              static_cast<unsigned>(backdateScoringEpochs));
     publishReport();
@@ -728,8 +783,11 @@ void Service::openNight(uint16_t backdateScoringEpochs)
 void Service::closeNight(bool discard)
 {
     mRaw.stop();
+    mSessionOpen = false;
 
     if (discard) {
+        mDiag.line("discard", "%s epochs=%u too short to report",
+                   mStore.path(), static_cast<unsigned>(mScoringCount));
         mStore.discardNight();
         mScoringCount = 0;
         mFlags        = 0;
@@ -851,6 +909,7 @@ void Service::closeNight(bool discard)
         // else read them, and the history row that would let this app. Said on
         // the screen rather than only in a UART log nobody has attached.
         LOG_WARNING("night could not be filed\n");
+        mDiag.line("fail", "could not write the summary or the index row");
         s.interruption |= Engine::Interruption::kWriteFailed;
         mFlags         |= Engine::Interruption::kWriteFailed;
     }
@@ -864,6 +923,18 @@ void Service::closeNight(bool discard)
     mHaveReport   = true;
     mScoringCount = 0;
     mFlags        = 0;
+
+    mDiag.line("close",
+               "worn=%u sleep=%ld tib=%ld eff=%ld acc_hz_x10=%ld flags=0x%x "
+               "epochs=%u lost=%u",
+               static_cast<unsigned>(s.worn),
+               static_cast<long>(s.totalSleepMin),
+               static_cast<long>(s.timeInBedMin),
+               static_cast<long>(s.efficiencyPct),
+               static_cast<long>(s.accHzX10),
+               static_cast<unsigned>(s.interruption),
+               static_cast<unsigned>(s.epochs),
+               static_cast<unsigned>(lostEpochs));
 
     LOG_INFO("night closed: worn=%u sleep=%ld min eff=%ld%%\n",
              static_cast<unsigned>(s.worn),
@@ -887,7 +958,7 @@ void Service::closeNight(bool discard)
 
 void Service::checkAlarm()
 {
-    if (!mSettings.alarmEnabled || mAlarmFired || !mStore.isOpen()) {
+    if (!mSettings.alarmEnabled || mAlarmFired || !mSessionOpen) {
         return;
     }
 
@@ -1008,7 +1079,7 @@ void Service::buildStrip(CustomMessage::SleepReportData &msg) const
     //     closes -- and until then those arrays hold the *previous* night's
     //     verdicts, or, on a fresh install, zeroed memory, which decodes as
     //     "asleep, most settled" for every minute recorded so far.
-    if (mStore.isOpen() || !mHaveReport || !mLastSummary.hasSleep) {
+    if (mSessionOpen || !mHaveReport || !mLastSummary.hasSleep) {
         return;
     }
 
@@ -1074,7 +1145,7 @@ void Service::publishReport()
         return;
     }
 
-    if (mStore.isOpen()) {
+    if (mSessionOpen) {
         msg->data.phase = static_cast<uint8_t>(CustomMessage::Phase::Recording);
     } else if (mHaveReport) {
         msg->data.phase = static_cast<uint8_t>(CustomMessage::Phase::Reported);
@@ -1231,7 +1302,7 @@ void Service::glanceRefresh()
 
     const Engine::NightSummary &s = mLastSummary;
 
-    if (mStore.isOpen()) {
+    if (mSessionOpen) {
         mGlanceValue.setText("recording");
         mGlanceSub.setText("report in the morning");
     } else if (!mHaveReport) {
@@ -1271,7 +1342,7 @@ void Service::pumpWidget()
     // Shown only while a report stands and no night is running: that window is
     // the morning. A widget still showing Tuesday's efficiency on Thursday
     // afternoon is clutter, not information.
-    const bool want = mHaveReport && !mStore.isOpen() && !mGuiStarted &&
+    const bool want = mHaveReport && !mSessionOpen && !mGuiStarted &&
                       mLastSummary.hasSleep;
 
     if (!want) {
@@ -1323,6 +1394,20 @@ void Service::run()
 
     const SleepLab::SettingsStatus cfg =
         SleepLab::loadSettings(mKernel, mSettings);
+
+    // First, before anything else can go wrong, and to the volume rather than to
+    // a UART nobody has attached at 03:00. A night that leaves no epoch file at
+    // all used to leave nothing at all; this is what it leaves now.
+    mDiag.line("launch",
+               "v%s uptime=%lu %s bed=%d-%d hr=%s alarm=%d raw=%d",
+               SleepLab::kAppVersion, static_cast<unsigned long>(start),
+               SleepLab::toString(cfg),
+               static_cast<int>(mSettings.segmenter.windowStartMin),
+               static_cast<int>(mSettings.segmenter.windowEndMin),
+               SleepLab::toString(mSettings.hrMode),
+               mSettings.alarmEnabled ? 1 : 0,
+               mSettings.rawRecording ? 1 : 0);
+
     LOG_INFO("%s; bed %d-%d hr=%s alarm=%d raw=%d\n",
              SleepLab::toString(cfg),
              static_cast<int>(mSettings.segmenter.windowStartMin),
@@ -1338,6 +1423,14 @@ void Service::run()
     // worse than one flagged one, and both halves might be short enough to be
     // discarded entirely.
     const SleepLab::ResumeState resume = mStore.readState(start, nowUtc);
+    mDiag.line("resume", "present=%d path=%s epochs=%lu gap=%lumin %s",
+               resume.present ? 1 : 0,
+               resume.present ? resume.path : "-",
+               static_cast<unsigned long>(resume.epochs),
+               static_cast<unsigned long>(resume.gapMinutes),
+               resume.deviceRebooted ? "device-rebooted"
+                                     : (resume.appRestarted ? "app-restarted"
+                                                            : "fresh"));
     if (resume.present && mStore.resumeNight(resume)) {
         mFlags         = resume.flags;
         // Everything ahead of this launch's own first epoch: the epochs already
@@ -1363,12 +1456,14 @@ void Service::run()
         // night rather than to its beginning.
         mNightStartUtc = resume.startUtc;
         mSegmenter.resumeOpen(static_cast<uint16_t>(mEpochsNotInArray));
+        mSessionOpen = true;
         if (mSettings.rawRecording) {
             mRaw.start(mNightStartUtc, mSettings.rawMaxMb, mSettings.rawMaxMin);
         }
     }
 
     connectSensors();
+    logSensors();
 
     mEpochOpenedAt = start;
     mNextEpochAt   = start + Engine::kEpochMs;
@@ -1426,6 +1521,12 @@ void Service::run()
                     // leaving it open: the state file is what lets the relaunch
                     // resume, and the raw capture has a buffer to flush.
                     LOG_INFO("stopping\n");
+                // Almost always the USB cable, which is the boundary a resumed
+                // night has to be stitched across -- so the pair of clocks at the
+                // stop is worth as much as the pair at the launch.
+                mDiag.line("stop", "night_open=%d epochs=%lu",
+                           mStore.isOpen() ? 1 : 0,
+                           static_cast<unsigned long>(mStore.epochsWritten()));
                     mRaw.stop();
                     // Leave no stale widget on the home screen.
                     if (mWidgetActive) {

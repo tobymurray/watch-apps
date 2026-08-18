@@ -177,6 +177,7 @@ if(EXISTS "${COREJSON_DIR}/core_json.c")
         "${APP_LIBS}/Sources/RawRecorder.cpp"
         "${APP_LIBS}/Sources/Settings.cpp"
         "${APP_LIBS}/Sources/WallClock.cpp"
+        "${APP_LIBS}/Sources/Diag.cpp"
         ${SLEEPLAB_ENGINE_SOURCES}
         "${UNA_SDK_ROOT}/Libs/Source/SensorLayer/SensorConnection.cpp"
         "${UNA_SDK_ROOT}/Libs/Source/JSON/JsonStreamReader.cpp"

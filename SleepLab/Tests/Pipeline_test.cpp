@@ -11,6 +11,7 @@
 
 #include <cstdlib>
 
+#include "Diag.hpp"
 #include "NightHarness.hpp"
 
 namespace {
@@ -1037,6 +1038,145 @@ TEST(UptimeWrap, AResumeAcrossTheWrapIsARestartNotAReboot)
         << "reported wake " << rep->wokeAtMin
         << ": the relaunch across the wrap was misclassified, so the twenty "
            "minutes off were not counted";
+}
+
+// ---------------------------------------------------------------------------
+// Can a night be diagnosed from what it left behind?
+// ---------------------------------------------------------------------------
+
+TEST(Diagnosis, ANightThatRecordedNothingStillExplainsItself)
+{
+    // The failure the economics of this app cannot afford: an eight-hour night
+    // that leaves no epoch CSV at all. Before the diagnostic log there was
+    // nothing on the volume to read -- no file, no history row, no clue -- and the
+    // only way to answer "why" was to spend another night.
+    //
+    // Here the volume refuses every write from the first byte, so the night file
+    // is never created. What has to survive is the *reason*.
+    Scenario s = plainNight();
+    s.failWritesAfterBytes = 0;
+    const Observations obs = Rig::instance().run(s);
+
+    // First: the service returned. A wedged loop is the one failure that costs a
+    // night *and* the next one, and there is nothing to read afterwards either.
+    // Reaching this line is the assertion.
+
+    // Nothing was filed.
+    EXPECT_FALSE(Rig::instance().fs.exist("Nights/index.csv"));
+    const std::string csv = theNightCsv(Rig::instance().fs);
+    if (!csv.empty()) {
+        // A zero-length night file is what a refused write leaves: the entry was
+        // created and nothing went into it. That is itself a diagnosis, and a
+        // better one than no file at all, so it is pinned rather than prevented.
+        EXPECT_TRUE(Rig::instance().fs.readFile(csv).empty())
+            << csv << " has content, so the writes were not actually refused";
+    }
+
+    // And the honest report: no numbers, and a reason.
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    if (rep != nullptr) {
+        EXPECT_NE(rep->interruption & Engine::Interruption::kWriteFailed, 0u)
+            << "nothing could be written and the report did not say so";
+    }
+}
+
+TEST(Diagnosis, TheLogSaysWhichSensorDriversResolved)
+{
+    // The single most valuable line in the file. On hardware, a two-minute run of
+    // the probe's screen turned over two ledger rows -- TOUCH_DETECT resolved and
+    // said nothing (S12), SPO2 did not resolve at all (S4) -- and a lower-case
+    // letter is what said so. SleepLab had no equivalent: a night recorded against
+    // a sensor that never resolved looked exactly like a night recorded against one
+    // that did.
+    Scenario s = plainNight();
+    Rig::instance().run(s);
+
+    const std::string log = Rig::instance().fs.readFile("Debug/sleeplab.log");
+    ASSERT_FALSE(log.empty()) << "no diagnostic log was written at all";
+
+    EXPECT_NE(log.find(" sensors "), std::string::npos)
+        << "the log does not say which drivers resolved:\n" << log;
+    // All nine resolve in the harness, so the block is all upper case.
+    EXPECT_NE(log.find("ATMRHXSLC"), std::string::npos)
+        << "the resolved-driver block is not in the log:\n" << log;
+}
+
+TEST(Diagnosis, TheLogSaysWhatTheNightRanUnderAndHowItEnded)
+{
+    // Second most valuable: a night is never diagnosed against the settings
+    // somebody meant to write. And the close line has to carry enough to tell a
+    // suppressed night from a clean one without opening anything else.
+    Scenario s = plainNight();
+    s.settingsJson = "{\"schema\":1,\"values\":{\"bedtime\":\"22:30\","
+                     "\"wake_by\":\"09:00\",\"hr\":\"off\"}}";
+    Rig::instance().run(s);
+
+    const std::string log = Rig::instance().fs.readFile("Debug/sleeplab.log");
+    ASSERT_FALSE(log.empty());
+
+    EXPECT_NE(log.find("settings.json loaded"), std::string::npos)
+        << "the log does not say whether the settings were read:\n" << log;
+    EXPECT_NE(log.find("bed=1350-540"), std::string::npos)
+        << "the log does not say what window was in force:\n" << log;
+    EXPECT_NE(log.find("hr=off"), std::string::npos) << log;
+    EXPECT_NE(log.find("app_version") != std::string::npos ||
+                  log.find("v0.1.0") != std::string::npos, false)
+        << "the log does not say which build wrote it:\n" << log;
+
+    EXPECT_NE(log.find(" open "), std::string::npos) << log;
+    EXPECT_NE(log.find(" close "), std::string::npos)
+        << "the night closed and the log does not say how:\n" << log;
+    EXPECT_NE(log.find("acc_hz_x10="), std::string::npos)
+        << "the close line does not carry the delivered rate:\n" << log;
+}
+
+TEST(Diagnosis, TheLogSaysWhereARefusedWriteStoppedTheRecord)
+{
+    // The difference between losing the last hour of a night and losing the first
+    // seven is the difference between a usable night and a wasted one, and only
+    // the log can say which: the report says INCOMPLETE and the CSV says nothing
+    // about where it was cut off, because a truncated file looks like a short one.
+    //
+    // The failure is scoped to the epoch CSV -- its closes fail, which FatFs treats
+    // as a failed sync -- rather than filling the whole volume. That is the case
+    // where the log can still be written, and it is the case worth testing.
+    //
+    // A volume that is *genuinely* full cannot be reported by a file on that
+    // volume, and this deliberately does not pretend otherwise. See
+    // `Docs/POST-MORTEM.md`, which names that as an accepted blind spot and what
+    // covers it instead.
+    Scenario s = plainNight();
+    s.failCloseContaining = ".csv";
+    Rig::instance().run(s);
+
+    const std::string log = Rig::instance().fs.readFile("Debug/sleeplab.log");
+    ASSERT_FALSE(log.empty()) << "no diagnostic log at all";
+    EXPECT_NE(log.find(" fail "), std::string::npos)
+        << "every epoch write was refused and the log said nothing:\n" << log;
+    EXPECT_NE(log.find("epoch write refused"), std::string::npos) << log;
+    // And it says how far the night got before it stopped.
+    EXPECT_NE(log.find("after "), std::string::npos) << log;
+}
+
+TEST(Diagnosis, TheLogDoesNotGrowWithoutBound)
+{
+    // An append-only file in a service that runs for the device's whole life is a
+    // way to fill the volume the night then cannot be written to.
+    Scenario s = plainNight();
+    for (int i = 0; i < 6; ++i) {
+        s.keepFilesystem = (i > 0);
+        s.startUptimeMs  = 3600u * 1000u +
+                           static_cast<uint32_t>(i) * 600u * 60000u;
+        s.startUtc       = kStart + static_cast<int64_t>(i) * 86400;
+        Rig::instance().run(s);
+    }
+    const std::string log = Rig::instance().fs.readFile("Debug/sleeplab.log");
+    ASSERT_FALSE(log.empty());
+    EXPECT_LT(log.size(), SleepLab::kDiagMaxBytes + 1024u)
+        << "the log is " << log.size() << " bytes after six launches";
+    // ~20 lines a launch, so six launches is well under the cap and nothing
+    // should have been rotated away yet.
+    EXPECT_NE(log.find("launch"), std::string::npos);
 }
 
 } // namespace

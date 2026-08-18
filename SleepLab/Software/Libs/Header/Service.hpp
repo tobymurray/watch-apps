@@ -75,6 +75,7 @@
 #include "Engine/SleepWakeScorer.hpp"
 
 #include "Commands.hpp"
+#include "Diag.hpp"
 #include "NightStore.hpp"
 #include "RawRecorder.hpp"
 #include "Settings.hpp"
@@ -126,6 +127,10 @@ private:
     // -- Lifecycle ------------------------------------------------------------
 
     void connectSensors();
+    /// Write the resolved-driver block to the diagnostic log, in the probe's own
+    /// single-letter form. This is the one line that would have caught
+    /// TOUCH_DETECT and SPO2 without spending a night on either.
+    void logSensors();
     void disconnectSensors();
     /// Drive the heart-rate duty cycle. Returns ms to the next transition, or 0.
     uint32_t pumpHrDuty(uint32_t now);
@@ -166,6 +171,8 @@ private:
 
     void openNight(uint16_t backdateScoringEpochs);
     void closeNight(bool discard);
+    /// Raise the write-failure flag, and say so once on the volume.
+    void noteWriteFailure(const char *where);
 
     // -- Alarm ----------------------------------------------------------------
 
@@ -206,6 +213,7 @@ private:
     SleepLab::Settings  mSettings;
     SleepLab::NightStore mStore;
     SleepLab::RawRecorder mRaw;
+    SleepLab::Diag        mDiag;
 
     /// Counters for the recording epoch in progress.
     Accum mAcc;
@@ -298,6 +306,16 @@ private:
     // -- Night state ----------------------------------------------------------
 
     uint16_t mFlags        = 0;   ///< Engine::Interruption bits for this night.
+
+    /// Whether a night is in progress, which is a question about the *session* and
+    /// not about the file.
+    ///
+    /// `mStore.isOpen()` was standing in for this, and it is a different question:
+    /// a night whose CSV could not be created has no open file and is still a
+    /// night. Gating the scoring array on the file meant an unwritable volume
+    /// produced no record and no report either -- the log said "recording to RAM
+    /// only" and nothing was recorded at all.
+    bool     mSessionOpen  = false;
     int64_t  mNightStartUtc = -1;
     /// Recording epochs the loop lost: it woke later than a whole epoch and
     /// advanced the grid past the slots it had missed. Real minutes of the night
