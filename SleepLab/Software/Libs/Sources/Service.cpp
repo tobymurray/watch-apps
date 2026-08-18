@@ -579,9 +579,46 @@ void Service::openNight(uint16_t backdateScoringEpochs)
     mScoringCount  = 0;
     mEpochsNotInArray = 0;
     mAlarmFired    = false;
-    // Deliberately NOT cleared: charging and clock jumps seen while idle in the
-    // minutes now being backdated into the night are part of the night.
-    // mFlags stands.
+
+    // The flags start clean and are rebuilt from the minutes that are actually
+    // part of the night.
+    //
+    // Carrying them forward was deliberate -- charging and gaps seen while idle
+    // in the minutes about to be backdated ARE part of the night -- but nothing
+    // bounded how far back "while idle" reached, and the flags are only cleared
+    // when a night closes. So a charge at six in the evening, or the thin first
+    // epoch of a launch, marked the night five hours later as INTERRUPTED. That
+    // is the first line of the morning report, and a flag that cries wolf is a
+    // flag nobody reads on the night it matters.
+    //
+    // The backdated window is exactly what `flushPreRoll` is about to walk, and
+    // every `Epoch` in the ring carries its own `charging` and its own sample
+    // count -- so the flags for that window are read off the epochs themselves
+    // rather than off a variable that has been accumulating all day.
+    mFlags = 0;
+    {
+        size_t want = static_cast<size_t>(backdateScoringEpochs) *
+                      Engine::kEpochsPerScoringEpoch;
+        if (want > mPreRollCount) {
+            want = mPreRollCount;
+        }
+        const size_t first =
+            (mPreRollNext + kPreRollEpochs - want) % kPreRollEpochs;
+        for (size_t i = 0; i < want; ++i) {
+            const Engine::Epoch &e = mPreRoll[(first + i) % kPreRollEpochs];
+            if (e.charging) {
+                mFlags |= Engine::Interruption::kCharging;
+            }
+            if (e.samples < kMinSamplesPerRecordingEpoch) {
+                mFlags |= Engine::Interruption::kDataGap;
+            }
+        }
+    }
+    // Charging *now* counts whether or not an epoch has closed on it yet: the
+    // charger going in is about to terminate this process.
+    if (mCharging) {
+        mFlags |= Engine::Interruption::kCharging;
+    }
 
     uint16_t recovered = 0;
     if (!mStore.beginNight(mNightStartUtc, mKernel.sys.getTimeMs())) {
