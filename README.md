@@ -17,6 +17,7 @@ than living inside it.
 | [`MapManager`](MapManager) | A background, autostart `Utility` app that discovers and CRC-verifies offline map packs dropped into the shared `SharedData/maps/` directory, so map-consuming apps read from one already-verified location instead of each running their own copy of this pipeline. |
 | [`RunMap`](RunMap) | The stock Running activity with the same live map. |
 | [`RustGuiPoc`](RustGuiPoc) | A proof of concept: a watch app whose GUI is drawn by Rust and `embedded-graphics` through the SDK's CustomGUI entry point, instead of TouchGFX. |
+| [`SleepLab`](SleepLab) | A background, autostart `Utility` app that records a night of wrist data and scores it with a published actigraphy algorithm — and refuses to report sleep stages, an unworn night, or a heart-rate figure it has not earned a baseline for, because a sleep app's failures are silent. |
 | [`Squash`](Squash) | A squash activity app, and the raw 100 Hz IMU recorder it is being built out of — because tuning shot detection needs labelled court data that does not exist yet. |
 
 Most of these started as example apps inside the SDK tree and came here with
@@ -56,13 +57,18 @@ kira build-app --app GpsLab --sdk /path/to/una-sdk --version 1.0.0 --out GpsLab.
 [`Squash/Tests`](Squash/Tests) — see [its README](Squash/README.md#tests) —
 `Chrono` carries tests for its stopwatch core under [`Chrono/Tests`](Chrono/Tests),
 `MapManager` carries tests for its verifier core under
-[`MapManager/Tests`](MapManager/Tests), and the three map apps share one suite
-under [`MapKit/Tests`](MapKit/Tests).
+[`MapManager/Tests`](MapManager/Tests), `SleepLab` carries its sleep engine and
+storage under [`SleepLab/Tests`](SleepLab/Tests), and the three map apps share
+one suite under [`MapKit/Tests`](MapKit/Tests).
 
-`Chrono`, `MapManager` and the three map apps are pinned to a particular SDK:
-point `$UNA_SDK` at a checkout of `apps-v1.3.0`, and see their READMEs
+Two different SDKs, depending on the app. `Chrono`, `MapManager` and the three
+map apps are pinned to `apps-v1.3.0` — point `$UNA_SDK` at a checkout of that
+tag, and see their READMEs
 ([Chrono](Chrono/README.md#why-13-matters), [MapManager](MapManager/README.md#why-its-pinned-to-sdk-13))
-for why.
+for why. `SleepLab` targets **`apps-v1.4.0`** and will not run on a 1.3 kernel:
+an app carries the interface version it was built against, and the mismatch
+shows up as an instant `App PID` error screen rather than as a build failure —
+see [its README](SleepLab/README.md#building).
 
 ## Licence
 

@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "values": {
+    "hr": "continuous",
+    "accel_period_ms": 40,
+    "accel_latency_ms": 5000,
+    "spo2": "on",
+    "ppg": "off"
+  }
+}

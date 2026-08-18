@@ -1,0 +1,11 @@
+# SleepLab night index, schema 1. A hand-written fixture, for the simulator.
+# Six nights: four clean, one interrupted, one that failed the worn gate --
+# so the history screen has to draw all three cases and the baseline has to
+# exclude the fourth.
+start_utc,tib_min,tst_min,eff_pct,hr_min_x10,hr_min_at_pct,worn,interruption
+1754864400,462,401,86,524,52,0,0
+1754950800,438,392,89,518,48,0,1
+1755037200,401,352,87,531,55,0,0
+1755123600,-1,-1,-1,-1,-1,1,0
+1755210000,470,430,91,509,50,0,0
+1755296400,455,405,89,515,47,0,0
