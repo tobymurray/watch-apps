@@ -9,9 +9,11 @@ namespace
 {
 
 /// The panel is round: a 240 px square's corners are not visible, and content
-/// pushed into them cannot be judged. Cards keep their content inside this
-/// inset, which is the same 30 px the text screens use.
-constexpr int16_t kInset = 30;
+/// pushed into them cannot be judged. Cards keep their subject inside this,
+/// which also leaves the reference strips at x 16..40 and x 200..224 alone.
+/// Scene cards are the deliberate exception: a map is the whole panel, and the
+/// strips sit on top of it.
+constexpr int16_t kContentInset = 44;
 
 /// Render one tile at an offset. Does not clear, so a card can lay several
 /// down; returns false if the scene would not open, leaving the canvas alone.
@@ -81,8 +83,8 @@ void cardPalette64(Canvas& canvas)
     // code's own bits order the grid: row = blue+green, column = red+green, so
     // a neighbour differs by one quantum in one channel and the eye is being
     // asked whether one quantum looks like one step.
-    constexpr int16_t cell = 26;
-    constexpr int16_t x0   = (240 - 8 * cell) / 2;
+    constexpr int16_t cell = 19;
+    constexpr int16_t x0   = (240 - 8 * cell) / 2;   // 44, clearing the reference
     for (int i = 0; i < 64; ++i) {
         const uint8_t c = static_cast<uint8_t>(0xC0 | i);
         const int16_t cx = static_cast<int16_t>(x0 + (i % 8) * cell);
@@ -92,7 +94,7 @@ void cardPalette64(Canvas& canvas)
         // found on the panel without counting squares.
         for (const auto& s : kSlots) {
             if (s.code == c) {
-                canvas.fillRect(cx, cy, 5, 5, code(Slot::Trace));
+                canvas.fillRect(cx, cy, 4, 4, code(Slot::Trace));
                 break;
             }
         }
@@ -112,7 +114,7 @@ void cardSlotRoles(Canvas& canvas)
         // Bands are narrower at the top and bottom of the panel: a round
         // display clips a full-width rect there, and a band that is partly
         // missing cannot be compared with one that is not.
-        const int16_t inset = static_cast<int16_t>((i < 2 || i >= n - 2) ? 58 : kInset);
+        const int16_t inset = static_cast<int16_t>((i < 2 || i >= n - 2) ? 64 : kContentInset);
         canvas.fillRect(inset, y, static_cast<int16_t>(240 - 2 * inset), bandH,
                         kSlots[i].code);
     }
@@ -127,19 +129,19 @@ void cardLineWeights(Canvas& canvas)
     int16_t y = 40;
     for (uint8_t ink : inks) {
         for (int16_t w = 1; w <= 4; ++w) {
-            canvas.thickLine(34, y, 108, y, w, ink);
+            canvas.thickLine(44, y, 112, y, w, ink);
             // Cased: halo first, ink over it, at the spec's ratio (ink + 3).
-            canvas.thickLine(132, y, 206, y, static_cast<int16_t>(w + 3), kHalo);
-            canvas.thickLine(132, y, 206, y, w, ink);
+            canvas.thickLine(128, y, 196, y, static_cast<int16_t>(w + 3), kHalo);
+            canvas.thickLine(128, y, 196, y, w, ink);
             y = static_cast<int16_t>(y + 13);
         }
         y = static_cast<int16_t>(y + 4);
     }
     // Diagonals, where aliasing is worst and a 1 px line either survives or
     // does not.
-    canvas.thickLine(34, 210, 100, 150, 1, code(Slot::Contour));
-    canvas.thickLine(70, 210, 136, 150, 2, code(Slot::RoadMinor));
-    canvas.thickLine(106, 210, 172, 150, 4, code(Slot::RoadMajor));
+    canvas.thickLine(44, 210, 110, 150, 1, code(Slot::Contour));
+    canvas.thickLine(80, 210, 146, 150, 2, code(Slot::RoadMinor));
+    canvas.thickLine(116, 210, 182, 150, 4, code(Slot::RoadMajor));
 }
 
 void cardDashes(Canvas& canvas)
@@ -150,12 +152,12 @@ void cardDashes(Canvas& canvas)
     const int16_t cycles[4][2] = { { 2, 2 }, { 3, 3 }, { 4, 4 }, { 3, 6 } };
     int16_t y = 60;
     for (auto& c : cycles) {
-        canvas.dashedLine(34, y, 206, y, 2, c[0], c[1], code(Slot::Path));
+        canvas.dashedLine(44, y, 196, y, 2, c[0], c[1], code(Slot::Path));
         y = static_cast<int16_t>(y + 18);
     }
     y = static_cast<int16_t>(y + 10);
     for (auto& c : cycles) {
-        canvas.dashedLine(34, y, 206, y, 3, c[0], c[1], code(Slot::Path));
+        canvas.dashedLine(44, y, 196, y, 3, c[0], c[1], code(Slot::Path));
         y = static_cast<int16_t>(y + 18);
     }
 }
@@ -169,13 +171,21 @@ void drawReference(Canvas& canvas)
     // reference is a thing the display does rather than a thing a camera is
     // asked to believe.
     const uint8_t neutrals[4] = { 0xFF, 0xEA, 0xD5, 0xC0 };
-    // x < 16 and x > 224 clears the 64-code grid, which spans 16..224, so no
-    // card loses a swatch to the reference. y 78..162 is the span still inside
-    // the round panel at that far out.
+    // Inboard of the bezel, not flush against it. The first version sat at
+    // x<16 and x>224 -- geometrically inside the disc, but hard against the
+    // curve where the bezel shadows the glass, and small. In the 2026-08-19
+    // photographs they were legible by eye and could not be registered
+    // automatically, which is half a reference. 24x30 at x 16..40 and 200..224
+    // sits clear of the shadow with margin: at x=28 the disc spans y 43..197,
+    // so the whole strip is comfortably inside it.
+    //
+    // Cards keep their content within x 44..196 to leave this alone. That
+    // costs every card a little width and is the reason the palette grid is
+    // 19 px cells rather than 26.
     for (int i = 0; i < 4; ++i) {
-        const int16_t y = static_cast<int16_t>(78 + i * 21);
-        canvas.fillRect(0,   y, 16, 21, neutrals[i]);
-        canvas.fillRect(224, y, 16, 21, neutrals[i]);
+        const int16_t y = static_cast<int16_t>(60 + i * 30);
+        canvas.fillRect(16,  y, 24, 30, neutrals[i]);
+        canvas.fillRect(200, y, 24, 30, neutrals[i]);
     }
 }
 
@@ -188,7 +198,7 @@ void cardChannelRamps(Canvas& canvas)
     // large one and "is one quantum one step" is a judgement about area.
     // The neutral ramp is not repeated here -- it is on every card already, as
     // the reference.
-    constexpr int16_t x0 = 40, w = 40, h = 44;
+    constexpr int16_t x0 = 44, w = 38, h = 44;
     int16_t y = 40;
     for (int ch = 0; ch < 3; ++ch) {
         for (uint8_t lv = 0; lv < 4; ++lv) {
@@ -228,8 +238,8 @@ void cardCurves(Canvas& canvas)
     // point in this library, and a curve is exactly where an integer
     // approximation would become the thing under test instead of the subject.
     const Pt sweep[] = {
-        {  38, 120 }, {  56,  98 }, {  78,  84 }, { 102,  80 },
-        { 126,  86 }, { 148, 100 }, { 168, 118 }, { 186, 136 }, { 202, 150 },
+        {  46, 120 }, {  62,  98 }, {  82,  84 }, { 104,  80 },
+        { 125,  86 }, { 145, 100 }, { 163, 118 }, { 179, 136 }, { 194, 150 },
     };
     const int nPts = static_cast<int>(sizeof(sweep) / sizeof(sweep[0]));
     const struct { int16_t dy; int16_t w; uint8_t ink; } rows[] = {
@@ -254,11 +264,17 @@ void cardTextBedFills(Canvas& canvas, uint8_t upper, uint8_t lower)
     canvas.clear(code(Slot::Paper));
     // Aligned to where the view puts the two caption lines in card mode, so
     // the glyphs land on the fill rather than beside it.
-    canvas.fillRect(34, 176, 172, 22, upper);
-    canvas.fillRect(34, 198, 172, 22, lower);
+    // Wider than kContentInset on purpose: the reference strips stop at y=180
+    // and these bands live at 176..220, so they barely meet. The bands need to
+    // be wider than the caption they sit under, or the glyphs hang off the fill
+    // and the halo is being judged against paper instead.
+    canvas.fillRect(30, 176, 180, 22, upper);
+    canvas.fillRect(30, 198, 180, 22, lower);
 }
 
-void cardTraceOverSlots(Canvas& canvas)
+/// Every basemap slot as a band, paper between, narrower at the top and bottom
+/// where a round panel would clip a full-width rect.
+void drawSlotBands(Canvas& canvas)
 {
     canvas.clear(code(Slot::Paper));
     // Rule R5 -- "the trace must win against every basemap colour" -- was only
@@ -269,15 +285,48 @@ void cardTraceOverSlots(Canvas& canvas)
     const int16_t top = static_cast<int16_t>((240 - n * (bandH + 2)) / 2);
     for (int i = 0; i < n; ++i) {
         const int16_t y = static_cast<int16_t>(top + i * (bandH + 2));
-        const int16_t inset = static_cast<int16_t>((i < 2 || i >= n - 2) ? 58 : kInset);
+        const int16_t inset = static_cast<int16_t>((i < 2 || i >= n - 2) ? 64 : kContentInset);
         canvas.fillRect(inset, y, static_cast<int16_t>(240 - 2 * inset), bandH,
                         kSlots[i].code);
     }
+}
+
+/// Top and bottom of the band stack, so a trace can be drawn across all of it.
+int16_t slotBandsTop()
+{
+    const int n = static_cast<int>(Slot::Count);
+    return static_cast<int16_t>((240 - n * 17) / 2);
+}
+int16_t slotBandsBottom() { return static_cast<int16_t>(slotBandsTop() + static_cast<int>(Slot::Count) * 17); }
+
+void cardTraceOverSlots(Canvas& canvas)
+{
+    drawSlotBands(canvas);
     // Diagonal, so the trace crosses every band and does it at an angle --
     // which is where a 3 px line is thinnest in practice, and where the day
     // variants' trace-red-against-road-maroon problem showed up indoors.
-    const int16_t bot = static_cast<int16_t>(top + n * (bandH + 2));
-    canvas.thickLine(52, top, 188, bot, 3, code(Slot::Trace));
+    canvas.thickLine(56, slotBandsTop(), 184, slotBandsBottom(), 3, code(Slot::Trace));
+}
+
+/// The remedy, next to the thing it is meant to remedy, in one frame.
+///
+/// Left line is the trace as the spec draws it today. Right line is the same
+/// ink at the same width with a `paper` casing under it. Both cross every
+/// slot, in the same light, in the same photograph -- which is the only way to
+/// answer "does casing rescue R5" without arguing about two exposures.
+///
+/// Why the variants draw this *after* the LUT: `kHalo` is `paper`, and a
+/// variant remaps paper along with everything else. In `night` paper becomes
+/// dark, so a casing applied before the restyle would put a dark halo on a
+/// dark ground and rescue nothing. Drawing it afterwards is also the honest
+/// model of the real thing -- the trace is app-drawn over a restyled basemap,
+/// not part of the basemap being restyled.
+void drawCasedComparison(Canvas& canvas)
+{
+    const int16_t t = slotBandsTop(), b = slotBandsBottom();
+    canvas.thickLine(62, t, 102, b, 3, code(Slot::Trace));
+    canvas.thickLine(144, t, 184, b, 5, kHalo);
+    canvas.thickLine(144, t, 184, b, 3, code(Slot::Trace));
 }
 
 } // namespace
@@ -305,6 +354,10 @@ const char* cardName(Card c)
         case Card::TraceSlotsNight:    return "trace/slots night";
         case Card::TraceSlotsContrast: return "trace/slots contrast";
         case Card::TraceSlotsTrail:    return "trace/slots trail";
+        case Card::TraceCasedDay:      return "cased day";
+        case Card::TraceCasedNight:    return "cased night";
+        case Card::TraceCasedContrast: return "cased contrast";
+        case Card::TraceCasedTrail:    return "cased trail";
         default:                    return "?";
     }
 }
@@ -332,6 +385,10 @@ const char* cardQuestion(Card c)
         case Card::TraceSlotsNight:    return "trace over every slot";
         case Card::TraceSlotsContrast: return "trace over every slot";
         case Card::TraceSlotsTrail:    return "trace over every slot";
+        case Card::TraceCasedDay:      return "cased vs uncased";
+        case Card::TraceCasedNight:    return "cased vs uncased";
+        case Card::TraceCasedContrast: return "cased vs uncased";
+        case Card::TraceCasedTrail:    return "cased vs uncased";
         default:                    return "";
     }
 }
@@ -414,6 +471,25 @@ static void drawSubject(Card c, Canvas& canvas,
                                                               : Variant::Trail;
             buildLut(v, lut);
             canvas.applyLut(lut);
+            return;
+        }
+
+        case Card::TraceCasedDay:
+            drawSlotBands(canvas);
+            drawCasedComparison(canvas);
+            return;
+
+        case Card::TraceCasedNight:
+        case Card::TraceCasedContrast:
+        case Card::TraceCasedTrail: {
+            drawSlotBands(canvas);
+            const Variant v = (c == Card::TraceCasedNight)    ? Variant::Night
+                            : (c == Card::TraceCasedContrast) ? Variant::HighContrast
+                                                              : Variant::Trail;
+            buildLut(v, lut);
+            canvas.applyLut(lut);
+            // After the LUT, deliberately. See drawCasedComparison.
+            drawCasedComparison(canvas);
             return;
         }
 

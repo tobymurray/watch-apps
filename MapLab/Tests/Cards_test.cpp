@@ -66,15 +66,15 @@ TEST(Cards, EveryCardCarriesTheReferencePatches)
     // would produce a frame that cannot be normalised, and nothing on the
     // watch would say so.
     Bed bed;
-    const int16_t probeY[4] = { 88, 109, 130, 151 };
+    const int16_t probeY[4] = { 75, 105, 135, 165 };
     const uint8_t want[4]   = { 0xFF, 0xEA, 0xD5, 0xC0 };
     for (int i = 0; i < static_cast<int>(Card::Count); ++i) {
         const Card c = static_cast<Card>(i);
         bed.draw(c);
         for (int k = 0; k < 4; ++k) {
             const int idx = probeY[k] * 240;
-            EXPECT_EQ(bed.px[idx + 4],   want[k]) << "left reference, card " << cardName(c);
-            EXPECT_EQ(bed.px[idx + 232], want[k]) << "right reference, card " << cardName(c);
+            EXPECT_EQ(bed.px[idx + 28],  want[k]) << "left reference, card " << cardName(c);
+            EXPECT_EQ(bed.px[idx + 212], want[k]) << "right reference, card " << cardName(c);
         }
     }
 }
@@ -85,8 +85,8 @@ TEST(Cards, TheReferenceSurvivesAVariantLut)
     // it before the LUT and night would hand back a recoloured "neutral" ramp.
     Bed bed;
     bed.draw(Card::TraceSlotsNight);
-    EXPECT_EQ(bed.px[88 * 240 + 4], 0xFF);
-    EXPECT_EQ(bed.px[151 * 240 + 4], 0xC0);
+    EXPECT_EQ(bed.px[75 * 240 + 28], 0xFF);
+    EXPECT_EQ(bed.px[165 * 240 + 28], 0xC0);
 }
 
 TEST(Cards, TheTraceSlotCardsPutTheTraceOverEverySlot)
@@ -111,9 +111,9 @@ TEST(Cards, TheCoarseSceneFillsThePanelRatherThanSittingInIt)
     Bed bed;
     bed.draw(Card::SceneCoarse);
     // Sample the four quadrant centres; each must carry drawn content, not the
-    // paper the old card left there. Reference bars are at x<16 and x>224, so
-    // these probes miss them.
-    const int16_t qx[4] = { 60, 180, 60, 180 };
+    // paper the old card left there. Reference strips are at x 16..40 and
+    // x 200..224, so these probes are kept clear of them.
+    const int16_t qx[4] = { 70, 170, 70, 170 };
     const int16_t qy[4] = { 60, 60, 180, 180 };
     for (int q = 0; q < 4; ++q) {
         bool drawn = false;
@@ -126,6 +126,39 @@ TEST(Cards, TheCoarseSceneFillsThePanelRatherThanSittingInIt)
         }
         EXPECT_TRUE(drawn) << "quadrant " << q << " of the half-scale card is empty";
     }
+}
+
+TEST(Cards, TheCasedCardsPutCasingAndNoCasingInOneFrame)
+{
+    // The whole point of these cards is a within-frame comparison, so both
+    // lines have to be present: trace ink twice, and `paper` casing that is
+    // not merely the card's background showing through.
+    Bed bed;
+    bed.draw(Card::TraceCasedDay);
+    EXPECT_EQ(bed.codes().count(code(Slot::Trace)), 1u);
+    // The casing sits directly left of the right-hand trace line, over a band
+    // that is not paper -- so finding kHalo there means casing, not ground.
+    const int16_t y = 150;
+    bool casingOverANonPaperBand = false;
+    for (int16_t x = 130; x < 200; ++x) {
+        if (bed.px[y * 240 + x] == kHalo && bed.px[y * 240 + x - 6] != kHalo
+            && bed.px[y * 240 + x - 6] != code(Slot::Paper)) {
+            casingOverANonPaperBand = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(casingOverANonPaperBand) << "no paper casing found beside the cased trace";
+}
+
+TEST(Cards, TheCasedVariantsDrawTheirCasingAfterTheLut)
+{
+    // If casing were applied before the variant LUT, night would remap `paper`
+    // to a dark code and the halo would vanish into a dark ground -- rescuing
+    // nothing. The casing must still be literal kHalo after the restyle.
+    Bed bed;
+    bed.draw(Card::TraceCasedNight);
+    EXPECT_EQ(bed.codes().count(kHalo), 1u)
+        << "night's casing was LUT'd away; it must be drawn after applyLut";
 }
 
 TEST(Cards, ThePaletteCardShowsAllSixtyFourCodes)

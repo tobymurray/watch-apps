@@ -88,6 +88,15 @@ enum class Card : uint8_t {
     TraceSlotsNight,
     TraceSlotsContrast,
     TraceSlotsTrail,
+
+    // ---- added after the 2026-08-19 lighting series refuted R5. These carry
+    // the proposed remedy -- a `paper` casing under the trace -- next to the
+    // uncased line, in one frame, so direct sun tests the fix rather than
+    // re-confirming the failure.
+    TraceCasedDay,
+    TraceCasedNight,
+    TraceCasedContrast,
+    TraceCasedTrail,
     Count
 };
 

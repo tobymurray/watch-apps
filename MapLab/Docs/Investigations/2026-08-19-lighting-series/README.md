@@ -84,12 +84,13 @@ and no palette change. It costs the trace one pixel of width on each side.
 The suite's instrument is the person holding the watch; these are the record.
 Two limits to keep in mind:
 
-- **The reference patches are weaker than intended.** They sit at x<16 and
-  x>224, the extreme edge of a *round* panel, where the bezel shadows them.
-  They are legible by eye but automated registration could not land on them
-  reliably, so no numeric normalisation has been done. Moving them inboard is a
-  change for after the sun session — not before, because it would break
-  comparability with both sets already taken.
+- **The reference patches were weaker than intended in these two sets.** They
+  sat at x<16 and x>224, hard against the bezel's shadow on a *round* panel:
+  legible by eye, but automated registration could not land on them, so no
+  numeric normalisation was done on these frames. **Fixed in build 1.2.0** —
+  24×30 strips at x 16..40 and x 200..224, with every card's subject pulled
+  inside x 44..196 to make room. The sun set will be normalisable; these two
+  sets stay as they are, and are compared by eye.
 - **The second caption line truncates** ("does the halo sa…"), a consequence of
   narrowing that line to a 156 px chord. Cosmetic: the card's identity is on the
   line above and every card's subject is unaffected.

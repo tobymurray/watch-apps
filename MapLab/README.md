@@ -5,7 +5,7 @@ A foreground `Utility` app that measures, on the watch, everything the
 It renders vector geometry with a candidate rasteriser, times every stage,
 blits through the real framebuffer path, exercises the filesystem the way a
 per-tile layer directory would, finds where the app-liveness watchdog fires,
-and puts twenty cartography cards on the panel to be looked at.
+and puts twenty-four cartography cards on the panel to be looked at.
 
 **Why now.** Every cartographic decision behind the map work so far was taken
 against a *colorimetric model* of this panel and a set of simulated renders:
@@ -76,7 +76,7 @@ it, `R2` back. Four modes.
   the log as it completes. One bench at a time is deliberate: a suite that ran
   to completion inside one call would block the GUI thread for the best part of
   a minute, which is the thing the staircase exists to find the limit of.
-- **cards** — the twenty visual cards, full screen, one at a time.
+- **cards** — the twenty-four visual cards, full screen, one at a time.
 - **watchdog stair** — a deliberate, one-press-per-step ladder of GUI-thread
   blocks. It says on screen that it may restart the watch, because it may.
 - **exit**.
@@ -123,7 +123,7 @@ measurably faster and looks identical.
 
 ## The cards
 
-Twenty, each asking one question. The person holding the watch is the
+Twenty-four, each asking one question. The person holding the watch is the
 instrument, so the question is on the screen under the card — on the bottom
 arc, clear of the card, and drawn as `road_major` glyphs with a `paper` halo
 rather than as plain white, so that the text cards ask what their caption says
@@ -135,8 +135,12 @@ their numbering is fixed because the investigation bundle cites it. **Cards
 question the suite could not answer.
 
 **Every card carries reference patches** — four neutral codes (`r=g=b` at each
-quantum level) in two 16 px bars at the far left and right, drawn last so a
-variant LUT never touches them. They are not part of any card's subject. They
+quantum level) in two 24×30 strips at x 16..40 and x 200..224, drawn last so a
+variant LUT never touches them. Cards keep their subject inside x 44..196 to
+leave them alone; scene cards are the deliberate exception, since a map is the
+whole panel. The first version put them flush against the bezel at x<16 and
+x>224, where the photographs of 2026-08-19 showed them legible by eye but
+impossible to register automatically — half a reference. They are not part of any card's subject. They
 are there because a phone camera applies auto white balance and auto exposure
 per frame, so without a known value in the frame no two photographs can be
 compared — least of all an indoor one against a daylight one, which is the
@@ -168,6 +172,20 @@ session raised and could not settle:
 | text dark | the halo over `water` and `road_major` | card 5's fills are all light. The dark end is the case a halo is supposed to be unnecessary for, and the easiest to be wrong about |
 | trace/slots day · night · contrast · trail | the trace crossing **every** slot, at 3 px, on a diagonal, in each variant | rule R5 says the trace must win against every basemap colour in every variant. Card 12 only ever tested it against whatever colours a generated scene happened to put underneath — and indoors the day variants looked like the weak case, trace red against road maroon |
 
+Added after the lighting series refuted R5:
+
+| card | asks | why it was added |
+| --- | --- | --- |
+| cased day · night · contrast · trail | the same slot bands crossed twice — once by the trace as drawn today, once by the same ink with a `paper` casing under it | R5 fails because `trace` (`0xC3`), `road_minor` (`0xC1`) and `road_major` (`0xC0`) are r3/r1/r0 with green and blue zero in all three: the same hue, separated by lightness alone. Casing wins against any colour whatever its hue. Both lines are in **one frame** so the comparison survives two different exposures — and so the sun session tests the remedy instead of re-confirming the failure |
+
+**The cased variants draw their casing after the LUT, deliberately.** `paper` is
+what a variant remaps hardest — in `night` it becomes dark — so a casing applied
+before the restyle would put a dark halo on a dark ground and rescue nothing.
+Drawing it afterwards is also the honest model: the trace is app-drawn over a
+restyled basemap, not part of the basemap being restyled. Cards 18–20 draw the
+trace *before* the LUT and cards 22–24 draw it *after*, so the pair also
+answers whether the trace belongs inside the restyle at all.
+
 Look at them **indoors and in sunlight** — this is a reflective panel, and its
 whole argument is about ink range. Photograph them into
 `Docs/Investigations/<date>-<slug>/` with what you concluded, including what
@@ -187,7 +205,7 @@ MapLab/
     │   ├── Canvas.{hpp,cpp}      # the candidate rasteriser
     │   ├── VecScene.{hpp,cpp}    # a draft wire format, decoder and generator
     │   ├── SceneRender.{hpp,cpp} # the spec's style, applied
-    │   ├── Cards.{hpp,cpp}       # the twenty pictures
+    │   ├── Cards.{hpp,cpp}       # the twenty-four pictures
     │   ├── Bench.{hpp}           # the timing harness
     │   ├── BenchLog.{hpp,cpp}    # the CSV, normatively specified in the header
     │   ├── BenchSuite.{hpp,cpp}  # the benches themselves

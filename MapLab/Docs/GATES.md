@@ -281,6 +281,18 @@ lightness, which is what R5 actually demands. `road_major` is already drawn
 cased and casing survived both conditions on the line-weights card. No new
 code, no palette change, one pixel of width each side.
 
+**Cards 21–24 carry that remedy onto the panel** (build 1.2.0), uncased and
+cased in one frame so the comparison survives two exposures. Direct sun
+therefore tests the fix rather than re-confirming the failure — which matters,
+because a sunny day cannot be scheduled and the failure is already established.
+
+Those cards draw their casing **after** the variant LUT. `paper` is exactly
+what a restyle remaps hardest, so a casing applied before it would put a dark
+halo on a dark ground in `night` and rescue nothing. Since cards 18–20 draw the
+trace before the LUT and 22–24 draw it after, the pair also answers a question
+nobody had asked: whether the app-drawn trace belongs inside the basemap
+restyle at all.
+
 Changing the palette instead would mean giving the trace a chroma component to
 get it off the pure-red axis — a larger change, and one that spends a colour
 the 14 slots do not have going spare.
