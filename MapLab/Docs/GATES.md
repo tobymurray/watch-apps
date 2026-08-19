@@ -10,14 +10,19 @@ something confirmed), **UNVERIFIED**, **REFUTED**.
 Update it from `Tools/maplab_report.py` output after every hardware session,
 and cite the run id so a number can be traced back to the rows it came from.
 
+Sessions so far:
+[**2026-08-19 — the first hardware session**](Investigations/2026-08-19-first-hardware-session),
+which holds the log and the card photographs every device figure below is
+drawn from.
+
 ## The gates
 
 | | Gate | Status | Evidence |
 | --- | --- | --- | --- |
 | **A** | Size: is a vector pack ≥10x smaller than the RLE raster equivalent? | **UNVERIFIED** | Host-side. Not MapLab's question — it belongs to the packer, against the Athens extent |
 | **B** | RAM: does the renderer's static set link into `RunMap`? | **CONFIRMED — fits** | `Tools/gate_b_link_test.sh`, 2026-08-18, SDK at `apps-v1.4.0`. See below |
-| **C** | Time: does a dense viewport render inside 100 ms? | **UNVERIFIED** | Benches R05–R08 + B01. Host figures below are not device figures |
-| **D** | Legibility: does the palette-first cartography hold up on glass? | **UNVERIFIED** | The twelve cards. Needs eyes, a camera, and daylight |
+| **C** | Time: does a dense viewport render inside 100 ms? | **REFUTED at city density; CONFIRMED to suburban** | Runs 56/151, 2026-08-19. Rural 24.0 ms, suburban 70.2 ms, city 160.5 ms. See below |
+| **D** | Legibility: does the palette-first cartography hold up on glass? | **PARTLY REFUTED — R5 fails** | 20 cards under indoor and overcast, 7.1 EV apart, 2026-08-19. The trace loses against the road slots; direct sun outstanding. See below |
 
 ## Gate B, in detail — the one this app has already settled
 
@@ -67,20 +72,84 @@ way and both results were discarded. It is written down here because the
 failure is invisible — an instrument that always says yes looks exactly like
 good news.
 
+## Gate C, in detail — the session of 2026-08-19
+
+Measured as a curve rather than a point, which is what makes the verdict
+actionable: the pivot does not fail everywhere, it fails downtown.
+
+| Scene | Features | Points | Render | Verdict vs 100 ms |
+| --- | --- | --- | --- | --- |
+| R06 rural | 70 | 1,428 | 24.0 ms | passes, 4.2× headroom |
+| R07 suburban | 164 | 3,644 | 70.2 ms | passes, ~30% spare |
+| R08 city centre | 433 | 8,338 | **160.5 ms** | **fails, 1.6× over** |
+
+Blit adds 719 µs and is not material.
+
+**The route to Gate C is not the wire format.** R05 puts decode+transform at
+5.46 ms — 3.4% of the city render. The other 96.6% is rasterising. A perfect,
+zero-cost format buys back 3%, so "design a faster format" cannot close a 1.6×
+gap. What can: a rasteriser about 1.6× faster, or ~5,200 points instead of
+8,338 (a ~38% density cut, which is generalisation's job). At 19.25 µs/point
+that arithmetic is now measured rather than assumed.
+
+**The watchdog is not the binding constraint.** W01 survived every step of the
+staircase including 16 s (see below), so a 160 ms render is three orders of
+magnitude short of taking the device down. Gate C is a smoothness budget, not a
+stability one — which is a different kind of failure and admits different
+remedies.
+
+**The I/O cost arrives before the first pixel.** I07's 638 µs per seek is the
+per-(tile, layer) cost of the layer directory. A 2×2 viewport with six layers
+is 24 seeks ≈ 15 ms, i.e. 15% of the whole frame budget spent before anything
+is drawn. That belongs in the format's design, not in its optimisation.
+
+## W01 — the stair was exhausted before the watchdog was found
+
+Seven steps ran in run 246 (100 ms → 8 s) and the eighth in run 946
+(16,000 ms target, 16,001 ms measured, `valid=1`). **Every step survived. No
+step has ever failed**, so the ladder is exhausted top to bottom without the
+watchdog once firing.
+
+The finding is therefore a **lower bound, not a ceiling**: the watchdog
+tolerates **at least 16 s** of blocked GUI thread. The instrument tops out at
+16 s by construction, so it cannot say where the limit is, only that it is
+somewhere above the top of the ladder. The previous anecdote (~10 s survived)
+is consistent with this and is neither confirmed nor refuted as a *limit*.
+
+**Two independent signals agree that nothing fired.** Each step writes an
+`about-to-block` row before it blocks, and every one of the eight is followed
+by its `survived` row — no missing row, which is the designed detector. Beyond
+that, uptime climbs monotonically across all five R rows in the log
+(56,193 → 946,203 ms) and never jumps backwards, which per `BenchLog.hpp` means
+app restarts within a single boot and **no reboot at any point in the session**.
+The device was never taken down.
+
+Extending the ladder is the only way to close this, and it is worth asking
+whether the answer is worth the reboots — nothing in the render path is within
+two orders of magnitude of 16 s. A 160.5 ms city render sits ~100× below the
+lowest step that is known to be safe.
+
 ## Numbers this app takes, and what they replace
+
+All device figures below are from runs 56 and 151 (2026-08-19, build 1.0.0),
+two independent passes of the same suite that agree to within 0.3%; run 942 is
+a partial third pass (R01–R03 only) and corroborates those three to within
+0.4%. The watchdog figures are runs 246 and 946. Every row cited carries
+`valid=1`, and **no row in the file is marked `INCOMPLETE`**, so no render
+dropped a span or clipped a feature.
 
 | Bench | Number | Previously | Status |
 | --- | --- | --- | --- |
-| R08 | dense viewport render | never measured | **UNVERIFIED** |
-| R05 | decode+transform share of a render | never measured | **UNVERIFIED** |
-| R09 | 64-entry restyle LUT over a full canvas | charter X7, "proven in simulation, per-frame cost unmeasured" | **UNVERIFIED** |
-| B01/B02 | full-screen canvas blit vs the 2×2 raster mosaic | never compared | **UNVERIFIED** |
-| I02 | first filesystem touch after app start | ~113 ms, measured on 1.3 | **UNVERIFIED on 1.4** |
-| I06 | 64 KiB read | 6–9 ms per tile, measured on 1.3 | **UNVERIFIED on 1.4** |
-| I07 | 512 B read after a seek | never measured; the layer directory's whole cost model | **UNVERIFIED** |
-| I11 | a real `.rawtiles` tile read | 6–9 ms on 1.3 | **UNVERIFIED on 1.4** |
-| W01 | longest GUI-thread block the watchdog tolerates | anecdote: ~10 s survived, 201 MB scan did not | **UNVERIFIED** |
-| Cards | the palette, the weights, the dash, the variants | a colorimetric model and simulated renders | **UNVERIFIED** |
+| R08 | dense viewport render | never measured | **CONFIRMED 160.5 ms** — 1.6× over budget |
+| R05 | decode+transform share of a render | never measured | **CONFIRMED 5.46 ms = 3.4% of R08** |
+| R09 | 64-entry restyle LUT over a full canvas | charter X7, "proven in simulation, per-frame cost unmeasured" | **CONFIRMED 4.39 ms**, ~3% on top of a city render |
+| B01/B02 | full-screen canvas blit vs the 2×2 raster mosaic | never compared | **CONFIRMED 719 µs vs 813 µs** (canvas 1.13× faster) |
+| I02 | first filesystem touch after app start | ~113 ms, measured on 1.3 | **CONFIRMED 32.0 ms on 1.4** — 3.5× better |
+| I06 | 64 KiB read | 6–9 ms per tile, measured on 1.3 | **CONFIRMED 8.48 ms on 1.4** — top of the 1.3 range |
+| I07 | 512 B read after a seek | never measured; the layer directory's whole cost model | **CONFIRMED 638 µs per (tile, layer)** |
+| I11 | a real `.rawtiles` tile read | 6–9 ms on 1.3 | **CONFIRMED 9.04 ms on 1.4**, 687-tile pack |
+| W01 | longest GUI-thread block the watchdog tolerates | anecdote: ~10 s survived, 201 MB scan did not | **CONFIRMED ≥16 s** (run 946); ceiling not found, ladder exhausted |
+| Cards | the palette, the weights, the dash, the variants | a colorimetric model and simulated renders | **UNVERIFIED** — indoor half taken, daylight half outstanding |
 
 ## Host figures, for scale only
 
@@ -88,16 +157,139 @@ Taken on an Apple-silicon laptop, and recorded so that a device number can be
 sanity-checked rather than compared. The device is a 160 MHz Cortex-M33; expect
 one to two orders of magnitude.
 
-| Scene | Encoded | Features | Points | Host render |
-| --- | --- | --- | --- | --- |
-| rural | 4,263 B | 70 | 1,428 | ~100 µs |
-| suburban | 8,429 B | 164 | 3,644 | ~291 µs |
-| city centre | 16,787 B | 433 | 8,338 | ~670 µs |
+| Scene | Encoded | Features | Points | Host render | Device (run 56) | Ratio |
+| --- | --- | --- | --- | --- | --- | --- |
+| rural | 4,263 B | 70 | 1,428 | ~100 µs | 24.0 ms | ~240× |
+| suburban | 8,429 B | 164 | 3,644 | ~291 µs | 70.2 ms | ~241× |
+| city centre | 16,787 B | 433 | 8,338 | ~670 µs | 160.5 ms | ~240× |
+
+**The ratio is constant to within 0.5% across a 6× density range**, which is
+more than this table was built to claim. It means the host figure is a usable
+predictor of the device figure under a single scale factor of ~240, so a
+rasteriser change can be evaluated on a laptop and only confirmed on glass.
+Treat that as a working rule with three points behind it, not a law — and note
+it holds for *this* rasteriser, whose inner loop is integer and cache-resident
+on both machines. It would not survive a change that added floating point.
 
 **The presets are judgements, not counts from a real extract**, and the report
 prints cost per feature and per point precisely so that a corrected preset does
 not invalidate a measurement. Counting features in a real z14 tile of a
 European city centre is the work that would upgrade them.
+
+## Gate D — the indoor half, 2026-08-19
+
+Twelve cards photographed on a wrist, **backlight off, well-lit interior
+room** — the photographs are in
+[`Investigations/2026-08-19-first-hardware-session/cards/`](Investigations/2026-08-19-first-hardware-session/cards). That is one of the two conditions the card suite asks for; the daylight
+half is outstanding, and it is the half the palette's whole argument is about.
+
+**What these photographs can and cannot carry.** The suite's stated instrument
+is the person holding the watch; these are the record, not the verdict. They
+are the camera originals, 3000×4000 at quality 95, pulled off the phone over
+`adb` and cropped to the panel without resampling — roughly 8 photo pixels per
+panel pixel. Two limits remain and both are the phone's, not the transfer's:
+JPEG 4:2:0 chroma subsampling, and **auto white balance** (EXIF
+`WhiteBalance: 0`), which applies a different colour transform to every frame.
+So slots still cannot be compared rigorously *between* cards, and these frames
+cannot be compared against a future daylight set at all. Within a single frame
+they are sound. Cards 3, 4 and 6–8 are geometry and are unaffected.
+
+| Card | Reading from the photographs | Confidence |
+| --- | --- | --- |
+| 1 · 64 codes | Steps are **visibly unequal, and compress at the light end**: neighbours in the dark rows separate strongly, several adjacent pale patches in the lower rows are near-indistinguishable. E1 assumes equal steps and says so — this is the first evidence against it. The card's own caption also washes out over the paler patches, which is card 5's question answered incidentally | moderate |
+| 2 · slots | The palest band **does effectively vanish** against paper, and the warm taupe band third down is marginal — a low-contrast warm grey a shade off the ground. Every saturated slot (greens, blues, brown, reds) separates cleanly, as do the two inset dark slots. White text over the saturated mid-dark fills is crisp | moderate |
+| 3 · weights | 1 px lines are followable but weak. Diagonals show visible staircase — no antialiasing anywhere, as designed | good |
+| 4 · dashes | The finest cycle **reads as a continuous line, not a dash**; the dash character only arrives a couple of steps up | good |
+| 5 · text | The `paper` halo saves text over dark fills cleanly. Over light and mid fills it is marginal — halo and fill converge | moderate |
+| 6 · scene 1× | Reads as a map. Roads, water and park all separate | good |
+| 7 · scene 2× | Overzoom holds up — sparser, heavier strokes, still legible | good |
+| 8 · scene ½× | **The weakest card.** Roads merge into a tangle; individual features are unrecoverable. Generalisation is not dropping enough at coarse zoom | good |
+| 9 · night | Trace wins decisively against the dark ground | good |
+| 10 · contrast | Trace visible, but competing with near-black roads | moderate |
+| 11 · trail | Trace wins clearly against the muted basemap | good |
+| 12 · trace | Day variant: the trace red and the road maroon **share a hue family**, and this is where R5 is weakest | moderate |
+
+Three things worth carrying forward, none of them closeable indoors:
+
+**Rule R5 is at risk in the day variants, not in night or trail.** The trace
+must win against every basemap colour; against a dark maroon road at 2 px it is
+separated mostly by lightness, and lightness is the axis a reflective panel
+loses first in bright light. This is the single most important thing to check
+in sunlight.
+
+**Card 8 is a cartography finding, not a rendering one.** The ½× scene is too
+dense to read, which says the zoom ladder's generalisation is under-aggressive
+at coarse zoom. That is the same lever Gate C needs pulled (~38% fewer points),
+so one change may serve both — the strongest cross-gate result of the session.
+
+**Card 4 sets a floor on dash design.** A dash cycle finer than the second step
+is indistinguishable from a solid line at 2 px, so the trail styling cannot use
+the finest cycles regardless of what the spec's model predicted.
+
+### What changed in the suite because of this session
+
+The indoor half raised three things the twelve cards could not settle, so the
+suite was extended to twenty before the daylight session rather than after it.
+Cards 1–12 keep their numbers; the investigation bundle cites them.
+
+| Added | Settles |
+| --- | --- |
+| `ramps` | whether the light-end compression seen on card 1 is real, in blocks big enough to judge |
+| `slots at width` | whether a slot that survives as a 15 px band survives as a 1 px contour |
+| `curves` | whether a weight survives an angle that is neither horizontal nor 45° |
+| `text dark` | the halo over the dark fills card 5 never showed |
+| `trace/slots` ×4 variants | **rule R5 against every slot in every variant**, which is the risk this session flagged and card 12 could not test |
+
+Two defects were also fixed, both of which cost the indoor session data:
+
+- **The caption sat across the middle of the panel** (y=134–178), obscuring
+  card 1's swatches and illegible over the scene cards. It is now on the bottom
+  arc.
+- **The half-scale card drew one 120 px tile into the middle of a 240 px
+  panel**, so three quarters of it was paper and the density question was being
+  asked of a quarter of the field. It is now a 2×2 mosaic.
+
+And one that would have made the daylight session answer the wrong question:
+the text cards' glyphs were drawn **plain white with no halo at all**, while
+their caption asked "does the halo save it". They are now `road_major` ink with
+a `paper` halo.
+
+## R5 is refuted, and the palette is why — 2026-08-19 lighting series
+
+Full write-up and both photograph sets:
+[`Investigations/2026-08-19-lighting-series`](Investigations/2026-08-19-lighting-series).
+
+Rule R5 says the trace must win against every basemap colour in every variant.
+It does not. Against `road_minor` it is marginal indoors and close to gone under
+overcast, and the cause is structural rather than a matter of judgement:
+
+| Slot | Code | Channels | Model L* |
+| --- | --- | --- | --- |
+| `trace` | `0xC3` | r3 g0 b0 | 51.76 |
+| `road_minor` | `0xC1` | r1 g0 b0 | 36.58 |
+| `road_major` | `0xC0` | r0 g0 b0 | 23.67 |
+
+Green and blue are zero in all three. They are the **same hue**, separated by
+lightness alone with no chroma difference at all — and lightness is the first
+thing a reflective panel gives up as ambient rises and the glass returns the
+sky. The control is `path` (`0xD0`, r0 g0 b1): a cool ink at the *same* modelled
+L* as `road_minor`, over which the trace stays legible in both conditions.
+
+**The remedy is one the spec already owns: case the trace.** A `paper` halo
+under the trace ink wins against any basemap colour whatever its hue or
+lightness, which is what R5 actually demands. `road_major` is already drawn
+cased and casing survived both conditions on the line-weights card. No new
+code, no palette change, one pixel of width each side.
+
+Changing the palette instead would mean giving the trace a chroma component to
+get it off the pure-red axis — a larger change, and one that spends a colour
+the 14 slots do not have going spare.
+
+**Conditions, from EXIF rather than estimate.** ISO and shutter put the two sets
+7.09 EV apart; the APEX brightness values put them 7.10 EV apart. Overcast is
+therefore ~137× the indoor room. Direct sun is a further 2–3 EV and is the
+remaining case — it adds a directional specular component that diffuse overcast
+does not have, which is what will separate glare from the panel's own ink range.
 
 ## Not measured here, deliberately
 

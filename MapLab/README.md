@@ -5,7 +5,7 @@ A foreground `Utility` app that measures, on the watch, everything the
 It renders vector geometry with a candidate rasteriser, times every stage,
 blits through the real framebuffer path, exercises the filesystem the way a
 per-tile layer directory would, finds where the app-liveness watchdog fires,
-and puts twelve cartography cards on the panel to be looked at.
+and puts twenty cartography cards on the panel to be looked at.
 
 **Why now.** Every cartographic decision behind the map work so far was taken
 against a *colorimetric model* of this panel and a set of simulated renders:
@@ -40,8 +40,32 @@ label collision grid.
 A vector renderer **replaces** the tile cache rather than joining it, so what
 it may spend is 93 KB, not 93 KB on top of the 64 KiB the cache holds today.
 
+**Gate C — the renderer is too slow downtown, and fast enough everywhere
+else.** Measured on device 2026-08-19 (runs 56/151): rural **24.0 ms**,
+suburban **70.2 ms**, city centre **160.5 ms**, against a 100 ms budget. So the
+pivot is not blocked; its dense case is. The number that decides what to do
+about it is R05: decode+transform is **3.4%** of that render, so a faster wire
+format cannot close a 1.6× gap. Only a ~1.6× faster rasteriser, or ~38% fewer
+points from generalisation, can.
+
+**The watchdog is not the constraint it was assumed to be.** The ladder was
+climbed to its top step and **every step survived, including 16 s** — the
+instrument runs out before the watchdog does. A 160 ms render sits ~100× below
+the lowest block known to be safe, so Gate C is a smoothness budget rather than
+a stability one.
+
+**Gate D is half taken.** The first twelve cards were photographed indoors with the
+backlight off; the daylight half, which is what the palette's ink-range
+argument actually rests on, is outstanding. Three findings survive the indoor
+half: rule R5 is weakest in the day variants, where the trace red and the road
+maroon share a hue family; the ½× scene is too dense to read, which points at
+the same generalisation lever Gate C needs; and the finest dash cycle reads as
+a solid line at 2 px.
+
 See [`Docs/GATES.md`](Docs/GATES.md) for the full ledger, including the
-instrument that silently measured nothing and had to be thrown away.
+instrument that silently measured nothing and had to be thrown away, and
+[`Docs/Investigations/2026-08-19-first-hardware-session/`](Docs/Investigations/2026-08-19-first-hardware-session)
+for the log and the photographs behind these numbers.
 
 ## The screen
 
@@ -52,7 +76,7 @@ it, `R2` back. Four modes.
   the log as it completes. One bench at a time is deliberate: a suite that ran
   to completion inside one call would block the GUI thread for the best part of
   a minute, which is the thing the staircase exists to find the limit of.
-- **cards** — the twelve visual cards, full screen, one at a time.
+- **cards** — the twenty visual cards, full screen, one at a time.
 - **watchdog stair** — a deliberate, one-press-per-step ladder of GUI-thread
   blocks. It says on screen that it may restart the watch, because it may.
 - **exit**.
@@ -99,8 +123,26 @@ measurably faster and looks identical.
 
 ## The cards
 
-Twelve, each asking one question. The person holding the watch is the
-instrument, so the question is on the screen under the card.
+Twenty, each asking one question. The person holding the watch is the
+instrument, so the question is on the screen under the card — on the bottom
+arc, clear of the card, and drawn as `road_major` glyphs with a `paper` halo
+rather than as plain white, so that the text cards ask what their caption says
+they ask.
+
+**Cards 1–12 are the original suite**, photographed indoors on 2026-08-19;
+their numbering is fixed because the investigation bundle cites it. **Cards
+13–20 were added after that session**, each because the indoor half raised a
+question the suite could not answer.
+
+**Every card carries reference patches** — four neutral codes (`r=g=b` at each
+quantum level) in two 16 px bars at the far left and right, drawn last so a
+variant LUT never touches them. They are not part of any card's subject. They
+are there because a phone camera applies auto white balance and auto exposure
+per frame, so without a known value in the frame no two photographs can be
+compared — least of all an indoor one against a daylight one, which is the
+comparison Gate D turns on. Two bars rather than one because a reflective panel
+glares directionally: a left-right difference in the same four patches is an
+illumination gradient across the glass, not a fact about the palette.
 
 | card | asks |
 | --- | --- |
@@ -111,9 +153,20 @@ instrument, so the question is on the screen under the card.
 | text | does a `paper` halo save aliased text over each fill |
 | scene 1× | is this a map |
 | scene 2× | overzoom — the sparse-ladder question, and most of the size win |
-| scene ½× | is a coarse zoom too dense, i.e. is generalisation doing its job |
+| scene ½× | is a coarse zoom too dense, i.e. is generalisation doing its job. A 2×2 of tiles filling the panel, because density is judged over a field |
 | night / contrast / trail | the three LUT variants, on glass instead of in simulation |
 | trace | does the trace win against every basemap colour, in every variant (rule R5) |
+
+Added after the 2026-08-19 indoor session, each answering something that
+session raised and could not settle:
+
+| card | asks | why it was added |
+| --- | --- | --- |
+| ramps | one quantum = one step, per channel, in 40×44 blocks | the 64-code grid asks this in 26 px cells, and a small patch of a code reads darker than a large one. Indoors the steps looked **unequal and compressed at the light end**; this is the card that can confirm it |
+| slots at width | which slots vanish at 1, 2 and 3 px | card 2 asks the question of 15 px bands. A slot that survives as a band can still vanish as a 1 px contour, which is the width the spec actually spends it at |
+| curves | does a weight survive a curve | card 3 tests a horizontal and a 45° diagonal — the two angles a non-antialiased rasteriser is best at. A road is neither |
+| text dark | the halo over `water` and `road_major` | card 5's fills are all light. The dark end is the case a halo is supposed to be unnecessary for, and the easiest to be wrong about |
+| trace/slots day · night · contrast · trail | the trace crossing **every** slot, at 3 px, on a diagonal, in each variant | rule R5 says the trace must win against every basemap colour in every variant. Card 12 only ever tested it against whatever colours a generated scene happened to put underneath — and indoors the day variants looked like the weak case, trace red against road maroon |
 
 Look at them **indoors and in sunlight** — this is a reflective panel, and its
 whole argument is about ink range. Photograph them into
@@ -134,7 +187,7 @@ MapLab/
     │   ├── Canvas.{hpp,cpp}      # the candidate rasteriser
     │   ├── VecScene.{hpp,cpp}    # a draft wire format, decoder and generator
     │   ├── SceneRender.{hpp,cpp} # the spec's style, applied
-    │   ├── Cards.{hpp,cpp}       # the twelve pictures
+    │   ├── Cards.{hpp,cpp}       # the twenty pictures
     │   ├── Bench.{hpp}           # the timing harness
     │   ├── BenchLog.{hpp,cpp}    # the CSV, normatively specified in the header
     │   ├── BenchSuite.{hpp,cpp}  # the benches themselves
