@@ -22,7 +22,7 @@ drawn from.
 | **A** | Size: is a vector pack ≥10x smaller than the RLE raster equivalent? | **UNVERIFIED** | Host-side. Not MapLab's question — it belongs to the packer, against the Athens extent |
 | **B** | RAM: does the renderer's static set link into `RunMap`? | **CONFIRMED — fits** | `Tools/gate_b_link_test.sh`, 2026-08-18, SDK at `apps-v1.4.0`. See below |
 | **C** | Time: does a dense viewport render inside 100 ms? | **REFUTED at city density; CONFIRMED to suburban** | Runs 56/151, 2026-08-19. Rural 24.0 ms, suburban 70.2 ms, city 160.5 ms. See below |
-| **D** | Legibility: does the palette-first cartography hold up on glass? | **PARTLY REFUTED — R5 fails** | 20 cards under indoor and overcast, 7.1 EV apart, 2026-08-19. The trace loses against the road slots; direct sun outstanding. See below |
+| **D** | Legibility: does the palette-first cartography hold up on glass? | **REFUTED as specified; CONFIRMED with a cased trace** | 24 cards across indoor, overcast and sun spanning 9.0 EV, 2026-08-19. R5 fails on the palette as written and holds once the trace is cased. See below |
 
 ## Gate B, in detail — the one this app has already settled
 
@@ -281,10 +281,20 @@ lightness, which is what R5 actually demands. `road_major` is already drawn
 cased and casing survived both conditions on the line-weights card. No new
 code, no palette change, one pixel of width each side.
 
-**Cards 21–24 carry that remedy onto the panel** (build 1.2.0), uncased and
-cased in one frame so the comparison survives two exposures. Direct sun
-therefore tests the fix rather than re-confirming the failure — which matters,
-because a sunny day cannot be scheduled and the failure is already established.
+**Cards 21–24 carried that remedy onto the panel** (build 1.2.0), uncased and
+cased in one frame, and **direct sun confirms it works.** The uncased line
+disappears into the warm bands; the cased line stays followable across every
+slot, because a `paper` outline gives the trace a boundary that does not depend
+on the colour underneath. Card 22 (`cased night`) is the clearest of the four.
+
+So Gate D's verdict splits: **the cartography as specified fails R5, and the
+cartography with a cased trace passes it.** The change costs one pixel of width
+each side, needs no new code on the render path, and spends no palette slot.
+
+The sun set also settles the ordering question the cards were built to ask.
+Cards 18–20 draw the trace before the LUT and 22–24 after it; only the latter
+keep a pale casing on the night ground. **The app-drawn trace belongs over the
+restyled basemap, not inside the restyle.**
 
 Those cards draw their casing **after** the variant LUT. `paper` is exactly
 what a restyle remaps hardest, so a casing applied before it would put a dark
@@ -297,11 +307,16 @@ Changing the palette instead would mean giving the trace a chroma component to
 get it off the pure-red axis — a larger change, and one that spends a colour
 the 14 slots do not have going spare.
 
-**Conditions, from EXIF rather than estimate.** ISO and shutter put the two sets
-7.09 EV apart; the APEX brightness values put them 7.10 EV apart. Overcast is
-therefore ~137× the indoor room. Direct sun is a further 2–3 EV and is the
-remaining case — it adds a directional specular component that diffuse overcast
-does not have, which is what will separate glare from the panel's own ink range.
+**Conditions, from EXIF rather than estimate**, each step cross-checked two
+ways. Indoor→overcast: 7.09 EV by ISO and shutter, 7.10 EV by APEX brightness.
+Overcast→sun: 1.90 EV and 1.89 EV. So overcast is ~137× the room, sun is ~3.7×
+overcast and ~510× the room, and the series spans **9.0 EV**.
+
+The sun set was taken at 16:13 local in late August — afternoon sun rather than
+noon — so the bright end is not fully explored and the true ceiling sits
+somewhat above it. R5 already fails well below that ceiling, so this does not
+weaken the verdict; it would only matter for a claim that something *survives*
+the brightest case.
 
 ## Not measured here, deliberately
 
