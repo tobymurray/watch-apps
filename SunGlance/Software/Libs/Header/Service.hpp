@@ -95,6 +95,11 @@ private:
     /// Copy the lines into the controls, but only the ones that differ.
     void apply(const Sun::Lines &lines);
 
+    /// Write down what the kernel offered and what was drawn from it, so the
+    /// next round of layout tuning is done against a measurement instead of
+    /// against another guess. One small file, rewritten only when it changes.
+    void noteGeometry();
+
     /// Show or hide a control, and invalidate it when that changed.
     ///
     /// `Control::setVisible()` does not invalidate -- it writes the flag and
@@ -112,18 +117,14 @@ private:
 
     // -- Layout ---------------------------------------------------------------
     //
-    // The bands are SleepLab's, which came off a real panel; the widths are
-    // whatever the kernel says the area is, so the rows centre in it rather
-    // than in an assumption.
-    static constexpr int16_t kRowH    = 32;
-    static constexpr int16_t kRowAY   = 1;
-    static constexpr int16_t kRowBY   = 33;
-    static constexpr int16_t kSubY    = 66;
-    static constexpr int16_t kSubH    = 20;
+    // Nothing vertical is a constant any more. The first version hard-coded
+    // bands copied from SleepLab -- an app with one line at font 30 and 36
+    // pixels to put it in -- and stacking two of those plus a caption clipped
+    // the bottom row on the watch. `Sun::bandsFor()` derives the bands and the
+    // font from the height the kernel reports; this file only maps the result
+    // onto controls.
     /// Gap between an icon and the time it labels.
     static constexpr int16_t kIconGap = 8;
-    /// Width reserved for "04:50" at the row font. Five digits, not a sentence.
-    static constexpr int16_t kTimeW   = 92;
 
     /// Two icons, two times and a caption.
     static constexpr uint32_t kControlsWanted = 5;
@@ -139,8 +140,13 @@ private:
     SDK::Glance::ControlText  mSecond;
     SDK::Glance::ControlText  mSub;
 
-    /// False when the kernel would not give this glance five controls, in which
-    /// case the rows carry words instead of pictures.
+    /// Where everything goes, and how big the row font is, for the panel this
+    /// glance actually got.
+    Sun::Bands mBands;
+
+    /// False when the kernel would not give this glance five controls, or when
+    /// the rows came out too short to hold an icon. Either way the rows carry
+    /// words instead of pictures.
     bool mWithIcons = false;
 
     /// What is currently on screen, because the SDK will not say: which shape

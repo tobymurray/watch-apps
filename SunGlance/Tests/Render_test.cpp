@@ -250,6 +250,114 @@ TEST(Render, TroubleOutranksAnythingElseTheViewCarries)
     EXPECT_STREQ(lines.first, "");
 }
 
+// -- The bands ---------------------------------------------------------------
+//
+// The layout arithmetic, which exists because the first version's hard-coded
+// bands clipped the bottom row on a real watch. These are the properties that
+// failure would have broken.
+
+constexpr int16_t kIconHeight = 21;
+
+TEST(Bands, ALineGetsMoreRoomThanItsFontSize)
+{
+    // The ratio SleepLab demonstrates on the watch this runs on: font 30 in a
+    // 36-pixel band, font 18 in 22. Anything tighter is what clipped.
+    EXPECT_EQ(Sun::lineHeightFor(30), 36);
+    EXPECT_EQ(Sun::lineHeightFor(25), 30);
+    EXPECT_EQ(Sun::lineHeightFor(20), 24);
+    EXPECT_EQ(Sun::lineHeightFor(18), 21);
+}
+
+TEST(Bands, TheFontFitsTheRowItIsPutIn)
+{
+    // The invariant the clipped row broke. Where it cannot hold -- a panel too
+    // short for two lines and a caption at any size -- the answer is `fits`
+    // false and no glance at all, rather than a size that will be cut off.
+    for (int16_t height = 20; height <= 140; height++) {
+        const Sun::Bands bands = Sun::bandsFor(height, true, kIconHeight);
+        if (!bands.fits) {
+            continue;
+        }
+        ASSERT_LE(Sun::lineHeightFor(bands.rowFontPx), bands.rowH)
+            << "height " << height << " gave font " << bands.rowFontPx
+            << " a row of " << bands.rowH;
+        ASSERT_LE(Sun::lineHeightFor(18), bands.subH) << height;
+    }
+}
+
+TEST(Bands, APanelTooShortToDrawInSaysSo)
+{
+    EXPECT_FALSE(Sun::bandsFor(44, true, kIconHeight).fits);
+    EXPECT_FALSE(Sun::bandsFor(56, true, kIconHeight).fits);
+    // And the panel this app was written against is fine.
+    EXPECT_TRUE(Sun::bandsFor(88, true, kIconHeight).fits);
+    EXPECT_TRUE(Sun::bandsFor(84, true, kIconHeight).fits);
+
+    // Once it fits, it keeps fitting: a taller panel never becomes undrawable.
+    bool seenFitting = false;
+    for (int16_t height = 20; height <= 200; height++) {
+        const bool fits = Sun::bandsFor(height, true, kIconHeight).fits;
+        if (fits) {
+            seenFitting = true;
+        }
+        ASSERT_TRUE(!seenFitting || fits) << "height " << height;
+    }
+}
+
+TEST(Bands, NothingIsDrawnPastTheBottomOfThePanel)
+{
+    for (int16_t height = 20; height <= 140; height++) {
+        const Sun::Bands bands = Sun::bandsFor(height, true, kIconHeight);
+        ASSERT_GE(bands.rowAY, 0) << height;
+        ASSERT_EQ(bands.rowBY, bands.rowAY + bands.rowH) << height;
+        ASSERT_LE(bands.subY + bands.subH, height) << height;
+        ASSERT_LE(bands.rowBY + bands.rowH, bands.subY) << height;
+    }
+}
+
+TEST(Bands, TheCaptionIsNeverSacrificedForTheRows)
+{
+    // It is the line that says why there is no time at all. A screen that
+    // cannot show it is worse than one whose digits are a size smaller.
+    for (int16_t height = 40; height <= 140; height++) {
+        const Sun::Bands bands = Sun::bandsFor(height, true, kIconHeight);
+        ASSERT_GE(bands.subH, 12) << height;
+    }
+}
+
+TEST(Bands, ABiggerPanelGetsABiggerFont)
+{
+    int16_t previous = 0;
+    for (int16_t height = 40; height <= 140; height++) {
+        const Sun::Bands bands = Sun::bandsFor(height, true, kIconHeight);
+        ASSERT_GE(bands.rowFontPx, previous) << "font shrank at height " << height;
+        previous = bands.rowFontPx;
+    }
+    // And the panel this was written against does not get the size that clipped.
+    EXPECT_EQ(Sun::bandsFor(88, true, kIconHeight).rowFontPx, 25);
+    EXPECT_EQ(Sun::bandsFor(88, true, kIconHeight).rowH, 32);
+}
+
+TEST(Bands, ARowTooShortForAnIconLosesIt)
+{
+    // The icons are a fixed 21 pixels and cannot shrink with the font, so a
+    // short panel drops them rather than letting them overlap the row beneath.
+    EXPECT_TRUE(Sun::bandsFor(88, true, kIconHeight).icons);
+    EXPECT_FALSE(Sun::bandsFor(56, true, kIconHeight).icons);
+    // And a caller with no controls to spare for them never gets them.
+    EXPECT_FALSE(Sun::bandsFor(88, false, kIconHeight).icons);
+}
+
+TEST(Bands, AnAbsurdPanelIsNotACrash)
+{
+    for (int16_t height : { static_cast<int16_t>(-1), static_cast<int16_t>(0),
+                            static_cast<int16_t>(1), static_cast<int16_t>(8) }) {
+        const Sun::Bands bands = Sun::bandsFor(height, true, kIconHeight);
+        EXPECT_GE(bands.rowH, 0) << height;
+        EXPECT_FALSE(bands.icons) << height;
+    }
+}
+
 TEST(Render, ATimeZoneThatDisagreesReplacesTheCountdown)
 {
     Sun::View v = rising();

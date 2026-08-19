@@ -25,17 +25,20 @@ There is no GUI. Tapping the card opens nothing, because everything this app
 has to say fits on that card — which is the definition of a glance, and the
 reason it is 36 KB and runs only while you are looking at it.
 
-## Status: builds, tested at a desk, never run on a watch
+## Status: on a watch, and the first thing it found was a layout bug
 
-Everything below builds against `apps-v1.4.0` and **68 host tests pass**,
-including thirteen that drive the real service through a scripted glance
-carousel. Nothing here has been on hardware or through the simulator. So:
+Everything below builds against `apps-v1.4.0` and **80 host tests pass**,
+including sixteen that drive the real service through a scripted glance
+carousel. It has now been run on hardware, which immediately clipped the bottom
+of the second row's digits — see [the bands](#the-bands-and-why-none-of-them-are-constants).
+So:
 
 | | |
 | --- | --- |
 | **Checked against an independent implementation** | Sunrise and sunset for 52 place-days against [`astral`](https://pypi.org/project/astral/) 3.2, plus a 1825-day polar sweep. Worst disagreement: 26 s below 55° latitude, 72 s to 66°, 118 s beyond. [`Tests/README.md`](Tests/README.md) has the method and the generator. |
 | **Checked by running the real code** | The service itself, from a config file on the storage to the strings handed to the kernel, through the message queue a carousel would send. |
-| **Not checked at all** | That any of it renders. The layout bands, the icon sizes, the assumption that the kernel will give a glance five controls, and the character budgets in `Render_test.cpp` are all estimates from SleepLab's numbers and have never met a panel. |
+| **Checked on the watch** | That it draws, that the position is read, and that the times are the right shape. One round of hardware feedback so far, which found the clipped row. |
+| **Not checked at all** | That the *fixed* layout renders cleanly, and the character budgets in `Render_test.cpp`, which remain an estimate of what fits at these font sizes. The app now writes down what the panel actually is — see `glance.txt` below — so the next round of tuning is done against a measurement. |
 
 ## What it shows
 
@@ -94,6 +97,41 @@ three. If the kernel offers fewer than five the icons are dropped and the rows
 say `rise 04:50` and `set 19:17` instead; below three the glance is declined
 outright, because two times with no way to tell which is which is worse than no
 glance at all.
+
+## The bands, and why none of them are constants
+
+The first version put the rows at fixed heights — 32 pixels each for a font-30
+line — and on the watch the bottom of the second row's digits was cut off.
+
+The numbers had been copied from [SleepLab](../SleepLab), which draws **one**
+line at font 30 and gives it **36** pixels. That ratio, about 1.2, is the part
+worth copying; the absolute numbers are not, because two rows and a caption do
+not fit in the same panel as one row and a caption.
+
+So there are no vertical constants left. `Sun::bandsFor()` takes the height the
+kernel reports and works out the bands and the font from it: the caption is
+given what it needs first, the rest is split in two, and the row font is the
+largest of 30/25/20/18 whose line box fits its half. On an 88-pixel panel that
+is font 25 in a 32-pixel row — the same row height that clipped, with a font
+that fits in it. Below about 66 pixels the icons are dropped (they are a fixed
+21 tall and cannot shrink); below about 46 nothing fits at any size, and the
+glance is declined rather than drawn cut off.
+
+### `glance.txt`
+
+Beside `input.json`, written when it changes, so the next round of tuning is
+done against a measurement rather than another app's numbers:
+
+```
+# what the kernel offered, and what was drawn from it
+area 241x88
+rows y0 y32 h32 font25 icons yes
+sub y64 h22 font18
+```
+
+It is written *before* the app decides whether the panel is drawable, because a
+panel too short to draw in is exactly the case somebody needs the measurement
+for, and a glance that declines silently tells them nothing.
 
 ## Where the position comes from
 
@@ -181,7 +219,7 @@ Software/Libs/
 ├── Header/Sources
 │   ├── Solar.*        NOAA's solar position calculation. No SDK, no clock, no I/O.
 │   ├── Schedule.*     The next two events, and the time-zone sanity check.
-│   ├── Render.*       What the screen says, as a pure function of what is known.
+│   ├── Render.*       What the screen says and where it goes, as pure functions.
 │   ├── Icons.h        Generated. The two icons, as ABGR2222 bytes.
 │   ├── Fix.*          A position, its provenance, and a strict degree parser.
 │   ├── HomeConfig.*   input.json -> a Fix, or a reason there is not one.
@@ -308,8 +346,8 @@ cd Tests
 cmake -B build . && cmake --build build && (cd build && ctest --output-on-failure)
 ```
 
-Three executables and 68 tests: the arithmetic and the wording with no SDK at
-all, the config reader over the SDK's in-memory filesystem, and the real
+Three executables and 80 tests: the arithmetic, the layout and the wording with
+no SDK at all, the config reader over the SDK's in-memory filesystem, and the real
 service driven by a scripted glance carousel. [`Tests/README.md`](Tests/README.md)
 says what each is evidence about — and what the fixtures are *not* evidence
 about.

@@ -72,7 +72,79 @@ Lines message(const char *headline, const char *caption, bool caution)
     return lines;
 }
 
+/// The caption's font never changes: it is the smallest thing on the screen and
+/// shrinking it further would make it the least readable thing on a screen read
+/// half awake.
+constexpr int16_t kSubFontPx = 18;
+
+/// Largest first, because the loop takes the first that fits.
+constexpr int16_t kRowFonts[] = { 30, 25, 20, 18 };
+
+/// A pixel or two of the panel left unused at the bottom. Cheap insurance: the
+/// kernel reports the area, and nothing here can tell whether that number
+/// includes a border the carousel draws over.
+constexpr int16_t kBottomGuard = 2;
+
+int16_t clampTo(int16_t value, int16_t low, int16_t high)
+{
+    if (value < low)  { return low;  }
+    if (value > high) { return high; }
+    return value;
+}
+
 } // namespace
+
+int16_t lineHeightFor(int16_t fontPx)
+{
+    // 6/5 rather than 1.2 so this is integer arithmetic all the way down: these
+    // numbers become pixel positions, and a rounding difference between the
+    // test and the watch would be a rounding difference nobody could see.
+    return static_cast<int16_t>((fontPx * 6) / 5);
+}
+
+Bands bandsFor(int16_t height, bool wantIcons, int16_t iconHeight)
+{
+    Bands out;
+
+    if (height <= 0) {
+        return out;
+    }
+
+    // The caption is placed first and gets what it needs, because it is the
+    // line that says why there is no time at all. A screen that cannot show it
+    // is worse than one whose digits are a size smaller.
+    out.subH = clampTo(lineHeightFor(kSubFontPx), 12, static_cast<int16_t>(height / 3));
+
+    const int16_t rowsH = static_cast<int16_t>(height - out.subH - kBottomGuard);
+    out.rowH  = static_cast<int16_t>(rowsH > 0 ? rowsH / 2 : 0);
+    out.rowAY = 0;
+    out.rowBY = out.rowH;
+    // Any odd pixel left over joins the guard at the bottom rather than being
+    // handed to a row that would then disagree with the row above it.
+    out.subY  = static_cast<int16_t>(out.rowH * 2);
+
+    out.rowFontPx = kRowFonts[sizeof kRowFonts / sizeof kRowFonts[0] - 1];
+    for (const int16_t px : kRowFonts) {
+        if (lineHeightFor(px) <= out.rowH) {
+            out.rowFontPx = px;
+            break;
+        }
+    }
+
+    // An icon is a fixed size and cannot shrink with the font, so a row too
+    // short for one loses it rather than overlapping the row beneath.
+    out.icons = wantIcons && (out.rowH >= iconHeight + 2);
+
+    // Below this there is no arrangement of two lines and a caption that is not
+    // cut off somewhere, and the smallest font is already in use. Saying so is
+    // the honest answer; picking a size that will be clipped is what the first
+    // version did.
+    const int16_t smallest = kRowFonts[sizeof kRowFonts / sizeof kRowFonts[0] - 1];
+    out.fits = (out.rowH >= lineHeightFor(smallest))
+               && (out.subH >= lineHeightFor(kSubFontPx));
+
+    return out;
+}
 
 Lines render(const View &view, bool withIcons)
 {

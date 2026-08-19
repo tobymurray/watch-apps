@@ -111,6 +111,50 @@ struct Lines
 };
 
 /**
+ * @brief Where the rows and the caption go, for a glance of a given height.
+ *
+ * Hard-coded bands were the first version's mistake and cost a clipped row on
+ * hardware: the numbers were lifted from SleepLab, which has *one* line at font
+ * 30 and gives it a 36-pixel band, and two of those plus a caption do not fit
+ * in the same panel. What is copied here instead is the *ratio* that app
+ * demonstrates on a real watch -- a line needs about 1.2 times its font size,
+ * or the bottom of the digits is cut off -- and the rest is arithmetic over the
+ * height the kernel reports.
+ *
+ * So the font follows the panel rather than the other way round: whatever the
+ * area turns out to be, the largest size whose line box fits its half of it is
+ * the one used. An app that guesses at a panel it has never seen should at
+ * least guess conservatively.
+ *
+ * @param wantIcons  Whether the caller has controls to spare for them.
+ * @param iconHeight Icons are a fixed size, so a short enough row cannot hold
+ *                   one and says so here rather than overlapping the caption.
+ */
+struct Bands
+{
+    int16_t rowAY     = 0;
+    int16_t rowBY     = 0;
+    int16_t rowH      = 0;
+    int16_t subY      = 0;
+    int16_t subH      = 0;
+    /// Font size in pixels for the two rows: 30, 25, 20 or 18.
+    int16_t rowFontPx = 18;
+    /// False when a row is too short to hold an icon, whatever the caller wanted.
+    bool    icons     = false;
+    /// False when even the smallest font would be clipped -- a panel this short
+    /// cannot hold two lines and a caption at all. The caller declines the
+    /// glance rather than drawing something cut off, which is the whole reason
+    /// this struct exists.
+    bool    fits      = false;
+};
+
+Bands bandsFor(int16_t height, bool wantIcons, int16_t iconHeight);
+
+/// What a line of this font needs vertically, in pixels. The 1.2 is SleepLab's
+/// ratio, measured on the watch this runs on rather than derived from the font.
+int16_t lineHeightFor(int16_t fontPx);
+
+/**
  * @brief Turn what is known into what is shown.
  *
  * @param withIcons False when the kernel would not give this glance enough

@@ -296,6 +296,84 @@ TEST(Glance, AClockThatIsNotSetShowsNoTimes)
     EXPECT_EQ(rig.updates().front().sub(), "clock not set");
 }
 
+TEST(Glance, ItWritesDownWhatTheKernelGaveIt)
+{
+    // The file that exists because the first layout was tuned against another
+    // app's numbers and clipped a row. Whatever the panel turns out to be, it
+    // is now readable over USB instead of guessed at.
+    Rig rig;
+    rig.seed("input.json", london());
+    rig.at(kBeforeDawn);
+    rig.comm.width  = 241;
+    rig.comm.height = 88;
+    rig.comm.viewing(1);
+
+    rig.run();
+
+    const std::string note = rig.fs.readFile("glance.txt");
+    EXPECT_NE(note.find("area 241x88"), std::string::npos) << note;
+    EXPECT_NE(note.find("font25"), std::string::npos) << note;
+    EXPECT_NE(note.find("icons yes"), std::string::npos) << note;
+}
+
+TEST(Glance, AShorterPanelGetsASmallerFontRatherThanAClippedRow)
+{
+    // The bug this fixes: two rows and a caption were laid out at fixed heights
+    // copied from an app with one row, and the bottom of the second row's
+    // digits was cut off on the watch.
+    Rig rig;
+    rig.seed("input.json", london());
+    rig.at(kBeforeDawn);
+    rig.comm.height = 72;
+    rig.comm.viewing(1);
+
+    rig.run();
+
+    const std::string note = rig.fs.readFile("glance.txt");
+    EXPECT_NE(note.find("area 241x72"), std::string::npos) << note;
+    // A size down from the 25 an 88-pixel panel gets, and still both times.
+    EXPECT_NE(note.find("font20"), std::string::npos) << note;
+    ASSERT_EQ(rig.updates().size(), 1u);
+    EXPECT_EQ(rig.updates().front().first(), "04:50");
+    EXPECT_EQ(rig.updates().front().second(), "19:17");
+}
+
+TEST(Glance, APanelTooShortToDrawInIsDeclinedButMeasuredFirst)
+{
+    Rig rig;
+    rig.seed("input.json", london());
+    rig.at(kBeforeDawn);
+    rig.comm.height = 44;
+    rig.comm.viewing(2);
+
+    rig.run();
+
+    EXPECT_TRUE(rig.updates().empty()) << "nothing clipped was drawn";
+    // But the measurement is on the watch, which is the only way anybody finds
+    // out what the panel actually was.
+    EXPECT_NE(rig.fs.readFile("glance.txt").find("area 241x44"), std::string::npos);
+}
+
+TEST(Glance, TheGeometryNoteIsNotRewrittenWhenNothingChanged)
+{
+    Rig rig;
+    rig.seed("input.json", london());
+    rig.at(kBeforeDawn);
+    rig.comm.viewing(1);
+    rig.run();
+
+    const size_t afterFirst = rig.fs.bytesWritten;
+    EXPECT_GT(afterFirst, 0u);
+
+    // A second viewing of the same card on the same watch: the note already
+    // says what it would say, and a write cycle is not spent repeating it.
+    rig.comm.updates.clear();
+    rig.comm.viewing(1);
+    rig.run();
+
+    EXPECT_EQ(rig.fs.bytesWritten, afterFirst);
+}
+
 TEST(Glance, TheServiceReturnsWhenTheCardScrollsAway)
 {
     // A Glance-type app's run() must return on EVENT_GLANCE_STOP. If it does
