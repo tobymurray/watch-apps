@@ -11,6 +11,7 @@
 
 #include <cstring>
 #include <ctime>
+#include <memory>
 
 #include "WallClock.hpp"
 
@@ -37,6 +38,32 @@ constexpr char kGlanceName[] = "Sun";
 /// SDK header. This is where the two are held to each other.
 static_assert(Sun::kLineBytes == GLANCE_TEXT_SIZE,
               "Render.hpp's line budget must be the SDK's text buffer size");
+
+/// Beside input.json, in the app's own folder, readable over USB. See
+/// Service::noteGeometry().
+constexpr char kGeometryPath[] = "glance.txt";
+
+/// The renderer picks a size in pixels; the SDK names its fonts. One switch,
+/// here, rather than a size the renderer cannot express.
+GlanceFont_t rowFontFor(int16_t px)
+{
+    switch (px) {
+        case 30: return GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_30;
+        case 25: return GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_25;
+        case 20: return GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_20;
+        default: return GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_18;
+    }
+}
+
+GlancePoint_t pointOf(const Sun::Box &box)
+{
+    return GlancePoint_t { static_cast<uint16_t>(box.x), static_cast<uint16_t>(box.y) };
+}
+
+GlanceSize_t sizeOf(const Sun::Box &box)
+{
+    return GlanceSize_t { static_cast<uint16_t>(box.w), static_cast<uint16_t>(box.h) };
+}
 
 } // namespace
 
@@ -115,17 +142,36 @@ bool Service::glanceConfig()
         return false;
     }
 
-    // Five gets the icons; three gets the words. Every SDK glance example asks
-    // for three, so a kernel that offers only that is not a fault to refuse --
-    // it is a screen to draw differently.
-    mWithIcons = (gc->maxControls >= kControlsWanted);
-    if (!mWithIcons) {
-        LOG_INFO("glance offers %u controls; drawing without icons\n",
-                 static_cast<unsigned>(gc->maxControls));
-    }
-
     mGlance.setWidth(gc->width);
     mGlance.setHeight(gc->height);
+
+    // Five controls gets the icons; three gets the words. Every SDK glance
+    // example asks for three, so a kernel that offers only that is not a fault
+    // to refuse -- it is a screen to draw differently. The rows can also turn
+    // out too short to hold an icon, which bandsFor() decides.
+    mLayout    = Sun::layoutFor(gc->width, gc->height,
+                                gc->maxControls >= kControlsWanted,
+                                ICON_SUNRISE_WIDTH, ICON_SUNRISE_HEIGHT);
+    mWithIcons = mLayout.icons;
+
+    LOG_INFO("glance %dx%d, %u controls -> %s font%d, icons %s\n",
+             static_cast<int>(gc->width), static_cast<int>(gc->height),
+             static_cast<unsigned>(gc->maxControls),
+             mLayout.arrangement == Sun::Arrangement::SideBySide ? "side-by-side" : "stacked",
+             static_cast<int>(mLayout.rowFontPx),
+             mWithIcons ? "yes" : "no");
+
+    // Written before the verdict below, on purpose: a panel too short to draw
+    // in is exactly the case somebody needs the measurement for, and a glance
+    // that declines silently tells them nothing.
+    noteGeometry();
+
+    if (!mLayout.fits) {
+        LOG_WARNING("no arrangement of two times and a caption fits %dx%d\n",
+                    static_cast<int>(gc->width), static_cast<int>(gc->height));
+        return false;
+    }
+
     return true;
 }
 
@@ -142,7 +188,7 @@ void Service::glanceCreate()
     }
 
     mFirst = mGlance.createText();
-    mFirst.font(GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_30)
+    mFirst.font(rowFontFor(mLayout.rowFontPx))
         .color(GlanceColor_t::GLANCE_COLOR_WHITE)
         .setText("--");
 
@@ -153,12 +199,12 @@ void Service::glanceCreate()
     }
 
     mSecond = mGlance.createText();
-    mSecond.font(GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_30)
+    mSecond.font(rowFontFor(mLayout.rowFontPx))
         .color(GlanceColor_t::GLANCE_COLOR_WHITE)
         .setText("");
 
     mSub = mGlance.createText();
-    mSub.pos({ 0, kSubY }, { width, kSubH })
+    mSub.pos(pointOf(mLayout.sub), sizeOf(mLayout.sub))
         .font(GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_18)
         .color(GlanceColor_t::GLANCE_COLOR_GRAY)
         .setText("")
@@ -183,41 +229,94 @@ void Service::layout(bool rowsMode)
         return;
     }
 
-    const int16_t width = static_cast<int16_t>(mGlance.getWidth());
+    const GlanceAlignH_t rowAlign = mLayout.textCentred
+                                        ? GlanceAlignH_t::GLANCE_ALIGN_H_CENTER
+                                        : GlanceAlignH_t::GLANCE_ALIGN_H_LEFT;
 
-    if (rowsMode && mWithIcons) {
-        // Centre the icon and the time together rather than each within its own
-        // half: what should sit in the middle of the panel is the pair.
-        const int16_t span = ICON_SUNRISE_WIDTH + kIconGap + kTimeW;
-        const int16_t left = static_cast<int16_t>((width - span) / 2);
-        const int16_t iconDrop = static_cast<int16_t>((kRowH - ICON_SUNRISE_HEIGHT) / 2);
-        const int16_t textX = static_cast<int16_t>(left + ICON_SUNRISE_WIDTH + kIconGap);
+    if (rowsMode) {
+        mFirst.pos(pointOf(mLayout.textFirst), sizeOf(mLayout.textFirst)).alignment(rowAlign);
+        mSecond.pos(pointOf(mLayout.textSecond), sizeOf(mLayout.textSecond)).alignment(rowAlign);
 
-        mIconFirst.pos({ static_cast<uint16_t>(left),
-                         static_cast<uint16_t>(kRowAY + iconDrop) });
-        mIconSecond.pos({ static_cast<uint16_t>(left),
-                          static_cast<uint16_t>(kRowBY + iconDrop) });
-
-        mFirst.pos({ static_cast<uint16_t>(textX), kRowAY }, { kTimeW, kRowH })
-            .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_LEFT);
-        mSecond.pos({ static_cast<uint16_t>(textX), kRowBY }, { kTimeW, kRowH })
-            .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_LEFT);
-    } else if (rowsMode) {
-        // No icons: the words are back, so the rows are full-width and centred.
-        mFirst.pos({ 0, kRowAY }, { static_cast<uint16_t>(width), kRowH })
-            .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
-        mSecond.pos({ 0, kRowBY }, { static_cast<uint16_t>(width), kRowH })
-            .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
+        if (mWithIcons) {
+            mIconFirst.pos(pointOf(mLayout.iconFirst));
+            mIconSecond.pos(pointOf(mLayout.iconSecond));
+        }
     } else {
-        // One message instead of two rows, sitting where the eye already is --
-        // between the two row bands rather than at the top of the first.
-        mFirst.pos({ 0, static_cast<uint16_t>(kRowAY + kRowH / 2) },
-                   { static_cast<uint16_t>(width), kRowH })
+        // One line instead of two times: it takes the whole row area, centred,
+        // because it is a sentence rather than a number sitting beside a
+        // picture.
+        mFirst.pos(pointOf(mLayout.message), sizeOf(mLayout.message))
             .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
     }
 
     mRowsMode = rowsMode;
     mLaidOut  = true;
+}
+
+void Service::noteGeometry()
+{
+    // The first version of this app hard-coded its bands and clipped a row on
+    // the watch, and there was no way to find out what the panel actually was
+    // without another build. This is that way: one file beside input.json,
+    // readable over USB, saying what the kernel offered and what was made of
+    // it. It is a measurement, and every layout decision after this one is
+    // taken against it instead of against SleepLab's numbers.
+    char text[256];
+    const int len = snprintf(text, sizeof text,
+                             "# what the kernel offered, and what was drawn from it\n"
+                             "area %dx%d\n"
+                             "%s font%d icons %s fits %s\n"
+                             "first %d,%d %dx%d  second %d,%d %dx%d\n"
+                             "sub %d,%d %dx%d\n",
+                             static_cast<int>(mGlance.getWidth()),
+                             static_cast<int>(mGlance.getHeight()),
+                             mLayout.arrangement == Sun::Arrangement::SideBySide
+                                 ? "side-by-side" : "stacked",
+                             static_cast<int>(mLayout.rowFontPx),
+                             mLayout.icons ? "yes" : "no",
+                             mLayout.fits ? "yes" : "no",
+                             static_cast<int>(mLayout.textFirst.x), static_cast<int>(mLayout.textFirst.y),
+                             static_cast<int>(mLayout.textFirst.w), static_cast<int>(mLayout.textFirst.h),
+                             static_cast<int>(mLayout.textSecond.x), static_cast<int>(mLayout.textSecond.y),
+                             static_cast<int>(mLayout.textSecond.w), static_cast<int>(mLayout.textSecond.h),
+                             static_cast<int>(mLayout.sub.x), static_cast<int>(mLayout.sub.y),
+                             static_cast<int>(mLayout.sub.w), static_cast<int>(mLayout.sub.h));
+
+    if (len <= 0 || static_cast<size_t>(len) >= sizeof text) {
+        return;
+    }
+
+    // Rewritten only when it changes. The glance service starts every time the
+    // card is scrolled to, and a file rewritten on every viewing would be a
+    // write cycle spent saying what it already said.
+    SDK::Interface::IFileSystem::ObjectInfo info {};
+    if (mKernel.fs.objectInfo(kGeometryPath, info) && info.size == static_cast<size_t>(len)) {
+        std::unique_ptr<SDK::Interface::IFile> existing = mKernel.fs.file(kGeometryPath);
+        char   current[sizeof text] = { 0 };
+        size_t read                 = 0;
+        if (existing && existing->open()
+            && existing->read(current, static_cast<size_t>(len), read)) {
+            existing->close();
+            if (read == static_cast<size_t>(len)
+                && std::memcmp(current, text, static_cast<size_t>(len)) == 0) {
+                return;
+            }
+        } else if (existing) {
+            existing->close();
+        }
+    }
+
+    std::unique_ptr<SDK::Interface::IFile> file = mKernel.fs.file(kGeometryPath);
+    if (!file || !file->open(true, true)) {
+        // Not being able to write a note about the screen is no reason not to
+        // draw the screen.
+        LOG_WARNING("could not write %s\n", kGeometryPath);
+        return;
+    }
+
+    size_t written = 0;
+    file->write(text, static_cast<size_t>(len), written);
+    file->close();
 }
 
 void Service::showControl(SDK::Glance::Control &control, bool shown, bool &state)

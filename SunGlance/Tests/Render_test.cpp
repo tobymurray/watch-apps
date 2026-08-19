@@ -250,6 +250,175 @@ TEST(Render, TroubleOutranksAnythingElseTheViewCarries)
     EXPECT_STREQ(lines.first, "");
 }
 
+// -- The layout --------------------------------------------------------------
+//
+// The arithmetic that decides where everything goes, which exists because the
+// first version's hard-coded positions clipped the bottom row on a real watch.
+// These are the properties that failure would have broken.
+
+constexpr int16_t kIconW = 24;
+constexpr int16_t kIconH = 21;
+
+/// The panel this app was written against, until glance.txt says otherwise.
+Sun::Layout panel(int16_t width = 241, int16_t height = 88, bool wantIcons = true)
+{
+    return Sun::layoutFor(width, height, wantIcons, kIconW, kIconH);
+}
+
+TEST(Layout, ALineGetsMoreRoomThanItsFontSize)
+{
+    // The ratio SleepLab demonstrates on the watch this runs on: font 30 in a
+    // 36-pixel band, font 18 in 22. Anything tighter is what clipped.
+    EXPECT_EQ(Sun::lineHeightFor(30), 36);
+    EXPECT_EQ(Sun::lineHeightFor(25), 30);
+    EXPECT_EQ(Sun::lineHeightFor(20), 24);
+    EXPECT_EQ(Sun::lineHeightFor(18), 21);
+}
+
+TEST(Layout, AWideShortPanelPutsTheTwoTimesBesideEachOther)
+{
+    const Sun::Layout out = panel();
+    ASSERT_TRUE(out.fits);
+    EXPECT_EQ(out.arrangement, Sun::Arrangement::SideBySide);
+    EXPECT_TRUE(out.icons);
+
+    // Same row, different columns, next event on the left.
+    EXPECT_EQ(out.textFirst.y, out.textSecond.y);
+    EXPECT_LT(out.textFirst.x, out.textSecond.x);
+    EXPECT_EQ(out.iconFirst.y, out.iconSecond.y);
+    EXPECT_LT(out.iconFirst.x, out.textFirst.x) << "each icon labels the time to its right";
+    EXPECT_LT(out.textFirst.x + out.textFirst.w, out.iconSecond.x) << "and the pairs do not overlap";
+}
+
+TEST(Layout, ANarrowPanelStacksInsteadOfColliding)
+{
+    // Two times side by side need width. Where there is not enough, stacking is
+    // the answer -- overlapping digits are a worse failure than a smaller font.
+    const Sun::Layout out = panel(120, 100);
+    ASSERT_TRUE(out.fits);
+    EXPECT_EQ(out.arrangement, Sun::Arrangement::Stacked);
+    EXPECT_LT(out.textFirst.y, out.textSecond.y);
+    EXPECT_EQ(out.textFirst.x, out.textSecond.x);
+}
+
+TEST(Layout, NothingOverlapsAnythingElse)
+{
+    for (int16_t width = 100; width <= 260; width += 3) {
+        for (int16_t height = 40; height <= 140; height += 3) {
+            const Sun::Layout out = Sun::layoutFor(width, height, true, kIconW, kIconH);
+            if (!out.fits) {
+                continue;
+            }
+
+            const std::string where = "at " + std::to_string(width) + "x" + std::to_string(height);
+
+            // Everything inside the panel.
+            ASSERT_GE(out.textFirst.x, 0) << where;
+            ASSERT_LE(out.textSecond.x + out.textSecond.w, width) << where;
+            ASSERT_LE(out.sub.y + out.sub.h, height) << where;
+            ASSERT_LE(out.textFirst.y + out.textFirst.h, out.sub.y) << where;
+            ASSERT_LE(out.textSecond.y + out.textSecond.h, out.sub.y) << where;
+
+            // The two times never sit on top of one another.
+            const bool sameRow = (out.textFirst.y == out.textSecond.y);
+            if (sameRow) {
+                ASSERT_LE(out.textFirst.x + out.textFirst.w, out.textSecond.x) << where;
+            } else {
+                ASSERT_LE(out.textFirst.y + out.textFirst.h, out.textSecond.y) << where;
+            }
+
+            if (out.icons) {
+                ASSERT_LE(out.iconFirst.x + out.iconFirst.w, out.textFirst.x) << where;
+                ASSERT_LE(out.iconSecond.x + out.iconSecond.w, out.textSecond.x) << where;
+                if (sameRow) {
+                    ASSERT_LE(out.textFirst.x + out.textFirst.w, out.iconSecond.x) << where;
+                }
+                ASSERT_LE(out.iconFirst.y + out.iconFirst.h, out.sub.y) << where;
+                ASSERT_LE(out.iconSecond.y + out.iconSecond.h, out.sub.y) << where;
+            }
+        }
+    }
+}
+
+TEST(Layout, TheFontFitsTheBoxItIsPutIn)
+{
+    // The invariant the clipped row broke. Where nothing can hold it -- a panel
+    // too small at any size -- the answer is `fits` false and no glance at all,
+    // rather than a size that will be cut off.
+    for (int16_t width = 100; width <= 260; width += 3) {
+        for (int16_t height = 20; height <= 140; height += 3) {
+            const Sun::Layout out = Sun::layoutFor(width, height, true, kIconW, kIconH);
+            if (!out.fits) {
+                continue;
+            }
+            const int16_t line = Sun::lineHeightFor(out.rowFontPx);
+            ASSERT_EQ(out.textFirst.h, line) << width << "x" << height;
+            ASSERT_GE(out.textFirst.w, Sun::timeWidthFor(out.rowFontPx)) << width << "x" << height;
+            ASSERT_GE(out.sub.h, Sun::lineHeightFor(18)) << width << "x" << height;
+        }
+    }
+}
+
+TEST(Layout, IconsAreKeptEvenAtTheCostOfAFontSize)
+{
+    // They are what lets the rows carry no words at all, so they outrank the
+    // digits being one size bigger.
+    const Sun::Layout withIcons = panel(241, 88, true);
+    const Sun::Layout without   = panel(241, 88, false);
+    ASSERT_TRUE(withIcons.fits);
+    ASSERT_TRUE(without.fits);
+    EXPECT_TRUE(withIcons.icons);
+    EXPECT_FALSE(without.icons);
+    EXPECT_GE(without.rowFontPx, withIcons.rowFontPx) << "dropping them can only help the font";
+}
+
+TEST(Layout, ATimeStandingOnItsOwnIsCentredAndOneBesideAnIconIsNot)
+{
+    EXPECT_FALSE(panel(241, 88, true).textCentred);
+    EXPECT_TRUE(panel(241, 88, false).textCentred);
+}
+
+TEST(Layout, APanelTooSmallToDrawInSaysSo)
+{
+    // Too short for a caption plus any line at all.
+    EXPECT_FALSE(Sun::layoutFor(241, 28, true, kIconW, kIconH).fits);
+    // Too narrow for even one time.
+    EXPECT_FALSE(Sun::layoutFor(40, 88, true, kIconW, kIconH).fits);
+
+    EXPECT_TRUE(panel(241, 88).fits);
+    EXPECT_TRUE(panel(241, 84).fits);
+}
+
+TEST(Layout, SideBySideRescuesAPanelTooShortToStackIn)
+{
+    // A panel with room for one line and a caption cannot hold two rows at any
+    // size -- but it can hold two times beside each other, which is the point
+    // of the arrangement. Under the old stacked-only layout this was a declined
+    // glance.
+    const Sun::Layout out = panel(241, 46);
+    ASSERT_TRUE(out.fits);
+    EXPECT_EQ(out.arrangement, Sun::Arrangement::SideBySide);
+    EXPECT_EQ(out.textFirst.y, out.textSecond.y);
+    EXPECT_EQ(out.rowFontPx, 18) << "the smallest font, but a whole one";
+
+    // Two pixels shorter and the icons no longer have a band to sit in, so they
+    // go and the words come back rather than the glance going away.
+    const Sun::Layout shorter = panel(241, 44);
+    ASSERT_TRUE(shorter.fits);
+    EXPECT_FALSE(shorter.icons);
+    EXPECT_TRUE(shorter.textCentred);
+}
+
+TEST(Layout, AnAbsurdPanelIsNotACrash)
+{
+    for (int16_t size : { static_cast<int16_t>(-1), static_cast<int16_t>(0),
+                          static_cast<int16_t>(1), static_cast<int16_t>(8) }) {
+        const Sun::Layout out = Sun::layoutFor(size, size, true, kIconW, kIconH);
+        EXPECT_FALSE(out.fits) << size;
+        EXPECT_FALSE(out.icons) << size;
+    }
+}
+
 TEST(Render, ATimeZoneThatDisagreesReplacesTheCountdown)
 {
     Sun::View v = rising();

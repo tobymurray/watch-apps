@@ -1,6 +1,6 @@
 # Host tests
 
-68 tests, three executables, and the split between them is about what each one
+82 tests, three executables, and the split between them is about what each one
 is *evidence* about rather than about what it covers.
 
 ```sh
@@ -10,7 +10,7 @@ cmake -B build . && cmake --build build && (cd build && ctest --output-on-failur
 
 | Executable | Needs | What a pass means |
 | --- | --- | --- |
-| `sunglance-pure-tests` | GoogleTest | The astronomy, the two-event policy, the coordinate parser and the wording are right. No SDK, no kernel, no filesystem. |
+| `sunglance-pure-tests` | GoogleTest | The astronomy, the two-event policy, the coordinate parser, the wording and the layout arithmetic are right. No SDK, no kernel, no filesystem. |
 | `sunglance-config-tests` | + kernel doubles, coreJSON | A config file on the watch's storage becomes the position the app acts on, or a stated reason it does not. |
 | `sunglance-glance-tests` | + the real `Service` | The parts are joined up, and the strings actually reach the kernel. |
 
@@ -48,12 +48,15 @@ than asserted.
 
 ## What the fixtures are not evidence about
 
-**Not that anything renders.** No test here has seen a panel. The layout bands
-come from SleepLab's, which came off a real watch; the character budgets in
-`Render_test.cpp` are an estimate of what fits at these font sizes and are
-explicitly marked as unverified. A caption one character too wide for the panel,
-an icon that collides with the time next to it, or a five-control glance a
-kernel will not grant all pass every test in this directory.
+**Not that anything renders.** No test here has seen a panel, and the first
+version proved what that is worth: every test passed while the bottom of the
+second row's digits was cut off on the watch. What the `Layout` tests can check
+is that a font is never put in a box too small for it, that nothing is drawn
+past the edge of the panel, and that no two things overlap — swept over every
+panel size from 100×40 to 260×140 — given a *correct* line-height ratio, which is
+SleepLab's measured 1.2 and is itself an assumption. A caption one character too
+wide, an icon colliding with the time beside it, or a five-control glance a
+kernel will not grant still pass everything here.
 
 **Not that the watch's clock or time zone is right.** Everything is computed
 from what the platform says the time is. If the RTC is wrong the glance is
