@@ -295,29 +295,40 @@ the round panel allows at a legible row height. The list windows over the whole
 roster, so the sixth pack and beyond scroll into view rather than being
 unreachable.
 
-## A real firmware quirk found while testing this
+## A real firmware quirk found while testing this — fixed in 1.4
 
-The on-watch quick-access menu (behind top-left `L1`) appears to cap out at
-**3** installed `Utility`-type apps, filled alphabetically by name, alongside
-its fixed `Power off` / `Settings` / `Alerts on` entries — confirmed by
-removing other Utility apps and watching Map Manager appear once a slot
-opened up. This is closed kernel/launcher firmware behavior, not present
-anywhere in the `una-sdk` source, and not a defect in this app: its Service,
-autostart, and app-registry entry (`Apps/app_list.json`) are all confirmed
-correct regardless of whether that particular menu has room to show its icon.
-Worth knowing before assuming a newly-deployed Utility app is broken because
-it's "missing" from that menu.
+**This section is 1.3-only history.** It is kept because the reasoning still
+matters when a newly-deployed app appears to be missing, not because the cap is
+still there.
 
-It does have a real consequence for *this* app, though, even though it isn't
-this app's bug. On a watch with three alphabetically-earlier Utility apps
-installed, Map Manager can't be opened at all — and since its screen is the
-only place that explains "your map is missing because that pack failed its
-CRC", the fallback becomes pulling `Debug/mapmanager_verify.log` over USB.
-The verification itself is unaffected (that's the point of autostart), but
-the diagnosis story is worse than it looks. Note also that "filled
-alphabetically" means visibility depends on the app's *name* — which is an
-argument for consumers surfacing pack state in their own UI rather than
-relying on this one being reachable.
+On **1.3** firmware the on-watch quick-access menu (behind top-left `L1`) capped
+out at **3** installed `Utility`-type apps, filled alphabetically by name,
+alongside its fixed `Power off` / `Settings` / `Alerts on` entries — confirmed
+by removing other Utility apps and watching Map Manager appear once a slot
+opened up. It was closed kernel/launcher behaviour, present nowhere in the
+`una-sdk` source, and never a defect in this app: its Service, autostart and
+app-registry entry (`Apps/app_list.json`) were confirmed correct regardless of
+whether that menu had room to show its icon.
+
+**1.4 replaced that menu with a scrolling list**, so the cap is gone and the
+consequence it had for this app — that on a watch with three alphabetically
+earlier Utility apps Map Manager could not be opened at all — no longer
+applies. See [SleepLab's Reachability note](../SleepLab/README.md) for the same
+finding from the other side.
+
+Two things worth keeping from it:
+
+- **A newly-deployed app that is "missing" from a menu is not necessarily
+  broken.** Check the app registry before the code. That was the lesson, and it
+  outlives the cap.
+- **Reachability is not something an app should depend on.** The verification
+  runs from autostart and writes `Debug/mapmanager_verify.log` whether or not
+  anyone can open the screen, which is why the cap was survivable at all.
+
+Note also that this app is still pinned to `apps-v1.3.0` (see
+[why it's pinned](#why-its-pinned-to-sdk-13)), so on a 1.4 watch it does not run
+at all as built — a separate problem from the one this section describes, and
+the one to fix first.
 
 ## Icon
 
