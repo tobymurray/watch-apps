@@ -48,6 +48,27 @@ void MainView::setupScreen()
         add(mLine[i]);
     }
 
+    // Halo first in z-order, ink over it. `paper` is the spec's halo colour
+    // and paper is white, so these are white glyphs offset by one pixel in
+    // each diagonal -- the cheapest thing that is actually a halo.
+    for (int l = 0; l < 2; ++l) {
+        for (int k = 0; k < kHaloCopies; ++k) {
+            mHalo[l][k].setTypedText(touchgfx::TypedText(T_TMP_MEDIUM_16_L));
+            mHalo[l][k].setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
+            mHalo[l][k].setWideTextAction(touchgfx::WIDE_TEXT_CHARWRAP_DOUBLE_ELLIPSIS);
+            mHaloBuf[l][k][0] = 0;
+            mHalo[l][k].setWildcard(mHaloBuf[l][k]);
+            mHalo[l][k].setVisible(false);
+            add(mHalo[l][k]);
+        }
+    }
+    // Re-add the two caption lines so they paint after their halos.
+    for (int l = 4; l < kLines; ++l) {
+        remove(mLine[l]);
+        add(mLine[l]);
+    }
+
+    layoutLines(false);
     refresh();
 }
 
@@ -78,6 +99,11 @@ void MainView::handleTickEvent()
             // not the blit.
             for (int i = 0; i < kLines; ++i) {
                 mLine[i].setVisible(false);
+            }
+            for (int l = 0; l < 2; ++l) {
+                for (int k = 0; k < kHaloCopies; ++k) {
+                    mHalo[l][k].setVisible(false);
+                }
             }
             mCanvasView.setVisible(true);
             mCanvasView.startBlitBench(source, w, h, repeats, mosaic);
@@ -183,6 +209,36 @@ void MainView::refreshStair(char text[kLines][kLineBufSize], const Model::Status
     std::snprintf(text[5], kLineBufSize, "L1/L2 step  R2 back");
 }
 
+/// Put the two caption lines where the current mode needs them: inline with
+/// the rest of the text on the menu screens, down on the bottom arc in card
+/// mode so the card keeps the panel. Idempotent, so refresh() can call it.
+void MainView::layoutLines(bool cardMode)
+{
+    if (cardMode == mCardLayout) {
+        return;
+    }
+    mCardLayout = cardMode;
+
+    const int16_t y4 = cardMode ? kCardLine4Y : static_cast<int16_t>(kFirstLineY + 4 * kLineHeight);
+    const int16_t y5 = cardMode ? kCardLine5Y : static_cast<int16_t>(kFirstLineY + 5 * kLineHeight);
+    const int16_t w5 = cardMode ? kCardLine5W : static_cast<int16_t>(192);
+    const int16_t x5 = static_cast<int16_t>((240 - w5) / 2);
+
+    mLine[4].setPosition(24, y4, 192, kLineHeight);
+    mLine[5].setPosition(x5, y5, w5, kLineHeight);
+
+    static const int16_t dx[kHaloCopies] = { -1, 1, -1, 1 };
+    static const int16_t dy[kHaloCopies] = { -1, -1, 1, 1 };
+    for (int k = 0; k < kHaloCopies; ++k) {
+        mHalo[0][k].setPosition(static_cast<int16_t>(24 + dx[k]),
+                                static_cast<int16_t>(y4 + dy[k]), 192, kLineHeight);
+        mHalo[1][k].setPosition(static_cast<int16_t>(x5 + dx[k]),
+                                static_cast<int16_t>(y5 + dy[k]), w5, kLineHeight);
+        mHalo[0][k].setVisible(cardMode);
+        mHalo[1][k].setVisible(cardMode);
+    }
+}
+
 void MainView::refresh()
 {
     const Model::Status &s = presenter->status();
@@ -191,6 +247,8 @@ void MainView::refresh()
     for (int i = 0; i < kLines; i++) {
         text[i][0] = '\0';
     }
+
+    layoutLines(s.mode == Model::Mode::Cards);
 
     switch (s.mode) {
         case Model::Mode::Menu:    refreshMenu(text, s);    break;
@@ -211,6 +269,21 @@ void MainView::refresh()
         mLine[i].setWildcard(mBuf[i]);
         mLine[i].setVisible(!mBlitRunning);
         mLine[i].invalidate();
+    }
+
+    // In card mode the caption is ink-on-halo, which is what the spec means by
+    // a label: `road_major` glyphs with a `paper` outline. Everywhere else it
+    // is plain white on a dark screen, as before.
+    const uint8_t inkR = showCanvas ? 0x22 : 0xFF;
+    for (int l = 0; l < 2; ++l) {
+        mLine[4 + l].setColor(touchgfx::Color::getColorFromRGB(inkR, inkR, inkR));
+        for (int k = 0; k < kHaloCopies; ++k) {
+            touchgfx::Unicode::strncpy(mHaloBuf[l][k], text[4 + l], kLineBufSize - 1);
+            mHaloBuf[l][k][kLineBufSize - 1] = 0;
+            mHalo[l][k].setWildcard(mHaloBuf[l][k]);
+            mHalo[l][k].setVisible(showCanvas && !mBlitRunning);
+            mHalo[l][k].invalidate();
+        }
     }
     invalidate();
 }

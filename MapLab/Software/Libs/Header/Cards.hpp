@@ -3,7 +3,7 @@
  * @file    Cards.hpp
  * @date    18-08-2026
  * @author  Toby Murray <toby.murray@protonmail.com>
- * @brief   The pictures. Twelve full-screen cards that put a judgement made in
+ * @brief   The pictures. Full-screen cards that put a judgement made in
  *          simulation onto the panel it was made about.
  ******************************************************************************
  *
@@ -31,6 +31,24 @@
  * their backgrounds here and the view puts real glyphs on top -- which is also
  * the arrangement a label-drawing renderer would have to use.
  *
+ * ---------------------------------------------------------------------------
+ * The reference patches
+ *
+ * Every card carries four neutral codes -- r=g=b at each quantum level -- in
+ * two 16 px bars at the extreme left and right. They are not part of any
+ * card's subject. They are there because the instrument photographing these
+ * cards has auto white balance and auto exposure, so every frame arrives under
+ * a different colour transform and no two frames can otherwise be compared --
+ * least of all an indoor frame against a daylight one, which is the comparison
+ * Gate D actually turns on.
+ *
+ * Two bars rather than one because a reflective panel glares directionally: a
+ * left-right difference in the same four patches is an illumination gradient
+ * across the glass, not a fact about the palette.
+ *
+ * They are drawn *last*, after any variant LUT, so the reference is the same
+ * neutral ramp on every card including the restyled ones.
+ *
  * Pure: canvas in, pixels out. Host-tested for coverage rather than beauty.
  ******************************************************************************
  */
@@ -57,6 +75,19 @@ enum class Card : uint8_t {
     VariantContrast,
     VariantTrail,
     TraceOverMap,    ///< R5: the trace must win against every basemap colour.
+
+    // ---- added after the 2026-08-19 indoor session, which is why these come
+    // after the first twelve rather than in a tidier order: the twelve are
+    // already photographed and their numbering is cited in the investigation
+    // bundle, so renumbering them would orphan that evidence.
+    ChannelRamps,    ///< One quantum of each channel, as areas big enough to judge.
+    SlotsAtWidth,    ///< The slots at 1/2/3 px -- the width they are really drawn.
+    Curves,          ///< Weights on a curve, where stair-stepping is worst.
+    TextBedDark,     ///< The dark half of the fills the halo has to survive.
+    TraceSlotsDay,   ///< R5 against every slot, not against whatever a scene put there.
+    TraceSlotsNight,
+    TraceSlotsContrast,
+    TraceSlotsTrail,
     Count
 };
 

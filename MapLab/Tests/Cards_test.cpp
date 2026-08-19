@@ -59,6 +59,75 @@ TEST(Cards, EveryCardCoversThePanelAndHasANameAndAQuestion)
     }
 }
 
+TEST(Cards, EveryCardCarriesTheReferencePatches)
+{
+    // The reference is what makes two photographs comparable at all. A card
+    // that lost it -- by drawing over it, or by a variant LUT recolouring it --
+    // would produce a frame that cannot be normalised, and nothing on the
+    // watch would say so.
+    Bed bed;
+    const int16_t probeY[4] = { 88, 109, 130, 151 };
+    const uint8_t want[4]   = { 0xFF, 0xEA, 0xD5, 0xC0 };
+    for (int i = 0; i < static_cast<int>(Card::Count); ++i) {
+        const Card c = static_cast<Card>(i);
+        bed.draw(c);
+        for (int k = 0; k < 4; ++k) {
+            const int idx = probeY[k] * 240;
+            EXPECT_EQ(bed.px[idx + 4],   want[k]) << "left reference, card " << cardName(c);
+            EXPECT_EQ(bed.px[idx + 232], want[k]) << "right reference, card " << cardName(c);
+        }
+    }
+}
+
+TEST(Cards, TheReferenceSurvivesAVariantLut)
+{
+    // Specifically the ordering rule: subject, then LUT, then reference. Draw
+    // it before the LUT and night would hand back a recoloured "neutral" ramp.
+    Bed bed;
+    bed.draw(Card::TraceSlotsNight);
+    EXPECT_EQ(bed.px[88 * 240 + 4], 0xFF);
+    EXPECT_EQ(bed.px[151 * 240 + 4], 0xC0);
+}
+
+TEST(Cards, TheTraceSlotCardsPutTheTraceOverEverySlot)
+{
+    // R5 in one frame: every basemap slot present, and the trace present over
+    // them. The day card is the one that can be checked by code -- the variant
+    // cards remap both, which is the thing only an eye can judge.
+    Bed bed;
+    bed.draw(Card::TraceSlotsDay);
+    const std::set<uint8_t> seen = bed.codes();
+    for (const SlotSpec& s : kSlots) {
+        EXPECT_EQ(seen.count(s.code), 1u) << "slot " << s.name << " missing from the R5 card";
+    }
+    EXPECT_EQ(seen.count(code(Slot::Trace)), 1u);
+}
+
+TEST(Cards, TheCoarseSceneFillsThePanelRatherThanSittingInIt)
+{
+    // The bug this replaces: one 120 px tile centred on a 240 px panel, so
+    // three quarters of the card was paper and the density question was being
+    // asked of a quarter of the field.
+    Bed bed;
+    bed.draw(Card::SceneCoarse);
+    // Sample the four quadrant centres; each must carry drawn content, not the
+    // paper the old card left there. Reference bars are at x<16 and x>224, so
+    // these probes miss them.
+    const int16_t qx[4] = { 60, 180, 60, 180 };
+    const int16_t qy[4] = { 60, 60, 180, 180 };
+    for (int q = 0; q < 4; ++q) {
+        bool drawn = false;
+        for (int16_t dy = -20; dy <= 20 && !drawn; ++dy) {
+            for (int16_t dx = -20; dx <= 20 && !drawn; ++dx) {
+                if (bed.px[(qy[q] + dy) * 240 + (qx[q] + dx)] != code(Slot::Paper)) {
+                    drawn = true;
+                }
+            }
+        }
+        EXPECT_TRUE(drawn) << "quadrant " << q << " of the half-scale card is empty";
+    }
+}
+
 TEST(Cards, ThePaletteCardShowsAllSixtyFourCodes)
 {
     Bed bed;
