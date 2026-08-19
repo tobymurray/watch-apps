@@ -12,6 +12,7 @@
 #include <cstdlib>
 
 #include "Diag.hpp"
+#include "NightStore.hpp"
 #include "NightHarness.hpp"
 
 namespace {
@@ -1139,9 +1140,13 @@ TEST(Diagnosis, TheLogSaysWhatTheNightRanUnderAndHowItEnded)
     EXPECT_NE(log.find("bed=1350-540"), std::string::npos)
         << "the log does not say what window was in force:\n" << log;
     EXPECT_NE(log.find("hr=off"), std::string::npos) << log;
-    EXPECT_NE(log.find("app_version") != std::string::npos ||
-                  log.find("v0.1.0") != std::string::npos, false)
-        << "the log does not say which build wrote it:\n" << log;
+    // Against the constant, not a literal. A test that hardcodes the version is a
+    // test that fails on the next bump for a reason unrelated to what it checks --
+    // which this one did.
+    EXPECT_NE(log.find(std::string("v") + SleepLab::kAppVersion),
+              std::string::npos)
+        << "the log does not say which build wrote it (expected v"
+        << SleepLab::kAppVersion << "):\n" << log;
 
     EXPECT_NE(log.find(" open "), std::string::npos) << log;
     EXPECT_NE(log.find(" close "), std::string::npos)
@@ -1265,6 +1270,194 @@ TEST(Diagnosis, AnInterruptedNightsCsvSaysWhatProducedIt)
     EXPECT_EQ(body.find("SleepLab v") > 0 &&
                   body[body.rfind('\n', body.find("SleepLab v")) + 1] == '#',
               true);
+}
+
+// ---------------------------------------------------------------------------
+// The merge: one night answers both questions
+//
+// The Tier 0 probe recorded per-sensor delivery and battery telemetry; SleepLab
+// recorded the scored night. Neither recorded the other, and the two cannot be
+// installed together -- so on 2026-08-19 a clean 8h26m night with a hand diary and
+// a Garmin reference settled six sensor rows and could not be scored at all
+// (ledger row S13). These pin that a single night now does both.
+// ---------------------------------------------------------------------------
+
+/// Pull one column out of the epoch CSV by name, so a test names what it wants
+/// rather than counting commas -- which is the mistake the schema comment in
+/// `NightStore.hpp` warns readers about.
+std::vector<long> column(const std::string &csv, const std::string &name)
+{
+    std::vector<std::string> ls = lines(csv);
+    size_t hdr = ls.size(), idx = 0;
+    for (size_t i = 0; i < ls.size(); ++i) {
+        if (ls[i].rfind("uptime_ms,wall_utc,", 0) == 0) { hdr = i; break; }
+    }
+    if (hdr == ls.size()) { return {}; }
+
+    std::vector<std::string> cols;
+    { std::string cur; for (char c : ls[hdr]) {
+        if (c == ',') { cols.push_back(cur); cur.clear(); } else { cur += c; } }
+      cols.push_back(cur); }
+    bool found = false;
+    for (size_t i = 0; i < cols.size(); ++i) {
+        if (cols[i] == name) { idx = i; found = true; break; }
+    }
+    if (!found) { return {}; }
+
+    std::vector<long> out;
+    for (size_t i = hdr + 1; i < ls.size(); ++i) {
+        if (ls[i].empty() || ls[i][0] == '#') { continue; }
+        std::vector<std::string> f;
+        std::string cur;
+        for (char c : ls[i]) {
+            if (c == ',') { f.push_back(cur); cur.clear(); } else { cur += c; } }
+        f.push_back(cur);
+        if (idx < f.size()) { out.push_back(std::strtol(f[idx].c_str(), nullptr, 10)); }
+    }
+    return out;
+}
+
+TEST(Merge, OneNightCarriesTheDeliveryColumnsAndTheSleepOnes)
+{
+    const Observations obs = Rig::instance().run(plainNight());
+    const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
+    ASSERT_NE(rep, nullptr);
+    ASSERT_TRUE(rep->hasSleep) << "the merge cost the night its sleep numbers";
+
+    const std::string csv =
+        Rig::instance().fs.readFile(theNightCsv(Rig::instance().fs));
+    ASSERT_FALSE(csv.empty());
+
+    // Every column the probe used to own, present and populated.
+    //
+    // `touch_n` is deliberately not in this list. It is the one column whose zero
+    // is the finding rather than a fault: TOUCH_DETECT is an event sensor, and in
+    // this scenario it reported its state once at minute zero -- before the night
+    // opened, so before any row was written -- and then had nothing to say for
+    // seven hours. Measured on hardware, one sample in 507 minutes (ledger row
+    // S7). `TouchDeliveryIsSeenWhenTheSensorActuallySpeaks` covers the other case.
+    for (const char *name : { "acc_batches", "hr_trust_x10",
+                              "hrex_opt", "batt_mah", "wakes", "msgs" }) {
+        const std::vector<long> v = column(csv, name);
+        ASSERT_FALSE(v.empty()) << name << " is not a column in the epoch log";
+        bool anyReal = false;
+        for (long x : v) { if (x > 0) { anyReal = true; break; } }
+        EXPECT_TRUE(anyReal) << name << " exists and every row is absent or zero";
+    }
+    // And the column exists even when nothing filled it, which is the point of a
+    // fixed layout.
+    EXPECT_FALSE(column(csv, "touch_n").empty());
+}
+
+TEST(Merge, TouchDeliveryIsSeenWhenTheSensorActuallySpeaks)
+{
+    // The other half of the event-sensor story: when the worn state does change
+    // mid-night, `touch_n` records that the sensor spoke. Without this column,
+    // "reported worn" and "said nothing and the last state was carried forward"
+    // are the same row -- which is what made ledger row S12 cost a screen read
+    // rather than a log read.
+    Scenario s;
+    s.startUtc = kStart;
+    Phase off = still(4);
+    off.worn  = false;
+    s.phases  = { awake(5), still(3 * 60), off, still(3 * 60),
+                  awake(20, 72, 40) };
+    Rig::instance().run(s);
+
+    const std::string csv =
+        Rig::instance().fs.readFile(theNightCsv(Rig::instance().fs));
+    ASSERT_FALSE(csv.empty());
+
+    const std::vector<long> touchN = column(csv, "touch_n");
+    ASSERT_FALSE(touchN.empty());
+    long spoke = 0;
+    for (long x : touchN) { if (x > 0) { ++spoke; } }
+    EXPECT_GT(spoke, 0)
+        << "the worn state changed twice mid-night and no row recorded the "
+           "sensor speaking";
+    EXPECT_LT(spoke, static_cast<long>(touchN.size()) / 4)
+        << "the sensor spoke in a quarter of all rows; it publishes on change";
+}
+
+TEST(Merge, TheBatteryColumnsThePercentGaugeCannotReplace)
+{
+    // Ledger row S18: across a whole night the percent gauge read 100.0 % at both
+    // ends while remaining capacity fell 10 mAh. So `batt_mah` has to move, and it
+    // has to move monotonically down, or a power question is unanswerable from a
+    // SleepLab night -- which is what S16 first wrongly claimed it was not.
+    Rig::instance().run(plainNight());
+    const std::string csv =
+        Rig::instance().fs.readFile(theNightCsv(Rig::instance().fs));
+
+    const std::vector<long> mah = column(csv, "batt_mah");
+    ASSERT_GT(mah.size(), 100u);
+    EXPECT_GT(mah.front(), mah.back())
+        << "remaining capacity did not fall across the night: "
+        << mah.front() << " -> " << mah.back();
+
+    // And the current is recorded, which is the column that gives a rate rather
+    // than a difference.
+    const std::vector<long> ma = column(csv, "batt_avg_ma_x10");
+    ASSERT_FALSE(ma.empty());
+    bool anyNonAbsent = false;
+    for (long x : ma) { if (x != Engine::kAbsent) { anyNonAbsent = true; break; } }
+    EXPECT_TRUE(anyNonAbsent) << "batt_avg_ma_x10 is absent in every row";
+}
+
+TEST(Merge, TouchDeliveryIsRecordedSeparatelyFromWhatTouchSaid)
+{
+    // The column that would have made ledger row S12 obvious in one night instead
+    // of needing a screen read: `worn_pct` says what the sensor reported and
+    // `touch_n` says whether it reported at all. On hardware the answer was one
+    // sample in 507 minutes, and `worn_pct` looked identical throughout.
+    Scenario s = plainNight();
+    s.touchReportsInitialState = true;
+    Rig::instance().run(s);
+
+    const std::string csv =
+        Rig::instance().fs.readFile(theNightCsv(Rig::instance().fs));
+    const std::vector<long> touchN = column(csv, "touch_n");
+    const std::vector<long> wornPct = column(csv, "worn_pct");
+    ASSERT_EQ(touchN.size(), wornPct.size());
+    ASSERT_GT(touchN.size(), 100u);
+
+    // The harness's touch sensor speaks on change only, so most rows are silent
+    // while the worn fraction stays high -- exactly the hardware shape.
+    size_t silent = 0, worn = 0;
+    for (size_t i = 0; i < touchN.size(); ++i) {
+        if (touchN[i] == 0)    { ++silent; }
+        if (wornPct[i] >= 100) { ++worn; }
+    }
+    EXPECT_GT(silent, touchN.size() / 2)
+        << "the touch sensor spoke in most rows; it is an event sensor";
+    EXPECT_GT(worn, touchN.size() / 2)
+        << "the worn fraction did not carry forward through the silence";
+}
+
+TEST(Merge, DiagnosticsOffLeavesTheColumnsAbsentRatherThanZero)
+{
+    // The schema is fixed and the setting controls gathering, not layout -- so a
+    // reader never has to branch, and an ungathered column is absent, which is
+    // what -1 already means in this file. Zero would be a measurement.
+    Scenario s = plainNight();
+    s.settingsJson = "{\"schema\":1,\"values\":{\"diagnostics\":\"off\"}}";
+    Rig::instance().run(s);
+
+    const std::string csv =
+        Rig::instance().fs.readFile(theNightCsv(Rig::instance().fs));
+    ASSERT_FALSE(csv.empty());
+
+    // The columns still exist.
+    const std::vector<long> mah = column(csv, "batt_mah");
+    ASSERT_FALSE(mah.empty()) << "the column layout changed with the setting";
+    for (long x : mah) {
+        EXPECT_EQ(x, Engine::kAbsent) << "batt_mah was gathered with diagnostics off";
+    }
+    // And the sleep columns are untouched by the setting.
+    const std::vector<long> count = column(csv, "count");
+    bool anyCount = false;
+    for (long x : count) { if (x > 0) { anyCount = true; break; } }
+    EXPECT_TRUE(anyCount) << "turning diagnostics off cost the night its counts";
 }
 
 } // namespace

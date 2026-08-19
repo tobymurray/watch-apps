@@ -87,6 +87,7 @@
 #include "SDK/SensorLayer/SensorTypes.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserAccelerometer.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserHeartRate.hpp"
+#include "SDK/SensorLayer/DataParsers/SensorDataParserHeartRateEx.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserMotionDetect.hpp"
 
 #include "Commands.hpp"
@@ -310,7 +311,7 @@ struct Observations
 
 /// Sensors the harness can deliver, in the order handles are assigned.
 enum class Chan : uint8_t { Accel, Touch, Motion, Activity, Hr, HrEx, Steps,
-                            BattLevel, BattCharge, Count };
+                            BattLevel, BattCharge, BattMetrics, Count };
 
 class ScriptedComm : public SDK::TestSupport::StubAppComm
 {
@@ -333,7 +334,9 @@ public:
         mConnected.clear();
         mNextAccelAt = mT0 + s.accelLatencyMs;
         mNextHrAt    = mT0 + 1000;
+        mNextHrExAt  = mT0 + 1000;
         mNextBattAt  = mT0 + 30000;
+        mNextMetricsAt = mT0 + 30000;
         mNextMinuteAt = mT0 + 60000;
         mTouchPrimed = false;
         mLastWorn    = false;
@@ -545,7 +548,9 @@ public:
         };
         consider(mNextAccelAt, Chan::Accel);
         consider(mNextHrAt,    Chan::Hr);
+        consider(mNextHrExAt,  Chan::HrEx);
         consider(mNextBattAt,  Chan::BattLevel);
+        consider(mNextMetricsAt, Chan::BattMetrics);
         // The event sensors all fire on the minute boundary, which is when the
         // scenario's phase can change.
         consider(mNextMinuteAt, Chan::Touch);
@@ -606,6 +611,7 @@ private:
             case SDK::Sensor::Type::STEP_COUNTER:         return Chan::Steps;
             case SDK::Sensor::Type::BATTERY_LEVEL:        return Chan::BattLevel;
             case SDK::Sensor::Type::BATTERY_CHARGING:     return Chan::BattCharge;
+            case SDK::Sensor::Type::BATTERY_METRICS:      return Chan::BattMetrics;
             default:                                      return Chan::Count;
         }
     }
@@ -649,7 +655,9 @@ private:
         switch (c) {
             case Chan::Accel:     return buildAccel(at);
             case Chan::Hr:        return buildHr(at);
-            case Chan::BattLevel: return buildBatt(at);
+            case Chan::HrEx:      return buildHrEx(at);
+            case Chan::BattLevel:   return buildBatt(at);
+            case Chan::BattMetrics: return buildMetrics(at);
             case Chan::Touch:     return buildMinuteEvent(at);
             default:              return nullptr;
         }
@@ -723,7 +731,60 @@ private:
         SDK::Sensor::Data *d = sampleAt(e, 0);
         d->mTimeStamp  = at;
         d->mValue[0].f = static_cast<float>(p.hrBpm);
-        d->mValue[1].f = 0.9f;   // trust
+        // Trust tracks movement on real hardware: measured across the 2026-08-19
+        // night it sat at ~2.8 of 3.0 while settled and fell to 1.2 once the wearer
+        // was up (ledger row S10's night). Modelled the same way, so a test can
+        // tell a struggling sensor from a low heart rate.
+        d->mValue[1].f = (p.amplitudeG > 0.01f) ? 1.2f : 2.8f;
+        return e;
+    }
+
+    /// Voltage, current, average current, remaining and design capacity -- the
+    /// channel the diagnostics setting adds. The numbers follow the shape measured
+    /// on the 2026-08-19 night: capacity falling ~1.2 mAh an hour off a 216 mAh
+    /// pack, while the percent gauge would not have moved at all (ledger row S18).
+    SDK::MessageBase *buildMetrics(uint32_t at)
+    {
+        mNextMetricsAt = at + 30000;
+        auto *e = newBatch(Chan::BattMetrics, 1, 5);
+        if (e == nullptr) { return nullptr; }
+        SDK::Sensor::Data *d = sampleAt(e, 0);
+        d->mTimeStamp  = at;
+        const float hours = static_cast<float>(minuteOf(at)) / 60.0f;
+        d->mValue[0].f = 4.05f;                       // volts
+        d->mValue[1].f = -1.33f;                      // mA, sign per firmware
+        d->mValue[2].f = -1.20f;                      // averaged mA
+        d->mValue[3].f = 216.0f - hours * 1.2f;       // remaining mAh
+        d->mValue[4].f = 250.0f;                      // design mAh
+        return e;
+    }
+
+    /// The arbitrated heart rate and, crucially, *which source won*. Hardware
+    /// delivers one of these per HR sample -- measured, 30 169 against 30 168 --
+    /// and every one of them was optical with none external and none unattributed
+    /// (ledger row S8). Modelled the same way, because the counts are what would
+    /// show a strap and the wrist trading places.
+    SDK::MessageBase *buildHrEx(uint32_t at)
+    {
+        mNextHrExAt = at + 1000;
+        const Phase &p = mScn->at(minuteOf(at));
+        if (p.hrBpm <= 0) {
+            return nullptr;
+        }
+        auto *e = newBatch(Chan::HrEx, 1,
+                           SDK::SensorDataParser::HeartRateEx::Field::COUNT);
+        if (e == nullptr) { return nullptr; }
+        SDK::Sensor::Data *d = sampleAt(e, 0);
+        using F = SDK::SensorDataParser::HeartRateEx::Field;
+        using Src = SDK::SensorDataParser::HeartRateEx::Source;
+        d->mTimeStamp = at;
+        d->mValue[F::BPM].f            = static_cast<float>(p.hrBpm);
+        d->mValue[F::TRUST_LEVEL].f    = (p.amplitudeG > 0.01f) ? 1.2f : 2.8f;
+        d->mValue[F::SOURCE].f         = static_cast<float>(Src::OPTICAL);
+        d->mValue[F::OPTICAL_BPM].f    = static_cast<float>(p.hrBpm);
+        d->mValue[F::OPTICAL_TRUST].f  = (p.amplitudeG > 0.01f) ? 1.2f : 2.8f;
+        d->mValue[F::EXTERNAL_BPM].f   = 0.0f;
+        d->mValue[F::EXTERNAL_TRUST].f = 0.0f;
         return e;
     }
 
@@ -842,7 +903,9 @@ private:
 
     uint32_t mNextAccelAt  = 0;
     uint32_t mNextHrAt     = 0;
+    uint32_t mNextHrExAt   = 0;
     uint32_t mNextBattAt   = 0;
+    uint32_t mNextMetricsAt = 0;
     uint32_t mNextMinuteAt = 0;
     std::vector<Chan> mMinuteQueue;
 

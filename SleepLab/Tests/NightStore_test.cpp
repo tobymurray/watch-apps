@@ -57,6 +57,21 @@ Engine::NightSummary goodNight()
     return s;
 }
 
+/// Index of the column-name line, found rather than assumed.
+///
+/// The header is the normative documentation of the format and gains comment
+/// lines when the format changes, so counting them is a test that fails for the
+/// wrong reason -- as three of these did when schema 2 landed.
+size_t headerRow(const std::vector<std::string> &ls)
+{
+    for (size_t i = 0; i < ls.size(); ++i) {
+        if (ls[i].rfind("uptime_ms,wall_utc,", 0) == 0) {
+            return i;
+        }
+    }
+    return ls.size();   // not found; callers assert on the range
+}
+
 std::vector<std::string> lines(const std::string &blob)
 {
     std::vector<std::string> out;
@@ -89,12 +104,13 @@ TEST(NightStore, ANightGetsAHeaderAndOneRowPerEpoch)
     EXPECT_EQ(store.epochsWritten(), 5u);
 
     const auto ls = lines(fx.fileSystem.readFile(store.path()));
-    // Four comment lines, one column header, five rows.
-    ASSERT_EQ(ls.size(), 10u);
+    const size_t h = headerRow(ls);
+    ASSERT_LT(h, ls.size()) << "no column-name line in the epoch log";
+    // Comment lines, one column header, then exactly five rows.
+    ASSERT_EQ(ls.size(), h + 1 + 5);
     EXPECT_EQ(ls[0].rfind("# SleepLab epoch log", 0), 0u);
-    EXPECT_EQ(ls[4].rfind("uptime_ms,wall_utc,", 0), 0u);
-    EXPECT_EQ(ls[5].rfind("31000,", 0), 0u);
-    EXPECT_EQ(ls[9].rfind("151000,", 0), 0u);
+    EXPECT_EQ(ls[h + 1].rfind("31000,", 0), 0u);
+    EXPECT_EQ(ls[h + 5].rfind("151000,", 0), 0u);
 }
 
 TEST(NightStore, EveryEpochIsFlushedAndNoHandleIsLeftOpen)
@@ -125,9 +141,11 @@ TEST(NightStore, TheReservedHrvColumnsExistInEveryRowFromTheStart)
     ASSERT_TRUE(store.appendEpoch(epoch(31000), 0));
 
     const auto ls = lines(fx.fileSystem.readFile(store.path()));
-    EXPECT_NE(ls[4].find("rmssd_x10,sdnn_x10,rr_count"), std::string::npos);
-    // ...and the row ends with the three sentinels.
-    EXPECT_NE(ls[5].find("-1,-1,0"), std::string::npos);
+    const size_t h = headerRow(ls);
+    ASSERT_LT(h + 1, ls.size());
+    EXPECT_NE(ls[h].find("rmssd_x10,sdnn_x10,rr_count"), std::string::npos);
+    // ...and the row carries the three sentinels.
+    EXPECT_NE(ls[h + 1].find("-1,-1,0"), std::string::npos);
 }
 
 // -- Resume ------------------------------------------------------------------------
@@ -242,8 +260,12 @@ TEST(NightStore, ResumeContinuesTheSameFileRatherThanOpeningASecond)
     EXPECT_EQ(relaunched.epochsWritten(), 3u);
 
     relaunched.appendEpoch(epoch(230000), r.flags);
-    // Seven rows: five from before (4 comments + header + 3) plus one.
-    EXPECT_EQ(lines(fx.fileSystem.readFile(path)).size(), 9u);
+    // Three rows from before the restart, plus one after it, appended to the same
+    // file rather than opening a second.
+    const auto ls = lines(fx.fileSystem.readFile(path));
+    const size_t h = headerRow(ls);
+    ASSERT_LT(h, ls.size());
+    EXPECT_EQ(ls.size(), h + 1 + 4);
 }
 
 TEST(NightStore, AStateNamingAMissingFileIsRefusedRatherThanResumedInto)

@@ -20,6 +20,7 @@
 #include "SDK/SensorLayer/DataParsers/SensorDataParserAccelerometer.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserActivityRecognition.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserBatteryCharging.hpp"
+#include "SDK/SensorLayer/DataParsers/SensorDataParserBatteryMetrics.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserBatteryLevel.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserHeartRate.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserHeartRateEx.hpp"
@@ -172,6 +173,7 @@ Service::Service(SDK::Kernel &kernel)
     , mSteps(SDK::Sensor::Type::STEP_COUNTER, kEventPeriodMs)
     , mBattLevel(SDK::Sensor::Type::BATTERY_LEVEL, kBatteryPeriodMs)
     , mBattCharge(SDK::Sensor::Type::BATTERY_CHARGING, kEventPeriodMs)
+    , mBattMetrics(SDK::Sensor::Type::BATTERY_METRICS, kBatteryPeriodMs)
 {
 }
 
@@ -193,6 +195,14 @@ void Service::connectSensors()
     mBattLevel.connect();
     mBattCharge.connect();
 
+    // The one channel the diagnostics setting adds. Two messages a minute at a
+    // 30 s period, against the 436 the accelerometer already produces on its own
+    // (ledger row S17) -- and the only channel that can answer a power question,
+    // because `batt_pct_x10` did not move across a whole night (S18).
+    if (mSettings.diagnostics) {
+        mBattMetrics.connect();
+    }
+
     if (mSettings.hrMode != SleepLab::HrMode::Off) {
         mHr.connect();
         mHrEx.connect();
@@ -212,6 +222,7 @@ void Service::logSensors()
         { 'A', mAccel },     { 'T', mTouch },      { 'M', mMotion },
         { 'R', mActivity },  { 'H', mHr },         { 'X', mHrEx },
         { 'S', mSteps },     { 'L', mBattLevel },  { 'C', mBattCharge },
+        { 'E', mBattMetrics },
     };
 
     char block[sizeof(entries) / sizeof(entries[0]) + 1] = {};
@@ -223,7 +234,7 @@ void Service::logSensors()
     }
     block[at] = '\0';
 
-    mDiag.line("sensors", "%s (ATMRHXSLC upper=resolved)", block);
+    mDiag.line("sensors", "%s (ATMRHXSLCE upper=resolved)", block);
 }
 
 void Service::disconnectSensors()
@@ -237,6 +248,7 @@ void Service::disconnectSensors()
     mSteps.disconnect();
     mBattLevel.disconnect();
     mBattCharge.disconnect();
+    mBattMetrics.disconnect();
 }
 
 uint32_t Service::pumpHrDuty(uint32_t now)
@@ -275,6 +287,9 @@ void Service::onSensorData(uint16_t handle, SDK::Sensor::DataBatch &batch)
     const uint16_t n = batch.size();
 
     if (mAccel.matchesDriver(handle)) {
+        if (mAcc.accBatches < 0xFFFFu) {
+            mAcc.accBatches++;
+        }
         for (uint16_t i = 0; i < n; i++) {
             const SDK::SensorDataParser::Accelerometer p(batch[i]);
             if (!p.isDataValid()) {
@@ -286,6 +301,20 @@ void Service::onSensorData(uint16_t handle, SDK::Sensor::DataBatch &batch)
             // late and in bursts, and the loop's clock would attribute a whole
             // batch to the instant it was delivered.
             const uint32_t ts = p.getTimestamp();
+
+            // Worst inter-sample gap, which is what separates delivery thinning
+            // from delivery stopping and restarting. Unsigned difference, so the
+            // sensor's own clock wrapping is a gap of nearly nothing rather than
+            // of 49 days.
+            if (mAccLastTsValid) {
+                const uint32_t gap = ts - mAccLastTs;
+                if (gap < 0xFFFFu && gap > mAcc.accMaxGapMs) {
+                    mAcc.accMaxGapMs = static_cast<uint16_t>(gap);
+                }
+            }
+            mAccLastTs      = ts;
+            mAccLastTsValid = true;
+
             mCounter.add(ts, x, y, z);
             if (mRaw.isRecording()) {
                 mRaw.add(ts, x, y, z);
@@ -349,6 +378,15 @@ void Service::onSensorData(uint16_t handle, SDK::Sensor::DataBatch &batch)
             if (bpm <= 0.0f) {
                 continue;
             }
+            // The kernel's own confidence, which is the difference between a
+            // struggling sensor and a genuinely low heart rate -- and the worn
+            // gate's second half is "was there a pulse at all".
+            const float trust = p.getTrustLevel();
+            if (trust >= 0.0f && mAcc.hrTrustN < 0xFFFFu) {
+                mAcc.hrTrustSum += trust;
+                mAcc.hrTrustN++;
+            }
+
             const uint16_t x10 = static_cast<uint16_t>(bpm * 10.0f);
             if (mAcc.hrCount == 0 || x10 < mAcc.hrMinX10) {
                 mAcc.hrMinX10 = x10;
@@ -370,8 +408,20 @@ void Service::onSensorData(uint16_t handle, SDK::Sensor::DataBatch &batch)
             // came from the wrist: the strap is electrical, the wrist optical,
             // and only the wrist degrades with a loose band.
             using S = SDK::SensorDataParser::HeartRateEx::Source;
-            if (p.getSource() == S::OPTICAL)  { mAcc.hrOptical  = true; }
-            if (p.getSource() == S::EXTERNAL) { mAcc.hrExternal = true; }
+            const S src = p.getSource();
+            if (src == S::OPTICAL)  { mAcc.hrOptical  = true; }
+            if (src == S::EXTERNAL) { mAcc.hrExternal = true; }
+
+            // Counted as well as flagged. `hrSource` collapses a whole epoch to
+            // one enum; the counts are what would show a strap and the wrist
+            // trading places, or an arbiter that could not attribute a reading.
+            if (src == S::OPTICAL) {
+                if (mAcc.hrexOptical < 0xFFFFu) { mAcc.hrexOptical++; }
+            } else if (src == S::EXTERNAL) {
+                if (mAcc.hrexExternal < 0xFFFFu) { mAcc.hrexExternal++; }
+            } else {
+                if (mAcc.hrexUnknown < 0xFFFFu) { mAcc.hrexUnknown++; }
+            }
         }
         return;
     }
@@ -392,6 +442,22 @@ void Service::onSensorData(uint16_t handle, SDK::Sensor::DataBatch &batch)
             if (p.isDataValid()) {
                 mBattPctX10 = static_cast<int32_t>(p.getCharge() * 10.0f);
             }
+        }
+        return;
+    }
+
+    if (mBattMetrics.matchesDriver(handle)) {
+        for (uint16_t i = 0; i < n; i++) {
+            const SDK::SensorDataParser::BatteryMetrics p(batch[i]);
+            if (!p.isDataValid()) {
+                continue;
+            }
+            // Carried forward like the percent is: the channel publishes on its
+            // own period rather than on the epoch grid.
+            mBattMv       = static_cast<int32_t>(p.getVoltage() * 1000.0f);
+            mBattMaX10    = static_cast<int32_t>(p.getCurrent() * 10.0f);
+            mBattAvgMaX10 = static_cast<int32_t>(p.getAverageCurrent() * 10.0f);
+            mBattMah      = static_cast<int32_t>(p.getCapacity());
         }
         return;
     }
@@ -481,6 +547,29 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
     e.wornEdges  = mAcc.touchEdges;
     e.battPctX10 = static_cast<int16_t>(mBattPctX10);
     e.charging   = mCharging;
+
+    // Delivery and power. Written whether or not the diagnostics setting is on --
+    // the column layout is fixed, and the fields stay at their absent values when
+    // nothing gathered them, which is what -1 already means in this file. What the
+    // setting controls is the one extra subscription, not the schema.
+    if (mSettings.diagnostics) {
+        e.accBatches   = mAcc.accBatches;
+        e.accMaxGapMs  = mAcc.accMaxGapMs;
+        e.touchSamples = mAcc.touchN;
+        if (mAcc.hrTrustN > 0) {
+            e.hrTrustX10 = static_cast<int16_t>(
+                (mAcc.hrTrustSum / static_cast<float>(mAcc.hrTrustN)) * 10.0f);
+        }
+        e.hrexOptical  = mAcc.hrexOptical;
+        e.hrexExternal = mAcc.hrexExternal;
+        e.hrexUnknown  = mAcc.hrexUnknown;
+        e.battMv       = mBattMv;
+        e.battMaX10    = mBattMaX10;
+        e.battAvgMaX10 = mBattAvgMaX10;
+        e.battMah      = mBattMah;
+        e.wakes        = mAcc.wakes;
+        e.msgs         = mAcc.msgs;
+    }
 
     // The reserved HRV fields stay absent. There is no producer: HEART_BEAT
     // emits nothing, so there are no RR intervals. They are written every row
@@ -1536,8 +1625,20 @@ void Service::run()
             sleepMs = toDuty;
         }
 
+        // Counted for the epoch's own row. A wake without a message is a spurious
+        // wake, and the two together are what tell a fed loop from a spinning one
+        // -- measured on the probe, 435 of every 436 wakes carried a message
+        // (ledger row S10), and the feed was the accelerometer refusing to batch
+        // (S17).
+        if (mAcc.wakes < 0xFFFFu) {
+            mAcc.wakes++;
+        }
+
         SDK::MessageBase *msg = nullptr;
         if (mKernel.comm.getMessage(msg, sleepMs)) {
+            if (mAcc.msgs < 0xFFFFu) {
+                mAcc.msgs++;
+            }
             switch (msg->getType()) {
                 case SDK::MessageType::COMMAND_APP_STOP: {
                     // Almost always the USB cable. Close the night rather than

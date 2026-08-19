@@ -53,12 +53,20 @@ from datetime import datetime, timedelta, timezone
 # Column order of a SleepLab epoch CSV, from NightStore.cpp's kEpochHeader.
 # A literal rather than a read of the file's own header line: if the two
 # disagree that is a bug worth failing on, not one to paper over.
+# Schema 2. The last thirteen are the delivery and power columns that used to be
+# the Tier 0 probe's alone -- see NightStore.cpp, which this list has to track
+# exactly, because a reader that maps columns by position across a schema change
+# reports one sensor's numbers under another sensor's name.
 EPOCH_COLS = [
     "uptime_ms", "wall_utc", "span_ms", "count", "peak", "samples",
     "motion", "sig_motion", "step_delta",
     "hr_mean_x10", "hr_min_x10", "hr_samples", "hr_source",
     "worn_pct", "worn_edges", "batt_pct_x10", "charging",
     "rmssd_x10", "sdnn_x10", "rr_count",
+    "acc_batches", "acc_max_gap_ms", "touch_n", "hr_trust_x10",
+    "hrex_opt", "hrex_ext", "hrex_unk",
+    "batt_mv", "batt_ma_x10", "batt_avg_ma_x10", "batt_mah",
+    "wakes", "msgs",
 ]
 
 ABSENT = -1

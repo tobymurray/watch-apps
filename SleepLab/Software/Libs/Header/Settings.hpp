@@ -141,6 +141,25 @@ struct Settings
     /// Off by default and capped hard. Epochs cost ~46 KB a night; raw at 25 Hz
     /// costs about **31 MB for eight hours**, scaling Squash's measured
     /// ~4.3 KiB/s at 100 Hz. Nobody wants that by accident.
+    /// Record the per-sensor delivery columns as well as the sleep ones.
+    ///
+    /// **On by default**, which is a measurement rather than a preference. The
+    /// Tier 0 probe recorded these columns and SleepLab did not, so any question
+    /// about delivery or power needed a *separate* night with a different app
+    /// installed -- and on 2026-08-19 that cost a night with a hand diary and a
+    /// Garmin reference alongside it, which settled six sensor rows and could not
+    /// be scored (ledger row S13).
+    ///
+    /// The marginal cost, measured on that night: `BATTERY_METRICS` at a 30 s
+    /// period is 2 IPC messages a minute against the 436 the accelerometer alone
+    /// already produces (S17), and the extra columns take a night from ~46 KB to
+    /// ~96 KB on a volume that has carried 160 MiB of map packs. Neither is a
+    /// reason to be off.
+    ///
+    /// What it does not change is the sleep numbers. Every column it adds is
+    /// delivery or power; nothing downstream of the scorer reads any of them.
+    bool     diagnostics  = true;
+
     bool     rawRecording = false;
 
     /// Cap on the raw recording, megabytes. Self-defence, not device

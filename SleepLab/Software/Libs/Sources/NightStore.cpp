@@ -32,15 +32,22 @@ namespace {
 /// from the same source as the row cannot catch a column going out of step
 /// with its name.
 constexpr char kEpochHeader[] =
-    "# SleepLab epoch log, schema 1. One row per 30 s recording epoch.\n"
+    "# SleepLab epoch log, schema 2. One row per 30 s recording epoch.\n"
     "# uptime_ms is device uptime and survives an app restart; wall_utc is the\n"
     "# wall clock and can jump. Durations come from uptime, times of day from\n"
     "# the wall clock, and -1 means not measured (never 0).\n"
+    "# Schema 2 adds the delivery and power columns the Tier 0 probe used to own,\n"
+    "# so one night can answer both what the wearer did and what the hardware did.\n"
+    "# They are absent, not zero, when the diagnostics setting is off.\n"
     "uptime_ms,wall_utc,span_ms,count,peak,samples,"
     "motion,sig_motion,step_delta,"
     "hr_mean_x10,hr_min_x10,hr_samples,hr_source,"
     "worn_pct,worn_edges,batt_pct_x10,charging,"
-    "rmssd_x10,sdnn_x10,rr_count\n";
+    "rmssd_x10,sdnn_x10,rr_count,"
+    "acc_batches,acc_max_gap_ms,touch_n,hr_trust_x10,"
+    "hrex_opt,hrex_ext,hrex_unk,"
+    "batt_mv,batt_ma_x10,batt_avg_ma_x10,batt_mah,"
+    "wakes,msgs\n";
 
 constexpr char kIndexHeader[] =
     "# SleepLab night index, schema 1. One row per completed night.\n"
@@ -49,7 +56,13 @@ constexpr char kIndexHeader[] =
     "start_utc,tib_min,tst_min,eff_pct,hr_min_x10,hr_min_at_pct,worn,interruption\n";
 
 /// Longest an epoch row can be, plus slack.
-constexpr size_t kRowMax = 256;
+///
+/// Schema 2's 33 columns run to about 200 characters of digits in the worst case;
+/// 384 is comfortable slack. `appendEpoch` refuses to write a row that did not
+/// fit rather than writing a truncated one, so being wrong here costs epochs
+/// rather than corrupting the file -- but it costs *all* of them, silently until
+/// the write-failure flag was added, so the slack is deliberate.
+constexpr size_t kRowMax = 384;
 
 /// Format a session-start time as the file's stem.
 ///
@@ -391,7 +404,11 @@ bool NightStore::appendEpoch(const Engine::Epoch &e, uint16_t flags)
         "%u,%u,%ld,"
         "%d,%d,%u,%u,"
         "%u,%u,%d,%d,"
-        "%ld,%ld,%u\n",
+        "%ld,%ld,%u,"
+        "%u,%u,%u,%d,"
+        "%u,%u,%u,"
+        "%ld,%ld,%ld,%ld,"
+        "%u,%u\n",
         static_cast<unsigned long>(e.uptimeMs),
         static_cast<long long>(e.wallUtc),
         static_cast<unsigned long>(e.spanMs),
@@ -418,7 +435,26 @@ bool NightStore::appendEpoch(const Engine::Epoch &e, uint16_t flags)
         // a future HRV producer needs no schema bump and no re-recording.
         static_cast<long>(e.rmssdX10),
         static_cast<long>(e.sdnnX10),
-        static_cast<unsigned>(e.rrCount));
+        static_cast<unsigned>(e.rrCount),
+
+        // Delivery and power -- schema 2. What the epoch was built from, rather
+        // than what it measured.
+        static_cast<unsigned>(e.accBatches),
+        static_cast<unsigned>(e.accMaxGapMs),
+        static_cast<unsigned>(e.touchSamples),
+        static_cast<int>(e.hrTrustX10),
+
+        static_cast<unsigned>(e.hrexOptical),
+        static_cast<unsigned>(e.hrexExternal),
+        static_cast<unsigned>(e.hrexUnknown),
+
+        static_cast<long>(e.battMv),
+        static_cast<long>(e.battMaX10),
+        static_cast<long>(e.battAvgMaX10),
+        static_cast<long>(e.battMah),
+
+        static_cast<unsigned>(e.wakes),
+        static_cast<unsigned>(e.msgs));
 
     if (n <= 0 || static_cast<size_t>(n) >= sizeof(line)) {
         LOG_WARNING("epoch row did not fit; dropped\n");

@@ -121,6 +121,17 @@ private:
         uint16_t touchWornN = 0;
         uint8_t  touchEdges = 0;
 
+        // -- Delivery, for the diagnostics columns ---------------------------
+        uint16_t accBatches   = 0;
+        uint16_t accMaxGapMs  = 0;
+        float    hrTrustSum   = 0.0f;
+        uint16_t hrTrustN     = 0;
+        uint16_t hrexOptical  = 0;
+        uint16_t hrexExternal = 0;
+        uint16_t hrexUnknown  = 0;
+        uint16_t wakes        = 0;
+        uint16_t msgs         = 0;
+
         void reset() { *this = Accum{}; }
     };
 
@@ -250,6 +261,11 @@ private:
     SDK::Sensor::Connection mSteps;
     SDK::Sensor::Connection mBattLevel;
     SDK::Sensor::Connection mBattCharge;
+    /// Voltage, current and remaining capacity. Subscribed only when the
+    /// diagnostics setting is on -- it is the one extra channel the merge adds,
+    /// and it is the only one that can answer a power question, because the
+    /// percent gauge cannot (ledger row S18).
+    SDK::Sensor::Connection mBattMetrics;
 
     // -- The night in RAM -----------------------------------------------------
     //
@@ -309,6 +325,19 @@ private:
     int64_t  mStepAtEpoch    = Engine::kAbsent;
     int32_t  mBattPctX10     = Engine::kAbsent;
     bool     mCharging       = false;
+
+    /// Latest BATTERY_METRICS reading, carried forward like the percent is: the
+    /// channel publishes on its own period, not on the epoch grid.
+    int32_t  mBattMv         = Engine::kAbsent;
+    int32_t  mBattMaX10      = Engine::kAbsent;
+    int32_t  mBattAvgMaX10   = Engine::kAbsent;
+    int32_t  mBattMah        = Engine::kAbsent;
+
+    /// Timestamp of the last accelerometer sample, for the worst-gap column. The
+    /// counter tracks this internally too, and deliberately does not expose it --
+    /// its copy is filter state and this one is a delivery measurement.
+    uint32_t mAccLastTs      = 0;
+    bool     mAccLastTsValid = false;
 
     // -- Night state ----------------------------------------------------------
 

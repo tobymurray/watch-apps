@@ -36,7 +36,12 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 SDK="${UNA_SDK:-$(cd "$REPO/../una-sdk" && pwd)}"
-VERSION="${BUILD_VERSION:-0.1.0}"
+# The two apps version independently, and conflating them was a real hazard: one
+# `BUILD_VERSION` meant bumping SleepLab silently restamped the probe, which is
+# published at 0.1.1 in Kira and has not changed since. `BUILD_VERSION` still
+# overrides either, for a one-off build.
+APP_VERSION="${BUILD_VERSION:-0.2.0}"
+PROBE_VERSION="${BUILD_VERSION:-0.1.1}"
 
 ARM_IMAGE="${SLEEPLAB_ARM_IMAGE:-sleeplab-arm:latest}"
 HOST_IMAGE="${SLEEPLAB_HOST_IMAGE:-sleeplab-host:latest}"
@@ -64,11 +69,11 @@ run_sim() {
 case "${1:-}" in
   probe)
     run_arm "SleepLab/Probe/Software/App/SleepProbe-CMake" \
-      "cmake -B build -G 'Unix Makefiles' -DBUILD_VERSION=$VERSION . && cmake --build build -j\$(nproc)"
+      "cmake -B build -G 'Unix Makefiles' -DBUILD_VERSION=$PROBE_VERSION . && cmake --build build -j\$(nproc)"
     ;;
   app)
     run_arm "SleepLab/Software/Apps/SleepLab-CMake" \
-      "cmake -B build -G 'Unix Makefiles' -DBUILD_VERSION=$VERSION . && cmake --build build -j\$(nproc)"
+      "cmake -B build -G 'Unix Makefiles' -DBUILD_VERSION=$APP_VERSION . && cmake --build build -j\$(nproc)"
     ;;
   tests)
     run_host \

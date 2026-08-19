@@ -100,7 +100,7 @@ constexpr size_t kMaxNightPath = 64;
 /// Schema of the epoch CSV. Bumped when a column is added, removed or
 /// reinterpreted; a reader must refuse an unknown schema rather than mapping
 /// columns by position and reporting the wrong sensor's numbers.
-constexpr uint32_t kEpochCsvSchema = 1;
+constexpr uint32_t kEpochCsvSchema = 2;
 /// Schema of the index CSV. Independent of the above: they change for
 /// different reasons and a decade of index rows should survive an epoch column
 /// being added.
@@ -116,7 +116,7 @@ constexpr uint32_t kSummaryJsonSchema = 1;
 /// provenance field that only exists under one of two build systems is worse
 /// than one that is maintained by hand. Bump it whenever anything that would move
 /// a number changes -- a threshold, a filter, an epoch length.
-constexpr char kAppVersion[] = "0.1.0";
+constexpr char kAppVersion[] = "0.2.0";
 
 /**
  * @brief What a resumed launch found on disk.

@@ -153,6 +153,62 @@ struct Epoch
     /// the charger is a night with a hole in it.
     bool     charging   = false;
 
+    // -- Delivery and power ---------------------------------------------------
+    //
+    // What the epoch was built from, rather than what it measured. Absent
+    // (kAbsent) or zero when the diagnostics setting is off.
+    //
+    // These are here because the Tier 0 probe recorded them and SleepLab did not,
+    // which made every question about delivery or power cost a separate night with
+    // a different app installed. A count is only comparable with another count
+    // taken at a similar delivered rate, and the rate is neither the requested one
+    // (ledger rows S3, S17) nor constant -- so a night that cannot say what it was
+    // built from cannot be compared with another night at all.
+
+    uint16_t accBatches   = 0;  ///< Sensor-layer messages carrying accelerometer.
+    /// Worst gap between consecutive accelerometer timestamps, ms. Distinguishes
+    /// "delivery thinned" from "delivery stopped and restarted", which the sample
+    /// count alone cannot.
+    uint16_t accMaxGapMs  = 0;
+
+    /// TOUCH_DETECT samples *delivered*, as distinct from what they said.
+    ///
+    /// The one column that separates "the sensor reported worn" from "the sensor
+    /// said nothing and the recorder carried the last state forward". It is an
+    /// event sensor: measured across a whole night, it delivered one sample in 507
+    /// minutes (ledger row S7). `wornPct` cannot show that and `wornEdges` cannot
+    /// either.
+    uint16_t touchSamples = 0;
+
+    /// Kernel's own confidence in the heart rate, x10. Optical HR against a hard
+    /// surface returns a number with the trust collapsed, and the worn gate's
+    /// second half is "was there a pulse" -- so a reading's trust is what separates
+    /// a struggling sensor from a genuinely low heart rate.
+    int16_t  hrTrustX10   = static_cast<int16_t>(kAbsent);
+
+    /// HEART_RATE_EX readings by arbitrated source. `hrSource` collapses these to
+    /// one enum for the night; the counts are what show contention.
+    uint16_t hrexOptical  = 0;
+    uint16_t hrexExternal = 0;
+    uint16_t hrexUnknown  = 0;
+
+    /// Battery voltage, current and remaining capacity from BATTERY_METRICS.
+    ///
+    /// `battPctX10` above is not a substitute: measured across a whole 8.45 h
+    /// night it read 100.0 % at both ends while the remaining capacity fell by
+    /// 10 mAh (ledger row S18). The percent gauge is not slow, it is
+    /// non-functional for this, and these are the columns that work.
+    int32_t  battMv       = kAbsent;
+    int32_t  battMaX10    = kAbsent;
+    int32_t  battAvgMaX10 = kAbsent;
+    int32_t  battMah      = kAbsent;
+
+    /// Loop wakes and messages handled during the epoch. A wake without a message
+    /// is a spurious wake; the two together are what tell a fed loop from a
+    /// spinning one.
+    uint16_t wakes        = 0;
+    uint16_t msgs         = 0;
+
     // -- Reserved: heart-rate variability -------------------------------------
     //
     // Written as absent, always, today. `HEART_BEAT` (0x40) emits no events at

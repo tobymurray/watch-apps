@@ -200,6 +200,7 @@ void apply(const char *buffer, size_t len, Settings &out)
     readBounded(json, "values.hr_duty_per_sec", 10, 3600, out.hrDutyPerSec);
 
     readFlag(json, "values.alarm",         out.alarmEnabled);
+    readFlag(json, "values.diagnostics",   out.diagnostics);
     readFlag(json, "values.raw_recording", out.rawRecording);
     readBounded(json, "values.raw_max_mb",   1, 512,  out.rawMaxMb);
     readBounded(json, "values.raw_max_min",  1, 1440, out.rawMaxMin);
