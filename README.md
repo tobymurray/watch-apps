@@ -19,6 +19,7 @@ than living inside it.
 | [`RustGuiPoc`](RustGuiPoc) | A proof of concept: a watch app whose GUI is drawn by Rust and `embedded-graphics` through the SDK's CustomGUI entry point, instead of TouchGFX. |
 | [`SleepLab`](SleepLab) | A background, autostart `Utility` app that records a night of wrist data and scores it with a published actigraphy algorithm — and refuses to report sleep stages, an unworn night, or a heart-rate figure it has not earned a baseline for, because a sleep app's failures are silent. |
 | [`Squash`](Squash) | A squash activity app, and the raw 100 Hz IMU recorder it is being built out of — because tuning shot detection needs labelled court data that does not exist yet. |
+| [`SunGlance`](SunGlance) | A `Glance` card that says what the sun does next — sunrise or sunset, and how long until it — for a position written into the app's folder at install time, because a three-second card cannot afford a GNSS fix and does not need one. |
 
 Most of these started as example apps inside the SDK tree and came here with
 their history intact (`Barcode`, `GpsLab`, `RustGuiPoc`, `Squash`); `Chrono`
@@ -68,17 +69,19 @@ kira build-app --app GpsLab --sdk /path/to/una-sdk --version 1.0.0 --out GpsLab.
 `Chrono` carries tests for its stopwatch core under [`Chrono/Tests`](Chrono/Tests),
 `MapManager` carries tests for its verifier core under
 [`MapManager/Tests`](MapManager/Tests), `SleepLab` carries its sleep engine and
-storage under [`SleepLab/Tests`](SleepLab/Tests), and the three map apps share
-one suite under [`MapKit/Tests`](MapKit/Tests).
+storage under [`SleepLab/Tests`](SleepLab/Tests), `SunGlance` carries its solar
+core, its wording and its glance wiring under
+[`SunGlance/Tests`](SunGlance/Tests), and the three map apps share one suite
+under [`MapKit/Tests`](MapKit/Tests).
 
 Two different SDKs, depending on the app. `Chrono`, `MapManager` and the three
 map apps are pinned to `apps-v1.3.0` — point `$UNA_SDK` at a checkout of that
 tag, and see their READMEs
 ([Chrono](Chrono/README.md#why-13-matters), [MapManager](MapManager/README.md#why-its-pinned-to-sdk-13))
-for why. `SleepLab` targets **`apps-v1.4.0`** and will not run on a 1.3 kernel:
-an app carries the interface version it was built against, and the mismatch
-shows up as an instant `App PID` error screen rather than as a build failure —
-see [its README](SleepLab/README.md#building).
+for why. `SleepLab` and `SunGlance` target **`apps-v1.4.0`** and will not run
+on a 1.3 kernel: an app carries the interface version it was built against, and
+the mismatch shows up as an instant `App PID` error screen rather than as a
+build failure — see [SleepLab's README](SleepLab/README.md#building).
 
 ## Licence
 
