@@ -81,11 +81,11 @@ struct Update
 class ScriptedComm : public SDK::TestSupport::StubAppComm
 {
 public:
-    /// What the glance area is. Defaults are the real panel's, less the
-    /// carousel's own furniture; a test can shrink them to check the app
-    /// declines rather than draws something clipped.
-    int16_t  width       = 241;
-    int16_t  height      = 88;
+    /// What the glance area is. The defaults are what a watch reported on
+    /// 2026-08-19 -- see glance.txt -- rather than what anybody assumed; a test
+    /// can change them to check the app adapts or declines.
+    int16_t  width       = 240;
+    int16_t  height      = 60;
     uint32_t maxControls = 32;
 
     /// Everything the service sent, in order.

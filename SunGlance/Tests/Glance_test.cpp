@@ -304,14 +304,12 @@ TEST(Glance, ItWritesDownWhatTheKernelGaveIt)
     Rig rig;
     rig.seed("input.json", london());
     rig.at(kBeforeDawn);
-    rig.comm.width  = 241;
-    rig.comm.height = 88;
     rig.comm.viewing(1);
 
     rig.run();
 
     const std::string note = rig.fs.readFile("glance.txt");
-    EXPECT_NE(note.find("area 241x88"), std::string::npos) << note;
+    EXPECT_NE(note.find("area 240x60"), std::string::npos) << note;
     EXPECT_NE(note.find("side-by-side"), std::string::npos) << note;
     EXPECT_NE(note.find("font25"), std::string::npos) << note;
     EXPECT_NE(note.find("icons yes"), std::string::npos) << note;
@@ -352,7 +350,7 @@ TEST(Glance, APanelTooSmallToDrawInIsDeclinedButMeasuredFirst)
     // But the measurement is on the watch, which is the only way anybody finds
     // out what the panel actually was.
     const std::string note = rig.fs.readFile("glance.txt");
-    EXPECT_NE(note.find("area 241x28"), std::string::npos) << note;
+    EXPECT_NE(note.find("area 240x28"), std::string::npos) << note;
     EXPECT_NE(note.find("fits no"), std::string::npos) << note;
 }
 

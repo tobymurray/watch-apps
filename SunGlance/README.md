@@ -30,20 +30,26 @@ There is no GUI. Tapping the card opens nothing, because everything this app
 has to say fits on that card — which is the definition of a glance, and the
 reason it is 36 KB and runs only while you are looking at it.
 
-## Status: on a watch, and the first thing it found was a layout bug
+## Status: on a watch, and the panel is finally a measurement
 
-Everything below builds against `apps-v1.4.0` and **82 host tests pass**,
+Everything below builds against `apps-v1.4.0` and **84 host tests pass**,
 including seventeen that drive the real service through a scripted glance
-carousel. It has now been run on hardware, which immediately clipped the bottom
-of the second row's digits — see [the bands](#the-bands-and-why-none-of-them-are-constants).
-So:
+carousel. Two rounds of hardware feedback so far, and both were about the panel
+rather than the sun: the first clipped the bottom of a stacked row, the second
+found the left icon sitting under the carousel's scroll indicator.
+
+**The glance area is 240×60.** Not the 241×88 this was written against — a third
+shorter, which means the stacked arrangement could never have worked here at any
+font size, and the drawable width is narrower still because the scroll indicator
+is painted over the left edge. That number came off the watch in `glance.txt`,
+and every layout constant now derives from it. So:
 
 | | |
 | --- | --- |
 | **Checked against an independent implementation** | Sunrise and sunset for 52 place-days against [`astral`](https://pypi.org/project/astral/) 3.2, plus a 1825-day polar sweep. Worst disagreement: 26 s below 55° latitude, 72 s to 66°, 118 s beyond. [`Tests/README.md`](Tests/README.md) has the method and the generator. |
 | **Checked by running the real code** | The service itself, from a config file on the storage to the strings handed to the kernel, through the message queue a carousel would send. |
-| **Checked on the watch** | That it draws, that the position is read, and that the times are the right shape. One round of hardware feedback so far, which found the clipped row. |
-| **Not checked at all** | That the *fixed* layout renders cleanly, and the character budgets in `Render_test.cpp`, which remain an estimate of what fits at these font sizes. The app now writes down what the panel actually is — see `glance.txt` below — so the next round of tuning is done against a measurement. |
+| **Checked on the watch** | That it draws, that the position is read, that the times are right, and — now — how big the glance area actually is and where its usable part starts. |
+| **Not checked at all** | Whether font 25 is the largest that fits, or whether the 18-pixel left inset is exactly right rather than merely enough. Both are now tuned against `glance.txt` rather than against another app's numbers, which is the difference between the first two rounds and any that follow. |
 
 ## What it shows
 
@@ -128,11 +134,22 @@ all; between two shapes that both keep them the larger font wins, and side by
 side breaks the tie. If none of the four fit, the glance is declined rather than
 drawn cut off.
 
-On the 241×88 panel this was written against that comes out as **side by side,
-font 25, icons kept** — the times 72×30 at y17, the icons at y22, the caption
-across the bottom at y65. A 180-pixel-wide panel stacks instead; a 200×80 one
-stays side by side at font 20; a 44-pixel-tall one keeps both times and drops
-the icons.
+On the real 240×60 panel that comes out as **side by side, font 25, icons kept**
+— icons at x21 and x130, times 70×30 beside them, the caption across the bottom
+at y37. A 180-pixel-wide panel drops the icons to keep the font; a 200×60 one
+keeps them at font 18; a 120-wide one stacks. Stacking cannot happen on *this*
+watch: two lines and a caption need 63 pixels before any margin, and there are
+60.
+
+### The part of the panel that is not drawable
+
+The kernel reports 240 wide; the carousel then paints a scroll indicator down
+the left edge, **over** the glance. The first build to reach a watch centred its
+content in the reported width, put the left icon at x=11, and had its edge
+clipped. Everything except the caption is now laid out inside an 18-pixel left
+inset — the same x SleepLab's main lines use — with 8 on the right. The caption
+still spans the full width because it is centred text: what the indicator passes
+over is its margin, not a glyph.
 
 Every text box is exactly its line height and centred in its band, rather than
 being handed the whole band. `GlanceText_t` has no vertical alignment, so a box
@@ -146,10 +163,10 @@ done against a measurement rather than another app's numbers:
 
 ```
 # what the kernel offered, and what was drawn from it
-area 241x88
+area 240x60
 side-by-side font25 icons yes fits yes
-first 41,17 72x30  second 157,17 72x30
-sub 0,65 241x21
+first 50,3 70x30  second 159,3 70x30
+sub 0,37 240x21
 ```
 
 It is written *before* the app decides whether the panel is drawable, because a
@@ -290,7 +307,7 @@ cd Tests
 cmake -B build . && cmake --build build && (cd build && ctest --output-on-failure)
 ```
 
-Three executables and 82 tests: the arithmetic, the layout and the wording with
+Three executables and 84 tests: the arithmetic, the layout and the wording with
 no SDK at all, the config reader over the SDK's in-memory filesystem, and the real
 service driven by a scripted glance carousel. [`Tests/README.md`](Tests/README.md)
 says what each is evidence about — and what the fixtures are *not* evidence
