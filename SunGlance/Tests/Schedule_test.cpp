@@ -37,35 +37,58 @@ Sun::Day polarDay(Sun::DayKind kind)
 const Sun::Day kToday    = normalDay(kRise, kSet);
 const Sun::Day kTomorrow = normalDay(kRise + 86400 + 120, kSet + 86400 - 120);
 
-TEST(Schedule, BeforeSunriseTheNextThingIsSunrise)
+TEST(Schedule, BeforeSunriseBothOfTodaysEventsAreAhead)
 {
     const Sun::Next n = Sun::nextEvent(kMidnight + 5 * 3600, kToday, kTomorrow);
     EXPECT_EQ(n.kind, Sun::EventKind::Rise);
     EXPECT_EQ(n.whenUtc, kRise);
-    EXPECT_EQ(n.otherUtc, kSet);
+    EXPECT_EQ(n.secondUtc, kSet);
     EXPECT_FALSE(n.nextDay);
 }
 
-TEST(Schedule, DuringTheDayTheNextThingIsSunset)
+TEST(Schedule, DuringTheDayTheSecondEventIsTomorrowsSunrise)
 {
     const Sun::Next n = Sun::nextEvent(kMidnight + 12 * 3600, kToday, kTomorrow);
     EXPECT_EQ(n.kind, Sun::EventKind::Set);
     EXPECT_EQ(n.whenUtc, kSet);
-    // Paired with a sunrise that has already happened, which the caption words
-    // in the past tense.
-    EXPECT_EQ(n.otherUtc, kRise);
+    // Not this morning's sunrise, which has been and gone. Both rows on the
+    // screen are things that have not happened yet.
+    EXPECT_EQ(n.secondUtc, kTomorrow.riseUtc);
     EXPECT_FALSE(n.nextDay);
 }
 
-TEST(Schedule, AfterSunsetTheNextThingIsTomorrowsSunrise)
+TEST(Schedule, AfterSunsetBothEventsAreTomorrows)
 {
     const Sun::Next n = Sun::nextEvent(kSet + 1, kToday, kTomorrow);
     EXPECT_EQ(n.kind, Sun::EventKind::Rise);
     EXPECT_EQ(n.whenUtc, kTomorrow.riseUtc);
+    EXPECT_EQ(n.secondUtc, kTomorrow.setUtc);
     EXPECT_TRUE(n.nextDay);
-    // No pairing: tomorrow's sunset is 20 hours away and saying so at 11pm
-    // helps nobody.
-    EXPECT_EQ(n.otherUtc, -1);
+}
+
+TEST(Schedule, NothingReturnedIsEverInThePast)
+{
+    // The property the whole file is really about, checked across a day rather
+    // than at the three instants the cases above happen to pick.
+    for (int64_t now = kMidnight; now < kMidnight + 86400; now += 137) {
+        const Sun::Next n = Sun::nextEvent(now, kToday, kTomorrow);
+        ASSERT_GT(n.whenUtc, now) << now;
+        if (n.secondUtc >= 0) {
+            ASSERT_GT(n.secondUtc, n.whenUtc) << now;
+        }
+    }
+}
+
+TEST(Schedule, TheLastSunsetBeforeTheMidnightSunHasNoSecondEvent)
+{
+    // Today's sunset happens; tomorrow the sun never comes back down, so it
+    // never comes up either. There is no second row to draw, and inventing one
+    // would mean showing a sunrise that is not coming.
+    const Sun::Next n = Sun::nextEvent(kMidnight + 12 * 3600, kToday,
+                                       polarDay(Sun::DayKind::AlwaysUp));
+    EXPECT_EQ(n.kind, Sun::EventKind::Set);
+    EXPECT_EQ(n.whenUtc, kSet);
+    EXPECT_EQ(n.secondUtc, -1);
 }
 
 TEST(Schedule, TheEventItselfHasNotHappenedYet)
@@ -107,6 +130,7 @@ TEST(Schedule, TheLastSunsetOfTheAutumnIsFollowedByNoSunrise)
     const Sun::Next n = Sun::nextEvent(kSet + 60, kToday, polarDay(Sun::DayKind::AlwaysDown));
     EXPECT_EQ(n.kind, Sun::EventKind::PolarNight);
     EXPECT_EQ(n.whenUtc, -1);
+    EXPECT_EQ(n.secondUtc, -1);
     EXPECT_TRUE(n.nextDay);
 }
 

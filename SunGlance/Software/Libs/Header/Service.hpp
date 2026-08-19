@@ -29,6 +29,14 @@
  * looking, which is the one thing this app type is not. If a morning "sun sets
  * at" widget is ever wanted, the app type has to change first.
  *
+ * ## The screen
+ *
+ * Two rows -- an icon and a time each, the next event above the one after it --
+ * and a caption under them. Five controls, which is more than any SDK glance
+ * example asks for, so the count the kernel offers is checked and the icons are
+ * dropped rather than the glance declined if it will not stretch to five. See
+ * `Render.hpp` for what the rows say without them.
+ *
  * ## The two things this file has to get right
  *
  * **Send when, and only when, something changed.** The tick is a frame clock --
@@ -75,12 +83,25 @@ private:
     bool glanceConfig();
     void glanceCreate();
 
+    /// Position the controls for the screen that is about to be drawn. Called
+    /// when the shape changes -- two rows to one message and back -- and not on
+    /// every update, because moving a control invalidates it.
+    void layout(bool rowsMode);
+
     /// Recompute what the screen should say, at most once a second.
     void update();
     /// Everything the renderer needs, gathered from the clock and the config.
     Sun::View compose(int64_t nowUtc);
     /// Copy the lines into the controls, but only the ones that differ.
     void apply(const Sun::Lines &lines);
+
+    /// Show or hide a control, and invalidate it when that changed.
+    ///
+    /// `Control::setVisible()` does not invalidate -- it writes the flag and
+    /// returns -- so a control that is hidden and nothing else would keep being
+    /// drawn until something unrelated happened to dirty the form. Exactly the
+    /// class of silent failure that killed SleepLab's glance.
+    static void showControl(SDK::Glance::Control &control, bool shown, bool &state);
     /// Send the form if anything invalidated it.
     void push();
 
@@ -92,24 +113,45 @@ private:
     // -- Layout ---------------------------------------------------------------
     //
     // The bands are SleepLab's, which came off a real panel; the widths are
-    // whatever the kernel says the area is, so the text centres in it rather
+    // whatever the kernel says the area is, so the rows centre in it rather
     // than in an assumption.
-    static constexpr int16_t kTitleY  = 0;
-    static constexpr int16_t kTitleH  = 26;
-    static constexpr int16_t kValueY  = 26;
-    static constexpr int16_t kValueH  = 36;
-    static constexpr int16_t kSubY    = 62;
-    static constexpr int16_t kSubH    = 22;
-    /// Three text controls, and the app declines the glance below that rather
-    /// than dropping a line -- a sun time with no idea which event it is, or
-    /// which day, is worse than no glance.
+    static constexpr int16_t kRowH    = 32;
+    static constexpr int16_t kRowAY   = 1;
+    static constexpr int16_t kRowBY   = 33;
+    static constexpr int16_t kSubY    = 66;
+    static constexpr int16_t kSubH    = 20;
+    /// Gap between an icon and the time it labels.
+    static constexpr int16_t kIconGap = 8;
+    /// Width reserved for "04:50" at the row font. Five digits, not a sentence.
+    static constexpr int16_t kTimeW   = 92;
+
+    /// Two icons, two times and a caption.
+    static constexpr uint32_t kControlsWanted = 5;
+    /// Below this the glance is declined outright: two times and a caption is
+    /// the least this app can say without lying about which event is which.
     static constexpr uint32_t kControlsNeeded = 3;
 
-    SDK::Kernel             &mKernel;
-    SDK::Glance::Form        mGlance;
-    SDK::Glance::ControlText mTitle;
-    SDK::Glance::ControlText mValue;
-    SDK::Glance::ControlText mSub;
+    SDK::Kernel              &mKernel;
+    SDK::Glance::Form         mGlance;
+    SDK::Glance::ControlImage mIconFirst;
+    SDK::Glance::ControlText  mFirst;
+    SDK::Glance::ControlImage mIconSecond;
+    SDK::Glance::ControlText  mSecond;
+    SDK::Glance::ControlText  mSub;
+
+    /// False when the kernel would not give this glance five controls, in which
+    /// case the rows carry words instead of pictures.
+    bool mWithIcons = false;
+
+    /// What is currently on screen, because the SDK will not say: which shape
+    /// the controls are laid out for, which icons they carry, and what is
+    /// visible.
+    bool           mRowsMode      = true;
+    bool           mLaidOut       = false;
+    Sun::EventKind mFirstIconKind   = Sun::EventKind::Rise;
+    bool           mIconFirstShown  = true;
+    bool           mIconSecondShown = true;
+    bool           mSecondShown     = true;
 
     Sun::HomeConfig mHome;
 

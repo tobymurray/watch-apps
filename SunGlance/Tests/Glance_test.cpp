@@ -21,9 +21,12 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
 #include <string>
 
 #include "GlanceHarness.hpp"
+
+#include "Icons.h"
 
 namespace {
 
@@ -50,7 +53,27 @@ std::string configFor(const std::string &lat, const std::string &lon)
 
 std::string london() { return configFor("51.5074", "-0.1278"); }
 
-TEST(Glance, SendsTheNextEventOnce)
+/// Compare what the kernel was handed against an icon by *content*, not by
+/// address. The generated header declares the arrays `static const`, so this
+/// translation unit has its own copy and the pointers are legitimately
+/// different -- which is also why Service.cpp is the only file in the app that
+/// includes it.
+bool isIcon(const uint8_t *buffer, const uint8_t *icon, size_t size)
+{
+    return buffer != nullptr && std::memcmp(buffer, icon, size) == 0;
+}
+
+bool isSunrise(const uint8_t *buffer)
+{
+    return isIcon(buffer, ICON_SUNRISE_ABGR2222, ICON_SUNRISE_SIZE);
+}
+
+bool isSunset(const uint8_t *buffer)
+{
+    return isIcon(buffer, ICON_SUNSET_ABGR2222, ICON_SUNSET_SIZE);
+}
+
+TEST(Glance, SendsBothUpcomingEventsOnce)
 {
     Rig rig;
     rig.seed("input.json", london());
@@ -66,12 +89,19 @@ TEST(Glance, SendsTheNextEventOnce)
     const auto &update = rig.updates().front();
     EXPECT_EQ(update.name, "Sun");
     ASSERT_EQ(update.texts.size(), 3u);
-    EXPECT_EQ(update.title(), "sunrise");
-    EXPECT_EQ(update.value(), "04:50");
-    EXPECT_EQ(update.sub(), "in 1h12m, sets 19:17");
+    ASSERT_EQ(update.images.size(), 2u);
+
+    EXPECT_EQ(update.first(), "04:50");
+    EXPECT_EQ(update.second(), "19:17");
+    EXPECT_EQ(update.sub(), "in 1h12m");
+
+    // Sunrise on top, because it is what happens next.
+    EXPECT_TRUE(isSunrise(update.iconFirst()));
+    EXPECT_TRUE(isSunset(update.iconSecond()));
+    EXPECT_TRUE(update.iconsShown());
 }
 
-TEST(Glance, DuringTheDayItCountsDownToSunset)
+TEST(Glance, DuringTheDayTheIconsSwapRound)
 {
     Rig rig;
     rig.seed("input.json", london());
@@ -81,12 +111,18 @@ TEST(Glance, DuringTheDayItCountsDownToSunset)
     rig.run();
 
     ASSERT_EQ(rig.updates().size(), 1u);
-    EXPECT_EQ(rig.updates().front().title(), "sunset");
-    EXPECT_EQ(rig.updates().front().value(), "19:17");
-    EXPECT_EQ(rig.updates().front().sub(), "in 8h30m, rose 04:50");
+    const auto &update = rig.updates().front();
+
+    EXPECT_EQ(update.first(), "19:17");
+    // Tomorrow's sunrise, not this morning's: nothing on the screen is behind
+    // you.
+    EXPECT_EQ(update.second(), "04:52");
+    EXPECT_EQ(update.sub(), "in 8h30m");
+    EXPECT_TRUE(isSunset(update.iconFirst()));
+    EXPECT_TRUE(isSunrise(update.iconSecond()));
 }
 
-TEST(Glance, AfterSunsetItRollsToTomorrow)
+TEST(Glance, AfterSunsetBothRowsAreTomorrows)
 {
     Rig rig;
     rig.seed("input.json", london());
@@ -96,14 +132,38 @@ TEST(Glance, AfterSunsetItRollsToTomorrow)
     rig.run();
 
     ASSERT_EQ(rig.updates().size(), 1u);
-    EXPECT_EQ(rig.updates().front().title(), "sunrise");
-    EXPECT_EQ(rig.updates().front().value(), "04:52");
-    // Tomorrow's sunrise really is a day and a bit away, and the caption says
-    // which day before it says how long.
+    const auto &update = rig.updates().front();
+
+    EXPECT_EQ(update.first(), "04:52");
+    EXPECT_EQ(update.second(), "19:14");
+    EXPECT_TRUE(isSunrise(update.iconFirst()));
+    // And the caption says which day, because "04:52" at eight in the evening
+    // otherwise reads as this morning.
     const int64_t away = kRiseTomorrow - (kSet + 60);
-    EXPECT_EQ(rig.updates().front().sub(),
+    EXPECT_EQ(update.sub(),
               "tomorrow, in " + std::to_string(away / 3600) + "h"
                               + std::to_string((away % 3600) / 60) + "m");
+}
+
+TEST(Glance, WithoutEnoughControlsForIconsTheWordsComeBack)
+{
+    // Every SDK glance example asks for three controls. A kernel that offers
+    // only that gets a screen that still says both times.
+    Rig rig;
+    rig.seed("input.json", london());
+    rig.at(kBeforeDawn);
+    rig.comm.maxControls = 4;
+    rig.comm.viewing(2);
+
+    rig.run();
+
+    ASSERT_EQ(rig.updates().size(), 1u);
+    const auto &update = rig.updates().front();
+
+    EXPECT_TRUE(update.images.empty()) << "no room for icons, so none were made";
+    EXPECT_EQ(update.first(), "rise 04:50");
+    EXPECT_EQ(update.second(), "set 19:17");
+    EXPECT_EQ(update.sub(), "in 1h12m");
 }
 
 TEST(Glance, TheMinuteTickingOverSendsExactlyOneMoreUpdate)
@@ -118,12 +178,12 @@ TEST(Glance, TheMinuteTickingOverSendsExactlyOneMoreUpdate)
     rig.run();
 
     ASSERT_EQ(rig.updates().size(), 2u);
-    EXPECT_EQ(rig.updates().at(0).sub(), "in 1h12m, sets 19:17");
-    EXPECT_EQ(rig.updates().at(1).sub(), "in 1h11m, sets 19:17");
-    // The headline did not move, and was still resent -- the form is one
-    // object, so a caption change carries the whole thing. Worth knowing, and
-    // cheap at once a minute.
-    EXPECT_EQ(rig.updates().at(1).value(), "04:50");
+    EXPECT_EQ(rig.updates().at(0).sub(), "in 1h12m");
+    EXPECT_EQ(rig.updates().at(1).sub(), "in 1h11m");
+    // The times did not move, and were still resent -- the form is one object,
+    // so a caption change carries the whole thing. Worth knowing, and cheap at
+    // once a minute.
+    EXPECT_EQ(rig.updates().at(1).first(), "04:50");
 }
 
 TEST(Glance, ASecondPassingIsNotEnoughToSendAnything)
@@ -151,10 +211,14 @@ TEST(Glance, WithNoConfigItSaysSoInsteadOfGuessing)
 
     ASSERT_EQ(rig.updates().size(), 1u);
     const auto &update = rig.updates().front();
-    EXPECT_EQ(update.value(), "--");
+    EXPECT_EQ(update.first(), "--");
     EXPECT_EQ(update.sub(), "no position set");
     // Amber, because this is a caveat rather than a caption.
     EXPECT_EQ(update.subColor(), static_cast<uint8_t>(GLANCE_COLOR_YELLOW_DARK));
+    // And no icons or second row: there is no event for a picture to label.
+    EXPECT_FALSE(update.iconsShown());
+    EXPECT_FALSE(update.secondIconShown());
+    EXPECT_FALSE(update.secondShown());
 }
 
 TEST(Glance, AConfigItCannotReadIsNotTheSameAsNoConfig)
@@ -196,8 +260,9 @@ TEST(Glance, MidnightSunIsDrawnAsItself)
     rig.run();
 
     ASSERT_EQ(rig.updates().size(), 1u);
-    EXPECT_EQ(rig.updates().front().title(), "midnight sun");
-    EXPECT_EQ(rig.updates().front().value(), "no sunset");
+    EXPECT_EQ(rig.updates().front().first(), "no sunset");
+    EXPECT_EQ(rig.updates().front().sub(), "the sun stays up");
+    EXPECT_FALSE(rig.updates().front().iconsShown());
     // Not a caveat: the sky is doing this on purpose.
     EXPECT_EQ(rig.updates().front().subColor(), static_cast<uint8_t>(GLANCE_COLOR_GRAY));
 }
@@ -207,7 +272,7 @@ TEST(Glance, AGlanceAreaTooSmallToDrawInIsDeclined)
     Rig rig;
     rig.seed("input.json", london());
     rig.at(kRise);
-    rig.comm.maxControls = 2;
+    rig.comm.maxControls = 2;   // below the three this screen cannot go under
     rig.comm.viewing(2);
 
     rig.run();
@@ -227,7 +292,7 @@ TEST(Glance, AClockThatIsNotSetShowsNoTimes)
     rig.run();
 
     ASSERT_EQ(rig.updates().size(), 1u);
-    EXPECT_EQ(rig.updates().front().value(), "--");
+    EXPECT_EQ(rig.updates().front().first(), "--");
     EXPECT_EQ(rig.updates().front().sub(), "clock not set");
 }
 

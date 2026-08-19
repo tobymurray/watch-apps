@@ -1,12 +1,17 @@
 /**
- * Host tests for the wording.
+ * Host tests for the wording and the shape of the screen.
  *
- * Two things are being checked, and the second is the one that bites.
+ * Three things are being checked, and the last is the one that bites.
  *
  * **What it says.** Every state the glance can be in has a screen here, written
  * out in full, so changing the wording means changing a test on purpose rather
  * than discovering on a Tuesday that the caption has said the wrong thing since
  * March.
+ *
+ * **Which icon goes where.** The two rows are the next event and the one after
+ * it, and the icons follow them round: before dawn the sunrise is on top, an
+ * hour later the sunset is. Getting that backwards is invisible in the code and
+ * obvious on the wrist.
  *
  * **Whether it fits.** `ControlText::setText()` ignores a string that does not
  * fit its buffer -- no truncation, no error, the control simply keeps what it
@@ -28,9 +33,10 @@ namespace {
 /// Roughly what the 225-pixel-wide caption band holds in Poppins SemiBold 18,
 /// at about 10 pixels per lowercase character. An estimate, deliberately
 /// conservative, and unverified on a watch -- see the file comment.
-constexpr size_t kSubBudget   = 22;
-constexpr size_t kValueBudget = 12;  // font 30, so fewer characters for more pixels
-constexpr size_t kTitleBudget = 14;
+constexpr size_t kSubBudget = 22;
+/// The rows are font 30 next to a 24-pixel icon, so they hold far less. "04:50"
+/// is five; "rise 04:50" is the widest thing the no-icon fallback produces.
+constexpr size_t kRowBudget = 12;
 
 Sun::Clock at(int hour, int minute)
 {
@@ -43,101 +49,134 @@ Sun::Clock at(int hour, int minute)
 
 void expectFits(const Sun::Lines &lines)
 {
-    EXPECT_LT(std::strlen(lines.title), Sun::kLineBytes) << lines.title;
-    EXPECT_LT(std::strlen(lines.value), Sun::kLineBytes) << lines.value;
+    EXPECT_LT(std::strlen(lines.first), Sun::kLineBytes) << lines.first;
+    EXPECT_LT(std::strlen(lines.second), Sun::kLineBytes) << lines.second;
+    EXPECT_LT(std::strlen(lines.message), Sun::kLineBytes) << lines.message;
     EXPECT_LT(std::strlen(lines.sub), Sun::kLineBytes) << lines.sub;
 
-    EXPECT_LE(std::strlen(lines.title), kTitleBudget) << lines.title;
-    EXPECT_LE(std::strlen(lines.value), kValueBudget) << lines.value;
+    EXPECT_LE(std::strlen(lines.first), kRowBudget) << lines.first;
+    EXPECT_LE(std::strlen(lines.second), kRowBudget) << lines.second;
+    EXPECT_LE(std::strlen(lines.message), kRowBudget) << lines.message;
     EXPECT_LE(std::strlen(lines.sub), kSubBudget) << lines.sub;
 }
 
+/// Before dawn: sunrise first, then today's sunset.
 Sun::View rising()
 {
     Sun::View v;
     v.kind        = Sun::EventKind::Rise;
-    v.when        = at(6, 12);
-    v.other       = at(20, 41);
+    v.first       = at(4, 50);
+    v.second      = at(19, 17);
     v.secondsAway = 72 * 60;
     return v;
 }
 
+/// Daylight: sunset first, then tomorrow's sunrise.
 Sun::View setting()
 {
     Sun::View v;
     v.kind        = Sun::EventKind::Set;
-    v.when        = at(20, 41);
-    v.other       = at(6, 12);
+    v.first       = at(19, 17);
+    v.second      = at(4, 52);
     v.secondsAway = 185 * 60;
     return v;
 }
 
-TEST(Render, BeforeSunrise)
+TEST(Render, BeforeSunriseTheSunriseIsOnTop)
 {
-    const Sun::Lines lines = Sun::render(rising());
-    EXPECT_STREQ(lines.title, "sunrise");
-    EXPECT_STREQ(lines.value, "06:12");
-    EXPECT_STREQ(lines.sub, "in 1h12m, sets 20:41");
+    const Sun::Lines lines = Sun::render(rising(), true);
+    EXPECT_TRUE(lines.rows);
+    EXPECT_EQ(lines.firstKind, Sun::EventKind::Rise);
+    EXPECT_STREQ(lines.first, "04:50");
+    EXPECT_STREQ(lines.second, "19:17");
+    EXPECT_STREQ(lines.sub, "in 1h12m");
     EXPECT_FALSE(lines.caution);
     expectFits(lines);
 }
 
-TEST(Render, DuringTheDay)
+TEST(Render, DuringTheDayTheSunsetIsOnTop)
 {
-    const Sun::Lines lines = Sun::render(setting());
-    EXPECT_STREQ(lines.title, "sunset");
-    EXPECT_STREQ(lines.value, "20:41");
-    // Past tense, because that sunrise has already happened.
-    EXPECT_STREQ(lines.sub, "in 3h05m, rose 06:12");
+    const Sun::Lines lines = Sun::render(setting(), true);
+    EXPECT_TRUE(lines.rows);
+    EXPECT_EQ(lines.firstKind, Sun::EventKind::Set);
+    EXPECT_STREQ(lines.first, "19:17");
+    // Tomorrow's sunrise, not this morning's: nothing on the screen is in the
+    // past.
+    EXPECT_STREQ(lines.second, "04:52");
+    EXPECT_STREQ(lines.sub, "in 3h05m");
     expectFits(lines);
+}
+
+TEST(Render, TheRowsCarryNoWordsWhenThereAreIcons)
+{
+    // The point of the icons: the panel is 241 pixels wide and "sunrise" spends
+    // a third of it saying what the picture says.
+    const Sun::Lines lines = Sun::render(rising(), true);
+    EXPECT_EQ(std::string(lines.first).find("rise"), std::string::npos);
+    EXPECT_EQ(std::string(lines.second).find("set"), std::string::npos);
+}
+
+TEST(Render, WithoutIconsTheWordsComeBack)
+{
+    const Sun::Lines lines = Sun::render(rising(), false);
+    EXPECT_TRUE(lines.rows);
+    EXPECT_STREQ(lines.first, "rise 04:50");
+    EXPECT_STREQ(lines.second, "set 19:17");
+    expectFits(lines);
+
+    const Sun::Lines evening = Sun::render(setting(), false);
+    EXPECT_STREQ(evening.first, "set 19:17");
+    EXPECT_STREQ(evening.second, "rise 04:52");
+    expectFits(evening);
 }
 
 TEST(Render, AfterSunsetTheDayIsNamed)
 {
-    Sun::View v = rising();
-    v.when        = at(6, 14);
-    v.other       = Sun::Clock {};
+    Sun::View v = setting();
+    v.kind        = Sun::EventKind::Rise;
+    v.first       = at(4, 52);
+    v.second      = at(19, 14);
     v.nextDay     = true;
-    v.secondsAway = (9 * 60 + 33) * 60;
+    v.secondsAway = (9 * 60 + 34) * 60;
 
-    const Sun::Lines lines = Sun::render(v);
-    EXPECT_STREQ(lines.title, "sunrise");
-    EXPECT_STREQ(lines.value, "06:14");
-    EXPECT_STREQ(lines.sub, "tomorrow, in 9h33m");
+    const Sun::Lines lines = Sun::render(v, true);
+    EXPECT_STREQ(lines.first, "04:52");
+    EXPECT_STREQ(lines.second, "19:14");
+    EXPECT_STREQ(lines.sub, "tomorrow, in 9h34m");
+    expectFits(lines);
+}
+
+TEST(Render, ASecondEventThereIsNoneOfLeavesTheRowEmpty)
+{
+    // The last sunset before the midnight sun: there is no next sunrise, and an
+    // empty string is what tells the service to hide the row rather than draw a
+    // time that is not coming.
+    Sun::View v = setting();
+    v.second = Sun::Clock {};
+
+    const Sun::Lines lines = Sun::render(v, true);
+    EXPECT_TRUE(lines.rows);
+    EXPECT_STREQ(lines.first, "19:17");
+    EXPECT_STREQ(lines.second, "");
     expectFits(lines);
 }
 
 TEST(Render, TheCountdownIsMinutesAtMost)
 {
     Sun::View v = rising();
-    v.other = Sun::Clock {};
 
     v.secondsAway = 0;
-    EXPECT_STREQ(Sun::render(v).sub, "now");
+    EXPECT_STREQ(Sun::render(v, true).sub, "now");
     v.secondsAway = 59;
-    EXPECT_STREQ(Sun::render(v).sub, "now");
+    EXPECT_STREQ(Sun::render(v, true).sub, "now");
     v.secondsAway = 60;
-    EXPECT_STREQ(Sun::render(v).sub, "in 1m");
+    EXPECT_STREQ(Sun::render(v, true).sub, "in 1m");
     v.secondsAway = 59 * 60 + 59;
-    EXPECT_STREQ(Sun::render(v).sub, "in 59m");
+    EXPECT_STREQ(Sun::render(v, true).sub, "in 59m");
     v.secondsAway = 60 * 60;
-    EXPECT_STREQ(Sun::render(v).sub, "in 1h00m");
+    EXPECT_STREQ(Sun::render(v, true).sub, "in 1h00m");
     v.secondsAway = (13 * 60 + 5) * 60;
-    EXPECT_STREQ(Sun::render(v).sub, "in 13h05m");
-}
-
-TEST(Render, TheLongestRealCaptionStillFits)
-{
-    // The widest thing this screen can be asked to say: a two-digit hour
-    // countdown next to a paired time.
-    Sun::View v = setting();
-    v.when        = at(23, 59);
-    v.other       = at(11, 11);
-    v.secondsAway = (23 * 60 + 59) * 60;
-
-    const Sun::Lines lines = Sun::render(v);
-    EXPECT_STREQ(lines.sub, "in 23h59m, rose 11:11");
-    expectFits(lines);
+    EXPECT_STREQ(Sun::render(v, true).sub, "in 13h05m");
 }
 
 TEST(Render, MidnightSunIsNotAMissingTime)
@@ -145,9 +184,9 @@ TEST(Render, MidnightSunIsNotAMissingTime)
     Sun::View v;
     v.kind = Sun::EventKind::MidnightSun;
 
-    const Sun::Lines lines = Sun::render(v);
-    EXPECT_STREQ(lines.title, "midnight sun");
-    EXPECT_STREQ(lines.value, "no sunset");
+    const Sun::Lines lines = Sun::render(v, true);
+    EXPECT_FALSE(lines.rows) << "there are no times, so there are no rows";
+    EXPECT_STREQ(lines.message, "no sunset");
     EXPECT_STREQ(lines.sub, "the sun stays up");
     // Not a caveat: this is what the sky is doing, and it is the correct
     // answer rather than a shortfall.
@@ -160,9 +199,9 @@ TEST(Render, PolarNightIsNotAMissingTime)
     Sun::View v;
     v.kind = Sun::EventKind::PolarNight;
 
-    const Sun::Lines lines = Sun::render(v);
-    EXPECT_STREQ(lines.title, "polar night");
-    EXPECT_STREQ(lines.value, "no sunrise");
+    const Sun::Lines lines = Sun::render(v, true);
+    EXPECT_FALSE(lines.rows);
+    EXPECT_STREQ(lines.message, "no sunrise");
     EXPECT_STREQ(lines.sub, "the sun stays down");
     EXPECT_FALSE(lines.caution);
     expectFits(lines);
@@ -173,8 +212,9 @@ TEST(Render, NoPositionShowsNoTime)
     Sun::View v;
     v.trouble = Sun::Trouble::NoPosition;
 
-    const Sun::Lines lines = Sun::render(v);
-    EXPECT_STREQ(lines.value, "--");
+    const Sun::Lines lines = Sun::render(v, true);
+    EXPECT_FALSE(lines.rows);
+    EXPECT_STREQ(lines.message, "--");
     EXPECT_STREQ(lines.sub, "no position set");
     EXPECT_TRUE(lines.caution);
     expectFits(lines);
@@ -188,13 +228,13 @@ TEST(Render, EachTroubleSaysWhichOneItIs)
     Sun::View v;
 
     v.trouble = Sun::Trouble::BadConfig;
-    EXPECT_STREQ(Sun::render(v).sub, "input.json rejected");
+    EXPECT_STREQ(Sun::render(v, true).sub, "input.json rejected");
 
     v.trouble = Sun::Trouble::NoClock;
-    EXPECT_STREQ(Sun::render(v).sub, "clock not set");
+    EXPECT_STREQ(Sun::render(v, true).sub, "clock not set");
 
     v.trouble = Sun::Trouble::NoPosition;
-    EXPECT_STREQ(Sun::render(v).sub, "no position set");
+    EXPECT_STREQ(Sun::render(v, true).sub, "no position set");
 }
 
 TEST(Render, TroubleOutranksAnythingElseTheViewCarries)
@@ -204,31 +244,24 @@ TEST(Render, TroubleOutranksAnythingElseTheViewCarries)
     Sun::View v = rising();
     v.trouble = Sun::Trouble::NoPosition;
 
-    const Sun::Lines lines = Sun::render(v);
-    EXPECT_STREQ(lines.value, "--");
-    EXPECT_STRNE(lines.value, "06:12");
+    const Sun::Lines lines = Sun::render(v, true);
+    EXPECT_FALSE(lines.rows);
+    EXPECT_STREQ(lines.message, "--");
+    EXPECT_STREQ(lines.first, "");
 }
 
-TEST(Render, ATimeZoneThatDisagreesReplacesTheConvenience)
+TEST(Render, ATimeZoneThatDisagreesReplacesTheCountdown)
 {
     Sun::View v = rising();
     v.zoneSuspect = true;
 
-    const Sun::Lines lines = Sun::render(v);
-    // The time is still shown -- it is not wrong, it is just not local.
-    EXPECT_STREQ(lines.value, "06:12");
+    const Sun::Lines lines = Sun::render(v, true);
+    // The times are still shown -- they are not wrong, they are just not local.
+    EXPECT_STREQ(lines.first, "04:50");
+    EXPECT_STREQ(lines.second, "19:17");
     EXPECT_STREQ(lines.sub, "times are for home");
     EXPECT_TRUE(lines.caution);
     expectFits(lines);
-}
-
-TEST(Render, AnInvalidClockDrawsDashesAndNotZeros)
-{
-    Sun::View v = rising();
-    v.when  = Sun::Clock {};
-    v.other = Sun::Clock {};
-
-    EXPECT_STREQ(Sun::render(v).value, "--:--");
 }
 
 } // namespace

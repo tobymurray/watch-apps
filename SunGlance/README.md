@@ -1,52 +1,99 @@
 # Sun — sunrise and sunset, as a glance
 
-A `Glance` app: one card in the carousel that says what the sun does next and
-when, for a position you set once when you install it.
+A `Glance` app: one card in the carousel showing the next two things the sun
+will do, for a position you set once when you install it.
 
 > Unofficial. Not affiliated with, endorsed or sponsored by UNA Watch Ltd.
 
 ```
-        sunrise                    sunset                   polar night
-         04:50                     19:17                     no sunrise
-  in 1h12m, sets 19:17      in 8h30m, rose 04:50         the sun stays down
+    [sun ^]  04:50          [sun v]  19:17            no sunset
+    [sun v]  19:17          [sun ^]  04:52         the sun stays up
+       in 1h12m                in 8h30m
 ```
 
+Two rows, in the order the events happen: the top row is always what is next,
+the bottom row is always the one after it. **Nothing on the screen is in the
+past** — at two in the afternoon the second row is tomorrow's sunrise, not this
+morning's.
+
+That is why the rows carry no words. An icon of a sun going up or down says
+which event it is in a fraction of the space "sunrise" takes, and what is
+actually being asked at seven in the morning is not "when is sunrise" but "how
+much daylight is there" — which is a question about the pair.
+
 There is no GUI. Tapping the card opens nothing, because everything this app
-has to say fits in three lines — which is the definition of a glance, and the
-reason it is 34 KB and runs only while you are looking at it.
+has to say fits on that card — which is the definition of a glance, and the
+reason it is 36 KB and runs only while you are looking at it.
 
 ## Status: builds, tested at a desk, never run on a watch
 
-Everything below builds against `apps-v1.4.0` and **64 host tests pass**,
-including twelve that drive the real service through a scripted glance
+Everything below builds against `apps-v1.4.0` and **68 host tests pass**,
+including thirteen that drive the real service through a scripted glance
 carousel. Nothing here has been on hardware or through the simulator. So:
 
 | | |
 | --- | --- |
 | **Checked against an independent implementation** | Sunrise and sunset for 52 place-days against [`astral`](https://pypi.org/project/astral/) 3.2, plus a 1825-day polar sweep. Worst disagreement: 26 s below 55° latitude, 72 s to 66°, 118 s beyond. [`Tests/README.md`](Tests/README.md) has the method and the generator. |
 | **Checked by running the real code** | The service itself, from a config file on the storage to the strings handed to the kernel, through the message queue a carousel would send. |
-| **Not checked at all** | That any of it renders. The layout bands, the assumption that three text controls fit, and the character budgets in `Render_test.cpp` are all estimates from SleepLab's numbers and have never met a panel. |
+| **Not checked at all** | That any of it renders. The layout bands, the icon sizes, the assumption that the kernel will give a glance five controls, and the character budgets in `Render_test.cpp` are all estimates from SleepLab's numbers and have never met a panel. |
 
 ## What it shows
 
 One question, answered: **what happens next, and when.** Not a table of today's
 two times — that is a screen, and this is a card you see for three seconds.
 
-| When | Headline | Caption |
-| --- | --- | --- |
-| Before sunrise | `sunrise 04:50` | `in 1h12m, sets 19:17` |
-| After sunrise | `sunset 19:17` | `in 8h30m, rose 04:50` |
-| After sunset | `sunrise 04:52` | `tomorrow, in 9h34m` |
-| Above the Arctic circle in summer | `midnight sun / no sunset` | `the sun stays up` |
-| …and in winter | `polar night / no sunrise` | `the sun stays down` |
-| No position configured | `--` | `no position set` |
-| A config it cannot read | `--` | `input.json rejected` |
-| The watch's clock is unset | `--` | `clock not set` |
-| Position and time zone disagree | the times, unchanged | `times are for home` |
+| When | Top row | Bottom row | Caption |
+| --- | --- | --- | --- |
+| Before sunrise | ⬆ `04:50` | ⬇ `19:17` | `in 1h12m` |
+| After sunrise | ⬇ `19:17` | ⬆ `04:52` *(tomorrow's)* | `in 8h30m` |
+| After sunset | ⬆ `04:52` | ⬇ `19:14` | `tomorrow, in 9h34m` |
+| The last sunset before the midnight sun | ⬇ `19:17` | *(empty)* | `in 3h05m` |
+| Above the Arctic circle in summer | `no sunset` | | `the sun stays up` |
+| …and in winter | `no sunrise` | | `the sun stays down` |
+| No position configured | `--` | | `no position set` |
+| A config it cannot read | `--` | | `input.json rejected` |
+| The watch's clock is unset | `--` | | `clock not set` |
+| Position and time zone disagree | the times, unchanged | | `times are for home` |
 
-The last four are the point of the app as much as the first three. Each has its
-own words because each needs something different done about it, and a caption
-that says the wrong one of those sends somebody looking in the wrong place.
+The bottom half of that table is the point of the app as much as the top half.
+Each state has its own words because each needs something different done about
+it, and a caption that says the wrong one of those sends somebody looking in the
+wrong place.
+
+The empty second row is not an oversight: on the day of the last sunset before
+the midnight sun there is no next sunrise, and a row is better empty than
+filled with a time that is not coming.
+
+## The icons
+
+Two of them, 24×21, drawn by [`Tools/draw_icons.py`](Tools/draw_icons.py) and
+converted by the SDK's own `png2abgr2222.py`:
+
+```sh
+python3 -m venv .venv && .venv/bin/pip install pillow
+.venv/bin/python Tools/draw_icons.py
+.venv/bin/python "$UNA_SDK/Utilities/Scripts/png2abgr2222/png2abgr2222.py" \
+    --inputs Resources/icon_sunrise.png Resources/icon_sunset.png \
+    -o Software/Libs/Header/Icons.h
+```
+
+The shapes are in a script rather than in a drawing program because a PNG in a
+diff is a wall nobody can see over — "make the arrow bigger" is a comment on a
+file that cannot be reviewed. The script prints an ASCII preview of what it drew.
+
+A glance image is one byte per pixel, **two bits per channel**, so there are
+four levels of everything and no antialiasing to lean on. The first version had
+rays on the sun; at this size they came out as lopsided blobs that merged into
+the disc, and the icon read as a smudge. What is left is a disc resting on a
+horizon with an arrow under it — the arrow in white because it carries the
+meaning, the horizon in grey because it is only context.
+
+The kernel decides how many controls a glance may have, and this screen wants
+five: two icons, two times and a caption. Every SDK glance example asks for
+three. If the kernel offers fewer than five the icons are dropped and the rows
+say `rise 04:50` and `set 19:17` instead; below three the glance is declined
+outright, because two times with no way to tell which is which is worse than no
+glance at all.
 
 ## Where the position comes from
 
@@ -133,8 +180,9 @@ would mean changing the app type first.
 Software/Libs/
 ├── Header/Sources
 │   ├── Solar.*        NOAA's solar position calculation. No SDK, no clock, no I/O.
-│   ├── Schedule.*     Which event comes next, and the time-zone sanity check.
-│   ├── Render.*       The three lines, as a pure function of what is known.
+│   ├── Schedule.*     The next two events, and the time-zone sanity check.
+│   ├── Render.*       What the screen says, as a pure function of what is known.
+│   ├── Icons.h        Generated. The two icons, as ABGR2222 bytes.
 │   ├── Fix.*          A position, its provenance, and a strict degree parser.
 │   ├── HomeConfig.*   input.json -> a Fix, or a reason there is not one.
 │   ├── InputConfig.*  A copy of Barcode's bounded JSON reader. See its header.
@@ -245,8 +293,12 @@ kira build-app --app SunGlance --sdk /path/to/una-sdk --version 0.1.0 --out Sun.
 `sha256("https://github.com/tobymurray/watch-apps#sunglance")[0:8]`, the repo
 convention.
 
-Deploy by copying the `.uapp` into `Apps/Sun/` on the USB-MSC volume. There is
-no icon yet, so Kira draws a lettered tile.
+Deploy by copying the `.uapp` into `Apps/Sun/` on the USB-MSC volume.
+
+There is no *app* icon — the pair of 30×30 and 60×60 PNGs that the launcher and
+Kira's card use — so `APP_USE_ICONS` is `Off` and Kira draws a lettered tile.
+The two icons above are the glance's own artwork and are compiled into the
+service; the two are unrelated.
 
 ## Tests
 
@@ -256,7 +308,7 @@ cd Tests
 cmake -B build . && cmake --build build && (cd build && ctest --output-on-failure)
 ```
 
-Three executables and 64 tests: the arithmetic and the wording with no SDK at
+Three executables and 68 tests: the arithmetic and the wording with no SDK at
 all, the config reader over the SDK's in-memory filesystem, and the real
 service driven by a scripted glance carousel. [`Tests/README.md`](Tests/README.md)
 says what each is evidence about — and what the fixtures are *not* evidence

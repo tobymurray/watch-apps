@@ -3,7 +3,7 @@
  * @file    Render.cpp
  * @date    18-08-2026
  * @author  Toby Murray <toby.murray@protonmail.com>
- * @brief   The three lines the glance shows.
+ * @brief   What the glance draws.
  ******************************************************************************
  */
 
@@ -38,30 +38,43 @@ void countdown(int64_t seconds, char *out, size_t outSize)
     snprintf(out, outSize, "in %ldh%02ldm", minutes / 60, minutes % 60);
 }
 
-void clockText(const Clock &clock, char *out, size_t outSize)
+/// One row: a time, with the word in front of it only when there is no icon to
+/// say which event it is.
+void rowText(const Clock &clock, EventKind kind, bool withIcons,
+             char *out, size_t outSize)
 {
     if (!clock.valid) {
-        snprintf(out, outSize, "--:--");
+        out[0] = '\0';
         return;
     }
-    snprintf(out, outSize, "%02d:%02d", clock.hour, clock.minute);
+
+    if (withIcons) {
+        snprintf(out, outSize, "%02d:%02d", clock.hour, clock.minute);
+        return;
+    }
+
+    snprintf(out, outSize, "%s %02d:%02d",
+             (kind == EventKind::Rise) ? "rise" : "set", clock.hour, clock.minute);
 }
 
-Lines trouble(const char *caption)
+EventKind opposite(EventKind kind)
+{
+    return (kind == EventKind::Rise) ? EventKind::Set : EventKind::Rise;
+}
+
+Lines message(const char *headline, const char *caption, bool caution)
 {
     Lines lines;
-    snprintf(lines.title, kLineBytes, "sun");
-    // The same sentinel SleepLab uses for a figure it has not earned. A blank
-    // would read as "loading" and a zero would read as a time.
-    snprintf(lines.value, kLineBytes, "--");
+    lines.rows    = false;
+    lines.caution = caution;
+    snprintf(lines.message, kLineBytes, "%s", headline);
     snprintf(lines.sub, kLineBytes, "%s", caption);
-    lines.caution = true;
     return lines;
 }
 
 } // namespace
 
-Lines render(const View &view)
+Lines render(const View &view, bool withIcons)
 {
     switch (view.trouble) {
         case Trouble::NoPosition:
@@ -70,63 +83,50 @@ Lines render(const View &view)
             // and an over-long caption is silently dropped rather than
             // truncated. The glance says what is wrong; the app's card in Kira
             // and its README say what to do about it.
-            return trouble("no position set");
+            //
+            // The dashes are the same sentinel SleepLab uses for a figure it has
+            // not earned. A blank would read as "loading" and a zero as a time.
+            return message("--", "no position set", true);
         case Trouble::BadConfig:
-            return trouble("input.json rejected");
+            return message("--", "input.json rejected", true);
         case Trouble::NoClock:
-            return trouble("clock not set");
+            return message("--", "clock not set", true);
         case Trouble::None:
             break;
     }
 
-    Lines lines;
-
     if (view.kind == EventKind::MidnightSun) {
-        snprintf(lines.title, kLineBytes, "midnight sun");
-        snprintf(lines.value, kLineBytes, "no sunset");
-        snprintf(lines.sub, kLineBytes, "the sun stays up");
-        return lines;
+        return message("no sunset", "the sun stays up", false);
     }
 
     if (view.kind == EventKind::PolarNight) {
-        snprintf(lines.title, kLineBytes, "polar night");
-        snprintf(lines.value, kLineBytes, "no sunrise");
-        snprintf(lines.sub, kLineBytes, "the sun stays down");
-        return lines;
+        return message("no sunrise", "the sun stays down", false);
     }
 
-    const bool rising = (view.kind == EventKind::Rise);
+    Lines lines;
+    lines.rows      = true;
+    lines.firstKind = view.kind;
 
-    snprintf(lines.title, kLineBytes, rising ? "sunrise" : "sunset");
-    clockText(view.when, lines.value, kLineBytes);
+    rowText(view.first, view.kind, withIcons, lines.first, kLineBytes);
+    rowText(view.second, opposite(view.kind), withIcons, lines.second, kLineBytes);
 
     char away[16] = { 0 };
     countdown(view.secondsAway, away, sizeof away);
 
     if (view.zoneSuspect) {
-        // The caveat outranks the convenience. Everything on the screen is
-        // still true of the configured position, and the clock it is being read
+        // The caveat outranks the countdown. Both times on the screen are still
+        // true of the configured position, and the clock they are being read
         // against is somewhere else, so the one thing worth the caption's line
-        // is which of those two the times belong to.
+        // is which of those two they belong to.
         snprintf(lines.sub, kLineBytes, "times are for home");
         lines.caution = true;
         return lines;
     }
 
     if (view.nextDay) {
-        // "06:14" on a Tuesday evening reads as this morning, which has been
-        // and gone. Saying which day comes before saying how far away it is.
+        // Both rows are tomorrow's, and "04:52" on a Tuesday evening reads as
+        // this morning, which has been and gone.
         snprintf(lines.sub, kLineBytes, "tomorrow, %s", away);
-        return lines;
-    }
-
-    if (view.other.valid) {
-        char paired[8] = { 0 };
-        clockText(view.other, paired, sizeof paired);
-        // Past tense for the event that has already happened, which is the
-        // sunrise whenever the headline is a sunset.
-        snprintf(lines.sub, kLineBytes, "%s, %s %s",
-                 away, rising ? "sets" : "rose", paired);
         return lines;
     }
 

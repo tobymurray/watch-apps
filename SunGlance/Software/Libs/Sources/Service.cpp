@@ -21,6 +21,11 @@
 #include "SDK/Messages/CommandMessages.hpp"
 #include "SDK/Messages/MessageGuard.hpp"
 
+// Generated from Resources/*.png by the SDK's png2abgr2222.py. Included here
+// and nowhere else: the arrays are `static const` in the header, so every
+// translation unit that included it would carry its own copy of 504 bytes.
+#include "Icons.h"
+
 namespace
 {
 
@@ -110,6 +115,15 @@ bool Service::glanceConfig()
         return false;
     }
 
+    // Five gets the icons; three gets the words. Every SDK glance example asks
+    // for three, so a kernel that offers only that is not a fault to refuse --
+    // it is a screen to draw differently.
+    mWithIcons = (gc->maxControls >= kControlsWanted);
+    if (!mWithIcons) {
+        LOG_INFO("glance offers %u controls; drawing without icons\n",
+                 static_cast<unsigned>(gc->maxControls));
+    }
+
     mGlance.setWidth(gc->width);
     mGlance.setHeight(gc->height);
     return true;
@@ -119,19 +133,29 @@ void Service::glanceCreate()
 {
     const uint16_t width = mGlance.getWidth();
 
-    mTitle = mGlance.createText();
-    mTitle.pos({ 0, kTitleY }, { width, kTitleH })
-        .font(GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_20)
-        .color(GlanceColor_t::GLANCE_COLOR_TEAL)
-        .setText("sun")
-        .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
+    // Order matters only for the kernel's own draw order; the rows are placed
+    // by layout(), which runs before anything is sent.
+    if (mWithIcons) {
+        mIconFirst = mGlance.createImage();
+        mIconFirst.init({ 0, 0 }, { ICON_SUNRISE_WIDTH, ICON_SUNRISE_HEIGHT },
+                        ICON_SUNRISE_ABGR2222);
+    }
 
-    mValue = mGlance.createText();
-    mValue.pos({ 0, kValueY }, { width, kValueH })
-        .font(GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_30)
+    mFirst = mGlance.createText();
+    mFirst.font(GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_30)
         .color(GlanceColor_t::GLANCE_COLOR_WHITE)
-        .setText("--")
-        .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
+        .setText("--");
+
+    if (mWithIcons) {
+        mIconSecond = mGlance.createImage();
+        mIconSecond.init({ 0, 0 }, { ICON_SUNSET_WIDTH, ICON_SUNSET_HEIGHT },
+                         ICON_SUNSET_ABGR2222);
+    }
+
+    mSecond = mGlance.createText();
+    mSecond.font(GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_30)
+        .color(GlanceColor_t::GLANCE_COLOR_WHITE)
+        .setText("");
 
     mSub = mGlance.createText();
     mSub.pos({ 0, kSubY }, { width, kSubH })
@@ -140,10 +164,73 @@ void Service::glanceCreate()
         .setText("")
         .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
 
+    // Every control is created visible, so that is what the tracking starts at.
+    mFirstIconKind   = Sun::EventKind::Rise;
+    mIconFirstShown  = true;
+    mIconSecondShown = true;
+    mSecondShown     = true;
+    mLaidOut         = false;
+
     // Deliberately not marking the form valid here. The controls were just
     // built, so they *are* invalid, and the first tick is what should discover
     // that and send them.
     mHaveShown = false;
+}
+
+void Service::layout(bool rowsMode)
+{
+    if (mLaidOut && rowsMode == mRowsMode) {
+        return;
+    }
+
+    const int16_t width = static_cast<int16_t>(mGlance.getWidth());
+
+    if (rowsMode && mWithIcons) {
+        // Centre the icon and the time together rather than each within its own
+        // half: what should sit in the middle of the panel is the pair.
+        const int16_t span = ICON_SUNRISE_WIDTH + kIconGap + kTimeW;
+        const int16_t left = static_cast<int16_t>((width - span) / 2);
+        const int16_t iconDrop = static_cast<int16_t>((kRowH - ICON_SUNRISE_HEIGHT) / 2);
+        const int16_t textX = static_cast<int16_t>(left + ICON_SUNRISE_WIDTH + kIconGap);
+
+        mIconFirst.pos({ static_cast<uint16_t>(left),
+                         static_cast<uint16_t>(kRowAY + iconDrop) });
+        mIconSecond.pos({ static_cast<uint16_t>(left),
+                          static_cast<uint16_t>(kRowBY + iconDrop) });
+
+        mFirst.pos({ static_cast<uint16_t>(textX), kRowAY }, { kTimeW, kRowH })
+            .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_LEFT);
+        mSecond.pos({ static_cast<uint16_t>(textX), kRowBY }, { kTimeW, kRowH })
+            .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_LEFT);
+    } else if (rowsMode) {
+        // No icons: the words are back, so the rows are full-width and centred.
+        mFirst.pos({ 0, kRowAY }, { static_cast<uint16_t>(width), kRowH })
+            .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
+        mSecond.pos({ 0, kRowBY }, { static_cast<uint16_t>(width), kRowH })
+            .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
+    } else {
+        // One message instead of two rows, sitting where the eye already is --
+        // between the two row bands rather than at the top of the first.
+        mFirst.pos({ 0, static_cast<uint16_t>(kRowAY + kRowH / 2) },
+                   { static_cast<uint16_t>(width), kRowH })
+            .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
+    }
+
+    mRowsMode = rowsMode;
+    mLaidOut  = true;
+}
+
+void Service::showControl(SDK::Glance::Control &control, bool shown, bool &state)
+{
+    if (state == shown) {
+        return;
+    }
+
+    control.setVisible(shown);
+    // setVisible() writes the flag and returns. Without this the form stays
+    // clean and the control keeps being drawn as it was.
+    control.invalidate();
+    state = shown;
 }
 
 Sun::Clock Service::clockAt(int64_t utc)
@@ -221,8 +308,8 @@ Sun::View Service::compose(int64_t nowUtc)
 
     view.kind        = next.kind;
     view.nextDay     = next.nextDay;
-    view.when        = clockAt(next.whenUtc);
-    view.other       = clockAt(next.otherUtc);
+    view.first       = clockAt(next.whenUtc);
+    view.second      = clockAt(next.secondUtc);
     view.secondsAway = (next.whenUtc >= 0) ? next.whenUtc - nowUtc : -1;
     view.zoneSuspect = !Sun::zoneAgreesWithLongitude(fix.lonDeg, offset);
 
@@ -241,28 +328,55 @@ void Service::update()
     }
     mLastSecond = now;
 
-    apply(Sun::render(compose(now)));
+    apply(Sun::render(compose(now), mWithIcons));
 }
 
 void Service::apply(const Sun::Lines &lines)
 {
-    const bool first = !mHaveShown;
+    const bool fresh = !mHaveShown;
 
-    if (first || std::strcmp(lines.title, mShown.title) != 0) {
-        mTitle.setText(lines.title);
+    layout(lines.rows);
+
+    // The first row's control does double duty: it is a time when there are
+    // rows and the whole message when there are not, so the string it should
+    // hold comes from one place or the other.
+    const char *headline = lines.rows ? lines.first : lines.message;
+    const char *wasHeadline = mShown.rows ? mShown.first : mShown.message;
+
+    if (fresh || std::strcmp(headline, wasHeadline) != 0) {
+        mFirst.setText(headline);
     }
-    if (first || std::strcmp(lines.value, mShown.value) != 0) {
-        mValue.setText(lines.value);
+    if (fresh || std::strcmp(lines.second, mShown.second) != 0) {
+        mSecond.setText(lines.second);
     }
-    if (first || std::strcmp(lines.sub, mShown.sub) != 0) {
+    if (fresh || std::strcmp(lines.sub, mShown.sub) != 0) {
         mSub.setText(lines.sub);
     }
-    if (first || lines.caution != mShown.caution) {
+    if (fresh || lines.caution != mShown.caution) {
         // Amber for a caption that is a caveat, grey for one that is a
         // convenience. Colour is set only when it changes for the same reason
         // the text is: it invalidates the control either way.
         mSub.color(lines.caution ? GlanceColor_t::GLANCE_COLOR_YELLOW_DARK
                                  : GlanceColor_t::GLANCE_COLOR_GRAY);
+    }
+
+    // A second row with nothing in it is hidden rather than left empty: an
+    // empty text control still occupies its band, and on the last day before
+    // the midnight sun there is genuinely no second event.
+    showControl(mSecond, lines.rows && lines.second[0] != '\0', mSecondShown);
+
+    if (mWithIcons) {
+        if (fresh || lines.firstKind != mFirstIconKind) {
+            const bool rising = (lines.firstKind == Sun::EventKind::Rise);
+            mIconFirst.setImage(rising ? ICON_SUNRISE_ABGR2222 : ICON_SUNSET_ABGR2222);
+            mIconSecond.setImage(rising ? ICON_SUNSET_ABGR2222 : ICON_SUNRISE_ABGR2222);
+            mFirstIconKind = lines.firstKind;
+        }
+
+        // The icons follow their rows: on a polar day, or a screen saying why
+        // there is no time, there is no event for a picture to label.
+        showControl(mIconFirst, lines.rows, mIconFirstShown);
+        showControl(mIconSecond, lines.rows && lines.second[0] != '\0', mIconSecondShown);
     }
 
     mShown     = lines;

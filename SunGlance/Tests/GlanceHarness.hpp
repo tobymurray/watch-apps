@@ -47,16 +47,34 @@
 namespace SunGlanceTest {
 
 /// One `RequestGlanceUpdate` as the kernel would have received it.
+///
+/// Split by control type rather than by index, because the two shapes of this
+/// screen do not have the same controls: with icons the array is image, text,
+/// image, text, text, and without them it is three texts. Reading a text out of
+/// an image control would read the union's bytes as a string, which is exactly
+/// the sort of thing that passes quietly.
 struct Update
 {
     std::string              name;
     std::vector<std::string> texts;
-    std::vector<uint8_t>     colors;
+    std::vector<uint8_t>     textColors;
+    std::vector<bool>        textVisible;
+    std::vector<const uint8_t *> images;
+    std::vector<bool>            imageVisible;
 
-    const std::string &title() const { return texts.at(0); }
-    const std::string &value() const { return texts.at(1); }
+    /// The top row: the next event's time, or the whole message when the screen
+    /// is one message instead.
+    const std::string &first() const { return texts.at(0); }
+    /// The row under it. Empty and hidden when there is no second event.
+    const std::string &second() const { return texts.at(1); }
+    bool secondShown() const { return textVisible.at(1); }
     const std::string &sub() const { return texts.at(2); }
-    uint8_t subColor() const { return colors.at(2); }
+    uint8_t subColor() const { return textColors.at(2); }
+
+    const uint8_t *iconFirst() const { return images.at(0); }
+    const uint8_t *iconSecond() const { return images.at(1); }
+    bool iconsShown() const { return imageVisible.at(0); }
+    bool secondIconShown() const { return imageVisible.at(1); }
 };
 
 /// A kernel that does exactly what the carousel does, and nothing else.
@@ -134,8 +152,14 @@ public:
                 update.name = (m->name != nullptr) ? m->name : "";
                 for (uint32_t i = 0; i < m->controlsNumber; i++) {
                     const GlanceControl_t &control = m->controls[i];
-                    update.texts.push_back(control.payload.text.str);
-                    update.colors.push_back(control.payload.text.color);
+                    if (control.type == GLANCE_TYPE_TEXT) {
+                        update.texts.push_back(control.payload.text.str);
+                        update.textColors.push_back(control.payload.text.color);
+                        update.textVisible.push_back(control.visible);
+                    } else if (control.type == GLANCE_TYPE_IMAGE) {
+                        update.images.push_back(control.payload.image.buff);
+                        update.imageVisible.push_back(control.visible);
+                    }
                 }
                 updates.push_back(update);
                 m->setResult(SDK::MessageResult::SUCCESS);

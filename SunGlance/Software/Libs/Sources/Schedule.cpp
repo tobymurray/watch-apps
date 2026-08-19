@@ -34,19 +34,24 @@ Next nextEvent(int64_t nowUtc, const Day &today, const Day &tomorrow)
         return polar(today.kind, false);
     }
 
+    // Before dawn: both of today's events are still ahead.
     if (nowUtc < today.riseUtc) {
         Next out;
-        out.kind     = EventKind::Rise;
-        out.whenUtc  = today.riseUtc;
-        out.otherUtc = today.setUtc;
+        out.kind      = EventKind::Rise;
+        out.whenUtc   = today.riseUtc;
+        out.secondUtc = today.setUtc;
         return out;
     }
 
+    // Daylight: the sunset in front of you, and then tomorrow's sunrise --
+    // which is why tomorrow is needed at two in the afternoon and not only at
+    // midnight. If tomorrow has no sunrise, the sunset in front of you is the
+    // last one for a while, and there is no honest second row.
     if (nowUtc < today.setUtc) {
         Next out;
-        out.kind     = EventKind::Set;
-        out.whenUtc  = today.setUtc;
-        out.otherUtc = today.riseUtc;
+        out.kind      = EventKind::Set;
+        out.whenUtc   = today.setUtc;
+        out.secondUtc = (tomorrow.kind == DayKind::Normal) ? tomorrow.riseUtc : -1;
         return out;
     }
 
@@ -58,12 +63,10 @@ Next nextEvent(int64_t nowUtc, const Day &today, const Day &tomorrow)
     }
 
     Next out;
-    out.kind    = EventKind::Rise;
-    out.whenUtc = tomorrow.riseUtc;
-    // Deliberately not tomorrow's sunset. Pairing "sunrise 06:14" with a sunset
-    // 20 hours away says nothing anybody wants at 11pm, and the caption's one
-    // line is better spent saying which day this is.
-    out.nextDay = true;
+    out.kind      = EventKind::Rise;
+    out.whenUtc   = tomorrow.riseUtc;
+    out.secondUtc = tomorrow.setUtc;
+    out.nextDay   = true;
     return out;
 }
 

@@ -3,14 +3,23 @@
  * @file    Render.hpp
  * @date    18-08-2026
  * @author  Toby Murray <toby.murray@protonmail.com>
- * @brief   The three lines the glance shows, as a pure function of what it knows.
+ * @brief   What the glance draws, as a pure function of what it knows.
  ******************************************************************************
  *
- * Everything the user actually sees is decided here, and nothing here touches
- * the SDK, the clock or the screen. That split is the point: a glance is looked
- * at half awake for three seconds, so the wording is the product, and wording
- * that can only be reviewed by scrolling a carousel on a watch does not get
- * reviewed.
+ * Two rows and a caption. Each row is an icon and a time -- a sun rising over a
+ * horizon, or setting under one -- and they are in the order the two events
+ * will happen, so the top row is always the next thing and the bottom row is
+ * always the one after it. Nothing on the screen is in the past.
+ *
+ * That layout is why there are no words on the rows. "sunrise 04:50" spends a
+ * third of the panel restating what the picture already says, and the pair of
+ * times is the thing worth reading: what is actually being asked at seven in
+ * the morning is not "when is sunrise" but "how much daylight is there".
+ *
+ * Everything here is decided without touching the SDK, the clock or the screen.
+ * A glance is looked at half awake for three seconds, so the wording is the
+ * product, and wording that can only be reviewed by scrolling a carousel on a
+ * watch does not get reviewed.
  *
  * ## Why the lines are built into buffers instead of set directly
  *
@@ -21,11 +30,13 @@
  * here means their lengths are asserted in a host test rather than discovered
  * by a caption that never changes.
  *
- * ## Why a caution flag rather than a colour
+ * ## Why the icons are optional
  *
- * The renderer decides *that* a line is a caveat; the service decides what
- * amber looks like. Keeping the palette out of here is what lets the wording
- * be tested without linking the glance headers.
+ * The kernel says how many controls the glance may have, and this screen wants
+ * five. Every SDK example asks for three. Rather than decline a glance on a
+ * watch that offers four, the renderer will put the words back: `withIcons`
+ * false produces "rise 04:50" and "set 19:17", which fits in three controls and
+ * says the same thing less prettily.
  *
  ******************************************************************************
  */
@@ -68,26 +79,45 @@ enum class Trouble : uint8_t {
 struct View
 {
     Trouble   trouble     = Trouble::None;
+    /// Which event the first row is. The second row is the other kind.
     EventKind kind        = EventKind::Rise;
-    Clock     when;                     ///< Local reading of the event.
-    Clock     other;                    ///< The paired event, if there is one.
-    int64_t   secondsAway = -1;         ///< Until `when`; -1 when there is none.
-    bool      nextDay     = false;      ///< `when` belongs to tomorrow.
+    Clock     first;                    ///< Local reading of the next event.
+    Clock     second;                   ///< And of the one after it, if there is one.
+    int64_t   secondsAway = -1;         ///< Until `first`; -1 when there is none.
+    bool      nextDay     = false;      ///< `first` belongs to tomorrow.
     bool      zoneSuspect = false;      ///< Position and time zone disagree.
 };
 
 /// The glance, drawn.
 struct Lines
 {
-    char title[kLineBytes] = { 0 };
-    char value[kLineBytes] = { 0 };
-    char sub[kLineBytes]   = { 0 };
+    /// True when the two time rows are in use. False means the screen is one
+    /// message instead -- a polar day, or a reason there is no time -- and
+    /// `message` is what to show.
+    bool      rows      = false;
+    /// Which icon belongs on the first row; the second row takes the other.
+    EventKind firstKind = EventKind::Rise;
+
+    char first[kLineBytes]   = { 0 };
+    /// Empty when there is no second event to show, which happens on the last
+    /// day before the midnight sun.
+    char second[kLineBytes]  = { 0 };
+    char message[kLineBytes] = { 0 };
+    char sub[kLineBytes]     = { 0 };
+
     /// True when the caption is a caveat rather than a convenience, so the
     /// service can colour it as one.
     bool caution = false;
 };
 
-Lines render(const View &view);
+/**
+ * @brief Turn what is known into what is shown.
+ *
+ * @param withIcons False when the kernel would not give this glance enough
+ *                  controls for the icons, in which case the rows carry the
+ *                  words instead.
+ */
+Lines render(const View &view, bool withIcons);
 
 } // namespace Sun
 
