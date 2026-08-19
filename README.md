@@ -14,6 +14,7 @@ than living inside it.
 | [`Chrono`](Chrono) | The SDK's Stopwatch example backported to SDK 1.3, which upstream never had a build of — so it launches on a watch whose kernel is still on interface version 2. |
 | [`GpsLab`](GpsLab) | The Running activity plus GNSS instrumentation — per-sample error estimate, fix and dead-reckoning state, recorded alongside the activity. |
 | [`HikeMap`](HikeMap) | The stock Hiking activity with the same live map. |
+| [`MapLab`](MapLab) | A bench app that takes the offline map's numbers off a model of the panel and onto the panel: it renders vector geometry with a candidate rasteriser, times every stage against a frame budget, finds where the app-liveness watchdog fires, and puts the cartography on the glass to be looked at — because every decision behind the map work so far was taken against a simulation. |
 | [`MapManager`](MapManager) | A background, autostart `Utility` app that discovers and CRC-verifies offline map packs dropped into the shared `SharedData/maps/` directory, so map-consuming apps read from one already-verified location instead of each running their own copy of this pipeline. |
 | [`RunMap`](RunMap) | The stock Running activity with the same live map. |
 | [`RustGuiPoc`](RustGuiPoc) | A proof of concept: a watch app whose GUI is drawn by Rust and `embedded-graphics` through the SDK's CustomGUI entry point, instead of TouchGFX. |
@@ -69,7 +70,8 @@ kira build-app --app GpsLab --sdk /path/to/una-sdk --version 1.0.0 --out GpsLab.
 `Chrono` carries tests for its stopwatch core under [`Chrono/Tests`](Chrono/Tests),
 `MapManager` carries tests for its verifier core under
 [`MapManager/Tests`](MapManager/Tests), `SleepLab` carries its sleep engine and
-storage under [`SleepLab/Tests`](SleepLab/Tests), `SunGlance` carries its solar
+storage under [`SleepLab/Tests`](SleepLab/Tests), `MapLab` carries its
+rasteriser, palette and draft wire format under [`MapLab/Tests`](MapLab/Tests), `SunGlance` carries its solar
 core, its wording and its glance wiring under
 [`SunGlance/Tests`](SunGlance/Tests), and the three map apps share one suite
 under [`MapKit/Tests`](MapKit/Tests).
@@ -78,7 +80,7 @@ Two different SDKs, depending on the app. `Chrono`, `MapManager` and the three
 map apps are pinned to `apps-v1.3.0` — point `$UNA_SDK` at a checkout of that
 tag, and see their READMEs
 ([Chrono](Chrono/README.md#why-13-matters), [MapManager](MapManager/README.md#why-its-pinned-to-sdk-13))
-for why. `SleepLab` and `SunGlance` target **`apps-v1.4.0`** and will not run
+for why. `SleepLab`, `SunGlance` and `MapLab` target **`apps-v1.4.0`** and will not run
 on a 1.3 kernel: an app carries the interface version it was built against, and
 the mismatch shows up as an instant `App PID` error screen rather than as a
 build failure — see [SleepLab's README](SleepLab/README.md#building).
