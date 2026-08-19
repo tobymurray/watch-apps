@@ -55,12 +55,14 @@ GlanceFont_t rowFontFor(int16_t px)
     }
 }
 
-/// Width to reserve for "04:50" at a given font size. Poppins' digits run about
-/// 0.6 em and the colon rather less, so five characters is a shade under three
-/// ems; three is that with room to be wrong in.
-int16_t timeWidthFor(int16_t fontPx)
+GlancePoint_t pointOf(const Sun::Box &box)
 {
-    return static_cast<int16_t>(fontPx * 3);
+    return GlancePoint_t { static_cast<uint16_t>(box.x), static_cast<uint16_t>(box.y) };
+}
+
+GlanceSize_t sizeOf(const Sun::Box &box)
+{
+    return GlanceSize_t { static_cast<uint16_t>(box.w), static_cast<uint16_t>(box.h) };
 }
 
 } // namespace
@@ -147,14 +149,16 @@ bool Service::glanceConfig()
     // example asks for three, so a kernel that offers only that is not a fault
     // to refuse -- it is a screen to draw differently. The rows can also turn
     // out too short to hold an icon, which bandsFor() decides.
-    mBands     = Sun::bandsFor(gc->height, gc->maxControls >= kControlsWanted,
-                               ICON_SUNRISE_HEIGHT);
-    mWithIcons = mBands.icons;
+    mLayout    = Sun::layoutFor(gc->width, gc->height,
+                                gc->maxControls >= kControlsWanted,
+                                ICON_SUNRISE_WIDTH, ICON_SUNRISE_HEIGHT);
+    mWithIcons = mLayout.icons;
 
-    LOG_INFO("glance %dx%d, %u controls -> rows h%d font%d, icons %s\n",
+    LOG_INFO("glance %dx%d, %u controls -> %s font%d, icons %s\n",
              static_cast<int>(gc->width), static_cast<int>(gc->height),
              static_cast<unsigned>(gc->maxControls),
-             static_cast<int>(mBands.rowH), static_cast<int>(mBands.rowFontPx),
+             mLayout.arrangement == Sun::Arrangement::SideBySide ? "side-by-side" : "stacked",
+             static_cast<int>(mLayout.rowFontPx),
              mWithIcons ? "yes" : "no");
 
     // Written before the verdict below, on purpose: a panel too short to draw
@@ -162,9 +166,9 @@ bool Service::glanceConfig()
     // that declines silently tells them nothing.
     noteGeometry();
 
-    if (!mBands.fits) {
-        LOG_WARNING("glance is %d tall; two rows and a caption do not fit\n",
-                    static_cast<int>(gc->height));
+    if (!mLayout.fits) {
+        LOG_WARNING("no arrangement of two times and a caption fits %dx%d\n",
+                    static_cast<int>(gc->width), static_cast<int>(gc->height));
         return false;
     }
 
@@ -184,7 +188,7 @@ void Service::glanceCreate()
     }
 
     mFirst = mGlance.createText();
-    mFirst.font(rowFontFor(mBands.rowFontPx))
+    mFirst.font(rowFontFor(mLayout.rowFontPx))
         .color(GlanceColor_t::GLANCE_COLOR_WHITE)
         .setText("--");
 
@@ -195,13 +199,12 @@ void Service::glanceCreate()
     }
 
     mSecond = mGlance.createText();
-    mSecond.font(rowFontFor(mBands.rowFontPx))
+    mSecond.font(rowFontFor(mLayout.rowFontPx))
         .color(GlanceColor_t::GLANCE_COLOR_WHITE)
         .setText("");
 
     mSub = mGlance.createText();
-    mSub.pos({ 0, static_cast<uint16_t>(mBands.subY) },
-             { width, static_cast<uint16_t>(mBands.subH) })
+    mSub.pos(pointOf(mLayout.sub), sizeOf(mLayout.sub))
         .font(GlanceFont_t::GLANCE_FONT_POPPINS_SEMIBOLD_18)
         .color(GlanceColor_t::GLANCE_COLOR_GRAY)
         .setText("")
@@ -226,43 +229,23 @@ void Service::layout(bool rowsMode)
         return;
     }
 
-    const int16_t width = static_cast<int16_t>(mGlance.getWidth());
+    const GlanceAlignH_t rowAlign = mLayout.textCentred
+                                        ? GlanceAlignH_t::GLANCE_ALIGN_H_CENTER
+                                        : GlanceAlignH_t::GLANCE_ALIGN_H_LEFT;
 
-    const uint16_t rowH = static_cast<uint16_t>(mBands.rowH);
+    if (rowsMode) {
+        mFirst.pos(pointOf(mLayout.textFirst), sizeOf(mLayout.textFirst)).alignment(rowAlign);
+        mSecond.pos(pointOf(mLayout.textSecond), sizeOf(mLayout.textSecond)).alignment(rowAlign);
 
-    if (rowsMode && mWithIcons) {
-        // Centre the icon and the time together rather than each within its own
-        // half: what should sit in the middle of the panel is the pair.
-        const int16_t timeW = timeWidthFor(mBands.rowFontPx);
-        const int16_t span  = ICON_SUNRISE_WIDTH + kIconGap + timeW;
-        const int16_t left  = static_cast<int16_t>((width - span) / 2);
-        const int16_t drop  = static_cast<int16_t>((mBands.rowH - ICON_SUNRISE_HEIGHT) / 2);
-        const int16_t textX = static_cast<int16_t>(left + ICON_SUNRISE_WIDTH + kIconGap);
-
-        mIconFirst.pos({ static_cast<uint16_t>(left),
-                         static_cast<uint16_t>(mBands.rowAY + drop) });
-        mIconSecond.pos({ static_cast<uint16_t>(left),
-                          static_cast<uint16_t>(mBands.rowBY + drop) });
-
-        mFirst.pos({ static_cast<uint16_t>(textX), static_cast<uint16_t>(mBands.rowAY) },
-                   { static_cast<uint16_t>(timeW), rowH })
-            .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_LEFT);
-        mSecond.pos({ static_cast<uint16_t>(textX), static_cast<uint16_t>(mBands.rowBY) },
-                    { static_cast<uint16_t>(timeW), rowH })
-            .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_LEFT);
-    } else if (rowsMode) {
-        // No icons: the words are back, so the rows are full-width and centred.
-        mFirst.pos({ 0, static_cast<uint16_t>(mBands.rowAY) },
-                   { static_cast<uint16_t>(width), rowH })
-            .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
-        mSecond.pos({ 0, static_cast<uint16_t>(mBands.rowBY) },
-                    { static_cast<uint16_t>(width), rowH })
-            .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
+        if (mWithIcons) {
+            mIconFirst.pos(pointOf(mLayout.iconFirst));
+            mIconSecond.pos(pointOf(mLayout.iconSecond));
+        }
     } else {
-        // One message instead of two rows, sitting where the eye already is --
-        // between the two row bands rather than at the top of the first.
-        mFirst.pos({ 0, static_cast<uint16_t>(mBands.rowAY + mBands.rowH / 2) },
-                   { static_cast<uint16_t>(width), rowH })
+        // One line instead of two times: it takes the whole row area, centred,
+        // because it is a sentence rather than a number sitting beside a
+        // picture.
+        mFirst.pos(pointOf(mLayout.message), sizeOf(mLayout.message))
             .alignment(GlanceAlignH_t::GLANCE_ALIGN_H_CENTER);
     }
 
@@ -282,14 +265,22 @@ void Service::noteGeometry()
     const int len = snprintf(text, sizeof text,
                              "# what the kernel offered, and what was drawn from it\n"
                              "area %dx%d\n"
-                             "rows y%d y%d h%d font%d icons %s\n"
-                             "sub y%d h%d font18\n",
+                             "%s font%d icons %s fits %s\n"
+                             "first %d,%d %dx%d  second %d,%d %dx%d\n"
+                             "sub %d,%d %dx%d\n",
                              static_cast<int>(mGlance.getWidth()),
                              static_cast<int>(mGlance.getHeight()),
-                             static_cast<int>(mBands.rowAY), static_cast<int>(mBands.rowBY),
-                             static_cast<int>(mBands.rowH), static_cast<int>(mBands.rowFontPx),
-                             mWithIcons ? "yes" : "no",
-                             static_cast<int>(mBands.subY), static_cast<int>(mBands.subH));
+                             mLayout.arrangement == Sun::Arrangement::SideBySide
+                                 ? "side-by-side" : "stacked",
+                             static_cast<int>(mLayout.rowFontPx),
+                             mLayout.icons ? "yes" : "no",
+                             mLayout.fits ? "yes" : "no",
+                             static_cast<int>(mLayout.textFirst.x), static_cast<int>(mLayout.textFirst.y),
+                             static_cast<int>(mLayout.textFirst.w), static_cast<int>(mLayout.textFirst.h),
+                             static_cast<int>(mLayout.textSecond.x), static_cast<int>(mLayout.textSecond.y),
+                             static_cast<int>(mLayout.textSecond.w), static_cast<int>(mLayout.textSecond.h),
+                             static_cast<int>(mLayout.sub.x), static_cast<int>(mLayout.sub.y),
+                             static_cast<int>(mLayout.sub.w), static_cast<int>(mLayout.sub.h));
 
     if (len <= 0 || static_cast<size_t>(len) >= sizeof text) {
         return;

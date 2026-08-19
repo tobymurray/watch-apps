@@ -117,14 +117,12 @@ private:
 
     // -- Layout ---------------------------------------------------------------
     //
-    // Nothing vertical is a constant any more. The first version hard-coded
+    // No position in this file is a constant. The first version hard-coded
     // bands copied from SleepLab -- an app with one line at font 30 and 36
     // pixels to put it in -- and stacking two of those plus a caption clipped
-    // the bottom row on the watch. `Sun::bandsFor()` derives the bands and the
-    // font from the height the kernel reports; this file only maps the result
-    // onto controls.
-    /// Gap between an icon and the time it labels.
-    static constexpr int16_t kIconGap = 8;
+    // the bottom row on the watch. `Sun::layoutFor()` decides the arrangement,
+    // the font and every box from the area the kernel reports; this file only
+    // puts controls where it says.
 
     /// Two icons, two times and a caption.
     static constexpr uint32_t kControlsWanted = 5;
@@ -140,9 +138,9 @@ private:
     SDK::Glance::ControlText  mSecond;
     SDK::Glance::ControlText  mSub;
 
-    /// Where everything goes, and how big the row font is, for the panel this
-    /// glance actually got.
-    Sun::Bands mBands;
+    /// Where everything goes, which way round, and at what size, for the panel
+    /// this glance actually got.
+    Sun::Layout mLayout;
 
     /// False when the kernel would not give this glance five controls, or when
     /// the rows came out too short to hold an icon. Either way the rows carry

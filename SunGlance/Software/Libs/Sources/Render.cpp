@@ -77,19 +77,46 @@ Lines message(const char *headline, const char *caption, bool caution)
 /// half awake.
 constexpr int16_t kSubFontPx = 18;
 
-/// Largest first, because the loop takes the first that fits.
-constexpr int16_t kRowFonts[] = { 30, 25, 20, 18 };
+/// Largest first, because the search takes the first that fits.
+constexpr int16_t kRowFonts[]  = { 30, 25, 20, 18 };
+constexpr size_t  kRowFontCount = sizeof kRowFonts / sizeof kRowFonts[0];
+
+/// Between an icon and the time it labels.
+constexpr int16_t kIconGap = 6;
+/// Between the two pairs, side by side. Wider than the icon gap on purpose: it
+/// is what makes them read as two things rather than four.
+constexpr int16_t kPairGap = 14;
 
 /// A pixel or two of the panel left unused at the bottom. Cheap insurance: the
 /// kernel reports the area, and nothing here can tell whether that number
 /// includes a border the carousel draws over.
 constexpr int16_t kBottomGuard = 2;
 
-int16_t clampTo(int16_t value, int16_t low, int16_t high)
+/// Centre a thing of size @p size in a band starting at @p start of size @p of.
+int16_t centreIn(int16_t start, int16_t of, int16_t size)
 {
-    if (value < low)  { return low;  }
-    if (value > high) { return high; }
-    return value;
+    const int16_t offset = static_cast<int16_t>((of - size) / 2);
+    return static_cast<int16_t>(start + (offset > 0 ? offset : 0));
+}
+
+/// Does one arrangement fit at one font size, given icons or not?
+bool shapeFits(Arrangement arrangement, bool icons, int16_t fontPx,
+               int16_t width, int16_t bandH, int16_t iconW, int16_t iconH)
+{
+    if (lineHeightFor(fontPx) > bandH) {
+        return false;
+    }
+    if (icons && bandH < iconH + 2) {
+        return false;
+    }
+
+    const int16_t groupW = static_cast<int16_t>(timeWidthFor(fontPx)
+                                                + (icons ? iconW + kIconGap : 0));
+
+    if (arrangement == Arrangement::SideBySide) {
+        return (2 * groupW + kPairGap) <= width;
+    }
+    return groupW <= width;
 }
 
 } // namespace
@@ -98,50 +125,110 @@ int16_t lineHeightFor(int16_t fontPx)
 {
     // 6/5 rather than 1.2 so this is integer arithmetic all the way down: these
     // numbers become pixel positions, and a rounding difference between the
-    // test and the watch would be a rounding difference nobody could see.
+    // test and the watch would be a difference nobody could see.
     return static_cast<int16_t>((fontPx * 6) / 5);
 }
 
-Bands bandsFor(int16_t height, bool wantIcons, int16_t iconHeight)
+int16_t timeWidthFor(int16_t fontPx)
 {
-    Bands out;
+    // 2.9 em for "04:50": four digits at about 0.62 and a colon at about 0.35
+    // is 2.83, and the rest is margin for a font nobody here has measured.
+    return static_cast<int16_t>((fontPx * 29) / 10);
+}
 
-    if (height <= 0) {
+Layout layoutFor(int16_t width, int16_t height, bool wantIcons,
+                 int16_t iconW, int16_t iconH)
+{
+    Layout out;
+
+    if (width <= 0 || height <= 0) {
         return out;
     }
 
-    // The caption is placed first and gets what it needs, because it is the
-    // line that says why there is no time at all. A screen that cannot show it
-    // is worse than one whose digits are a size smaller.
-    out.subH = clampTo(lineHeightFor(kSubFontPx), 12, static_cast<int16_t>(height / 3));
+    // The caption is placed first and gets exactly its line height, because it
+    // is the line that says why there is no time at all. Squeezing it was the
+    // shape of the original bug in miniature: a band smaller than the font that
+    // goes in it, and nothing to notice. A panel that cannot spare those pixels
+    // does not fit, and says so below.
+    out.sub.h = lineHeightFor(kSubFontPx);
+    out.sub.w = width;
+    out.sub.x = 0;
 
-    const int16_t rowsH = static_cast<int16_t>(height - out.subH - kBottomGuard);
-    out.rowH  = static_cast<int16_t>(rowsH > 0 ? rowsH / 2 : 0);
-    out.rowAY = 0;
-    out.rowBY = out.rowH;
-    // Any odd pixel left over joins the guard at the bottom rather than being
-    // handed to a row that would then disagree with the row above it.
-    out.subY  = static_cast<int16_t>(out.rowH * 2);
+    const int16_t rowsH = static_cast<int16_t>(height - out.sub.h - kBottomGuard);
+    if (rowsH <= 0) {
+        return out;
+    }
+    out.sub.y = rowsH;
 
-    out.rowFontPx = kRowFonts[sizeof kRowFonts / sizeof kRowFonts[0] - 1];
-    for (const int16_t px : kRowFonts) {
-        if (lineHeightFor(px) <= out.rowH) {
-            out.rowFontPx = px;
-            break;
+    // Icons before font size: they are what lets the rows carry no words. Among
+    // shapes that keep them, the larger font wins; side by side breaks ties,
+    // because the panel is wider than it is tall.
+    const Arrangement order[] = { Arrangement::SideBySide, Arrangement::Stacked };
+
+    bool found = false;
+    for (int pass = 0; pass < 2 && !found; pass++) {
+        const bool icons = (pass == 0) && wantIcons;
+        if (pass == 0 && !wantIcons) {
+            continue;
+        }
+
+        for (size_t f = 0; f < kRowFontCount && !found; f++) {
+            for (const Arrangement arrangement : order) {
+                const int16_t bandH = (arrangement == Arrangement::SideBySide)
+                                          ? rowsH
+                                          : static_cast<int16_t>(rowsH / 2);
+                if (!shapeFits(arrangement, icons, kRowFonts[f], width, bandH, iconW, iconH)) {
+                    continue;
+                }
+                out.arrangement = arrangement;
+                out.icons       = icons;
+                out.rowFontPx   = kRowFonts[f];
+                out.fits        = true;
+                found           = true;
+                break;
+            }
         }
     }
 
-    // An icon is a fixed size and cannot shrink with the font, so a row too
-    // short for one loses it rather than overlapping the row beneath.
-    out.icons = wantIcons && (out.rowH >= iconHeight + 2);
+    if (!found) {
+        return out;
+    }
 
-    // Below this there is no arrangement of two lines and a caption that is not
-    // cut off somewhere, and the smallest font is already in use. Saying so is
-    // the honest answer; picking a size that will be clipped is what the first
-    // version did.
-    const int16_t smallest = kRowFonts[sizeof kRowFonts / sizeof kRowFonts[0] - 1];
-    out.fits = (out.rowH >= lineHeightFor(smallest))
-               && (out.subH >= lineHeightFor(kSubFontPx));
+    const int16_t lineH  = lineHeightFor(out.rowFontPx);
+    const int16_t timeW  = timeWidthFor(out.rowFontPx);
+    const int16_t groupW = static_cast<int16_t>(timeW + (out.icons ? iconW + kIconGap : 0));
+
+    if (out.arrangement == Arrangement::SideBySide) {
+        const int16_t total = static_cast<int16_t>(2 * groupW + kPairGap);
+        const int16_t left  = centreIn(0, width, total);
+        const int16_t right = static_cast<int16_t>(left + groupW + kPairGap);
+        const int16_t textY = centreIn(0, rowsH, lineH);
+        const int16_t iconY = centreIn(0, rowsH, iconH);
+
+        out.textFirst  = Box { static_cast<int16_t>(left + (out.icons ? iconW + kIconGap : 0)),
+                               textY, timeW, lineH };
+        out.textSecond = Box { static_cast<int16_t>(right + (out.icons ? iconW + kIconGap : 0)),
+                               textY, timeW, lineH };
+        out.iconFirst  = Box { left, iconY, iconW, iconH };
+        out.iconSecond = Box { right, iconY, iconW, iconH };
+    } else {
+        const int16_t bandH = static_cast<int16_t>(rowsH / 2);
+        const int16_t left  = centreIn(0, width, groupW);
+        const int16_t textX = static_cast<int16_t>(left + (out.icons ? iconW + kIconGap : 0));
+
+        out.textFirst  = Box { textX, centreIn(0, bandH, lineH), timeW, lineH };
+        out.textSecond = Box { textX, centreIn(bandH, bandH, lineH), timeW, lineH };
+        out.iconFirst  = Box { left, centreIn(0, bandH, iconH), iconW, iconH };
+        out.iconSecond = Box { left, centreIn(bandH, bandH, iconH), iconW, iconH };
+    }
+
+    // A time sitting against its icon runs from the left of its box; one
+    // standing on its own is centred in it.
+    out.textCentred = !out.icons;
+
+    // The message replaces both times, so it gets the whole row band and the
+    // full width -- it is a sentence, not a number.
+    out.message = Box { 0, centreIn(0, rowsH, lineH), width, lineH };
 
     return out;
 }

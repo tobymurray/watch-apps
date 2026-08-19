@@ -312,38 +312,38 @@ TEST(Glance, ItWritesDownWhatTheKernelGaveIt)
 
     const std::string note = rig.fs.readFile("glance.txt");
     EXPECT_NE(note.find("area 241x88"), std::string::npos) << note;
+    EXPECT_NE(note.find("side-by-side"), std::string::npos) << note;
     EXPECT_NE(note.find("font25"), std::string::npos) << note;
     EXPECT_NE(note.find("icons yes"), std::string::npos) << note;
 }
 
-TEST(Glance, AShorterPanelGetsASmallerFontRatherThanAClippedRow)
+TEST(Glance, ANarrowPanelStacksRatherThanCollide)
 {
-    // The bug this fixes: two rows and a caption were laid out at fixed heights
-    // copied from an app with one row, and the bottom of the second row's
-    // digits was cut off on the watch.
+    // Two times side by side need width. Where there is not enough, the rows go
+    // back to being stacked -- overlapping digits are a worse failure than a
+    // smaller font, and either beats the clipping this all started with.
     Rig rig;
     rig.seed("input.json", london());
     rig.at(kBeforeDawn);
-    rig.comm.height = 72;
+    rig.comm.width  = 120;
+    rig.comm.height = 110;
     rig.comm.viewing(1);
 
     rig.run();
 
     const std::string note = rig.fs.readFile("glance.txt");
-    EXPECT_NE(note.find("area 241x72"), std::string::npos) << note;
-    // A size down from the 25 an 88-pixel panel gets, and still both times.
-    EXPECT_NE(note.find("font20"), std::string::npos) << note;
+    EXPECT_NE(note.find("stacked"), std::string::npos) << note;
     ASSERT_EQ(rig.updates().size(), 1u);
     EXPECT_EQ(rig.updates().front().first(), "04:50");
     EXPECT_EQ(rig.updates().front().second(), "19:17");
 }
 
-TEST(Glance, APanelTooShortToDrawInIsDeclinedButMeasuredFirst)
+TEST(Glance, APanelTooSmallToDrawInIsDeclinedButMeasuredFirst)
 {
     Rig rig;
     rig.seed("input.json", london());
     rig.at(kBeforeDawn);
-    rig.comm.height = 44;
+    rig.comm.height = 28;
     rig.comm.viewing(2);
 
     rig.run();
@@ -351,7 +351,9 @@ TEST(Glance, APanelTooShortToDrawInIsDeclinedButMeasuredFirst)
     EXPECT_TRUE(rig.updates().empty()) << "nothing clipped was drawn";
     // But the measurement is on the watch, which is the only way anybody finds
     // out what the panel actually was.
-    EXPECT_NE(rig.fs.readFile("glance.txt").find("area 241x44"), std::string::npos);
+    const std::string note = rig.fs.readFile("glance.txt");
+    EXPECT_NE(note.find("area 241x28"), std::string::npos) << note;
+    EXPECT_NE(note.find("fits no"), std::string::npos) << note;
 }
 
 TEST(Glance, TheGeometryNoteIsNotRewrittenWhenNothingChanged)

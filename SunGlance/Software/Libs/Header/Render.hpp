@@ -110,49 +110,99 @@ struct Lines
     bool caution = false;
 };
 
-/**
- * @brief Where the rows and the caption go, for a glance of a given height.
- *
- * Hard-coded bands were the first version's mistake and cost a clipped row on
- * hardware: the numbers were lifted from SleepLab, which has *one* line at font
- * 30 and gives it a 36-pixel band, and two of those plus a caption do not fit
- * in the same panel. What is copied here instead is the *ratio* that app
- * demonstrates on a real watch -- a line needs about 1.2 times its font size,
- * or the bottom of the digits is cut off -- and the rest is arithmetic over the
- * height the kernel reports.
- *
- * So the font follows the panel rather than the other way round: whatever the
- * area turns out to be, the largest size whose line box fits its half of it is
- * the one used. An app that guesses at a panel it has never seen should at
- * least guess conservatively.
- *
- * @param wantIcons  Whether the caller has controls to spare for them.
- * @param iconHeight Icons are a fixed size, so a short enough row cannot hold
- *                   one and says so here rather than overlapping the caption.
- */
-struct Bands
+/// A rectangle on the glance, in the kernel's coordinates.
+struct Box
 {
-    int16_t rowAY     = 0;
-    int16_t rowBY     = 0;
-    int16_t rowH      = 0;
-    int16_t subY      = 0;
-    int16_t subH      = 0;
-    /// Font size in pixels for the two rows: 30, 25, 20 or 18.
-    int16_t rowFontPx = 18;
-    /// False when a row is too short to hold an icon, whatever the caller wanted.
-    bool    icons     = false;
-    /// False when even the smallest font would be clipped -- a panel this short
-    /// cannot hold two lines and a caption at all. The caller declines the
-    /// glance rather than drawing something cut off, which is the whole reason
-    /// this struct exists.
-    bool    fits      = false;
+    int16_t x = 0;
+    int16_t y = 0;
+    int16_t w = 0;
+    int16_t h = 0;
 };
 
-Bands bandsFor(int16_t height, bool wantIcons, int16_t iconHeight);
+/// Which way round the two events are drawn.
+enum class Arrangement : uint8_t {
+    /// Side by side: next on the left, the one after it on the right, caption
+    /// underneath. The panel is wide and short, so this is the shape that fits
+    /// it -- it turns the binding constraint from height, which is where the
+    /// clipping came from, into width, where there is room.
+    SideBySide,
+    /// Stacked: next above the one after it. Used when the panel is too narrow
+    /// to put two times beside each other without them colliding, which is a
+    /// worse failure than a small font.
+    Stacked,
+};
+
+/**
+ * @brief Where everything goes, for the glance area the kernel actually gave.
+ *
+ * Hard-coded positions were the first version's mistake and cost a clipped row
+ * on hardware: the numbers were lifted from SleepLab, which has *one* line at
+ * font 30 and gives it a 36-pixel band, and two of those plus a caption do not
+ * fit in the same panel. What is copied here instead is the *ratio* that app
+ * demonstrates on a real watch -- a line needs about 1.2 times its font size,
+ * or the bottom of the digits is cut off -- and everything else is arithmetic
+ * over the area the kernel reports.
+ *
+ * Four shapes are considered, in this order of preference:
+ *
+ *   1. side by side, with icons
+ *   2. stacked, with icons
+ *   3. side by side, words instead of icons
+ *   4. stacked, words instead of icons
+ *
+ * Icons before font size, because they are what lets the rows carry no words at
+ * all; between two shapes that both keep them, the one with the larger font
+ * wins, and side by side breaks the tie. If none of the four fit, `fits` is
+ * false and the caller declines the glance rather than drawing something cut
+ * off.
+ *
+ * Every text box is exactly its line height and centred in its band, rather
+ * than being handed the whole band: `GlanceText_t` has no vertical alignment,
+ * so a box taller than the line leaves the kernel to decide where in it the
+ * glyphs sit, and that decision is what nobody here can see.
+ */
+struct Layout
+{
+    Arrangement arrangement = Arrangement::SideBySide;
+    /// False when no arrangement fits at any font size.
+    bool        fits        = false;
+    /// False when the icons had to go, in which case the times carry words.
+    bool        icons       = false;
+    int16_t     rowFontPx   = 18;
+
+    Box iconFirst;
+    Box iconSecond;
+    Box textFirst;
+    Box textSecond;
+    /// Where a single line goes when there are no times to show -- a polar day,
+    /// or a reason there is no position.
+    Box message;
+    Box sub;
+
+    /// True when the row texts should be centred in their boxes rather than run
+    /// from the left of them. Left-aligned is for a time sitting against its
+    /// icon; centred is for one standing on its own.
+    bool textCentred = true;
+};
+
+/**
+ * @brief Work out that layout.
+ *
+ * @param wantIcons     Whether the caller has controls to spare for them.
+ * @param iconW,iconH   Icons are a fixed size and cannot shrink with the font.
+ */
+Layout layoutFor(int16_t width, int16_t height, bool wantIcons,
+                 int16_t iconW, int16_t iconH);
 
 /// What a line of this font needs vertically, in pixels. The 1.2 is SleepLab's
 /// ratio, measured on the watch this runs on rather than derived from the font.
 int16_t lineHeightFor(int16_t fontPx);
+
+/// What "04:50" needs horizontally at this font size. Poppins' digits run about
+/// 0.62 em and its colon rather less; this is that with room to be wrong in,
+/// because a time too wide for its box is clipped sideways instead of downwards
+/// and nothing here can see either.
+int16_t timeWidthFor(int16_t fontPx);
 
 /**
  * @brief Turn what is known into what is shown.

@@ -1,6 +1,6 @@
 # Host tests
 
-80 tests, three executables, and the split between them is about what each one
+82 tests, three executables, and the split between them is about what each one
 is *evidence* about rather than about what it covers.
 
 ```sh
@@ -50,9 +50,10 @@ than asserted.
 
 **Not that anything renders.** No test here has seen a panel, and the first
 version proved what that is worth: every test passed while the bottom of the
-second row's digits was cut off on the watch. What the `Bands` tests can check
-is that a font is never put in a row too short for it and that nothing is drawn
-past the bottom of the panel — given a *correct* line-height ratio, which is
+second row's digits was cut off on the watch. What the `Layout` tests can check
+is that a font is never put in a box too small for it, that nothing is drawn
+past the edge of the panel, and that no two things overlap — swept over every
+panel size from 100×40 to 260×140 — given a *correct* line-height ratio, which is
 SleepLab's measured 1.2 and is itself an assumption. A caption one character too
 wide, an icon colliding with the time beside it, or a five-control glance a
 kernel will not grant still pass everything here.

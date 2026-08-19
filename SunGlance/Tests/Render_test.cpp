@@ -250,15 +250,22 @@ TEST(Render, TroubleOutranksAnythingElseTheViewCarries)
     EXPECT_STREQ(lines.first, "");
 }
 
-// -- The bands ---------------------------------------------------------------
+// -- The layout --------------------------------------------------------------
 //
-// The layout arithmetic, which exists because the first version's hard-coded
-// bands clipped the bottom row on a real watch. These are the properties that
-// failure would have broken.
+// The arithmetic that decides where everything goes, which exists because the
+// first version's hard-coded positions clipped the bottom row on a real watch.
+// These are the properties that failure would have broken.
 
-constexpr int16_t kIconHeight = 21;
+constexpr int16_t kIconW = 24;
+constexpr int16_t kIconH = 21;
 
-TEST(Bands, ALineGetsMoreRoomThanItsFontSize)
+/// The panel this app was written against, until glance.txt says otherwise.
+Sun::Layout panel(int16_t width = 241, int16_t height = 88, bool wantIcons = true)
+{
+    return Sun::layoutFor(width, height, wantIcons, kIconW, kIconH);
+}
+
+TEST(Layout, ALineGetsMoreRoomThanItsFontSize)
 {
     // The ratio SleepLab demonstrates on the watch this runs on: font 30 in a
     // 36-pixel band, font 18 in 22. Anything tighter is what clipped.
@@ -268,93 +275,147 @@ TEST(Bands, ALineGetsMoreRoomThanItsFontSize)
     EXPECT_EQ(Sun::lineHeightFor(18), 21);
 }
 
-TEST(Bands, TheFontFitsTheRowItIsPutIn)
+TEST(Layout, AWideShortPanelPutsTheTwoTimesBesideEachOther)
 {
-    // The invariant the clipped row broke. Where it cannot hold -- a panel too
-    // short for two lines and a caption at any size -- the answer is `fits`
-    // false and no glance at all, rather than a size that will be cut off.
-    for (int16_t height = 20; height <= 140; height++) {
-        const Sun::Bands bands = Sun::bandsFor(height, true, kIconHeight);
-        if (!bands.fits) {
-            continue;
+    const Sun::Layout out = panel();
+    ASSERT_TRUE(out.fits);
+    EXPECT_EQ(out.arrangement, Sun::Arrangement::SideBySide);
+    EXPECT_TRUE(out.icons);
+
+    // Same row, different columns, next event on the left.
+    EXPECT_EQ(out.textFirst.y, out.textSecond.y);
+    EXPECT_LT(out.textFirst.x, out.textSecond.x);
+    EXPECT_EQ(out.iconFirst.y, out.iconSecond.y);
+    EXPECT_LT(out.iconFirst.x, out.textFirst.x) << "each icon labels the time to its right";
+    EXPECT_LT(out.textFirst.x + out.textFirst.w, out.iconSecond.x) << "and the pairs do not overlap";
+}
+
+TEST(Layout, ANarrowPanelStacksInsteadOfColliding)
+{
+    // Two times side by side need width. Where there is not enough, stacking is
+    // the answer -- overlapping digits are a worse failure than a smaller font.
+    const Sun::Layout out = panel(120, 100);
+    ASSERT_TRUE(out.fits);
+    EXPECT_EQ(out.arrangement, Sun::Arrangement::Stacked);
+    EXPECT_LT(out.textFirst.y, out.textSecond.y);
+    EXPECT_EQ(out.textFirst.x, out.textSecond.x);
+}
+
+TEST(Layout, NothingOverlapsAnythingElse)
+{
+    for (int16_t width = 100; width <= 260; width += 3) {
+        for (int16_t height = 40; height <= 140; height += 3) {
+            const Sun::Layout out = Sun::layoutFor(width, height, true, kIconW, kIconH);
+            if (!out.fits) {
+                continue;
+            }
+
+            const std::string where = "at " + std::to_string(width) + "x" + std::to_string(height);
+
+            // Everything inside the panel.
+            ASSERT_GE(out.textFirst.x, 0) << where;
+            ASSERT_LE(out.textSecond.x + out.textSecond.w, width) << where;
+            ASSERT_LE(out.sub.y + out.sub.h, height) << where;
+            ASSERT_LE(out.textFirst.y + out.textFirst.h, out.sub.y) << where;
+            ASSERT_LE(out.textSecond.y + out.textSecond.h, out.sub.y) << where;
+
+            // The two times never sit on top of one another.
+            const bool sameRow = (out.textFirst.y == out.textSecond.y);
+            if (sameRow) {
+                ASSERT_LE(out.textFirst.x + out.textFirst.w, out.textSecond.x) << where;
+            } else {
+                ASSERT_LE(out.textFirst.y + out.textFirst.h, out.textSecond.y) << where;
+            }
+
+            if (out.icons) {
+                ASSERT_LE(out.iconFirst.x + out.iconFirst.w, out.textFirst.x) << where;
+                ASSERT_LE(out.iconSecond.x + out.iconSecond.w, out.textSecond.x) << where;
+                if (sameRow) {
+                    ASSERT_LE(out.textFirst.x + out.textFirst.w, out.iconSecond.x) << where;
+                }
+                ASSERT_LE(out.iconFirst.y + out.iconFirst.h, out.sub.y) << where;
+                ASSERT_LE(out.iconSecond.y + out.iconSecond.h, out.sub.y) << where;
+            }
         }
-        ASSERT_LE(Sun::lineHeightFor(bands.rowFontPx), bands.rowH)
-            << "height " << height << " gave font " << bands.rowFontPx
-            << " a row of " << bands.rowH;
-        ASSERT_LE(Sun::lineHeightFor(18), bands.subH) << height;
     }
 }
 
-TEST(Bands, APanelTooShortToDrawInSaysSo)
+TEST(Layout, TheFontFitsTheBoxItIsPutIn)
 {
-    EXPECT_FALSE(Sun::bandsFor(44, true, kIconHeight).fits);
-    EXPECT_FALSE(Sun::bandsFor(56, true, kIconHeight).fits);
-    // And the panel this app was written against is fine.
-    EXPECT_TRUE(Sun::bandsFor(88, true, kIconHeight).fits);
-    EXPECT_TRUE(Sun::bandsFor(84, true, kIconHeight).fits);
-
-    // Once it fits, it keeps fitting: a taller panel never becomes undrawable.
-    bool seenFitting = false;
-    for (int16_t height = 20; height <= 200; height++) {
-        const bool fits = Sun::bandsFor(height, true, kIconHeight).fits;
-        if (fits) {
-            seenFitting = true;
+    // The invariant the clipped row broke. Where nothing can hold it -- a panel
+    // too small at any size -- the answer is `fits` false and no glance at all,
+    // rather than a size that will be cut off.
+    for (int16_t width = 100; width <= 260; width += 3) {
+        for (int16_t height = 20; height <= 140; height += 3) {
+            const Sun::Layout out = Sun::layoutFor(width, height, true, kIconW, kIconH);
+            if (!out.fits) {
+                continue;
+            }
+            const int16_t line = Sun::lineHeightFor(out.rowFontPx);
+            ASSERT_EQ(out.textFirst.h, line) << width << "x" << height;
+            ASSERT_GE(out.textFirst.w, Sun::timeWidthFor(out.rowFontPx)) << width << "x" << height;
+            ASSERT_GE(out.sub.h, Sun::lineHeightFor(18)) << width << "x" << height;
         }
-        ASSERT_TRUE(!seenFitting || fits) << "height " << height;
     }
 }
 
-TEST(Bands, NothingIsDrawnPastTheBottomOfThePanel)
+TEST(Layout, IconsAreKeptEvenAtTheCostOfAFontSize)
 {
-    for (int16_t height = 20; height <= 140; height++) {
-        const Sun::Bands bands = Sun::bandsFor(height, true, kIconHeight);
-        ASSERT_GE(bands.rowAY, 0) << height;
-        ASSERT_EQ(bands.rowBY, bands.rowAY + bands.rowH) << height;
-        ASSERT_LE(bands.subY + bands.subH, height) << height;
-        ASSERT_LE(bands.rowBY + bands.rowH, bands.subY) << height;
-    }
+    // They are what lets the rows carry no words at all, so they outrank the
+    // digits being one size bigger.
+    const Sun::Layout withIcons = panel(241, 88, true);
+    const Sun::Layout without   = panel(241, 88, false);
+    ASSERT_TRUE(withIcons.fits);
+    ASSERT_TRUE(without.fits);
+    EXPECT_TRUE(withIcons.icons);
+    EXPECT_FALSE(without.icons);
+    EXPECT_GE(without.rowFontPx, withIcons.rowFontPx) << "dropping them can only help the font";
 }
 
-TEST(Bands, TheCaptionIsNeverSacrificedForTheRows)
+TEST(Layout, ATimeStandingOnItsOwnIsCentredAndOneBesideAnIconIsNot)
 {
-    // It is the line that says why there is no time at all. A screen that
-    // cannot show it is worse than one whose digits are a size smaller.
-    for (int16_t height = 40; height <= 140; height++) {
-        const Sun::Bands bands = Sun::bandsFor(height, true, kIconHeight);
-        ASSERT_GE(bands.subH, 12) << height;
-    }
+    EXPECT_FALSE(panel(241, 88, true).textCentred);
+    EXPECT_TRUE(panel(241, 88, false).textCentred);
 }
 
-TEST(Bands, ABiggerPanelGetsABiggerFont)
+TEST(Layout, APanelTooSmallToDrawInSaysSo)
 {
-    int16_t previous = 0;
-    for (int16_t height = 40; height <= 140; height++) {
-        const Sun::Bands bands = Sun::bandsFor(height, true, kIconHeight);
-        ASSERT_GE(bands.rowFontPx, previous) << "font shrank at height " << height;
-        previous = bands.rowFontPx;
-    }
-    // And the panel this was written against does not get the size that clipped.
-    EXPECT_EQ(Sun::bandsFor(88, true, kIconHeight).rowFontPx, 25);
-    EXPECT_EQ(Sun::bandsFor(88, true, kIconHeight).rowH, 32);
+    // Too short for a caption plus any line at all.
+    EXPECT_FALSE(Sun::layoutFor(241, 28, true, kIconW, kIconH).fits);
+    // Too narrow for even one time.
+    EXPECT_FALSE(Sun::layoutFor(40, 88, true, kIconW, kIconH).fits);
+
+    EXPECT_TRUE(panel(241, 88).fits);
+    EXPECT_TRUE(panel(241, 84).fits);
 }
 
-TEST(Bands, ARowTooShortForAnIconLosesIt)
+TEST(Layout, SideBySideRescuesAPanelTooShortToStackIn)
 {
-    // The icons are a fixed 21 pixels and cannot shrink with the font, so a
-    // short panel drops them rather than letting them overlap the row beneath.
-    EXPECT_TRUE(Sun::bandsFor(88, true, kIconHeight).icons);
-    EXPECT_FALSE(Sun::bandsFor(56, true, kIconHeight).icons);
-    // And a caller with no controls to spare for them never gets them.
-    EXPECT_FALSE(Sun::bandsFor(88, false, kIconHeight).icons);
+    // A panel with room for one line and a caption cannot hold two rows at any
+    // size -- but it can hold two times beside each other, which is the point
+    // of the arrangement. Under the old stacked-only layout this was a declined
+    // glance.
+    const Sun::Layout out = panel(241, 46);
+    ASSERT_TRUE(out.fits);
+    EXPECT_EQ(out.arrangement, Sun::Arrangement::SideBySide);
+    EXPECT_EQ(out.textFirst.y, out.textSecond.y);
+    EXPECT_EQ(out.rowFontPx, 18) << "the smallest font, but a whole one";
+
+    // Two pixels shorter and the icons no longer have a band to sit in, so they
+    // go and the words come back rather than the glance going away.
+    const Sun::Layout shorter = panel(241, 44);
+    ASSERT_TRUE(shorter.fits);
+    EXPECT_FALSE(shorter.icons);
+    EXPECT_TRUE(shorter.textCentred);
 }
 
-TEST(Bands, AnAbsurdPanelIsNotACrash)
+TEST(Layout, AnAbsurdPanelIsNotACrash)
 {
-    for (int16_t height : { static_cast<int16_t>(-1), static_cast<int16_t>(0),
-                            static_cast<int16_t>(1), static_cast<int16_t>(8) }) {
-        const Sun::Bands bands = Sun::bandsFor(height, true, kIconHeight);
-        EXPECT_GE(bands.rowH, 0) << height;
-        EXPECT_FALSE(bands.icons) << height;
+    for (int16_t size : { static_cast<int16_t>(-1), static_cast<int16_t>(0),
+                          static_cast<int16_t>(1), static_cast<int16_t>(8) }) {
+        const Sun::Layout out = Sun::layoutFor(size, size, true, kIconW, kIconH);
+        EXPECT_FALSE(out.fits) << size;
+        EXPECT_FALSE(out.icons) << size;
     }
 }
 
