@@ -19,10 +19,54 @@ drawn from.
 
 | | Gate | Status | Evidence |
 | --- | --- | --- | --- |
-| **A** | Size: is a vector pack ≥10x smaller than the RLE raster equivalent? | **UNVERIFIED** | Host-side. Not MapLab's question — it belongs to the packer, against the Athens extent |
+| **A** | Size: is a vector pack ≥10x smaller than the RLE raster equivalent? | **REFUTED against this cartography** | 3.1× like-for-like, 6.2× crediting overzoom, on the Athens extent, 2026-08-19. The answer swings 1.9×–19.7× with raster style. See below |
 | **B** | RAM: does the renderer's static set link into `RunMap`? | **CONFIRMED — fits** | `Tools/gate_b_link_test.sh`, 2026-08-18, SDK at `apps-v1.4.0`. See below |
 | **C** | Time: does a dense viewport render inside 100 ms? | **REFUTED at city density; CONFIRMED to suburban** | Runs 56/151, 2026-08-19. Rural 24.0 ms, suburban 70.2 ms, city 160.5 ms. See below |
 | **D** | Legibility: does the palette-first cartography hold up on glass? | **REFUTED as specified; CONFIRMED with a cased trace** | 24 cards across indoor, overcast and sun spanning 9.0 EV, 2026-08-19. R5 fails on the palette as written and holds once the trace is cased. See below |
+
+## Gate A — measured, and it does not clear the bar
+
+Full working:
+[`Investigations/2026-08-19-gate-a-pack-size`](Investigations/2026-08-19-gate-a-pack-size).
+Host-side, from files already on disk; no watch involved.
+
+Comparing `athens-watch.rawtiles` against `athens.pmtiles` over their shared
+z12–15 and identical bbox — 207 tiles each:
+
+| | z12–15 |
+| --- | --- |
+| Raster, spec RLE8 | 1,339,221 B |
+| Vector, gzipped MVT | 437,204 B |
+| **Like-for-like** | **3.06×** |
+| **Crediting the vector for overzooming z16** | **6.22×** |
+
+Neither clears ≥10×.
+
+**The recorded RLE figure was wrong.** `slippypack/MAP_DELIVERY_PROMPT.md` has
+"Spec RLE measured 32.4% of raw ⇒ ~14.6 MiB". Measured with a round-trip-checked
+reimplementation of the spec's own canonical encoder, Athens is **6.0%** —
+about **2.6 MiB**, not 14.6. The 32.4% is close to Toronto's measured 38.5% and
+looks like a figure carried between packs.
+
+**The real finding is that Gate A is not a vector-versus-raster question.** On
+the same geometry, the ratio is 1.94× against one of this project's own raster
+styles, 3.06× against another, and 19.66× against a third. The watch
+cartography was deliberately made flat for legibility — 14 slots, no dithering,
+no gradients — and that flatness is exactly what makes RLE devastating. **The
+legibility decision and the size argument pull against each other**, which
+nothing in the pivot's case had acknowledged.
+
+**It is closer than it looks, and one tile would settle it.** MVT carries
+attributes, labels and every layer, so it is an upper bound on a purpose-built
+vector pack. Clearing ≥10× needs a watch pack only **1.6× smaller than MVT** on
+the overzoom framing — plausible from stripping attributes alone. Encoding one
+real z14 tile in the draft `VecScene` format decides it, and is the same work
+that would replace the scene presets with counts.
+
+**Scope caveat.** The extent is 10.0 × 8.0 km of rural Ontario — Athens,
+*Ontario*, not Greece. Density is the variable this gate is most sensitive to,
+and a dense extent moves it toward vector. Re-measure on a city before deciding
+the pivot on this number.
 
 ## Gate B, in detail — the one this app has already settled
 
