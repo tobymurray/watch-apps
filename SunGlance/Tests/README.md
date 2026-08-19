@@ -1,6 +1,6 @@
 # Host tests
 
-82 tests, three executables, and the split between them is about what each one
+84 tests, three executables, and the split between them is about what each one
 is *evidence* about rather than about what it covers.
 
 ```sh
@@ -52,8 +52,10 @@ than asserted.
 version proved what that is worth: every test passed while the bottom of the
 second row's digits was cut off on the watch. What the `Layout` tests can check
 is that a font is never put in a box too small for it, that nothing is drawn
-past the edge of the panel, and that no two things overlap — swept over every
-panel size from 100×40 to 260×140 — given a *correct* line-height ratio, which is
+past the edge of the panel, that no two things overlap, and that nothing is
+drawn under the scroll indicator — swept over every panel size from 100×40 to
+260×140. The suite's default panel is 240×60, which is what a watch reported
+rather than what anybody assumed — given a *correct* line-height ratio, which is
 SleepLab's measured 1.2 and is itself an assumption. A caption one character too
 wide, an icon colliding with the time beside it, or a five-control glance a
 kernel will not grant still pass everything here.

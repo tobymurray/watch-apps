@@ -259,8 +259,14 @@ TEST(Render, TroubleOutranksAnythingElseTheViewCarries)
 constexpr int16_t kIconW = 24;
 constexpr int16_t kIconH = 21;
 
-/// The panel this app was written against, until glance.txt says otherwise.
-Sun::Layout panel(int16_t width = 241, int16_t height = 88, bool wantIcons = true)
+/// The panel, as measured on the watch and reported by glance.txt on
+/// 2026-08-19. Not the 241x88 this was first written against: the real area is
+/// a third shorter, which is why the stacked arrangement could never have
+/// worked here -- two lines and a caption need 65 pixels and there are 60.
+constexpr int16_t kPanelW = 240;
+constexpr int16_t kPanelH = 60;
+
+Sun::Layout panel(int16_t width = kPanelW, int16_t height = kPanelH, bool wantIcons = true)
 {
     return Sun::layoutFor(width, height, wantIcons, kIconW, kIconH);
 }
@@ -275,7 +281,32 @@ TEST(Layout, ALineGetsMoreRoomThanItsFontSize)
     EXPECT_EQ(Sun::lineHeightFor(18), 21);
 }
 
-TEST(Layout, AWideShortPanelPutsTheTwoTimesBesideEachOther)
+TEST(Layout, NothingIsDrawnUnderTheScrollIndicator)
+{
+    // The bug this constant exists for: the first build on a watch centred its
+    // content in the reported width, which put the left icon at x=11, under the
+    // scroll bar the carousel paints over the glance.
+    for (int16_t width = 120; width <= 260; width += 3) {
+        for (int16_t height = 40; height <= 140; height += 3) {
+            const Sun::Layout out = Sun::layoutFor(width, height, true, kIconW, kIconH);
+            if (!out.fits) {
+                continue;
+            }
+            const std::string where = "at " + std::to_string(width) + "x" + std::to_string(height);
+            const Sun::Box &leftMost = out.icons ? out.iconFirst : out.textFirst;
+            ASSERT_GE(leftMost.x, Sun::kSafeLeftInset) << where;
+            ASSERT_GE(out.textFirst.x, Sun::kSafeLeftInset) << where;
+        }
+    }
+
+    // The caption is the one exception, and deliberately: it spans the full
+    // width, but it is centred text whose margins the indicator passes over
+    // rather than a glyph.
+    EXPECT_EQ(panel().sub.x, 0);
+    EXPECT_EQ(panel().sub.w, kPanelW);
+}
+
+TEST(Layout, TheRealPanelGetsBothTimesSideBySideWithIcons)
 {
     const Sun::Layout out = panel();
     ASSERT_TRUE(out.fits);
@@ -288,6 +319,20 @@ TEST(Layout, AWideShortPanelPutsTheTwoTimesBesideEachOther)
     EXPECT_EQ(out.iconFirst.y, out.iconSecond.y);
     EXPECT_LT(out.iconFirst.x, out.textFirst.x) << "each icon labels the time to its right";
     EXPECT_LT(out.textFirst.x + out.textFirst.w, out.iconSecond.x) << "and the pairs do not overlap";
+}
+
+TEST(Layout, TheRealPanelIsTooShortToStackIn)
+{
+    // 60 pixels: a caption at 21 and two lines at 21 each is 63 before any
+    // guard, so the arrangement that shipped first could not have worked here
+    // at any font size. Side by side is not a preference on this watch, it is
+    // the only thing that fits.
+    const Sun::Layout out = panel();
+    ASSERT_TRUE(out.fits);
+    EXPECT_EQ(out.arrangement, Sun::Arrangement::SideBySide);
+
+    const int16_t stackedNeeds = 2 * Sun::lineHeightFor(18) + Sun::lineHeightFor(18);
+    EXPECT_GT(stackedNeeds, kPanelH) << "if this ever passes, stacking became possible";
 }
 
 TEST(Layout, ANarrowPanelStacksInsteadOfColliding)
@@ -363,8 +408,8 @@ TEST(Layout, IconsAreKeptEvenAtTheCostOfAFontSize)
 {
     // They are what lets the rows carry no words at all, so they outrank the
     // digits being one size bigger.
-    const Sun::Layout withIcons = panel(241, 88, true);
-    const Sun::Layout without   = panel(241, 88, false);
+    const Sun::Layout withIcons = panel(kPanelW, kPanelH, true);
+    const Sun::Layout without   = panel(kPanelW, kPanelH, false);
     ASSERT_TRUE(withIcons.fits);
     ASSERT_TRUE(without.fits);
     EXPECT_TRUE(withIcons.icons);
@@ -374,19 +419,19 @@ TEST(Layout, IconsAreKeptEvenAtTheCostOfAFontSize)
 
 TEST(Layout, ATimeStandingOnItsOwnIsCentredAndOneBesideAnIconIsNot)
 {
-    EXPECT_FALSE(panel(241, 88, true).textCentred);
-    EXPECT_TRUE(panel(241, 88, false).textCentred);
+    EXPECT_FALSE(panel(kPanelW, kPanelH, true).textCentred);
+    EXPECT_TRUE(panel(kPanelW, kPanelH, false).textCentred);
 }
 
 TEST(Layout, APanelTooSmallToDrawInSaysSo)
 {
     // Too short for a caption plus any line at all.
-    EXPECT_FALSE(Sun::layoutFor(241, 28, true, kIconW, kIconH).fits);
-    // Too narrow for even one time.
+    EXPECT_FALSE(Sun::layoutFor(240, 28, true, kIconW, kIconH).fits);
+    // Too narrow for even one time, once the scroll bar's inset is taken off.
     EXPECT_FALSE(Sun::layoutFor(40, 88, true, kIconW, kIconH).fits);
 
-    EXPECT_TRUE(panel(241, 88).fits);
-    EXPECT_TRUE(panel(241, 84).fits);
+    EXPECT_TRUE(panel().fits);
+    EXPECT_TRUE(panel(240, 88).fits);
 }
 
 TEST(Layout, SideBySideRescuesAPanelTooShortToStackIn)
@@ -395,7 +440,7 @@ TEST(Layout, SideBySideRescuesAPanelTooShortToStackIn)
     // size -- but it can hold two times beside each other, which is the point
     // of the arrangement. Under the old stacked-only layout this was a declined
     // glance.
-    const Sun::Layout out = panel(241, 46);
+    const Sun::Layout out = panel(240, 46);
     ASSERT_TRUE(out.fits);
     EXPECT_EQ(out.arrangement, Sun::Arrangement::SideBySide);
     EXPECT_EQ(out.textFirst.y, out.textSecond.y);
@@ -403,7 +448,7 @@ TEST(Layout, SideBySideRescuesAPanelTooShortToStackIn)
 
     // Two pixels shorter and the icons no longer have a band to sit in, so they
     // go and the words come back rather than the glance going away.
-    const Sun::Layout shorter = panel(241, 44);
+    const Sun::Layout shorter = panel(240, 44);
     ASSERT_TRUE(shorter.fits);
     EXPECT_FALSE(shorter.icons);
     EXPECT_TRUE(shorter.textCentred);

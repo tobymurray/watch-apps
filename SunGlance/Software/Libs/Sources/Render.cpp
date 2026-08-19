@@ -82,10 +82,15 @@ constexpr int16_t kRowFonts[]  = { 30, 25, 20, 18 };
 constexpr size_t  kRowFontCount = sizeof kRowFonts / sizeof kRowFonts[0];
 
 /// Between an icon and the time it labels.
-constexpr int16_t kIconGap = 6;
+constexpr int16_t kIconGap = 5;
 /// Between the two pairs, side by side. Wider than the icon gap on purpose: it
 /// is what makes them read as two things rather than four.
-constexpr int16_t kPairGap = 14;
+constexpr int16_t kPairGap = 10;
+
+/// Nothing is painted over the right edge, but a couple of pixels of margin
+/// keeps a time from ending flush against the bezel. The left inset is
+/// `kSafeLeftInset` in the header, where the tests can hold the layout to it.
+constexpr int16_t kSafeRight = 8;
 
 /// A pixel or two of the panel left unused at the bottom. Cheap insurance: the
 /// kernel reports the area, and nothing here can tell whether that number
@@ -131,9 +136,11 @@ int16_t lineHeightFor(int16_t fontPx)
 
 int16_t timeWidthFor(int16_t fontPx)
 {
-    // 2.9 em for "04:50": four digits at about 0.62 and a colon at about 0.35
-    // is 2.83, and the rest is margin for a font nobody here has measured.
-    return static_cast<int16_t>((fontPx * 29) / 10);
+    // 2.8 em for "04:50": four digits at about 0.62 and a colon at about 0.35
+    // is 2.83, so this is the glyphs and very little else. It was 2.9 until the
+    // panel turned out to be 240 wide with a scroll bar over part of it, and
+    // every pixel of slack in here is a pixel the pair cannot use.
+    return static_cast<int16_t>((fontPx * 28) / 10);
 }
 
 Layout layoutFor(int16_t width, int16_t height, bool wantIcons,
@@ -142,6 +149,15 @@ Layout layoutFor(int16_t width, int16_t height, bool wantIcons,
     Layout out;
 
     if (width <= 0 || height <= 0) {
+        return out;
+    }
+
+    // Everything below is laid out in the part of the panel that is actually
+    // free to draw in, and only the caption spans the full reported width --
+    // it is centred text with room to spare either side, so the scroll bar
+    // passes over its margin rather than over a glyph.
+    const int16_t usableW = static_cast<int16_t>(width - kSafeLeftInset - kSafeRight);
+    if (usableW <= 0) {
         return out;
     }
 
@@ -177,7 +193,7 @@ Layout layoutFor(int16_t width, int16_t height, bool wantIcons,
                 const int16_t bandH = (arrangement == Arrangement::SideBySide)
                                           ? rowsH
                                           : static_cast<int16_t>(rowsH / 2);
-                if (!shapeFits(arrangement, icons, kRowFonts[f], width, bandH, iconW, iconH)) {
+                if (!shapeFits(arrangement, icons, kRowFonts[f], usableW, bandH, iconW, iconH)) {
                     continue;
                 }
                 out.arrangement = arrangement;
@@ -200,7 +216,7 @@ Layout layoutFor(int16_t width, int16_t height, bool wantIcons,
 
     if (out.arrangement == Arrangement::SideBySide) {
         const int16_t total = static_cast<int16_t>(2 * groupW + kPairGap);
-        const int16_t left  = centreIn(0, width, total);
+        const int16_t left  = centreIn(kSafeLeftInset, usableW, total);
         const int16_t right = static_cast<int16_t>(left + groupW + kPairGap);
         const int16_t textY = centreIn(0, rowsH, lineH);
         const int16_t iconY = centreIn(0, rowsH, iconH);
@@ -213,7 +229,7 @@ Layout layoutFor(int16_t width, int16_t height, bool wantIcons,
         out.iconSecond = Box { right, iconY, iconW, iconH };
     } else {
         const int16_t bandH = static_cast<int16_t>(rowsH / 2);
-        const int16_t left  = centreIn(0, width, groupW);
+        const int16_t left  = centreIn(kSafeLeftInset, usableW, groupW);
         const int16_t textX = static_cast<int16_t>(left + (out.icons ? iconW + kIconGap : 0));
 
         out.textFirst  = Box { textX, centreIn(0, bandH, lineH), timeW, lineH };

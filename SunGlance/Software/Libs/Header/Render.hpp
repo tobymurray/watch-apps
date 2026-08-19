@@ -110,6 +110,18 @@ struct Lines
     bool caution = false;
 };
 
+/// How far in from the left edge anything may be drawn.
+///
+/// The area the kernel reports is not all drawable: the carousel paints a
+/// scroll indicator down the left edge, *over* the glance. The first build to
+/// reach a watch centred its content in the reported width, put an icon at
+/// x=11, and had the icon's left edge clipped by it. Eighteen is what
+/// SleepLab's main lines use and render cleanly, so it is a measurement rather
+/// than a guess -- and the only thing that spans the full width now is the
+/// caption, which is centred text whose margins the indicator passes over
+/// rather than a glyph.
+constexpr int16_t kSafeLeftInset = 18;
+
 /// A rectangle on the glance, in the kernel's coordinates.
 struct Box
 {
