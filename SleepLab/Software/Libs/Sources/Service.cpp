@@ -584,6 +584,13 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
 
     mAcc.reset();
 
+    // Whether a night could have opened in this minute at all. Read once: it is
+    // the only wall-clock read on this path, and both the idle record and the
+    // window-entry transition below are about the same answer.
+    const bool inWindow = Engine::inWindow(
+        localMinutes(SleepLab::wallClockUtc()),
+        mSettings.segmenter.windowStartMin, mSettings.segmenter.windowEndMin);
+
     if (mStore.isOpen()) {
         // Checked, because the alternative is a night whose record on disk stops
         // a third of the way through while the summary keeps counting minutes in
@@ -602,12 +609,36 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
         if (mPreRollCount < kPreRollEpochs) {
             mPreRollCount++;
         }
+
+        // And write it down, if this is a minute a night could have opened in.
+        //
+        // The ring alone discarded these, which left two questions unanswerable
+        // from the volume: why no night opened, and -- the one that matters --
+        // what a still wrist actually counts. `stillnessCountMax` is a guess at
+        // about 2 mg of band-limited movement, the same order as the sensor's own
+        // in-band noise, and if the noise is above it then no night ever opens and
+        // the symptom is indistinguishable from a wearer who did not go to bed.
+        //
+        // With these rows, a night that fails to open is a measurement of the noise
+        // floor instead of a wasted night, and the threshold gets set from a
+        // distribution rather than moved on a second guess.
+        //
+        // Only inside the window: outside it the segmenter would not have opened a
+        // night whatever the counts were, so the rows would answer nothing and
+        // would be most of a day of them.
+        if (inWindow) {
+            mStore.appendWatching(e, !mWasInWindow);
+        }
     }
     // The remaining case is a session running with no file to write to. The epoch
     // still folds into the scoring array below -- that is the night, and it is what
     // the morning report is built from -- but it must not go into the pre-roll
     // ring, which exists for a night that has not opened yet and would otherwise
     // be handed this night's minutes to backdate into the next one.
+
+    // Tracked whatever branch ran, so entering the window is a transition rather
+    // than "the first idle epoch after something else happened".
+    mWasInWindow = inWindow;
 
     fold(e, mPendingScore, mPendingHalves, mPendingSteps);
     if (mPendingHalves >= Engine::kEpochsPerScoringEpoch) {

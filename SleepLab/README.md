@@ -260,6 +260,7 @@ Everything lands in `Apps/SleepLab/` on the USB-MSC volume.
 | `Nights/index.csv` | One row per completed night. The history and the baseline. |
 | `Raw/raw_<start>.csv` | Raw accelerometer, only if you asked for it. |
 | `night_state.txt` | Present only while a night is in progress. |
+| `Nights/watching.csv` | What the segmenter was looking at while **no** night was open, inside the bedtime window — one row per 30 s, in a night's own format. **The file that turns "no night opened" from a wasted night into a measurement**, because the counts it carries are what the stillness threshold should be set from. |
 | `Debug/sleeplab.log` | ~20 lines a launch: which sensor drivers resolved, the settings in force, and one line per night opening, closing, being discarded or failing to be written. **The file you read when there is no night file at all** — see [`Docs/POST-MORTEM.md`](Docs/POST-MORTEM.md). |
 | `settings.json` | Yours to write. |
 
@@ -284,8 +285,8 @@ Three rules that run through all of it:
 
 | | per night | per decade |
 | --- | --- | --- |
-| epochs (always) | ~46 KB | ~17 MB |
-| raw at 25 Hz (opt-in) | **~31 MB** | — |
+| epochs, summary, index, idle record and log (always) | ~121 KB | ~44 MB |
+| raw accelerometer (opt-in) | **~60 MB** | — |
 
 So epochs always, raw never by default. Raw is capped twice — bytes and minutes
 — and a row is only written if its worst case still fits, so the file never
@@ -592,7 +593,14 @@ night and suggests a value for each threshold — and says so plainly when the t
 distributions overlap and *no* value separates them, which is a finding rather
 than a failure. Both nights have to be recorded **with SleepLab**, which is what
 rollout phase 3 does: the probe records delivery statistics and no activity counts,
-so there is no distribution in a probe night to separate. Ledger row S13. The second reports mean signed error and spread on onset and
+so there is no distribution in a probe night to separate. Ledger row S13.
+
+For the table side you can point it straight at the idle record, which carries the
+counts whether or not a session opened:
+
+```sh
+python3 Tools/night_report.py thresholds --worn ./nights --table ./nights/watching.csv
+``` The second reports mean signed error and spread on onset and
 final wake, refuses to quote an accuracy figure off fewer than ten nights, and
 excludes nights the worn gate suppressed, because folding those in as zero error
 would flatter the result.

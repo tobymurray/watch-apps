@@ -17,10 +17,11 @@ to close, not smoothed over.
 
 | Artifact | When | What it is |
 | --- | --- | --- |
-| `Nights/<start>.csv` | one row per 30 s, all night | the record. 20 columns, ~46 KB |
+| `Nights/<start>.csv` | one row per 30 s, all night | the record. 33 columns, ~110 KB |
 | `Nights/<start>.json` | once, when the night **closes** | the summary, the method, the constants, the delivered rate |
 | `Nights/index.csv` | once per completed night | the history, and the only thing the baseline is built from |
 | `night_state.txt` | rewritten every 30 s, removed at close | present ⇒ a night was in progress when the app stopped |
+| `Nights/watching.csv` | one row per 30 s while idle **inside** the window | what the segmenter was looking at before a night opened, or instead of one. Same format as a night, so the same tooling reads it. ~9 KB |
 | `Debug/sleeplab.log` | ~20 lines per launch | why a night did not happen. New; see below |
 | the report screen | on demand | the honesty line, the numbers or their absence |
 
@@ -45,10 +46,10 @@ infer it, with work or with ambiguity. **NO** — you could not tell.
 | 9 | **The worn sensor flickered** | `csv`: `worn_edges` per row. Sum it and divide by the night's hours. A worn *fraction* cannot tell a flicker from a removal and only one of those means tighten the strap | **YES** |
 | 10 | **Heart rate produced nothing** | `csv`: `hr_samples` 0 all night, `hr_mean_x10` `-1`. `json`: `heart_rate.epochs` 0, `method.hr_mode` says whether it was even asked for. Screen: `heart rate was off - cannot confirm it was worn` | **YES** |
 | 11 | **Heart rate produced nonsense** | `csv`: `hr_mean_x10` and `hr_min_x10` per epoch, and `hr_source` — 1 optical, 2 strap, 3 both, 0 none | **PARTLY.** The *values* are there and their provenance is there. The kernel's own **trust** value is not recorded, so "40 bpm at low trust" and "40 bpm at high trust" are indistinguishable. See gap G1 |
-| 12 | **The segmenter opened a night late** | `csv` vs the diary: the filename is the session start. `log`: `open … backdated=15min recovered=15`. `json`: `sleep.onset_latency_min` | **PARTLY.** You can see *when* it opened; you cannot see the epochs it declined to open on, because those are only in the pre-roll ring and the ring is discarded when a night opens. See gap G2 |
+| 12 | **The segmenter opened a night late** | `watching.csv`: every idle minute inside the window, with its `count` and `worn_pct` — so the epochs it *declined* to open on are readable, which is what says whether it was late and why. Plus `log`: `open … backdated=15min recovered=15`, and `json`: `sleep.onset_latency_min` | **YES** |
 | 13 | **The segmenter opened a night early** | `csv`: the first rows' `count` and `worn_pct` — a night opened on a still, worn quarter hour that was not sleep looks like fifteen quiet epochs followed by activity. `index.csv`: a spurious short night | **YES** |
 | 14 | **The segmenter closed a night early** | `csv`: the file simply ends. The epoch before the end carries the reason — `step_delta` ≥ 20 (walked) or `count` above the activity floor for ten consecutive scoring epochs | **YES** |
-| 15 | **The segmenter never opened a night** | **`Debug/sleeplab.log`** is the whole answer, and before it there was none: `launch` says the settings and the window in force, `sensors` says which drivers resolved. No `open` line and no CSV, with a `launch` line present, means the app ran and never saw fifteen still worn minutes inside the window | **PARTLY.** You learn it did not open and you learn the preconditions. You do **not** learn which precondition failed on which minute — see gap G2 |
+| 15 | **The segmenter never opened a night** | `Debug/sleeplab.log` says the app ran and under what settings — a `launch` line with no `open` line. **`Nights/watching.csv` says which precondition failed on which minute**: `count` against `stillnessCountMax`, `worn_pct` against the worn floor, one row per 30 s. If every row's `count` sits above 60, the stillness ceiling is below the sensor's noise floor and the file is the distribution that fixes it | **YES** |
 | 16 | **The scorer disagreed with the movement index** | `json`: `sleep.total_sleep_min` against `sleep.movement_index_pct` and `sleep.still_in_bed_min`. These are independent by construction: the movement index does not use the scorer. A large disagreement is the calibration of `kCountScale` being wrong, and is what `Tools/night_report.py thresholds` is for | **YES** |
 | 17 | **The alarm fired at the wrong time** | `log`: `alarm fired why=deadline\|smart-window epoch=N local_min=M`. The wall clock at the moment it fired is the thing a wearer disputes | **YES** |
 | 18 | **The alarm did not fire** | `log`: no `alarm` line, with `open`/`close` lines present. Distinguishes "never requested" from "requested and you slept through it", which used to be the same observation | **PARTLY.** It tells you the app never raised it. It cannot tell you the kernel swallowed one it did raise — that is ledger row T1, and only sitting and watching settles it |
@@ -68,13 +69,39 @@ CSV column, an accumulator field. This matters most for the worn gate, half of
 which is "a heart rate was present" — and a present-but-untrusted reading is
 exactly what a watch on a warm surface produces.
 
-**G2 — the idle minutes are discarded.** The pre-roll ring holds thirty minutes of
-epochs while no night is open, and they are thrown away when a night opens or when
-the ring wraps. So "why did no night open" and "why did it open at 23:40 rather
-than 23:20" cannot be answered from the volume: the evidence existed and was
-dropped. Cost: write the ring to a small rolling `Nights/watching.csv` while idle
-inside the bedtime window — thirty rows, rewritten, ~2 KB. Or accept it and answer
-the question with a diary instead, which is cheaper and is being kept anyway.
+**G2 — the idle minutes were discarded. Closed.** The pre-roll ring held thirty
+minutes of epochs while no night was open and threw them away, so two questions had
+no answer on the volume: "why did no night open" and "why did it open at 23:40
+rather than 23:20".
+
+The second is the one that mattered, and the reason is not diagnostic curiosity.
+`SegmenterConfig::stillnessCountMax` is a guess at about **2 mg** of band-limited
+wrist movement — the same order as a wrist IMU's own in-band noise — and if the
+noise is above it then **no night ever opens**, which from the outside is
+indistinguishable from a wearer who did not go to bed. There was no way to measure
+that in advance, because the probe records no activity counts (S13) and SleepLab
+recorded nothing at all until a night opened.
+
+`Nights/watching.csv` now carries one row per 30 s while the segmenter is idle
+**inside** the bedtime window, in the same format as a night's own log so
+`night_report.py thresholds` reads it unchanged:
+
+```sh
+night_report.py thresholds --worn ./nights --table ./nights/watching.csv
+```
+
+It is restarted on entering the window, so it holds one window rather than every
+evening since install, and capped at 1 MB in case the clock never reads as
+in-window. A 14-hour window with no night is ~1 700 rows, ~200 KB; a night that
+opens after twenty minutes leaves ~9 KB of run-up.
+
+What this changes about a first night: **there is no longer an outcome that wastes
+one.** Either a night opens, and the run-up is on the volume too, or it does not,
+and the whole window's counts *are* the noise-floor measurement the threshold should
+have been set from in the first place. The threshold gets moved once, from a
+distribution, rather than being guessed at twice.
+
+It also retires the last thing only the probe could do — see the section below.
 
 **G3 — the alarm's trace stops at the app boundary. Closed, as far as it can be.**
 `playAlarm()` now writes one `log` line with the wall clock, the epoch whose
@@ -125,6 +152,13 @@ reason this section first gave.**
 
 Each app records something the other cannot, and until that is fixed both sets of
 nights are needed:
+
+**Update: the last thing only the probe could do is gone.** The nightstand night
+was the holdout — a session only opens when the epoch is *worn*, so a watch the
+touch sensor correctly reports as off the wrist produced no night, no CSV and no
+counts. `watching.csv` records those minutes whether or not a session opens, so the
+table night is now a SleepLab night. What remains below is battery telemetry and
+loop counters.
 
 | Only the probe records | Only SleepLab records |
 | --- | --- |

@@ -150,7 +150,14 @@ def load_nights(paths):
                                           recursive=True)))
         else:
             files.append(p)
-    files = [f for f in files if os.path.basename(f) != "index.csv"]
+    # `index.csv` is the history and `watching.csv` is what the segmenter was
+    # looking at while *no* night was open. Neither is a night, so neither is swept
+    # up by a directory scan -- but `watching.csv` shares the night format exactly,
+    # so naming it explicitly works and is how you read a noise floor off it:
+    #
+    #   night_report.py thresholds --worn ./nights --table ./nights/watching.csv
+    skip = {"index.csv", "watching.csv"}
+    files = [f for f in files if os.path.basename(f) not in skip]
 
     nights = [load_night(f) for f in files]
     nights = [n for n in nights if n.rows]

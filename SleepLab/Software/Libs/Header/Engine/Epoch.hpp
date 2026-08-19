@@ -26,7 +26,7 @@ namespace Engine
  * @brief Recording epoch length, milliseconds.
  *
  * 30 s. Chosen for the *record*, not for the scorer: a finer grid loses
- * nothing, keeps a night at ~46 KB, and lets a future scorer with a different
+ * nothing, costs a night ~110 KB, and lets a future scorer with a different
  * epoch length be run against nights already recorded. Published actigraphy
  * scorers are defined on 30 s or 60 s epochs and this is one of them.
  *
@@ -84,9 +84,18 @@ enum class HrSource : uint8_t {
  * read back by the engine, and held in a fixed array for a night -- so it must
  * not own anything.
  *
- * 30 s epochs, 960 a night. At the ~48 bytes this packs into that is ~46 KB
- * per night and ~17 MB per decade, which is free on a volume that has carried
- * 160 MiB of map packs. Raw accelerometer at 25 Hz would be ~31 MB for eight
+ * 30 s epochs, 960 of them in an eight-hour night.
+ *
+ * This struct packs into ~100 bytes, but the number that matters is the *CSV
+ * row*, because that is what lands on the volume -- and it was previously quoted
+ * here as ~46 KB a night, which was this struct's old size rather than a
+ * measurement of the file. Measured on a generated eight-hour night at schema 2:
+ * **117 bytes a row, ~110 KB for the epoch log, ~121 KB for everything the night
+ * writes** including the summary, the index row, the idle record and the
+ * diagnostic log. So ~44 MB per decade, on a volume that has carried 160 MiB of
+ * map packs.
+ *
+ * Raw accelerometer at the ~48 Hz actually delivered would be ~60 MB for eight
  * hours, which is why epochs are always recorded and raw never is by default.
  */
 struct Epoch

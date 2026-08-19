@@ -1460,4 +1460,124 @@ TEST(Merge, DiagnosticsOffLeavesTheColumnsAbsentRatherThanZero)
     EXPECT_TRUE(anyCount) << "turning diagnostics off cost the night its counts";
 }
 
+// ---------------------------------------------------------------------------
+// The idle record: a night that does not open is a measurement, not a waste
+// ---------------------------------------------------------------------------
+
+TEST(Watching, ANightThatNeverOpensStillMeasuresTheNoiseFloor)
+{
+    // The failure this exists for. `stillnessCountMax` is a guess at about 2 mg of
+    // band-limited movement, which is the same order as a wrist IMU's own in-band
+    // noise -- so if the noise is above it, no night ever opens and from the
+    // outside that is indistinguishable from a wearer who did not go to bed.
+    //
+    // Modelled by a wearer who is worn and perfectly still but whose counts sit
+    // just above the stillness ceiling all night: exactly the shape a noise floor
+    // above the threshold produces.
+    Scenario s;
+    s.startUtc = kStart;
+    Phase noisy;
+    noisy.minutes    = 6 * 60;
+    // ~0.0035 g at 0.3 Hz is ~75 counts a scoring epoch, above the 60 ceiling and
+    // far below the 250 that would read as activity.
+    noisy.amplitudeG = 0.0035f;
+    noisy.freqHz     = kBreathingHz;
+    noisy.worn       = true;
+    noisy.hrBpm      = 55;
+    s.phases = { noisy };
+    Rig::instance().run(s);
+
+    // No night, which is the premise.
+    ASSERT_TRUE(theNightCsv(Rig::instance().fs).empty())
+        << "a night opened; this scenario is meant not to open one";
+    EXPECT_FALSE(Rig::instance().fs.exist("Nights/index.csv"));
+
+    // But the counts are on the volume.
+    const std::string watching =
+        Rig::instance().fs.readFile(SleepLab::kWatchingPath);
+    ASSERT_FALSE(watching.empty())
+        << "no night opened and nothing recorded what the wrist was doing";
+
+    const std::vector<long> counts = column(watching, "count");
+    ASSERT_GT(counts.size(), 300u)
+        << "only " << counts.size() << " idle rows for a six-hour window";
+
+    // And they are a distribution a threshold can be set from, rather than zeros.
+    long above = 0;
+    for (long c : counts) { if (c > 0) { ++above; } }
+    EXPECT_GT(above, static_cast<long>(counts.size()) / 2)
+        << "the idle rows carry no counts, so they measure nothing";
+
+    // Same format as a night, which is what lets night_report.py read it.
+    EXPECT_NE(watching.find("uptime_ms,wall_utc,"), std::string::npos);
+    EXPECT_NE(watching.find("acc_batches"), std::string::npos)
+        << "the idle record is not on schema 2, so it cannot be compared with a "
+           "night's counts";
+}
+
+TEST(Watching, TheMinutesBeforeANightOpensAreKeptToo)
+{
+    // A night that *does* open leaves the run-up on the volume as well, which is
+    // what answers "why did it open at 23:40 rather than 23:20".
+    Rig::instance().run(plainNight());
+
+    ASSERT_FALSE(theNightCsv(Rig::instance().fs).empty());
+    const std::string watching =
+        Rig::instance().fs.readFile(SleepLab::kWatchingPath);
+    ASSERT_FALSE(watching.empty())
+        << "the night opened and the minutes before it were discarded";
+    EXPECT_GT(column(watching, "count").size(), 4u);
+}
+
+TEST(Watching, NothingIsRecordedOutsideTheBedtimeWindow)
+{
+    // Outside the window the segmenter would not have opened a night whatever the
+    // counts were, so rows there answer nothing and would be most of a day of them.
+    Scenario s;
+    s.startUtc = 1755529200;   // 15:00 UTC, well outside 21:00-11:00
+    s.phases   = { still(90) };
+    Rig::instance().run(s);
+
+    EXPECT_FALSE(Rig::instance().fs.exist(SleepLab::kWatchingPath))
+        << "idle rows were written at three in the afternoon";
+}
+
+TEST(Watching, EnteringTheWindowStartsTheFileAgain)
+{
+    // One window's worth, not every evening since the app was installed. The file
+    // is restarted on the transition into the window rather than capped alone,
+    // because a cap that fires mid-window loses the beginning of it.
+    Scenario s;
+    s.startUtc = 1755550800;   // 21:00 UTC exactly: the window opens here
+    Phase before;              // 20:40-21:00 is outside it
+    before.minutes    = 20;
+    before.amplitudeG = kBreathingG;
+    before.freqHz     = kBreathingHz;
+    before.worn       = true;
+    before.hrBpm      = 55;
+    s.startUtc = 1755549600;   // 20:40 UTC
+    s.phases   = { before, still(60) };
+    Rig::instance().run(s);
+
+    const std::string watching =
+        Rig::instance().fs.readFile(SleepLab::kWatchingPath);
+    ASSERT_FALSE(watching.empty());
+
+    // Exactly one header, so the file was started once rather than appended to a
+    // previous evening's.
+    size_t headers = 0, at = 0;
+    while ((at = watching.find("uptime_ms,wall_utc,", at)) != std::string::npos) {
+        ++headers;
+        at += 1;
+    }
+    EXPECT_EQ(headers, 1u) << "the idle record has " << headers << " headers";
+
+    // And nothing from before the window opened: the first row's wall clock is at
+    // or after 21:00.
+    const std::vector<long> rows = column(watching, "wall_utc");
+    ASSERT_FALSE(rows.empty());
+    EXPECT_GE(rows.front(), 1755550800L)
+        << "the file carries rows from before the window opened";
+}
+
 } // namespace

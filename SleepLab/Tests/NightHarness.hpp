@@ -91,6 +91,7 @@
 #include "SDK/SensorLayer/DataParsers/SensorDataParserMotionDetect.hpp"
 
 #include "Commands.hpp"
+#include "NightStore.hpp"
 #include "Engine/Epoch.hpp"
 #include "Service.hpp"
 #include "WallClock.hpp"
@@ -1073,6 +1074,10 @@ inline std::vector<EpochRow> parseEpochs(const std::string &csv)
 }
 
 /// The path of the single night the run wrote, or "".
+///
+/// `index.csv` is the history and `watching.csv` is the idle record -- both live in
+/// `Nights/` and neither is a night. Two tests caught the second one the moment it
+/// started being written, which is what they are for.
 inline std::string theNightCsv(const SDK::TestSupport::InMemoryFileSystem &fs)
 {
     for (const auto &kv : fs.files) {
@@ -1080,7 +1085,8 @@ inline std::string theNightCsv(const SDK::TestSupport::InMemoryFileSystem &fs)
         const std::string &p = kv.first;
         if (p.rfind("Nights/", 0) == 0 && p.size() > 4 &&
             p.compare(p.size() - 4, 4, ".csv") == 0 &&
-            p != "Nights/index.csv") {
+            p != "Nights/index.csv" &&
+            p != SleepLab::kWatchingPath) {
             return p;
         }
     }

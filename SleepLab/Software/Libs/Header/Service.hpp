@@ -339,6 +339,11 @@ private:
     uint32_t mAccLastTs      = 0;
     bool     mAccLastTsValid = false;
 
+    /// Whether the previous recording epoch fell inside the bedtime window, so
+    /// entering it can restart `watching.csv` and the file holds one window rather
+    /// than every evening since the app was installed.
+    bool     mWasInWindow    = false;
+
     // -- Night state ----------------------------------------------------------
 
     uint16_t mFlags        = 0;   ///< Engine::Interruption bits for this night.

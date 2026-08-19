@@ -132,6 +132,81 @@ bool isNightPath(const char *path)
     return true;
 }
 
+/// Format one epoch as its CSV row, newline included.
+///
+/// One function, because two callers write these rows: the night in progress, and
+/// the idle `watching.csv` that records what the segmenter was looking at before a
+/// night opened. A row formatted by slightly different arithmetic in one of them
+/// would be a seam nothing downstream could see -- the same reason `Service::fold`
+/// exists.
+///
+/// @return characters written, or 0 if the row did not fit @p outSize.
+size_t formatEpochRow(const Engine::Epoch &e, char *out, size_t outSize)
+{
+    const int n = std::snprintf(
+        out, outSize,
+        "%lu,%lld,%lu,%lu,%lu,%u,"
+        "%u,%u,%ld,"
+        "%d,%d,%u,%u,"
+        "%u,%u,%d,%d,"
+        "%ld,%ld,%u,"
+        "%u,%u,%u,%d,"
+        "%u,%u,%u,"
+        "%ld,%ld,%ld,%ld,"
+        "%u,%u\n",
+        static_cast<unsigned long>(e.uptimeMs),
+        static_cast<long long>(e.wallUtc),
+        static_cast<unsigned long>(e.spanMs),
+        static_cast<unsigned long>(e.count),
+        static_cast<unsigned long>(e.peak),
+        static_cast<unsigned>(e.samples),
+
+        static_cast<unsigned>(e.motionEvents),
+        static_cast<unsigned>(e.sigMotion),
+        static_cast<long>(e.stepDelta),
+
+        static_cast<int>(e.hrMeanX10),
+        static_cast<int>(e.hrMinX10),
+        static_cast<unsigned>(e.hrSamples),
+        static_cast<unsigned>(e.hrSource),
+
+        static_cast<unsigned>(e.wornPct),
+        static_cast<unsigned>(e.wornEdges),
+        static_cast<int>(e.battPctX10),
+        e.charging ? 1 : 0,
+
+        // Reserved and always absent today -- see Engine::Epoch. Written every
+        // row anyway, so the column exists in every night already on disk and
+        // a future HRV producer needs no schema bump and no re-recording.
+        static_cast<long>(e.rmssdX10),
+        static_cast<long>(e.sdnnX10),
+        static_cast<unsigned>(e.rrCount),
+
+        // Delivery and power -- schema 2. What the epoch was built from, rather
+        // than what it measured.
+        static_cast<unsigned>(e.accBatches),
+        static_cast<unsigned>(e.accMaxGapMs),
+        static_cast<unsigned>(e.touchSamples),
+        static_cast<int>(e.hrTrustX10),
+
+        static_cast<unsigned>(e.hrexOptical),
+        static_cast<unsigned>(e.hrexExternal),
+        static_cast<unsigned>(e.hrexUnknown),
+
+        static_cast<long>(e.battMv),
+        static_cast<long>(e.battMaX10),
+        static_cast<long>(e.battAvgMaX10),
+        static_cast<long>(e.battMah),
+
+        static_cast<unsigned>(e.wakes),
+        static_cast<unsigned>(e.msgs));
+
+    if (n <= 0 || static_cast<size_t>(n) >= outSize) {
+        return 0;
+    }
+    return static_cast<size_t>(n);
+}
+
 } // namespace
 
 NightStore::NightStore(const SDK::Kernel &kernel)
@@ -398,70 +473,13 @@ bool NightStore::appendEpoch(const Engine::Epoch &e, uint16_t flags)
     }
 
     char line[kRowMax];
-    const int n = std::snprintf(
-        line, sizeof(line),
-        "%lu,%lld,%lu,%lu,%lu,%u,"
-        "%u,%u,%ld,"
-        "%d,%d,%u,%u,"
-        "%u,%u,%d,%d,"
-        "%ld,%ld,%u,"
-        "%u,%u,%u,%d,"
-        "%u,%u,%u,"
-        "%ld,%ld,%ld,%ld,"
-        "%u,%u\n",
-        static_cast<unsigned long>(e.uptimeMs),
-        static_cast<long long>(e.wallUtc),
-        static_cast<unsigned long>(e.spanMs),
-        static_cast<unsigned long>(e.count),
-        static_cast<unsigned long>(e.peak),
-        static_cast<unsigned>(e.samples),
-
-        static_cast<unsigned>(e.motionEvents),
-        static_cast<unsigned>(e.sigMotion),
-        static_cast<long>(e.stepDelta),
-
-        static_cast<int>(e.hrMeanX10),
-        static_cast<int>(e.hrMinX10),
-        static_cast<unsigned>(e.hrSamples),
-        static_cast<unsigned>(e.hrSource),
-
-        static_cast<unsigned>(e.wornPct),
-        static_cast<unsigned>(e.wornEdges),
-        static_cast<int>(e.battPctX10),
-        e.charging ? 1 : 0,
-
-        // Reserved and always absent today -- see Engine::Epoch. Written every
-        // row anyway, so the column exists in every night already on disk and
-        // a future HRV producer needs no schema bump and no re-recording.
-        static_cast<long>(e.rmssdX10),
-        static_cast<long>(e.sdnnX10),
-        static_cast<unsigned>(e.rrCount),
-
-        // Delivery and power -- schema 2. What the epoch was built from, rather
-        // than what it measured.
-        static_cast<unsigned>(e.accBatches),
-        static_cast<unsigned>(e.accMaxGapMs),
-        static_cast<unsigned>(e.touchSamples),
-        static_cast<int>(e.hrTrustX10),
-
-        static_cast<unsigned>(e.hrexOptical),
-        static_cast<unsigned>(e.hrexExternal),
-        static_cast<unsigned>(e.hrexUnknown),
-
-        static_cast<long>(e.battMv),
-        static_cast<long>(e.battMaX10),
-        static_cast<long>(e.battAvgMaX10),
-        static_cast<long>(e.battMah),
-
-        static_cast<unsigned>(e.wakes),
-        static_cast<unsigned>(e.msgs));
-
-    if (n <= 0 || static_cast<size_t>(n) >= sizeof(line)) {
+    const size_t n = formatEpochRow(e, line, sizeof(line));
+    if (n == 0) {
         LOG_WARNING("epoch row did not fit; dropped\n");
         return false;
     }
 
-    if (!append(mPath, line, static_cast<size_t>(n))) {
+    if (!append(mPath, line, n)) {
         return false;
     }
 
@@ -473,6 +491,43 @@ bool NightStore::appendEpoch(const Engine::Epoch &e, uint16_t flags)
     // lagged the data by even one epoch would resume the night at the wrong
     // length, and time in bed is built from that length.
     return writeState(flags);
+}
+
+
+void NightStore::appendWatching(const Engine::Epoch &e, bool restart)
+{
+    char line[kRowMax];
+    const size_t n = formatEpochRow(e, line, sizeof(line));
+    if (n == 0) {
+        return;
+    }
+
+    mKernel.fs.mkdir(kNightsDir);
+
+    // Started again on entering the window, so the file is one window's worth and
+    // not every evening since the app was installed. Also on passing the cap, so a
+    // clock that never reads as in-window cannot grow it without bound.
+    SDK::Interface::IFileSystem::ObjectInfo info {};
+    const bool over = mKernel.fs.objectInfo(kWatchingPath, info) && !info.isDir &&
+                      info.size >= kWatchingMaxBytes;
+
+    if (restart || over) {
+        std::unique_ptr<SDK::Interface::IFile> fresh =
+            mKernel.fs.file(kWatchingPath);
+        if (!fresh || !fresh->open(true, true)) {
+            return;
+        }
+        size_t wrote = 0;
+        fresh->write(kEpochHeader, sizeof(kEpochHeader) - 1, wrote);
+        fresh->flush();
+        fresh->close();
+    } else if (!mKernel.fs.exist(kWatchingPath)) {
+        append(kWatchingPath, kEpochHeader, sizeof(kEpochHeader) - 1);
+    }
+
+    // Result deliberately ignored -- see the header. A diagnostic file must not be
+    // able to cost a night, and its absence is itself the diagnosis.
+    (void)append(kWatchingPath, line, n);
 }
 
 

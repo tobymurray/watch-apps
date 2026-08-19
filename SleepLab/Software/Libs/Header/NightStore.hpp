@@ -94,6 +94,30 @@ constexpr char kIndexPath[]  = "Nights/index.csv";
 /// Present only while a night is in progress.
 constexpr char kStatePath[]  = "night_state.txt";
 
+/// What the segmenter was looking at before a night opened, or instead of one.
+///
+/// Same header and same row format as a night's own epoch log, so
+/// `Tools/night_report.py thresholds` reads it with no changes -- which is the
+/// whole point of it.
+///
+/// The pre-roll ring holds thirty minutes of epochs while idle and used to throw
+/// them away, so two questions had no answer on the volume: **why did no night
+/// open**, and **what does a still wrist actually count**. The second is the one
+/// that matters, because `SegmenterConfig::stillnessCountMax` is a guess at about
+/// 2 mg of band-limited movement -- the same order as the sensor's own in-band
+/// noise -- and if the noise is above it no night ever opens, which from the
+/// outside is indistinguishable from a wearer who did not go to bed.
+///
+/// Recording them means a night that fails to open is a *measurement* of the noise
+/// floor rather than a wasted night, and the threshold can be set from a
+/// distribution instead of moved on another guess.
+constexpr char kWatchingPath[] = "Nights/watching.csv";
+
+/// Truncated and restarted past this. A 14-hour window with no night is ~1 700
+/// rows at ~117 bytes, so ~200 KB; 1 MB holds several windows even if the
+/// truncate-on-window-entry below never fires because the clock is unreadable.
+constexpr size_t kWatchingMaxBytes = 1024u * 1024u;
+
 /// Longest a generated path can be, including the terminator.
 constexpr size_t kMaxNightPath = 64;
 
@@ -219,6 +243,23 @@ public:
      *              a restart does not forget that the charger was seen.
      */
     bool appendEpoch(const Engine::Epoch &e, uint16_t flags);
+
+    /**
+     * @brief Append one epoch to `watching.csv` -- the idle record.
+     *
+     * For epochs the segmenter saw while **no** night was open. Same row format as
+     * a night's, so the same tooling reads both.
+     *
+     * @param restart Start the file again, header and all, before appending. The
+     *                caller passes true on entering the bedtime window, so the
+     *                file holds one window's worth rather than growing across
+     *                every evening the app has ever run.
+     *
+     * Failure is not reported, deliberately. This file is diagnostic: an idle row
+     * that could not be written must never be able to affect a night, and the case
+     * where it cannot be written is itself visible, because the file is absent.
+     */
+    void appendWatching(const Engine::Epoch &e, bool restart = false);
 
     // -- Finishing ------------------------------------------------------------
 
