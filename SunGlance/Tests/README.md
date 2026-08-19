@@ -1,6 +1,6 @@
 # Host tests
 
-64 tests, three executables, and the split between them is about what each one
+68 tests, three executables, and the split between them is about what each one
 is *evidence* about rather than about what it covers.
 
 ```sh
@@ -10,7 +10,7 @@ cmake -B build . && cmake --build build && (cd build && ctest --output-on-failur
 
 | Executable | Needs | What a pass means |
 | --- | --- | --- |
-| `sunglance-pure-tests` | GoogleTest | The astronomy, the next-event policy, the coordinate parser and the wording are right. No SDK, no kernel, no filesystem. |
+| `sunglance-pure-tests` | GoogleTest | The astronomy, the two-event policy, the coordinate parser and the wording are right. No SDK, no kernel, no filesystem. |
 | `sunglance-config-tests` | + kernel doubles, coreJSON | A config file on the watch's storage becomes the position the app acts on, or a stated reason it does not. |
 | `sunglance-glance-tests` | + the real `Service` | The parts are joined up, and the strings actually reach the kernel. |
 
@@ -51,8 +51,9 @@ than asserted.
 **Not that anything renders.** No test here has seen a panel. The layout bands
 come from SleepLab's, which came off a real watch; the character budgets in
 `Render_test.cpp` are an estimate of what fits at these font sizes and are
-explicitly marked as unverified. A caption that is one character too wide for
-the panel passes every test in this directory.
+explicitly marked as unverified. A caption one character too wide for the panel,
+an icon that collides with the time next to it, or a five-control glance a
+kernel will not grant all pass every test in this directory.
 
 **Not that the watch's clock or time zone is right.** Everything is computed
 from what the platform says the time is. If the RTC is wrong the glance is
@@ -76,9 +77,22 @@ It is here because of what happened to SleepLab, whose glance sent nothing at
 all for weeks while every part of it built and passed its own tests. The bug
 lived in the joins: which call invalidates a control, which call marks the form
 clean, and which of those the tick actually reaches. The two tests that would
-have caught it are `SendsTheNextEventOnce` and
+have caught it are `SendsBothUpcomingEventsOnce` and
 `TheMinuteTickingOverSendsExactlyOneMoreUpdate` — one says something is sent,
 the other says it is not sent sixty times a second.
+
+It also captures the images and the visibility flags, not only the text, which
+is what makes `DuringTheDayTheIconsSwapRound` possible: an icon on the wrong row
+is invisible in the code and obvious on the wrist. The icons are compared by
+**content**, because the generated header declares them `static const` and each
+translation unit gets its own copy — the pointers legitimately differ, and
+Service.cpp is the only file in the app that includes it.
+
+One consequence of `Control::setVisible()` is worth knowing before editing the
+service: **it does not invalidate**. It writes the flag and returns, so a
+control that is hidden and nothing else would keep being drawn until something
+unrelated dirtied the form. `Service::showControl()` invalidates explicitly, and
+the hidden-row assertions here are what would catch it going missing.
 
 The app's one concession to being testable is `Sun::setWallClockSource()`, and
 it buys the whole exercise: the interesting moments on this screen are the

@@ -6,11 +6,16 @@
  * @brief   Which sun event to put on the glance, and when not to trust it.
  ******************************************************************************
  *
- * A glance answers one question. For the sun that question is "what happens
- * next, and when" -- not "here are today's two times", which is a table and
- * belongs on a screen somebody chose to open. So the policy of picking the
- * *next* event out of a pair of days is its own thing, tested on its own, and
- * kept out of both the astronomy and the drawing.
+ * A glance answers one question. For the sun that question is "when is it next
+ * light, and when is it next dark" -- so what comes out of here is the next
+ * *two* events, in the order they will happen, and never an event that has
+ * already been. "Today's sunrise" at nine in the evening is a fact about the
+ * past; the screen has two rows and both of them should be worth looking at.
+ *
+ * The two always alternate, so the second's kind is the first's opposite and is
+ * not carried separately. The policy of choosing them out of a pair of days is
+ * its own file, tested on its own, and kept out of both the astronomy and the
+ * drawing.
  *
  * Pure, and no clock of its own: `nowUtc` is passed in. Every interesting case
  * here -- the minute before sunrise, the minute after sunset, midnight, the day
@@ -37,27 +42,29 @@ enum class EventKind : uint8_t {
     PolarNight,   ///< Neither, today: it stays down. `whenUtc` is -1.
 };
 
-/// What the glance is about to say.
+/// The next two things the sun will do.
 struct Next
 {
-    EventKind kind     = EventKind::Rise;
-    int64_t   whenUtc  = -1;
-    /// The day's other event, whether it has happened yet or not: the sunset
-    /// still to come when the headline is a sunrise, the sunrise already past
-    /// when it is a sunset. -1 when there is nothing sensible to pair with --
-    /// after today's sunset the pair belongs to a day that has not started.
-    int64_t   otherUtc = -1;
+    /// Which of the two the first one is. The second is the other kind.
+    EventKind kind      = EventKind::Rise;
+    int64_t   whenUtc   = -1;
+    /// The event after that. -1 when there is not one to show: the day after a
+    /// last sunset before the midnight sun has neither a sunrise nor a sunset,
+    /// and a second row is better empty than invented.
+    int64_t   secondUtc = -1;
     /// True when `whenUtc` belongs to tomorrow, so the caption can say so. A
     /// bare "06:14" on a Tuesday evening reads as this morning, which has been
     /// and gone.
-    bool      nextDay  = false;
+    bool      nextDay   = false;
 };
 
 /**
- * @brief Pick the event to show.
+ * @brief The next two events, in the order they happen.
  *
  * @param today    The local day containing @p nowUtc.
- * @param tomorrow The one after it, consulted only once today's sun has set.
+ * @param tomorrow The one after it. Needed even in the middle of the afternoon,
+ *                 because the sunset in front of you is followed by tomorrow's
+ *                 sunrise and both belong on the screen.
  */
 Next nextEvent(int64_t nowUtc, const Day &today, const Day &tomorrow);
 
