@@ -21,7 +21,7 @@ drawn from.
 | --- | --- | --- | --- |
 | **A** | Size: is a vector pack ≥10x smaller than the RLE raster equivalent? | **REFUTED against this cartography** | 3.1× like-for-like, 6.2× crediting overzoom, on the Athens extent, 2026-08-19. The answer swings 1.9×–19.7× with raster style. See below |
 | **B** | RAM: does the renderer's static set link into `RunMap`? | **CONFIRMED — fits** | `Tools/gate_b_link_test.sh`, 2026-08-18, SDK at `apps-v1.4.0`. See below |
-| **C** | Time: does a dense viewport render inside 100 ms? | **REFUTED at city density; CONFIRMED to suburban** | Runs 56/151, 2026-08-19. Rural 24.0 ms, suburban 70.2 ms, city 160.5 ms. See below |
+| **C** | Time: does a dense viewport render inside 100 ms? | **REFUTED — 4.8× over at real city density** | Runs 56/151 gave 160.5 ms on a preset since shown to be 3× too sparse; a real downtown z14 is ~480 ms. Rural passes. See below |
 | **D** | Legibility: does the palette-first cartography hold up on glass? | **REFUTED as specified; CONFIRMED with a cased trace** | 24 cards across indoor, overcast and sun spanning 9.0 EV, 2026-08-19. R5 fails on the palette as written and holds once the trace is cased. See below |
 
 ## Gate A — measured, and it does not clear the bar
@@ -172,6 +172,43 @@ Extending the ladder is the only way to close this, and it is worth asking
 whether the answer is worth the reboots — nothing in the render path is within
 two orders of magnitude of 16 s. A 160.5 ms city render sits ~100× below the
 lowest step that is known to be safe.
+
+## The presets were 3× too sparse — 2026-08-19
+
+Counted, not estimated:
+[`Investigations/2026-08-19-real-tile-density`](Investigations/2026-08-19-real-tile-density).
+
+This app's scene presets were judgements, and the ledger said so. Decoding real
+MVT puts numbers on them, and they fall the wrong way:
+
+| | features | points |
+| --- | --- | --- |
+| preset `city centre` | 433 | 8,338 |
+| **real downtown Toronto z14** | **594** | **24,928** |
+| preset `rural` | 70 | 1,428 |
+| real rural z14 (Athens, Ontario) | 19 | 670 |
+
+Real density spans **37×** rural to downtown; the presets span 5.8× and top out
+well short of the ceiling.
+
+**Gate C therefore fails by 4.8×, not 1.6×.** At R08's measured 19.25 µs/point a
+real downtown tile is **479.9 ms**. The 100 ms budget buys 5,194 points, so the
+pivot must discard **79%** of the geometry or the rasteriser must get **4.8×**
+faster. Buildings alone are 61% of the points in 10% of the features — the
+largest single lever, and still only enough to reach 184.5 ms.
+
+Label layers are 0.4% of points, so "we only draw some layers" is not an
+escape: essentially all of it is geometry that must be drawn.
+
+**Gate A also gets worse.** At the draft format's own 2.01 B/point a real tile
+encodes to ~50,188 B against 62,252 B of gzipped MVT — **1.24× smaller**, short
+of the 1.6× Gate A needs. Closing it now means improving the wire format (2
+B/point is about one byte per coordinate; delta-plus-varint should beat it),
+not stripping the payload. That moves format work onto Gate A's critical path.
+
+Runs 56/151 stay readable — the report prints cost per feature and per point
+exactly so a corrected preset does not invalidate a session — but their
+headline number describes a scene 3× lighter than a real city.
 
 ## Numbers this app takes, and what they replace
 
