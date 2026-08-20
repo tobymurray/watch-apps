@@ -89,11 +89,20 @@ enum class HrSource : uint8_t {
  * This struct packs into ~100 bytes, but the number that matters is the *CSV
  * row*, because that is what lands on the volume -- and it was previously quoted
  * here as ~46 KB a night, which was this struct's old size rather than a
- * measurement of the file. Measured on a generated eight-hour night at schema 2:
- * **117 bytes a row, ~110 KB for the epoch log, ~121 KB for everything the night
- * writes** including the summary, the index row, the idle record and the
- * diagnostic log. So ~44 MB per decade, on a volume that has carried 160 MiB of
- * map packs.
+ * measurement of the file. Re-measured at **schema 3** on a generated
+ * eight-hour night: **112 bytes a row over 36 columns, ~105 KB for the epoch
+ * log**, and ~120 KB for everything a night writes including the summary, the
+ * index row, the idle record and the diagnostic log. So ~44 MB per decade, on a
+ * volume that has carried 160 MiB of map packs.
+ *
+ * The three per-axis columns schema 3 adds cost about five bytes a row on a
+ * quiet night, which is the cheapest thing in this file: they are what separates
+ * an isotropic sensor noise floor from directed movement, and the two recordings
+ * that most needed that separation were written before they existed.
+ *
+ * Both figures are from a *generated* night, so they are the shape of the file
+ * rather than a measurement of any real one; the byte count varies with how
+ * large the counts are, which varies with the night.
  *
  * Raw accelerometer at the ~48 Hz actually delivered would be ~60 MB for eight
  * hours, which is why epochs are always recorded and raw never is by default.

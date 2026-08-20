@@ -1550,8 +1550,8 @@ TEST(Watching, ANightThatNeverOpensStillMeasuresTheNoiseFloor)
     // Same format as a night, which is what lets night_report.py read it.
     EXPECT_NE(watching.find("uptime_ms,wall_utc,"), std::string::npos);
     EXPECT_NE(watching.find("acc_batches"), std::string::npos)
-        << "the idle record is not on schema 2, so it cannot be compared with a "
-           "night's counts";
+        << "the idle record is not on the current schema, so it cannot be "
+           "compared with a night's counts";
 }
 
 TEST(Watching, TheMinutesBeforeANightOpensAreKeptToo)

@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -112,6 +113,49 @@ TEST(NightStore, ANightGetsAHeaderAndOneRowPerEpoch)
     EXPECT_EQ(ls[0].rfind("# SleepLab epoch log", 0), 0u);
     EXPECT_EQ(ls[h + 1].rfind("31000,", 0), 0u);
     EXPECT_EQ(ls[h + 5].rfind("151000,", 0), 0u);
+}
+
+TEST(NightStore, TheHeaderAndTheSchemaConstantAgree)
+{
+    // P15, and the reason this test exists rather than a comment asking nicely.
+    // `kEpochHeader`'s first line names the schema in prose, `kEpochCsvSchema`
+    // names it as a number, and the number is the one that reaches a reader --
+    // it goes into every summary as `epochs_csv_schema`. They drifted apart for
+    // a release: the header said 3 and carried 35 columns while the constant
+    // said 2, so a reader obeying this app's own rule ("refuse a schema you do
+    // not recognise") would refuse a good file, or accept it and silently miss
+    // three columns.
+    //
+    // Both halves are checked: the number in the prose, and the count of columns
+    // the prose implies. A column added without a bump fails here rather than in
+    // somebody's re-analysis six months later.
+    KernelFixture fx;
+    NightStore store(fx.kernel);
+
+    ASSERT_TRUE(store.beginNight(kStart, 1000));
+    ASSERT_TRUE(store.appendEpoch(epoch(31000), 0));
+
+    const auto ls = lines(fx.fileSystem.readFile(store.path()));
+    ASSERT_FALSE(ls.empty());
+
+    char expected[64];
+    snprintf(expected, sizeof(expected), "schema %u.",
+             static_cast<unsigned>(SleepLab::kEpochCsvSchema));
+    EXPECT_NE(ls[0].find(expected), std::string::npos)
+        << "the header line says \"" << ls[0] << "\" and kEpochCsvSchema is "
+        << SleepLab::kEpochCsvSchema
+        << ". They must be bumped in the same commit.";
+
+    // And the row has as many fields as the column line names, which is the
+    // other way a column gets added without the format admitting it.
+    const size_t h = headerRow(ls);
+    ASSERT_LT(h + 1, ls.size());
+    const auto fields = [](const std::string &l) {
+        return std::count(l.begin(), l.end(), ',') + 1;
+    };
+    EXPECT_EQ(fields(ls[h]), fields(ls[h + 1]))
+        << "the column line names " << fields(ls[h]) << " columns and a row has "
+        << fields(ls[h + 1]);
 }
 
 TEST(NightStore, EveryEpochIsFlushedAndNoHandleIsLeftOpen)
