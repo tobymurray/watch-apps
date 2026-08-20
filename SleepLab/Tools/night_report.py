@@ -51,14 +51,23 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 # Column order of a SleepLab epoch CSV, from NightStore.cpp's kEpochHeader.
-# A literal rather than a read of the file's own header line: if the two
-# disagree that is a bug worth failing on, not one to paper over.
-# Schema 3. The delivery and power columns that used to be the Tier 0 probe's
-# alone are still here -- see NightStore.cpp, which this list has to track
-# exactly, because a reader that maps columns by position across a schema change
-# reports one sensor's numbers under another sensor's name.
+# Literals rather than a read of the file's own header line: a reader that maps
+# columns by position across a schema change reports one sensor's numbers under
+# another sensor's name, so the layouts are enumerated here and a file's header
+# has to match one of them exactly.
+#
+# **Every schema this app has ever written is listed**, not only the current
+# one. Recordings are the one thing in this project that cannot be taken again:
+# the 2026-08-19 worn night and the 2026-08-20 table hour are schema 2, they are
+# what the movement constants were set from, and a tool that reads only the
+# newest schema cannot read the only data there is. Old rows are widened to the
+# current layout with kAbsent for the columns that did not exist yet, which is
+# the same rule the recorder uses -- -1 means not measured and never zero.
+#
 # count_x/y/z are schema 3: the per-axis integrals `count` is the vector
 # magnitude of, for telling an isotropic noise floor from directed movement.
+# Schema 2 has no such columns, so a schema-2 night cannot answer that question
+# and says so by carrying -1 rather than by looking like three silent zeroes.
 EPOCH_COLS = [
     "uptime_ms", "wall_utc", "span_ms", "count", "peak", "samples",
     "count_x", "count_y", "count_z",
@@ -71,6 +80,16 @@ EPOCH_COLS = [
     "batt_mv", "batt_ma_x10", "batt_avg_ma_x10", "batt_mah",
     "wakes", "msgs",
 ]
+
+# Schema 2: everything above except the three per-axis integrals.
+EPOCH_COLS_V2 = [c for c in EPOCH_COLS if c not in ("count_x", "count_y", "count_z")]
+
+# Header line -> the schema it belongs to. Keyed by the joined header so a file
+# is matched by exact column order, never by column count.
+KNOWN_SCHEMAS = {
+    ",".join(EPOCH_COLS):    3,
+    ",".join(EPOCH_COLS_V2): 2,
+}
 
 ABSENT = -1
 
@@ -88,6 +107,10 @@ class Night:
         self.name = os.path.basename(path)
         self.rows = []
         self.summary = None
+        # Which schema the file declared, from its own header line. Reported
+        # rather than assumed: a figure derived from a schema-2 night has three
+        # fewer columns behind it and the reader should be able to see that.
+        self.schema = None
 
     @property
     def counts(self):
@@ -114,25 +137,46 @@ class Night:
 
 
 def load_night(path):
-    """Parse one epoch CSV, and its sibling .json if present."""
+    """Parse one epoch CSV, and its sibling .json if present.
+
+    The file's own header line decides which schema it is, and it has to match
+    one of KNOWN_SCHEMAS exactly. Rows are then keyed by name and widened to the
+    current layout, so every caller below sees the same field names whichever
+    schema produced the file, and a column that did not exist when the file was
+    written reads as kAbsent rather than as zero.
+    """
     night = Night(path)
+    cols = None
     with open(path, newline="") as fh:
         for parts in csv.reader(fh):
             if not parts or parts[0].startswith("#"):
                 continue
             if parts[0] == "uptime_ms":       # the column header
-                if parts != EPOCH_COLS:
+                schema = KNOWN_SCHEMAS.get(",".join(parts))
+                if schema is None:
                     sys.exit(f"{path}: unexpected columns.\n"
                              f"  file:   {','.join(parts)}\n"
-                             f"  expects {','.join(EPOCH_COLS)}\n"
+                             f"  known schemas:\n"
+                             f"    3: {','.join(EPOCH_COLS)}\n"
+                             f"    2: {','.join(EPOCH_COLS_V2)}\n"
                              "This script and NightStore.cpp have gone out of step.")
+                cols = parts
+                night.schema = schema
                 continue
-            if len(parts) != len(EPOCH_COLS):
+            if cols is None:
+                # Rows before any header. The file is not one this script wrote
+                # the reader for, and guessing the layout is exactly the failure
+                # the schema check exists to prevent.
+                sys.exit(f"{path}: data rows before any column header.")
+            if len(parts) != len(cols):
                 continue                       # a row cut short by a kill
             try:
-                night.rows.append({k: int(v) for k, v in zip(EPOCH_COLS, parts)})
+                row = {k: int(v) for k, v in zip(cols, parts)}
             except ValueError:
                 continue
+            for missing in EPOCH_COLS:
+                row.setdefault(missing, ABSENT)
+            night.rows.append(row)
 
     sidecar = path[:-4] + ".json"
     if os.path.exists(sidecar):
@@ -144,23 +188,34 @@ def load_night(path):
     return night
 
 
+# `index.csv` is the history and `watching.csv` is what the segmenter was looking
+# at while *no* night was open. Neither is a night, so neither is swept up by a
+# directory scan -- but `watching.csv` shares the night format exactly, so naming
+# it explicitly is how you read a noise floor off it:
+#
+#   night_report.py thresholds --worn ./nights --table ./nights/watching.csv
+#
+# The skip therefore applies to the scan and **not** to paths the caller typed.
+# It used to apply to both, which silently discarded the file in the invocation
+# directly above and failed with "no epoch rows found" -- naming neither the file
+# nor the reason. A file the caller named is a file the caller meant.
+SCAN_SKIP = {"index.csv", "watching.csv"}
+
+
 def load_nights(paths):
-    """Every `*.csv` under the given files or directories, excluding the index."""
+    """Every `*.csv` under the given files or directories, excluding the index.
+
+    A path that names a file is taken as given. A path that names a directory is
+    scanned, and the scan skips the two files that are not nights.
+    """
     files = []
     for p in paths:
         if os.path.isdir(p):
-            files.extend(sorted(glob.glob(os.path.join(p, "**", "*.csv"),
-                                          recursive=True)))
+            files.extend(f for f in sorted(glob.glob(os.path.join(p, "**", "*.csv"),
+                                                     recursive=True))
+                         if os.path.basename(f) not in SCAN_SKIP)
         else:
             files.append(p)
-    # `index.csv` is the history and `watching.csv` is what the segmenter was
-    # looking at while *no* night was open. Neither is a night, so neither is swept
-    # up by a directory scan -- but `watching.csv` shares the night format exactly,
-    # so naming it explicitly works and is how you read a noise floor off it:
-    #
-    #   night_report.py thresholds --worn ./nights --table ./nights/watching.csv
-    skip = {"index.csv", "watching.csv"}
-    files = [f for f in files if os.path.basename(f) not in skip]
 
     nights = [load_night(f) for f in files]
     nights = [n for n in nights if n.rows]
@@ -186,7 +241,7 @@ def cmd_thresholds(args):
           f"{sum(len(n.rows) for n in worn)} recording epochs")
     for n in worn:
         print(f"  {n.name}: {len(n.rows)} epochs, "
-              f"{n.worn_fraction * 100:.0f}% reporting worn")
+              f"{n.worn_fraction * 100:.0f}% reporting worn, schema {n.schema}")
 
     worn_counts = [c for n in worn for c in n.scoring_counts]
 
@@ -198,7 +253,7 @@ def cmd_thresholds(args):
               f"{sum(len(n.rows) for n in table)} recording epochs")
         for n in table:
             print(f"  {n.name}: {len(n.rows)} epochs, "
-                  f"{n.worn_fraction * 100:.0f}% reporting worn")
+                  f"{n.worn_fraction * 100:.0f}% reporting worn, schema {n.schema}")
         table_counts = [c for n in table for c in n.scoring_counts]
 
     def dist(label, counts):
