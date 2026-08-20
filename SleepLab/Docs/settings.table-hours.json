@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "values": {
+    "bedtime": "00:01",
+    "wake_by": "23:59",
+    "min_night_min": 30,
+
+    "hr": "continuous",
+
+    "alarm": "off",
+    "raw_recording": "off"
+  }
+}
