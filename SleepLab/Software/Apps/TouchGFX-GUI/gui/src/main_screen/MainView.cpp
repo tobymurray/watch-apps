@@ -207,12 +207,33 @@ void MainView::drawReport()
     const Model::Report &rep = presenter->report();
     const CustomMessage::SleepReportData &d = rep.data;
 
-    mStrip.setVisible(true);
-    mCaption.setVisible(true);
+    // Visibility for both is decided below, once it is known whether there is a
+    // night. It used to be set true here and turned off again in one branch,
+    // which is how an empty strip and its caption survived every path that
+    // forgot -- and every path forgot except the one where the service had not
+    // spoken at all.
 
     char text[16][kLineBufSize];
     for (auto &t : text) { t[0] = '\0'; }
     int n = 0;
+
+    // Is there a night for this screen to be about?
+    //
+    // `everReceived` only says the service has spoken, and the service speaks
+    // long before it has a night: on a fresh install it publishes a summary that
+    // is still default-constructed, and `NightSummary::worn` defaults to
+    // Uncertain -- deliberately, because the engine must fail closed. Read
+    // straight onto the screen, that default became **"UNCONFIRMED / no sleep
+    // data"** on a watch that had simply never recorded anything, which is both
+    // wrong and alarming: it tells somebody their watch may not have been on
+    // their wrist when the truth is that nothing has happened yet. The same
+    // reading showed the previous night's verdict over a night still in
+    // progress, which is ledger row A11's failure on a different widget.
+    //
+    // Phase::Reported is the service's own answer to the question -- it is set
+    // from `mHaveReport` -- so the screen asks that instead of inferring it.
+    const bool haveNight =
+        d.phase == static_cast<uint8_t>(CustomMessage::Phase::Reported);
 
     if (!rep.everReceived) {
         std::snprintf(text[n++], kLineBufSize, "SLEEP LAB");
@@ -220,11 +241,20 @@ void MainView::drawReport()
         mStrip.setVisible(false);
         mCaption.setVisible(false);
     } else {
+        // The strip is a picture of a night's verdicts and the caption is what
+        // stops that picture reading as a hypnogram. With no night there are no
+        // verdicts, so there must be neither -- a caption alone under an empty
+        // strip is a label on nothing.
+        mStrip.setVisible(haveNight);
+        mCaption.setVisible(haveNight);
+
         // The first line is the honesty line, and the order here is the
         // priority order: not-worn suppresses everything, an interruption
         // qualifies everything, and only a clean night gets a plain heading.
-        const Honesty worn = wornText(d.worn);
-        const Honesty intr = interruptionText(d.interruption);
+        // None of them may speak for a night that does not exist.
+        const Honesty worn = haveNight ? wornText(d.worn) : Honesty{ nullptr, nullptr };
+        const Honesty intr = haveNight ? interruptionText(d.interruption)
+                                       : Honesty{ nullptr, nullptr };
         const Honesty *say = worn.marker != nullptr   ? &worn
                            : intr.marker != nullptr   ? &intr
                                                       : nullptr;
