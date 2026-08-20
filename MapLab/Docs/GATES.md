@@ -399,6 +399,53 @@ somewhat above it. R5 already fails well below that ceiling, so this does not
 weaken the verdict; it would only matter for a claim that something *survives*
 the brightest case.
 
+## Gate A and Gate C are one gate — 2026-08-19
+
+Full working:
+[`Investigations/2026-08-19-format-ceiling`](Investigations/2026-08-19-format-ceiling).
+
+Asked what an optimally designed wire format would buy. The answer reframes two
+gates.
+
+**A better format cannot touch Gate C.** R05 puts decode and transform at 3.4%
+of a render; the rest is rasterising, which depends on how many points arrive,
+not how they were spelled. Format work is a Gate A lever exclusively.
+
+**The encoding floor is ~1.43 B/point** — the measured entropy of the
+quantised delta stream, which deflate essentially reaches. That is 2.2× better
+than gzipped MVT and 1.4× better than MapLab's draft. Naive delta+varint is
+*worse* than absolute 8-bit coordinates: zigzag costs two bytes past ±63 and
+every part opens with an absolute jump.
+
+**Quantising to the 256 screen grid removes 20.4% of points for free** — MVT
+carries 12-bit coordinates for a 240 px canvas, so those points were never
+distinguishable. DP at 1 px removes another 50%, also free in the sense that a
+sub-pixel deviation cannot be drawn.
+
+Carrying both through, with the Athens Gate A anchors:
+
+| Scenario | pts | render | vs MVT | Gate A l-f-l | Gate A overzoom |
+| --- | --- | --- | --- | --- | --- |
+| MVT as delivered | 24,928 | 480 ms | 1.0× | 3.1× | 6.2× |
+| + quantise to 256 | 19,842 | 382 ms | 2.2× | 6.7× | 13.6× |
+| + DP 1 px | 9,986 | 192 ms | 4.4× | **13.4×** | **27.1×** |
+| + drop buildings | 5,308 | 102 ms | 8.2× | **25.1×** | **51.0×** |
+| + trim landuse | 5,195 | **100 ms** | 8.4× | **25.7×** | **52.1×** |
+
+**Gate A clears ≥10× at DP 1 px — long before Gate C clears 100 ms — and by the
+time geometry is light enough to render in budget it clears by 25–52×.** Every
+point removed to satisfy C pays A twice, since it removes both a point to draw
+and a point to store. Gate A was only ever refuted because the pipeline was
+being asked to store geometry it could never have rendered. **It does not decide
+anything.**
+
+**What does decide it is cartographic.** After quantise and DP 1 px, buildings
+are 4,677 points and **90.0 ms — 90% of the frame budget** — for a slot the spec
+itself calls "context only". Roads, water and landuse together are 102 ms;
+buildings on top are 192 ms. So the question the pivot actually turns on is
+whether the map can drop buildings. If it can, everything closes. If it cannot,
+Gate C fails at 192 ms whatever the format does.
+
 ## Not measured here, deliberately
 
 - **Power.** What a static map costs versus a 1 Hz redraw needs an unattended
