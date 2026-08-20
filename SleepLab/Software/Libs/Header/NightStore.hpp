@@ -140,7 +140,7 @@ constexpr uint32_t kSummaryJsonSchema = 1;
 /// provenance field that only exists under one of two build systems is worse
 /// than one that is maintained by hand. Bump it whenever anything that would move
 /// a number changes -- a threshold, a filter, an epoch length.
-constexpr char kAppVersion[] = "0.2.0";
+constexpr char kAppVersion[] = "0.3.0";
 
 /**
  * @brief What a resumed launch found on disk.

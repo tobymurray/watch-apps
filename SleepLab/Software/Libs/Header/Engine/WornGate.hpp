@@ -112,32 +112,52 @@ public:
     /// wrist, and the band-limited count picks it up. A rigid object on
     /// furniture produces sensor noise and nothing else, and the 0.25-3 Hz band
     /// rejects most of that.
-    /// TODO: this is the constant the *table night* exists to set. Record one
-    /// night worn and one night on a nightstand **with SleepLab** and put the
-    /// floor between the two count distributions -- comfortably above the table
-    /// night's 95th percentile and below the worn night's 5th. That is
-    /// `ROLLOUT.md` phases 3 and 4, and `Tools/night_report.py thresholds`
-    /// prints both distributions and suggests the value.
     ///
-    /// **Not with the Tier 0 probe**, which is what this TODO used to say. The
-    /// probe records delivery statistics -- `acc_n`, `acc_ts_span_ms`,
-    /// `acc_max_gap_ms`, `acc_batches` -- and no activity counts at all, so
-    /// there is no count distribution in a probe night to put a floor between.
-    /// Ledger row S13.
+    /// **Measured 2026-08-20**, which is what this TODO used to ask for. The
+    /// two recordings are `Recordings/2026-08-19-worn` (a full night, 1249
+    /// epochs) and `Recordings/2026-08-20-table` (a stationary watch, empty
+    /// room, 106 epochs), both at the same delivered 50.00 Hz so their counts
+    /// are comparable (ledger row S14). Per 60 s scoring epoch:
     ///
-    /// 8 is a guess against EpochCounter's scale and nothing more. Measured,
-    /// that scale puts it at about 0.3 mg of 1 Hz wrist movement, which is the
-    /// same order as the sensor's own in-band noise -- so this floor is the one
-    /// most likely to be in the wrong place, in either direction.
-    static constexpr uint32_t kMicroMovementFloor = 8;
+    ///     table   p50  373   p95  390
+    ///     worn    p5   414   p25  468   p50  695
+    ///
+    /// `night_report.py thresholds` puts the floor midway at 402; 400 is that,
+    /// rounded, because the window between the two distributions is 24 counts
+    /// wide and the third digit of a value inside it is noise. At 400 no table
+    /// epoch passes and 1.8 % of worn epochs fail, which is what
+    /// kMinPlausiblePct is for.
+    ///
+    /// **The previous value, 8, was a test that could not fail.** The sensor's
+    /// own in-band noise floor is 357 counts at its very quietest, so every
+    /// epoch ever recorded -- furniture included -- was above 8, and the
+    /// micro-movement half of the plausibility check passed unconditionally.
+    /// The gate was heart rate alone and nothing said so. The old comment
+    /// guessed correctly that this floor was "the one most likely to be in the
+    /// wrong place"; it was wrong by a factor of 45.
+    ///
+    /// Two limits on this number, stated so they are not forgotten. It rests on
+    /// **one** table hour on **one** hard surface, and the worn night's minimum
+    /// (370) is below the table's p95 (390), so the two distributions do overlap
+    /// at the extreme tail. And whether the 357 floor is the accelerometer or
+    /// the room is untested: the per-axis columns that would separate isotropic
+    /// sensor noise from directed building vibration are schema 3, and both
+    /// recordings are schema 2.
+    static constexpr uint32_t kMicroMovementFloor = 400;
 
     /// Fraction of epochs, in percent, that must show *either* micro-movement
     /// or a heart rate for the night to be plausible.
     ///
     /// Both absent together is the table signature; this is how much of the
     /// night has to look alive.
-    /// TODO: same recording as kMicroMovementFloor -- a worn night and a table
-    /// night recorded with SleepLab, not with the probe.
+    ///
+    /// Left at 70 against the 2026-08-20 pair, and the pair says why it has
+    /// room to spare: on the worn night **1249 of 1249 epochs carried a heart
+    /// rate** and on the table hour **0 of 106 did**, so the pulse half of the
+    /// check separated the two completely on its own. The count half at
+    /// kMicroMovementFloor = 400 fails 1.8 % of worn epochs, which 70 % absorbs
+    /// with three decades of margin. It is the `hr: off` night that would put
+    /// this number under pressure, and there has not been one.
     static constexpr uint8_t kMinPlausiblePct = 70;
 
     /// Shortest night this gate will pass, in scoring epochs.

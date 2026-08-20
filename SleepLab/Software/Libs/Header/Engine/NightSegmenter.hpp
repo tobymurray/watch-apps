@@ -102,27 +102,66 @@ struct SegmenterConfig
     /// Counts per scoring epoch at or below which an epoch counts as still,
     /// for the purpose of opening a night.
     ///
-    /// TODO: set from a diary-validated recording made **with SleepLab**, whose
-    /// epoch CSV carries the `count` column this is expressed in -- the value
-    /// should sit above a settled sleeper's epochs and below someone lying awake
-    /// reading. `ROLLOUT.md` phases 3 and 4. 60 is a guess against
-    /// EpochCounter's scale, deliberately looser than
-    /// NightAnalyser::kMovementFloor because opening a night should tolerate
-    /// the shuffling that precedes sleep.
+    /// **This is the constant that decides whether a night opens at all**, and
+    /// the failure the old comment predicted is exactly the one that happened.
+    /// It read: "if the sensor's own noise in the 0.25-3 Hz band exceeds that,
+    /// no night ever opens and the symptom is indistinguishable from a wearer
+    /// who did not go to bed. Check `Debug/sleeplab.log` an hour into the first
+    /// night: a `launch` line with no `open` line, while lying still inside the
+    /// window, is that failure." On 2026-08-19 a full night's sleep produced
+    /// 1249 idle rows, no session, and a log with a `launch` line and no `open`
+    /// line. The sensor's floor is **357 counts** at its quietest; 60 was six
+    /// times below it, so every epoch of every night read as movement.
     ///
-    /// Measured, 60 counts is about 2 mg of 1 Hz wrist movement. **This is the
-    /// constant that decides whether a night opens at all**, so if the sensor's
-    /// own noise in the 0.25-3 Hz band exceeds that, no night ever opens and the
-    /// symptom is indistinguishable from a wearer who did not go to bed. Check
-    /// `Debug/sleeplab.log` an hour into the first night: a `launch` line with no
-    /// `open` line, while lying still inside the window, is that failure.
-    uint32_t stillnessCountMax = 60;
+    /// Set 2026-08-20 from `Recordings/2026-08-19-worn` against
+    /// `Recordings/2026-08-20-table`, per 60 s scoring epoch:
+    ///
+    ///     table   p50  373   p95  390
+    ///     worn    p5   414   p25  468   p50  695   p75 1103
+    ///
+    /// `night_report.py thresholds` suggests worn p50 = 695. **900 is taken
+    /// instead**, and the reason is a measurement rather than a heuristic: with
+    /// stillnessToOpenMin = 15, a threshold of 695 opens the session at 00:03
+    /// while 900 opens it at 23:38 -- and 23:38 is where *two* channels that
+    /// share none of this constant independently put sleep onset. The MOTION
+    /// event channel says 23:38, and Cole-Kripke at the corrected kCountScale
+    /// says 23:42-23:49. A percentile of one night is a guess about a shape;
+    /// agreement between two unrelated channels is evidence about a time.
+    ///
+    /// Note what this threshold cannot do, because it is now load-bearing in a
+    /// way it was not before: **100 % of table epochs also fall below 900.** A
+    /// watch on a nightstand will open a session. That is by design -- the worn
+    /// gate rejects furniture, the segmenter does not -- and it is why
+    /// WornGate::kMicroMovementFloor moving off 8 is a precondition for this
+    /// value rather than an independent improvement.
+    uint32_t stillnessCountMax = 900;
 
     /// Counts per scoring epoch above which an epoch counts as active, for the
     /// purpose of closing a night. Deliberately well above
     /// `stillnessCountMax`, so the two do not chatter around one boundary.
-    /// TODO: same recording.
-    uint32_t activityCountMin = 250;
+    ///
+    /// 250 was **below the sensor's own 357-count noise floor**, so every epoch
+    /// counted as active and a session -- had one ever opened -- would have
+    /// closed ten minutes later.
+    ///
+    /// 8000 is worn p90 (8563) rounded down: nine times stillnessCountMax, so
+    /// the hysteresis is wide, and far above anything a sleeping wrist sustains.
+    /// The close needs `activityToCloseMin` = 10 *consecutive* epochs above it,
+    /// and simulating the real state machine over the 2026-08-19 night shows the
+    /// outcome is insensitive across a twentyfold range: every value from 2 000
+    /// to 40 000 opens at 23:38 and closes between 09:35 and 09:38. That
+    /// insensitivity is the argument for the value, not the percentile.
+    ///
+    /// TODO: this one is still not properly set, and a night cannot set it. A
+    /// night spent asleep contains no clean example of "active enough to be up"
+    /// except the wearer getting up at the end, which is why
+    /// `night_report.py thresholds` suggests worn p99 -- 88 964 on this night --
+    /// and warns about exactly this. Record a few minutes of getting up and
+    /// walking about and take the value from that. `ROLLOUT.md` phase 4 says the
+    /// same thing. Note that `stepsToCloseInEpoch` is the stronger and less
+    /// ambiguous out-of-bed signal either way, which is what makes it safe for
+    /// this one to err high.
+    uint32_t activityCountMin = 8000;
 
     /// Longest a session may run, in scoring epochs. Sixteen hours.
     ///

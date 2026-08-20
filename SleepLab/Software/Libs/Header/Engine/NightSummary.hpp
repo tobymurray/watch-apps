@@ -229,12 +229,20 @@ public:
     /// that one asks "is anything alive here at all", this one asks "did the
     /// sleeper move". Sharing a constant between the two would tie a
     /// restlessness measure to a hardware-plausibility threshold.
-    /// TODO: set from a diary-validated night recorded **with SleepLab**, whose
-    /// epoch CSV carries the `count` column this is expressed in -- the value
-    /// should put a settled sleeper's epochs below it and a turn-over above it.
-    /// `ROLLOUT.md` phases 3 and 4. 40 is a guess against EpochCounter's scale,
-    /// which measures out at about 1.3 mg of 1 Hz wrist movement.
-    static constexpr uint32_t kMovementFloor = 40;
+    /// Set 2026-08-20 to worn p75 (1103, rounded) from
+    /// `Recordings/2026-08-19-worn`, which is where `ROLLOUT.md` phase 4 and
+    /// `night_report.py thresholds` both place it: a quarter of the night's
+    /// epochs above the floor is a plausible reading of "the sleeper moved".
+    ///
+    /// 40 was **below the sensor's own 357-count in-band noise floor**, so every
+    /// epoch of every night counted as movement: the movement index would have
+    /// read 100 % and `stillInBedMin` zero, on any night, worn or not.
+    ///
+    /// Still a percentile of one night rather than a validated boundary, and
+    /// this one is not diary-validatable at all -- a diary knows lights-out and
+    /// final wake, and nothing about turning over. What it now rests on is a
+    /// measured noise floor underneath it, which is more than it had.
+    static constexpr uint32_t kMovementFloor = 1100;
 
     /**
      * @brief Summarise.

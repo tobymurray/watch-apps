@@ -44,6 +44,15 @@ NightSegmenter::Update feed(NightSegmenter &s, int16_t &clock, size_t n,
 
 // -- Windows that cross midnight ---------------------------------------------------
 
+/// Counts either side of the segmenter's own thresholds, derived from them
+/// rather than written as literals. The literals in this file were 10 and 4000,
+/// chosen when stillnessCountMax was 60 and activityCountMin 250; when those
+/// moved to measured values on 2026-08-20, 4000 stopped being "active" and the
+/// close scenarios failed without saying why. Derived, a constant that moves
+/// takes its fixtures with it.
+constexpr uint32_t kStillCount  = Engine::SegmenterConfig{}.stillnessCountMax / 2;
+constexpr uint32_t kActiveCount = Engine::SegmenterConfig{}.activityCountMin * 2;
+
 TEST(Window, AWrappedWindowContainsBothSidesOfMidnight)
 {
     const int16_t start = at(21, 0), end = at(11, 0);
@@ -93,7 +102,7 @@ TEST(Segmenter, ANightOpensOnSustainedStillnessInsideTheWindow)
     int16_t clock = at(22, 30);
 
     // Fourteen still minutes is not yet enough.
-    auto u = feed(s, clock, 14, true, 10);
+    auto u = feed(s, clock, 14, true, kStillCount);
     EXPECT_EQ(u.event, Event::None);
     EXPECT_EQ(s.state(), State::Idle);
 
@@ -110,7 +119,7 @@ TEST(Segmenter, OpeningBackdatesToTheStartOfTheStillRun)
     NightSegmenter s;
     int16_t clock = at(22, 30);
 
-    const auto u = feed(s, clock, 20, true, 10);
+    const auto u = feed(s, clock, 20, true, kStillCount);
     ASSERT_EQ(u.event, Event::Opened);
     EXPECT_EQ(u.backdateEpochs, SegmenterConfig{}.stillnessToOpenMin);
     EXPECT_EQ(s.sessionEpochs(), SegmenterConfig{}.stillnessToOpenMin);
@@ -121,7 +130,7 @@ TEST(Segmenter, StillnessOutsideTheWindowOpensNothing)
     // Sitting still at 15:00 is not going to bed.
     NightSegmenter s;
     int16_t clock = at(15, 0);
-    EXPECT_EQ(feed(s, clock, 120, true, 5).event, Event::None);
+    EXPECT_EQ(feed(s, clock, 120, true, kStillCount).event, Event::None);
     EXPECT_EQ(s.state(), State::Idle);
 }
 
@@ -140,12 +149,12 @@ TEST(Segmenter, AMovementBreaksTheStillRun)
     NightSegmenter s;
     int16_t clock = at(22, 30);
 
-    feed(s, clock, 10, true, 10);
+    feed(s, clock, 10, true, kStillCount);
     s.update(clock, true, 5000, 0);        // one restless minute
     clock = static_cast<int16_t>(clock + 1);
 
     // Ten more still minutes: the run restarted, so this is not enough.
-    EXPECT_EQ(feed(s, clock, 10, true, 10).event, Event::None);
+    EXPECT_EQ(feed(s, clock, 10, true, kStillCount).event, Event::None);
 }
 
 TEST(Segmenter, WithNoWallClockANightCannotOpen)
@@ -165,9 +174,9 @@ TEST(Segmenter, StepsCloseANightOnceItIsLongEnough)
     // wrist does not accumulate them.
     NightSegmenter s;
     int16_t clock = at(22, 30);
-    ASSERT_EQ(feed(s, clock, 20, true, 10).event, Event::Opened);
+    ASSERT_EQ(feed(s, clock, 20, true, kStillCount).event, Event::Opened);
 
-    feed(s, clock, 300, true, 10);
+    feed(s, clock, 300, true, kStillCount);
 
     const auto u = s.update(clock, true, 300, /*steps=*/40);
     EXPECT_EQ(u.event, Event::Closed);
@@ -182,12 +191,12 @@ TEST(Segmenter, ATripToTheBathroomDoesNotSplitANightInTwo)
     // losing the whole night to a two-minute interruption.
     NightSegmenter s;
     int16_t clock = at(23, 0);
-    ASSERT_EQ(feed(s, clock, 20, true, 10).event, Event::Opened);
+    ASSERT_EQ(feed(s, clock, 20, true, kStillCount).event, Event::Opened);
 
-    feed(s, clock, 30, true, 10);
+    feed(s, clock, 30, true, kStillCount);
     // Fifteen active minutes with steps, well past activityToCloseMin -- but
     // only ~65 minutes into the session, under minSessionMin.
-    const auto u = feed(s, clock, 15, true, 4000, 60);
+    const auto u = feed(s, clock, 15, true, kActiveCount, 60);
 
     EXPECT_EQ(u.event, Event::None);
     EXPECT_EQ(s.state(), State::Open);
@@ -197,10 +206,10 @@ TEST(Segmenter, SustainedActivityClosesANightThatIsLongEnough)
 {
     NightSegmenter s;
     int16_t clock = at(22, 0);
-    ASSERT_EQ(feed(s, clock, 20, true, 10).event, Event::Opened);
-    feed(s, clock, 400, true, 10);
+    ASSERT_EQ(feed(s, clock, 20, true, kStillCount).event, Event::Opened);
+    feed(s, clock, 400, true, kStillCount);
 
-    const auto u = feed(s, clock, 20, true, 4000);
+    const auto u = feed(s, clock, 20, true, kActiveCount);
     EXPECT_EQ(u.event, Event::Closed);
 }
 
@@ -208,12 +217,12 @@ TEST(Segmenter, OneRestlessMinuteDoesNotCloseANight)
 {
     NightSegmenter s;
     int16_t clock = at(22, 0);
-    ASSERT_EQ(feed(s, clock, 20, true, 10).event, Event::Opened);
-    feed(s, clock, 300, true, 10);
+    ASSERT_EQ(feed(s, clock, 20, true, kStillCount).event, Event::Opened);
+    feed(s, clock, 300, true, kStillCount);
 
     // A turn-over: a few active minutes, then settled again.
-    EXPECT_EQ(feed(s, clock, 3, true, 4000).event, Event::None);
-    EXPECT_EQ(feed(s, clock, 30, true, 10).event, Event::None);
+    EXPECT_EQ(feed(s, clock, 3, true, kActiveCount).event, Event::None);
+    EXPECT_EQ(feed(s, clock, 30, true, kStillCount).event, Event::None);
     EXPECT_EQ(s.state(), State::Open);
 }
 
@@ -223,10 +232,10 @@ TEST(Segmenter, LeavingTheWindowClosesTheNightUnconditionally)
     // accelerometer says. The most likely cause is a watch left on a desk.
     NightSegmenter s;
     int16_t clock = at(22, 0);
-    ASSERT_EQ(feed(s, clock, 20, true, 10).event, Event::Opened);
+    ASSERT_EQ(feed(s, clock, 20, true, kStillCount).event, Event::Opened);
 
     // Run right through to 11:00, perfectly still the whole way.
-    const auto u = feed(s, clock, 900, true, 5);
+    const auto u = feed(s, clock, 900, true, kStillCount);
     EXPECT_EQ(u.event, Event::Closed);
 }
 
@@ -240,9 +249,9 @@ TEST(Segmenter, ASessionTooShortToReportIsDiscardedRatherThanClosed)
     NightSegmenter s(cfg);
 
     int16_t clock = at(22, 0);
-    ASSERT_EQ(feed(s, clock, 20, true, 10).event, Event::Opened);
+    ASSERT_EQ(feed(s, clock, 20, true, kStillCount).event, Event::Opened);
 
-    const auto u = feed(s, clock, 200, true, 5);
+    const auto u = feed(s, clock, 200, true, kStillCount);
     EXPECT_EQ(u.event, Event::Discarded);
     EXPECT_LT(u.sessionEpochs, cfg.minSessionMin);
 }
@@ -253,7 +262,7 @@ TEST(Segmenter, AnOpenSessionSurvivesTheClockBecomingUnreadable)
     // app does not control would lose real data.
     NightSegmenter s;
     int16_t clock = at(23, 0);
-    ASSERT_EQ(feed(s, clock, 20, true, 10).event, Event::Opened);
+    ASSERT_EQ(feed(s, clock, 20, true, kStillCount).event, Event::Opened);
 
     for (int i = 0; i < 100; ++i) {
         EXPECT_EQ(s.update(kAbsent, true, 10, 0).event, Event::None);
@@ -267,7 +276,7 @@ TEST(Segmenter, AClockJumpIsReportedAndNotAbsorbed)
 {
     NightSegmenter s;
     int16_t clock = at(22, 0);
-    feed(s, clock, 20, true, 10);
+    feed(s, clock, 20, true, kStillCount);
 
     // An hour forward, still inside the window: a timezone change, a host
     // sync, or DST.
@@ -283,8 +292,8 @@ TEST(Segmenter, AJumpThatAlsoClosesTheSessionStillReportsTheJump)
     // interrupted. An Update rebuilt inside the close path would drop it.
     NightSegmenter s;
     int16_t clock = at(22, 0);
-    ASSERT_EQ(feed(s, clock, 20, true, 10).event, Event::Opened);
-    feed(s, clock, 300, true, 10);
+    ASSERT_EQ(feed(s, clock, 20, true, kStillCount).event, Event::Opened);
+    feed(s, clock, 300, true, kStillCount);
 
     // Jump from the small hours to midday: out of the window, and a jump.
     const auto u = s.update(at(13, 0), true, 10, 0);
@@ -322,7 +331,7 @@ TEST(Segmenter, ResumeReentersAnOpenSessionRatherThanStartingASecond)
     EXPECT_EQ(s.sessionEpochs(), 200);
 
     int16_t clock = at(2, 30);
-    const auto u = feed(s, clock, 30, true, 10);
+    const auto u = feed(s, clock, 30, true, kStillCount);
     EXPECT_EQ(u.event, Event::None);
     EXPECT_EQ(s.state(), State::Open);
 }
@@ -337,7 +346,7 @@ TEST(Segmenter, AResumedSessionDoesNotInheritAnActivityRun)
 
     int16_t clock = at(3, 0);
     // Nine active minutes: one short of activityToCloseMin from a clean start.
-    EXPECT_EQ(feed(s, clock, 9, true, 4000).event, Event::None);
+    EXPECT_EQ(feed(s, clock, 9, true, kActiveCount).event, Event::None);
     EXPECT_EQ(s.state(), State::Open);
 }
 
@@ -347,8 +356,8 @@ TEST(Segmenter, FinishClosesAnOpenSessionForShutdown)
     // in. A session left open is a night that never gets written.
     NightSegmenter s;
     int16_t clock = at(22, 0);
-    ASSERT_EQ(feed(s, clock, 20, true, 10).event, Event::Opened);
-    feed(s, clock, 300, true, 10);
+    ASSERT_EQ(feed(s, clock, 20, true, kStillCount).event, Event::Opened);
+    feed(s, clock, 300, true, kStillCount);
 
     const auto u = s.finish();
     EXPECT_EQ(u.event, Event::Closed);

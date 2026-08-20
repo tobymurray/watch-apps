@@ -212,23 +212,47 @@ public:
     /// paper" and "is validated", and it cannot be derived -- only measured.
     ///
     /// TODO: calibrate. The recording needed is ten nights recorded with a
-    /// hand-kept diary of lights-out and final wake (Tier 0's probe already
-    /// records everything required). Sweep this constant, and report the mean
-    /// signed error on onset and final wake against the diary at each value;
-    /// the value minimising it goes here, with the residual error stated in
-    /// README and in the ledger's validation table. Until then every
-    /// sleep/wake figure this app prints is synthetic-only.
+    /// hand-kept diary of lights-out and final wake. Sweep this constant, and
+    /// report the mean signed error on onset and final wake against the diary at
+    /// each value; the value minimising it goes here, with the residual error
+    /// stated in README and in the ledger's validation table. Until then every
+    /// sleep/wake figure this app prints is synthetic-only. **What has changed
+    /// is that the sweep now has bounds**: 0.0003 to 0.0005, from the
+    /// measurement below. It is a check, not a search.
     ///
-    /// What the starting value implies, stated so it can be argued with: the
-    /// window weights sum to 665, so with kP = 0.001 the sleep/wake boundary
-    /// D = 1 falls at about **273 counts per scoring epoch** held across the
-    /// whole window. Against EpochCounter's measured scale -- a continuous
-    /// 0.3 g movement at 1 Hz integrating to ~4500 counts per 30 s epoch --
-    /// that boundary is roughly 0.01 g of sustained 1 Hz movement.
+    /// The old value was 0.0055 and it did not merely mis-scale the night --
+    /// **it removed sleep from the codomain.** The window weights sum to 665, so
+    /// with kP = 0.001 the sleep/wake boundary D = 1 falls at about **273 counts
+    /// per scoring epoch**. That number was in this comment from the beginning.
+    /// What nobody had was the other one: measured 2026-08-20 on
+    /// `Recordings/2026-08-20-table`, a stationary watch produces **357 counts
+    /// at its quietest and 373 at its median**. The scorer's entire sleep region
+    /// lay below the instrument's own noise floor. Driving the real algorithm --
+    /// these weights, this P, all five Webster rules -- over the 624 scoring
+    /// epochs of `Recordings/2026-08-19-worn` scored **zero epochs as sleep**,
+    /// and zero of the table hour's as well.
     ///
-    /// That is a plausible operating point for the difference between a
-    /// settled sleeper and someone awake and shifting, and it is nothing more
-    /// than plausible. It has never been compared against a person.
+    /// 0.0004 is the middle of the range in which that night has a plausible
+    /// shape. Scored across the session the corrected segmenter cuts
+    /// (23:38-09:36, 9 h 59 in bed):
+    ///
+    ///     scale    TST      WASO  awakenings  efficiency
+    ///     0.0007   6 h 11   189   32          62 %
+    ///     0.0005   7 h 29   111   33          75 %
+    ///     0.0004   8 h 09    71   24          82 %
+    ///     0.0003   8 h 35    46   20          86 %
+    ///     0.0002   9 h 04    18   12          91 %
+    ///
+    /// Final wake is 08:57-08:59 at every value, against 08:59 from the MOTION
+    /// event channel, which shares no constant with this one. Onset is 23:38 at
+    /// every value, against 23:38 from the same channel. **The night's edges are
+    /// robust to this constant and its interior is not**, which is the honest
+    /// summary of what one night can and cannot fix.
+    ///
+    /// This is still not validated against sleep. A shape that looks like a
+    /// night is not a night, the value was chosen partly by looking for one, and
+    /// nothing here has been compared against a person. What it is no longer is
+    /// a guess three orders of magnitude from anything measured.
     ///
     /// One further thing the reference implementations do and this does not: their
     /// device-to-paper bridge *saturates*. `actigraph.sleepr` maps ActiGraph
@@ -242,7 +266,7 @@ public:
     /// derived from a guess is a second guess wearing the first one's authority. It
     /// goes in with the calibration, from the same ten diary nights, and the
     /// ledger's A9 row says so.
-    static constexpr float kCountScale = 0.0055f;
+    static constexpr float kCountScale = 0.0004f;
 
     // -- Webster rescoring ---------------------------------------------------
     //

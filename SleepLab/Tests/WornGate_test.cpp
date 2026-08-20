@@ -28,7 +28,10 @@ std::vector<ScoringInput> wornNight(size_t n = 400)
     for (size_t i = 0; i < n; ++i) {
         // Comfortably above WornGate::kMicroMovementFloor -- a sleeping human
         // is never perfectly still; respiration alone moves the wrist.
-        v.push_back(Fixture::epoch(/*count=*/25, /*hrX10=*/540));
+        // Fixture::kQuiet rather than a literal: the floor moved from 8 to 400
+        // on 2026-08-20 and a literal chosen against the old one turns every
+        // fixture night in this file into a nightstand.
+        v.push_back(Fixture::epoch(Fixture::kQuiet, /*hrX10=*/540));
     }
     return v;
 }
@@ -40,7 +43,13 @@ std::vector<ScoringInput> tableNight(size_t n = 400)
 {
     std::vector<ScoringInput> v;
     for (size_t i = 0; i < n; ++i) {
-        v.push_back(Fixture::epoch(/*count=*/1, /*hrX10=*/
+        // 374 is the measured median of `Recordings/2026-08-20-table` -- a real
+        // stationary watch, not an idealised silent one. It was 1, which no
+        // accelerometer on this device has ever produced: the in-band noise
+        // floor is 357 at its very quietest. A gate that only rejects furniture
+        // quieter than anything real is not being tested against the case it
+        // exists for.
+        v.push_back(Fixture::epoch(/*count=*/374, /*hrX10=*/
                                    static_cast<int16_t>(Engine::kAbsent)));
     }
     return v;

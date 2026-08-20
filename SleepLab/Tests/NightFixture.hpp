@@ -15,7 +15,10 @@
 #include <cstdint>
 #include <vector>
 
+#include "Engine/NightSegmenter.hpp"
+#include "Engine/NightSummary.hpp"
 #include "Engine/SleepWakeScorer.hpp"
+#include "Engine/WornGate.hpp"
 
 namespace Fixture {
 
@@ -23,8 +26,45 @@ namespace Fixture {
 /// so that a "quiet" epoch lands well inside sleep and an "active" one well
 /// inside wake, with the boundary nowhere near either. Tests that need to
 /// probe the boundary set counts explicitly instead.
-constexpr uint32_t kQuiet  = 20;    ///< A settled sleeper.
-constexpr uint32_t kActive = 2500;  ///< Unambiguously awake and moving.
+///
+/// These were 20 and 2500, chosen against constants that were guesses. When
+/// those constants moved to measured values on 2026-08-20 the two literals
+/// silently landed on the wrong side of four different thresholds and eleven
+/// tests failed at once, none of them naming the reason. So the values are now
+/// **asserted against the constants they have to sit between**, and a constant
+/// that moves far enough to invalidate them is a build failure with a message
+/// rather than a morning of debugging.
+///
+/// The numbers themselves are the real ones: 700 is the median 60 s scoring
+/// epoch of `Recordings/2026-08-19-worn` (695) and 40 000 is the median of the
+/// hour that night's wearer spent getting up (39 851).
+constexpr uint32_t kQuiet  = 700;    ///< A settled sleeper.
+constexpr uint32_t kActive = 40000;  ///< Unambiguously awake and moving.
+
+/// The Cole-Kripke boundary, in counts per scoring epoch held across the whole
+/// window: the count at which D = 1. Everything below scores sleep.
+constexpr float kScorerBoundary =
+    1.0f / (Engine::SleepWakeScorer::kP *
+            (Engine::SleepWakeScorer::kWeights[0] + Engine::SleepWakeScorer::kWeights[1] +
+             Engine::SleepWakeScorer::kWeights[2] + Engine::SleepWakeScorer::kWeights[3] +
+             Engine::SleepWakeScorer::kWeights[4] + Engine::SleepWakeScorer::kWeights[5] +
+             Engine::SleepWakeScorer::kWeights[6]) *
+            Engine::SleepWakeScorer::kCountScale);
+
+static_assert(kQuiet < kScorerBoundary / 2.0f,
+              "kQuiet must score as sleep with room to spare");
+static_assert(kActive > kScorerBoundary * 2.0f,
+              "kActive must score as wake with room to spare");
+static_assert(kQuiet > Engine::WornGate::kMicroMovementFloor,
+              "kQuiet must look alive to the worn gate, or every fixture night "
+              "is a nightstand");
+static_assert(kQuiet <= Engine::SegmenterConfig{}.stillnessCountMax,
+              "a run of kQuiet epochs must be still enough to open a night");
+static_assert(kActive >= Engine::SegmenterConfig{}.activityCountMin,
+              "a run of kActive epochs must be active enough to close one");
+static_assert(kActive > Engine::NightAnalyser::kMovementFloor &&
+                  kQuiet < Engine::NightAnalyser::kMovementFloor,
+              "the movement index has to be able to tell the two apart");
 
 /// Enough samples and worn fraction that nothing is Unscorable by accident.
 constexpr uint16_t kGoodSamples = 600;

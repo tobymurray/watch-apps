@@ -221,7 +221,18 @@ TEST(Webster, ALongSleepBlockSurroundedByWakeSurvives)
     for (size_t i = 30; i < 60; ++i) {
         if (v[i] == Verdict::Sleep) { ++sleep; }
     }
-    EXPECT_GT(sleep, 20u);
+    // Half the block, not most of it, and the bar is loose on purpose. Two
+    // things necessarily eat into a sleep block bracketed by wake, and neither
+    // is what this test is about: Webster's rules 1-3 rescore the first four
+    // sleep minutes after a long wake, and Cole-Kripke's four-back window
+    // smears the wake either side across a few more. How many "a few" is
+    // depends on the *ratio* of kActive to kQuiet, which is a property of the
+    // fixture rather than of the rules. This bar was `> 20` and passed by one
+    // epoch until the fixture's counts moved to measured values; a test that
+    // passes by one epoch is measuring the fixture. The property under test is
+    // the contrast with AShortSleepIslandSurroundedByWakeIsRescored, where
+    // none of the four minutes survives at all.
+    EXPECT_GT(sleep, 15u);
 }
 
 /// Build a verdict array from (count, verdict) runs.

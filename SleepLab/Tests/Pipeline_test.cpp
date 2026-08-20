@@ -9,6 +9,7 @@
  */
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdlib>
 
 #include "Diag.hpp"
@@ -44,15 +45,33 @@ constexpr int64_t kStart = 1755553500;   // 2026-08-18 21:45:00 UTC
 // about 0.001 g and 0.05 g respectively -- three milli-g apart, which is worth
 // knowing before a night is spent on it.
 
-/// Respiration on a still, worn wrist: ~20 counts a minute. Below the stillness
-/// ceiling that opens a night and below the movement floor, and above the
-/// micro-movement floor the worn gate needs to see to believe a wrist is alive.
-constexpr float kBreathingG  = 0.0010f;
+// **The harness's accelerometer is noiseless and real hardware is not**, and
+// every amplitude below has to carry that difference. Measured on
+// `Recordings/2026-08-20-table`, a stationary watch on this device produces
+// ~374 counts per 60 s scoring epoch of pure in-band noise -- 357 at its very
+// quietest. A synthetic "still" phase given a physiological amplitude therefore
+// produces counts an order of magnitude below anything the hardware can emit,
+// and sits under thresholds no real night can go under. So these amplitudes
+// stand in for the sensor's own floor *plus* the wearer, and are set from the
+// one real worn night rather than from what a wrist does.
+//
+// EpochCounter's scale, measured: ~30 counts per 60 s scoring epoch per 1 mg of
+// sinusoid inside the passband, and ~21 at 0.3 Hz where the 0.25 Hz corner is
+// already attenuating.
+
+/// A still, worn wrist as this device records one: ~700 counts a scoring epoch,
+/// the median of `Recordings/2026-08-19-worn` (695). Above
+/// WornGate::kMicroMovementFloor so the night looks alive, below
+/// SegmenterConfig::stillnessCountMax so it opens, and far below Cole-Kripke's
+/// boundary so it scores as sleep.
+constexpr float kBreathingG  = 0.033f;
 constexpr float kBreathingHz = 0.30f;
 
-/// Somebody awake and shifting about: ~1500 counts a minute, six times the
-/// activity floor that closes a night and five times Cole-Kripke's boundary.
-constexpr float kAwakeG  = 0.05f;
+/// Somebody awake and shifting about: ~21 000 counts a scoring epoch, two and a
+/// half times the activity floor that closes a night and five times
+/// Cole-Kripke's boundary. For scale, that real night's 95th percentile was
+/// 31 677 and the hour its wearer spent getting up ran at ~40 000.
+constexpr float kAwakeG  = 0.70f;
 constexpr float kAwakeHz = 1.0f;
 
 Phase still(int minutes, int hr = 55)
@@ -743,14 +762,32 @@ TEST(HostileNights, SensorTimestampsThatJumpBackwardsDoNotFabricateMovement)
 
     const std::string csv = theNightCsv(Rig::instance().fs);
     ASSERT_FALSE(csv.empty());
+    long jumpedMax = 0;
     for (const EpochRow &r : parseEpochs(Rig::instance().fs.readFile(csv))) {
-        // Nothing anywhere in the night may look like violent movement.
-        EXPECT_LT(r.count, 5000L)
-            << "an epoch counted " << r.count
-            << " from a sensor clock that went backwards";
+        jumpedMax = std::max(jumpedMax, static_cast<long>(r.count));
     }
     const CustomMessage::SleepReportData *rep = obs.lastReportedNight();
     ASSERT_NE(rep, nullptr) << "the night did not survive a sensor clock reset";
+
+    // Against the same night without the jump, rather than against a literal.
+    // The bound here was `< 5000`, which was three times what an awake epoch
+    // counted when kAwakeG was 0.05 g; when the fixture amplitudes moved to
+    // match measured hardware the honest movement in the night's own awake
+    // phases sailed past it, and the test failed for the one reason it was not
+    // meant to detect. What it is actually asserting is that a clock going
+    // backwards **fabricates** nothing -- so the comparison is with the night
+    // that has no jump in it, which is a claim that survives any amplitude.
+    Scenario clean = plainNight();
+    Rig::instance().run(clean);
+    long cleanMax = 0;
+    for (const EpochRow &r :
+         parseEpochs(Rig::instance().fs.readFile(theNightCsv(Rig::instance().fs)))) {
+        cleanMax = std::max(cleanMax, static_cast<long>(r.count));
+    }
+    ASSERT_GT(cleanMax, 0L);
+    EXPECT_LE(jumpedMax, cleanMax + cleanMax / 10)
+        << "a sensor clock that went backwards counted " << jumpedMax
+        << " where the same night without it counted at most " << cleanMax;
 }
 
 TEST(HostileNights, AWallClockThatJumpsMidNightMarksTheNightRatherThanMovingIt)
@@ -1478,9 +1515,11 @@ TEST(Watching, ANightThatNeverOpensStillMeasuresTheNoiseFloor)
     s.startUtc = kStart;
     Phase noisy;
     noisy.minutes    = 6 * 60;
-    // ~0.0035 g at 0.3 Hz is ~75 counts a scoring epoch, above the 60 ceiling and
-    // far below the 250 that would read as activity.
-    noisy.amplitudeG = 0.0035f;
+    // ~0.07 g at 0.3 Hz is ~1500 counts a scoring epoch: above the 900 ceiling
+    // that would open a night and far below the 8000 that would read as
+    // activity. The premise is asserted below rather than trusted, because it
+    // is a mapping from an amplitude to a count and both ends have moved once.
+    noisy.amplitudeG = 0.07f;
     noisy.freqHz     = kBreathingHz;
     noisy.worn       = true;
     noisy.hrBpm      = 55;
