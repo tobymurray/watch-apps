@@ -32,14 +32,18 @@ namespace {
 /// from the same source as the row cannot catch a column going out of step
 /// with its name.
 constexpr char kEpochHeader[] =
-    "# SleepLab epoch log, schema 2. One row per 30 s recording epoch.\n"
+    "# SleepLab epoch log, schema 3. One row per 30 s recording epoch.\n"
     "# uptime_ms is device uptime and survives an app restart; wall_utc is the\n"
     "# wall clock and can jump. Durations come from uptime, times of day from\n"
     "# the wall clock, and -1 means not measured (never 0).\n"
     "# Schema 2 adds the delivery and power columns the Tier 0 probe used to own,\n"
     "# so one night can answer both what the wearer did and what the hardware did.\n"
     "# They are absent, not zero, when the diagnostics setting is off.\n"
+    "# Schema 3 adds count_x/y/z, the per-axis integrals count is the vector\n"
+    "# magnitude of. Noise is roughly isotropic and movement is not, so the split\n"
+    "# is what separates a sensor noise floor from a floor of micro-movement.\n"
     "uptime_ms,wall_utc,span_ms,count,peak,samples,"
+    "count_x,count_y,count_z,"
     "motion,sig_motion,step_delta,"
     "hr_mean_x10,hr_min_x10,hr_samples,hr_source,"
     "worn_pct,worn_edges,batt_pct_x10,charging,"
@@ -57,7 +61,7 @@ constexpr char kIndexHeader[] =
 
 /// Longest an epoch row can be, plus slack.
 ///
-/// Schema 2's 33 columns run to about 200 characters of digits in the worst case;
+/// Schema 3's 36 columns run to about 230 characters of digits in the worst case;
 /// 384 is comfortable slack. `appendEpoch` refuses to write a row that did not
 /// fit rather than writing a truncated one, so being wrong here costs epochs
 /// rather than corrupting the file -- but it costs *all* of them, silently until
@@ -146,6 +150,7 @@ size_t formatEpochRow(const Engine::Epoch &e, char *out, size_t outSize)
     const int n = std::snprintf(
         out, outSize,
         "%lu,%lld,%lu,%lu,%lu,%u,"
+        "%lu,%lu,%lu,"
         "%u,%u,%ld,"
         "%d,%d,%u,%u,"
         "%u,%u,%d,%d,"
@@ -160,6 +165,11 @@ size_t formatEpochRow(const Engine::Epoch &e, char *out, size_t outSize)
         static_cast<unsigned long>(e.count),
         static_cast<unsigned long>(e.peak),
         static_cast<unsigned>(e.samples),
+
+        // Schema 3. The parts of `count`, for telling noise from movement.
+        static_cast<unsigned long>(e.countX),
+        static_cast<unsigned long>(e.countY),
+        static_cast<unsigned long>(e.countZ),
 
         static_cast<unsigned>(e.motionEvents),
         static_cast<unsigned>(e.sigMotion),

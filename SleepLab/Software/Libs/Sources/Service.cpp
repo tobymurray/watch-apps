@@ -496,7 +496,11 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
     mLastEpochWallUtc = e.wallUtc;
     e.spanMs   = spanMs;
 
-    mCounter.closeEpoch(e.count, e.peak, e.samples);
+    uint32_t axisCounts[3] = {0, 0, 0};
+    mCounter.closeEpoch(e.count, e.peak, e.samples, axisCounts);
+    e.countX = axisCounts[0];
+    e.countY = axisCounts[1];
+    e.countZ = axisCounts[2];
 
     e.motionEvents = mAcc.motion;
     e.sigMotion    = mAcc.sigMotion;
@@ -626,15 +630,54 @@ void Service::closeRecordingEpoch(uint32_t now, uint32_t spanMs)
         // Only inside the window: outside it the segmenter would not have opened a
         // night whatever the counts were, so the rows would answer nothing and
         // would be most of a day of them.
-        if (inWindow) {
-            mStore.appendWatching(e, !mWasInWindow);
-        }
+    }
+
+    // Written whatever the session state, not only while idle.
+    //
+    // It used to live in the idle branch alone, and that had a failure mode worth
+    // spelling out: the record of why a night did not open stopped the instant one
+    // did. So the file could only ever describe rejected nights, which is the one
+    // sample no threshold should be set from -- and a single spurious open, on a
+    // watch left on a table whose worn state is stale, silently ended the
+    // measurement it was recording.
+    //
+    // The duplication against the night's own epoch file is deliberate and cheap:
+    // one continuous count series across the whole window is what the floor is
+    // estimated from, and stitching it back together from two files with different
+    // start rules is how an off-by-one epoch becomes a number in a table.
+    if (inWindow) {
+        mStore.appendWatching(e, !mWasInWindow);
     }
     // The remaining case is a session running with no file to write to. The epoch
     // still folds into the scoring array below -- that is the night, and it is what
     // the morning report is built from -- but it must not go into the pre-roll
     // ring, which exists for a night that has not opened yet and would otherwise
     // be handed this night's minutes to backdate into the next one.
+
+    // Raw capture follows the *window*, not the night.
+    //
+    // `openNight()` was the only thing that started it, so the one recording that
+    // most needs sample-level data -- a window in which no night ever opens --
+    // produced none at all. A watch left stationary is exactly that case, and it
+    // is the only measurement that can separate the sensor's own in-band noise
+    // from a living wrist's micro-movement. Asking for raw and finding an empty
+    // Raw/ directory is the sort of thing you discover the morning after.
+    //
+    // Armed once per window entry rather than whenever it is not running: a cap
+    // reached mid-window must stay reached, and re-arming every epoch would spray
+    // the volume with one file per 30 seconds, each named for a different second.
+    if (mSettings.rawRecording) {
+        if (inWindow && !mRawWindowStarted) {
+            mRawWindowStarted = true;
+            if (!mRaw.isRecording()) {
+                mRaw.start(SleepLab::wallClockUtc(), mSettings.rawMaxMb,
+                           mSettings.rawMaxMin);
+            }
+        } else if (!inWindow && mRawWindowStarted) {
+            mRawWindowStarted = false;
+            mRaw.stop();
+        }
+    }
 
     // Tracked whatever branch ran, so entering the window is a transition rather
     // than "the first idle epoch after something else happened".
@@ -895,8 +938,14 @@ void Service::openNight(uint16_t backdateScoringEpochs)
         mFlags |= Engine::Interruption::kDataGap;
     }
 
-    if (mSettings.rawRecording) {
+    // Only if the window did not already arm it. `start()` closes the current
+    // capture and opens a new one under a new name, so an unguarded call here
+    // would cut the file in two at the exact moment the night began -- and the
+    // minutes before the open, which is what the backdating is about, would be
+    // in the other half.
+    if (mSettings.rawRecording && !mRaw.isRecording()) {
         mRaw.start(mNightStartUtc, mSettings.rawMaxMb, mSettings.rawMaxMin);
+        mRawWindowStarted = true;
     }
 
     mPreRollCount = 0;
@@ -1602,6 +1651,10 @@ void Service::run()
         mSessionOpen = true;
         if (mSettings.rawRecording) {
             mRaw.start(mNightStartUtc, mSettings.rawMaxMb, mSettings.rawMaxMin);
+            // Resuming into an open night is a window entry as far as the raw
+            // capture is concerned; without this the epoch loop would arm it a
+            // second time and split the file on the first epoch after restart.
+            mRawWindowStarted = true;
         }
     }
 

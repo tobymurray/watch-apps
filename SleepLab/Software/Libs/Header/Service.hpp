@@ -344,6 +344,12 @@ private:
     /// than every evening since the app was installed.
     bool     mWasInWindow    = false;
 
+    /// Whether raw capture has been armed for the window currently open, so it is
+    /// started once on entering it rather than retried every epoch. A capture that
+    /// stopped because it hit a cap must stay stopped; re-arming on `isRecording()`
+    /// alone would open a new file every 30 seconds for the rest of the night.
+    bool     mRawWindowStarted = false;
+
     // -- Night state ----------------------------------------------------------
 
     uint16_t mFlags        = 0;   ///< Engine::Interruption bits for this night.

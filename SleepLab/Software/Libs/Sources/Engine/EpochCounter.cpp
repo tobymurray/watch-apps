@@ -158,6 +158,13 @@ void EpochCounter::add(uint32_t timestampMs, float x, float y, float z)
 
 void EpochCounter::closeEpoch(uint32_t &count, uint32_t &peak, uint16_t &samples)
 {
+    uint32_t discarded[3] = {0, 0, 0};
+    closeEpoch(count, peak, samples, discarded);
+}
+
+void EpochCounter::closeEpoch(uint32_t &count, uint32_t &peak, uint16_t &samples,
+                              uint32_t axisCounts[3])
+{
     // Vector magnitude of the three per-axis integrals, which is what
     // Actigraph's own "vector magnitude counts" are. Combining here rather than
     // per sample is what keeps each axis's own band-pass independent -- see the
@@ -182,6 +189,14 @@ void EpochCounter::closeEpoch(uint32_t &count, uint32_t &peak, uint16_t &samples
     count = !(scaledSum  < kMax) ? 0xFFFFFFFFu : static_cast<uint32_t>(scaledSum);
     peak  = !(scaledPeak < kMax) ? 0xFFFFFFFFu : static_cast<uint32_t>(scaledPeak);
     samples = mSamples;
+
+    for (int a = 0; a < 3; ++a) {
+        // Same scale and the same saturation rule as `count`, so the three are
+        // directly comparable with it and with each other.
+        const float scaledAxis = mAxis[a].sumGs * kCountsPerGSecond;
+        axisCounts[a] = !(scaledAxis < kMax) ? 0xFFFFFFFFu
+                                             : static_cast<uint32_t>(scaledAxis);
+    }
 
     for (int a = 0; a < 3; ++a) {
         mAxis[a].sumGs = 0.0f;

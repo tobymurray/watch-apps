@@ -53,12 +53,15 @@ from datetime import datetime, timedelta, timezone
 # Column order of a SleepLab epoch CSV, from NightStore.cpp's kEpochHeader.
 # A literal rather than a read of the file's own header line: if the two
 # disagree that is a bug worth failing on, not one to paper over.
-# Schema 2. The last thirteen are the delivery and power columns that used to be
-# the Tier 0 probe's alone -- see NightStore.cpp, which this list has to track
+# Schema 3. The delivery and power columns that used to be the Tier 0 probe's
+# alone are still here -- see NightStore.cpp, which this list has to track
 # exactly, because a reader that maps columns by position across a schema change
 # reports one sensor's numbers under another sensor's name.
+# count_x/y/z are schema 3: the per-axis integrals `count` is the vector
+# magnitude of, for telling an isotropic noise floor from directed movement.
 EPOCH_COLS = [
     "uptime_ms", "wall_utc", "span_ms", "count", "peak", "samples",
+    "count_x", "count_y", "count_z",
     "motion", "sig_motion", "step_delta",
     "hr_mean_x10", "hr_min_x10", "hr_samples", "hr_source",
     "worn_pct", "worn_edges", "batt_pct_x10", "charging",

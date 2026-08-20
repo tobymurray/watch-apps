@@ -202,6 +202,26 @@ public:
      */
     void closeEpoch(uint32_t &count, uint32_t &peak, uint16_t &samples);
 
+    /**
+     * @brief Close the epoch and take its count, keeping the per-axis parts.
+     *
+     * Identical to the three-argument form; it additionally reports the three
+     * per-axis integrals that `count` is the vector magnitude of.
+     *
+     * Diagnostic, and the reason is specific. `count` alone cannot distinguish
+     * broadband sensor noise from movement: noise is roughly isotropic and
+     * arrives on all three axes at similar amplitude, while a wrist moves in a
+     * direction. On a stationary watch the three should be comparable and the
+     * axis carrying gravity identifies the resting orientation. So the split is
+     * what tells a noise floor from a floor made of micro-movement -- which is
+     * the open question `stillnessCountMax` is blocked on.
+     *
+     * @param[out] axisCounts The x, y and z integrals, scaled exactly as
+     *                        `count` is. Saturating in the same way.
+     */
+    void closeEpoch(uint32_t &count, uint32_t &peak, uint16_t &samples,
+                    uint32_t axisCounts[3]);
+
     /// Samples accumulated into the epoch currently open.
     uint16_t pendingSamples() const { return mSamples; }
 

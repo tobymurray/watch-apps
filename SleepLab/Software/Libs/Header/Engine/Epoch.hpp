@@ -127,6 +127,14 @@ struct Epoch
     /// the same count and are not the same thing.
     uint32_t peak     = 0;
 
+    /// The three per-axis integrals `count` is the vector magnitude of, in the
+    /// same units. Diagnostic: broadband sensor noise arrives on all three axes
+    /// at similar amplitude, a moving wrist does not, and the axis holding
+    /// gravity gives the resting orientation. See EpochCounter::closeEpoch.
+    uint32_t countX   = 0;
+    uint32_t countY   = 0;
+    uint32_t countZ   = 0;
+
     /// Accelerometer samples the epoch was actually built from. An epoch built
     /// from four samples is not evidence about anything, and the scorer needs
     /// to be able to say so rather than average it in.
