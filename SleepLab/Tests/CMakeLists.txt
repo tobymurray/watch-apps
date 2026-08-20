@@ -71,6 +71,7 @@ add_executable(sleeplab-engine-tests
     NightSegmenter_test.cpp
     BaselineStore_test.cpp
     RestfulnessBand_test.cpp
+    RoundPanel_test.cpp
     "${APP_LIBS}/Sources/Engine/EpochCounter.cpp"
     "${APP_LIBS}/Sources/Engine/SleepWakeScorer.cpp"
     "${APP_LIBS}/Sources/Engine/WornGate.cpp"
@@ -82,6 +83,10 @@ add_executable(sleeplab-engine-tests
 target_include_directories(sleeplab-engine-tests PRIVATE
     "${APP_LIBS}/Header"
     "${CMAKE_CURRENT_LIST_DIR}"
+    # The round-panel geometry and the report screen's layout constants. Both are
+    # plain C++17 headers with no TouchGFX in them, deliberately, so that where
+    # every widget sits can be asserted here rather than discovered on a wrist.
+    "${CMAKE_CURRENT_LIST_DIR}/../Software/Apps/TouchGFX-GUI/gui/include"
 )
 target_link_libraries(sleeplab-engine-tests PRIVATE GTest::gtest_main)
 add_test(NAME sleeplab-engine-tests COMMAND sleeplab-engine-tests)

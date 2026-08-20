@@ -2,6 +2,7 @@
 #define MAINVIEW_HPP
 
 #include <gui_generated/main_screen/MainViewBase.hpp>
+#include "gui/main_screen/MainViewLayout.hpp"
 #include <gui/main_screen/MainPresenter.hpp>
 #include <gui/containers/SleepStrip.hpp>
 
@@ -72,10 +73,14 @@ private:
     static constexpr int      kReportLines = 6;
     /// Rows the history shows at once.
     static constexpr int      kHistoryRows = 5;
-    static constexpr int      kMaxLines    = 8;
+    static constexpr int      kMaxLines    = MainViewLayout::kMaxLines;
 
-    static constexpr int16_t kLineHeight = 20;
-    static constexpr int16_t kFirstLineY = 30;
+    // Layout lives in MainViewLayout.hpp, which has no TouchGFX dependency so
+    // the host tests can assert every rectangle fits the round glass.
+    static constexpr int16_t kLineHeight = MainViewLayout::kLineHeight;
+    static constexpr int16_t kFirstLineY = MainViewLayout::kFirstLineY;
+    static constexpr int16_t kStripY     = MainViewLayout::kStripY;
+    static constexpr int16_t kCaptionY   = MainViewLayout::kCaptionY;
 
     void refresh();
     void drawReport();

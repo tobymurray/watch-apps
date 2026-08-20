@@ -1,4 +1,5 @@
 #include <gui/main_screen/MainView.hpp>
+#include "gui/common/RoundPanel.hpp"
 
 #include <texts/TextKeysAndLanguages.hpp>
 #include <touchgfx/Color.hpp>
@@ -41,29 +42,43 @@ void formatDuration(char *out, size_t n, int32_t minutes)
 /// The interruption bits as one short phrase, or nullptr if the night was
 /// clean. The most consequential cause wins: charging means the app was
 /// terminated outright, which subsumes everything else.
-const char *interruptionText(uint16_t bits)
+/// The honesty line, as two rows rather than one.
+///
+/// It was one string -- "INTERRUPTED - clock changed" -- and at Poppins Medium
+/// 16 that renders 239 px wide. The row it goes in is 178 px at best, and on a
+/// round panel the top row shows 159. So the marker that carries the priority
+/// signal was the half being cut off, which is precisely backwards. Split, both
+/// halves fit with room: the widest marker is "UNCONFIRMED" at 115 px and the
+/// widest reason lands on the second row, which is 206 px wide.
+struct Honesty
+{
+    const char *marker;   ///< nullptr when the night has nothing to declare.
+    const char *reason;   ///< nullptr when the marker says it all.
+};
+
+Honesty interruptionText(uint16_t bits)
 {
     namespace I = Engine::Interruption;
-    if (bits == 0)                { return nullptr; }
-    if (bits & I::kCharging)      { return "INTERRUPTED - was charging"; }
+    if (bits == 0)                { return { nullptr, nullptr }; }
+    if (bits & I::kCharging)      { return { "INTERRUPTED", "was charging" }; }
     // Ahead of the rest deliberately: the others say the night had a hole in it,
     // and this one says the file does. Somebody about to copy a night off the
     // watch needs to know that first.
-    if (bits & I::kWriteFailed)   { return "INCOMPLETE - could not write"; }
-    if (bits & I::kResumed)       { return "INTERRUPTED - app restarted"; }
-    if (bits & I::kClockJump)     { return "INTERRUPTED - clock changed"; }
-    if (bits & I::kDataGap)       { return "INTERRUPTED - sensor gap"; }
-    if (bits & I::kTruncated)     { return "INTERRUPTED - too long, cut"; }
-    return "INTERRUPTED";
+    if (bits & I::kWriteFailed)   { return { "INCOMPLETE", "could not write" }; }
+    if (bits & I::kResumed)       { return { "INTERRUPTED", "app restarted" }; }
+    if (bits & I::kClockJump)     { return { "INTERRUPTED", "clock changed" }; }
+    if (bits & I::kDataGap)       { return { "INTERRUPTED", "sensor gap" }; }
+    if (bits & I::kTruncated)     { return { "INTERRUPTED", "too long, cut" }; }
+    return { "INTERRUPTED", nullptr };
 }
 
 /// The worn verdict as the reason a night has no numbers.
-const char *wornText(uint8_t worn)
+Honesty wornText(uint8_t worn)
 {
     switch (static_cast<Engine::WornVerdict>(worn)) {
-        case Engine::WornVerdict::NotWorn:   return "NOT WORN - no sleep data";
-        case Engine::WornVerdict::Uncertain: return "UNCONFIRMED - no sleep data";
-        default:                             return nullptr;
+        case Engine::WornVerdict::NotWorn:   return { "NOT WORN", "no sleep data" };
+        case Engine::WornVerdict::Uncertain: return { "UNCONFIRMED", "no sleep data" };
+        default:                             return { nullptr, nullptr };
     }
 }
 
@@ -112,11 +127,14 @@ void MainView::setupScreen()
     lapList.setVisible(false);
 
     for (int i = 0; i < kMaxLines; i++) {
-        // 26 px inset each side: a 240x240 round panel's usable chord is
-        // narrower than its bounding box everywhere except the middle, and the
-        // top and bottom lines are the ones that clip.
-        mLine[i].setPosition(26, static_cast<int16_t>(kFirstLineY + i * kLineHeight),
-                             188, kLineHeight);
+        // Every box is derived from the glass rather than from the framebuffer.
+        // The inset that is right in the middle of a round panel is wrong at the
+        // top, and this loop used to use one number for both: at y = 30 a 188 px
+        // box inset by 26 lost 14.6 px off each end, and the line it lost them
+        // from was the honesty line. See gui/common/RoundPanel.hpp.
+        const int16_t y = static_cast<int16_t>(kFirstLineY + i * kLineHeight);
+        mLine[i].setPosition(RoundPanel::insetFor(y, kLineHeight), y,
+                             RoundPanel::widthFor(y, kLineHeight), kLineHeight);
         mLine[i].setTypedText(touchgfx::TypedText(T_TMP_MEDIUM_16_L));
         mLine[i].setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
         mLine[i].setWideTextAction(touchgfx::WIDE_TEXT_CHARWRAP_DOUBLE_ELLIPSIS);
@@ -125,14 +143,24 @@ void MainView::setupScreen()
         add(mLine[i]);
     }
 
-    // Centred: 100 buckets at 2 px is 200 px on a 240 px panel.
-    mStrip.setXY(static_cast<int16_t>((240 - SleepStrip::kWidth) / 2), 158);
+    // Centred: 100 buckets at 2 px is 200 px on a 240 px panel. The strip is the
+    // one widget whose width is fixed by the message format (P13), so it cannot
+    // be narrowed to fit -- it has to sit where 200 px of chord exists. At
+    // kStripY its worst row leaves 201.6 px, which is 1.6 px of margin and is
+    // why the assertion below is a static one rather than a comment.
+    static_assert(SleepStrip::kWidth == MainViewLayout::kStripW &&
+                      SleepStrip::kHeight == MainViewLayout::kStripH,
+                  "MainViewLayout's strip size has drifted from the widget's, so "
+                  "the host test that checks the strip fits the glass is checking "
+                  "a rectangle nothing draws");
+    mStrip.setXY(static_cast<int16_t>((240 - SleepStrip::kWidth) / 2), kStripY);
     add(mStrip);
 
     // The caption is not decoration. It travels with the picture, because a
     // four-level band drawn across a night looks exactly like a hypnogram and
     // this device cannot produce one.
-    mCaption.setPosition(20, 188, 200, kLineHeight);
+    mCaption.setPosition(RoundPanel::insetFor(kCaptionY, kLineHeight), kCaptionY,
+                         RoundPanel::widthFor(kCaptionY, kLineHeight), kLineHeight);
     mCaption.setTypedText(touchgfx::TypedText(T_TMP_MEDIUM_16));
     mCaption.setColor(touchgfx::Color::getColorFromRGB(170, 170, 170));
     mCaption.setWideTextAction(touchgfx::WIDE_TEXT_CHARWRAP_DOUBLE_ELLIPSIS);
@@ -195,20 +223,24 @@ void MainView::drawReport()
         // The first line is the honesty line, and the order here is the
         // priority order: not-worn suppresses everything, an interruption
         // qualifies everything, and only a clean night gets a plain heading.
-        const char *worn = wornText(d.worn);
-        const char *intr = interruptionText(d.interruption);
+        const Honesty worn = wornText(d.worn);
+        const Honesty intr = interruptionText(d.interruption);
+        const Honesty *say = worn.marker != nullptr   ? &worn
+                           : intr.marker != nullptr   ? &intr
+                                                      : nullptr;
 
-        if (worn != nullptr) {
-            std::snprintf(text[n++], kLineBufSize, "%s", worn);
-        } else if (intr != nullptr) {
-            std::snprintf(text[n++], kLineBufSize, "%s", intr);
+        if (say != nullptr) {
+            std::snprintf(text[n++], kLineBufSize, "%s", say->marker);
+            if (say->reason != nullptr) {
+                std::snprintf(text[n++], kLineBufSize, "%s", say->reason);
+            }
         } else {
             switch (static_cast<CustomMessage::Phase>(d.phase)) {
                 case CustomMessage::Phase::Recording:
                     std::snprintf(text[n++], kLineBufSize, "RECORDING");
                     break;
                 case CustomMessage::Phase::Watching:
-                    std::snprintf(text[n++], kLineBufSize, "waiting for you to settle");
+                    // 17 characters, not 25: the first row is 178 px and "waiting for you\n                    // to settle" renders 186. See Tests/RoundPanel_test.cpp.\n                    std::snprintf(text[n++], kLineBufSize, "waiting to settle");
                     break;
                 case CustomMessage::Phase::Reported:
                     std::snprintf(text[n++], kLineBufSize, "LAST NIGHT");
@@ -220,9 +252,16 @@ void MainView::drawReport()
         }
 
         // An interruption still gets said even when not-worn took the first
-        // line: they are different problems with different remedies.
-        if (worn != nullptr && intr != nullptr) {
-            std::snprintf(text[n++], kLineBufSize, "%s", intr);
+        // line: they are different problems with different remedies. Marker and
+        // reason on one row here, because this is the secondary message and the
+        // rows it lands on are the wide ones in the middle of the panel.
+        if (worn.marker != nullptr && intr.marker != nullptr) {
+            if (intr.reason != nullptr) {
+                std::snprintf(text[n++], kLineBufSize, "%s - %s",
+                              intr.marker, intr.reason);
+            } else {
+                std::snprintf(text[n++], kLineBufSize, "%s", intr.marker);
+            }
         }
 
         if (d.hasSleep) {
@@ -266,7 +305,7 @@ void MainView::drawReport()
             std::snprintf(text[n++], kLineBufSize, "%u min so far",
                           static_cast<unsigned>(d.epochs));
             std::snprintf(text[n++], kLineBufSize, "report in the morning");
-        } else if (worn == nullptr) {
+        } else if (worn.marker == nullptr) {
             std::snprintf(text[n++], kLineBufSize, "no night recorded yet");
         }
     }

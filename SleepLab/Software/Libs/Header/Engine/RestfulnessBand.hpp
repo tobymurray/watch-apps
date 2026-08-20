@@ -93,7 +93,24 @@ public:
 
     /// One-line description for the screen, so the caveat travels with the
     /// picture rather than living only in a file nobody opens.
-    static constexpr char kCaption[] = "movement & heart rate - not sleep stages";
+    ///
+    /// **It has to fit on one line of a round panel, and the old one did not.**
+    /// "movement & heart rate - not sleep stages" renders 340 px wide at Poppins
+    /// Medium 16. The caption sits below the strip, where the glass is already
+    /// narrowing, and the widest box that fits there is 164 px -- so what
+    /// actually reached the wearer was about "movement & heart", which names
+    /// the inputs and drops the disclaimer. A caption that is cut in half says
+    /// the opposite of what it is for.
+    ///
+    /// So the half that survives is the half that matters. What the band is
+    /// made of is in `kMethod`, in every summary JSON, in the README and in the
+    /// ledger; what it is *not* has one place to be said and about twenty
+    /// characters to say it in.
+    ///
+    /// `kMethod` is deliberately unchanged: it is the file-level provenance
+    /// string, it is not width-constrained, and moving it would make every night
+    /// already on disk incomparable with every night after this.
+    static constexpr char kCaption[] = "not sleep stages";
 
     /// Counts per scoring epoch at or below which movement contributes its
     /// most-settled score.
