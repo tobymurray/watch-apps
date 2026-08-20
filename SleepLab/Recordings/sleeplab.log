@@ -1,0 +1,8 @@
+7227 1787195789 launch v0.2.0 uptime=7218 no settings.json - using defaults bed=1260-660 hr=continuous alarm=0 raw=0
+7265 1787195789 resume present=0 path=- epochs=0 gap=0min fresh
+7282 1787195789 sensors ATMRHXSLCE (ATMRHXSLCE upper=resolved)
+37485467 1787233267 stop night_open=0 epochs=0
+38987748 1787234769 launch v0.2.0 uptime=38987737 no settings.json - using defaults bed=1260-660 hr=continuous alarm=0 raw=0
+38987793 1787234769 resume present=0 path=- epochs=0 gap=0min fresh
+38987807 1787234769 sensors ATMRHXSLCE (ATMRHXSLCE upper=resolved)
+43754303 1787239536 stop night_open=0 epochs=0
