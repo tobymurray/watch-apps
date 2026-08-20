@@ -338,6 +338,23 @@ void MainView::drawReport()
         } else if (worn.marker == nullptr) {
             std::snprintf(text[n++], kLineBufSize, "no night recorded yet");
         }
+
+        // The thirty-second check before bed, on the app that is going to do the
+        // recording.
+        //
+        // It only appears when there is no night to report, which is exactly
+        // when somebody is looking at this screen on their way to bed and
+        // exactly when the rows are free. `POST-MORTEM.md` kept the Tier 0 probe
+        // alive for this one job -- "a line you read in the morning is not the
+        // same instrument as a block you read before bed" -- and the block was
+        // already being built at every launch and thrown at the log. Upper case
+        // resolved, lower case did not: a lower-case letter is a sensor that was
+        // asked for and is not there, and it is worth knowing before the night
+        // rather than after it.
+        if (!haveNight && d.sensors[0] != '\0') {
+            std::snprintf(text[n++], kLineBufSize, "%s", d.sensors);
+            std::snprintf(text[n++], kLineBufSize, "CAPS = sensor ready");
+        }
     }
 
     for (int i = 0; i < kMaxLines; i++) {

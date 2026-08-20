@@ -234,6 +234,14 @@ void Service::logSensors()
     }
     block[at] = '\0';
 
+    // Kept, not only logged. The log answers "why was that night bad" the
+    // morning after; the screen answers "will tonight record at all" while
+    // there is still time to do something about it.
+    for (size_t i = 0; i < sizeof(mSensorBlock) && i <= at; ++i) {
+        mSensorBlock[i] = block[i];
+    }
+    mSensorBlock[sizeof(mSensorBlock) - 1] = '\0';
+
     mDiag.line("sensors", "%s (ATMRHXSLCE upper=resolved)", block);
 }
 
@@ -1348,6 +1356,10 @@ void Service::publishReport()
         msg->data.phase = static_cast<uint8_t>(CustomMessage::Phase::Watching);
     } else {
         msg->data.phase = static_cast<uint8_t>(CustomMessage::Phase::Idle);
+    }
+
+    for (size_t i = 0; i < sizeof(msg->data.sensors); ++i) {
+        msg->data.sensors[i] = mSensorBlock[i];
     }
 
     const Engine::NightSummary &s = mLastSummary;

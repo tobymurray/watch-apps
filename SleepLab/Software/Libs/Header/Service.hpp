@@ -272,6 +272,11 @@ private:
     // ~17 KB. It has to be held: Cole-Kripke needs look-ahead and Webster
     // needs whole-night passes, so a night cannot be scored as it goes.
 
+    /// Which sensor drivers resolved, ATMRHXSLCE, upper case for resolved.
+    /// Built once at launch by connectSensors() and published on every report
+    /// so the screen can show it before bed rather than only the log after.
+    char mSensorBlock[12] = {};
+
     Engine::ScoringInput mScoring[Engine::kMaxScoringEpochs];
     Engine::Verdict      mVerdicts[Engine::kMaxScoringEpochs];
     Engine::Restfulness  mBand[Engine::kMaxScoringEpochs];

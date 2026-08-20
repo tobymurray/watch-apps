@@ -167,6 +167,22 @@ struct SleepReportData
     uint16_t epochs      = 0;
     uint16_t stripUsed   = 0;   ///< Buckets carrying data.
     uint8_t  strip[kStripBuckets] = {};
+
+    /// Which sensor drivers resolved, one letter each: ATMRHXSLCE, upper case
+    /// for resolved and lower case for not.
+    ///
+    /// The same block the Tier 0 probe puts on its screen, and it is here for
+    /// the reason `POST-MORTEM.md` gives for keeping the probe alive at all:
+    /// **a line you read in the morning is not the same instrument as a block
+    /// you read before bed.** The block already existed -- `Service.cpp` builds
+    /// it at every launch and writes it to `Debug/sleeplab.log` -- so the only
+    /// thing missing was carrying it to the screen, where somebody can act on
+    /// it while there is still a night to save. A lower-case letter means
+    /// `connect()` was called and there was nothing to subscribe to, which is a
+    /// different problem from a sensor that resolved and then said nothing, and
+    /// it is the difference between a night worth recording and one that is
+    /// already lost.
+    char     sensors[12] = {};
 };
 
 /// Service --> GUI. The wire type; `data` is the whole of it.
