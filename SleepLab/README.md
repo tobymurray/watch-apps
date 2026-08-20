@@ -617,6 +617,27 @@ findable at a desk must be found at a desk. It ranks findings by how *invisible*
 they are rather than how severe they sound, on the grounds that a crash is cheap
 and a silent one-minute bias in every night is not.
 
+[`Docs/STATE-OF-THE-ART-PROMPT.md`](Docs/STATE-OF-THE-ART-PROMPT.md) is the other
+half, and the two do not overlap: that one asks whether the code is *correct*,
+this one asks whether it is computing the *right things*. It is a brief for a
+sleep scientist — is Cole-Kripke still the right scorer against the raw-signal
+and machine-learning alternatives, what would a lab derive from the epoch CSVs
+that this app does not, is nap detection reachable, and can anything honest be
+said about how restorative a night was on a device that will never produce an RR
+interval.
+
+Its output is not an essay but **a catalogue of experiments**: each one a
+falsifiable hypothesis, the instrument that settles it — a desk read, a host
+test, a 110 ms harness night, an open dataset, three minutes on a wrist, or a
+night — a decision rule fixed before the run including the band where the result
+is *inconclusive*, and then the two lists that matter, what confirming unlocks
+and what refuting **locks for good**. It carries the hardware constraints as a
+table so that no proposal can quietly assume HRV, it asks for a night plan in
+which every night settles as many hypotheses as it can carry, and it ends in an
+unlock/lock map with terminal nodes — the features that no experiment on this
+hardware could ever unlock, written down as closed rather than left as somebody's
+someday.
+
 ## Known rough edges
 
 - **No night has been recorded on hardware.** Every sensor claim in the ledger's
