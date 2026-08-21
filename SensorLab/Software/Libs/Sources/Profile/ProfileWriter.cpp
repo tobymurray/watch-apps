@@ -163,6 +163,20 @@ void addManifest(Writer &w, const RunManifest &m)
     w.add("rows_written",  m.rowsWritten);
     w.add("row_failures",  m.rowFailures);
     addU64(w, "bytes_written", m.bytesWritten);
+
+    // Whether the run kept its inputs, and whether it kept all of them.
+    {
+        Writer::KeyedMapScope raw(w, "raw");
+        w.add("capture",     m.rawCapture);
+        w.add("chunks",      m.rawChunks);
+        addU64(w, "bytes",   m.rawBytes);
+        w.add("batches",     m.rawBatches);
+        addU64(w, "samples", m.rawSamples);
+        // Non-zero means the raw log is incomplete. The report leads with it.
+        w.add("dropped_batches", m.rawDropped);
+        w.add("write_failures",  m.rawFailures);
+        w.add("cap_reached",     m.rawCapReached);
+    }
 }
 
 /// One claim row: §1.2 of the implementation prompt, verbatim.

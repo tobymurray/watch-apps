@@ -191,6 +191,15 @@ void apply(const char *buffer, size_t len, Settings &out)
     readFlag(json, "values.subscribe_all", out.subscribeAll);
     readType(json, "values.only_type",     out.onlyType);
     readFlag(json, "values.field_stats",   out.fieldStats);
+
+    readFlag(json, "values.raw_capture", out.rawCapture);
+    // 1 MB floor: below that a chunk header is a measurable fraction of the
+    // budget and the cap would be reached inside a second, which is a
+    // configuration mistake rather than an experiment. 8 GB ceiling because the
+    // volume is smaller than that and a larger number is a typo.
+    readBounded(json, "values.raw_max_mb",   1, 8192, out.rawMaxMb);
+    // 32 KB floor: four buffer-fulls, so rotation is not the dominant cost.
+    readBounded(json, "values.raw_chunk_kb", 32, 65536, out.rawChunkKb);
     readFlag(json, "values.read_registers", out.readRegisters);
 
     readVersion(json, "values.firmware", out.declaredFirmware,
@@ -206,6 +215,15 @@ void apply(const char *buffer, size_t len, Settings &out)
         LOG_WARNING("subscribe_all is off and only_type names no type; this run "
                     "will subscribe nothing, which measures the service and not "
                     "a sensor\n");
+    }
+
+    if (out.rawCapture && !out.fieldStats) {
+        // Not an error -- it is the cheapest way to get an uncontended timing
+        // measurement with the inputs kept -- but worth saying, because the
+        // combination looks like a mistake and is not.
+        LOG_INFO("raw capture on with field statistics off: the per-field "
+                 "summaries will be absent and the raw samples they would have "
+                 "come from will not\n");
     }
 
     if (out.readRegisters) {

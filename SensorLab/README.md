@@ -35,12 +35,13 @@ beside it, and [`SENSOR-PROFILE.md`](SENSOR-PROFILE.md) rendered from them.
 | | Status |
 | --- | --- |
 | **Tier 0** — the evidence core: catalogue, claim store, verdict rules, completeness, statistics, report writer | built, 68 host tests |
-| **Tier 1** — layers 1–3: existence, frame structure, liveness, and the roster screen | built, 45 pipeline tests |
+| **Tier 1** — layers 1–3: existence, frame structure, liveness, and the roster screen | built, 58 pipeline tests |
+| **Raw capture** — every sample verbatim, plus the full histograms behind every quantile | built, decoder and round-trip test |
 | **Tier 2** — layers 4–5: timing and value domain over long runs | built; **never fed real samples** |
 | **Tier 3** — layers 6 and 8: period/latency sweeps, cross-sensor consistency | **not built.** Claims exist, UNVERIFIED, each naming its method |
 | **Tier 4** — layer 7: the guided physical protocols | **not built.** Same |
 | **Tier 5** — direct register reads | **not built, and may never be.** See below |
-| All three builds | green — ARM `.uapp` 231 852 bytes, host tests, TouchGFX simulator |
+| All three builds | green — ARM `.uapp` 235 412 bytes, host tests, TouchGFX simulator |
 | First hardware run | **not done.** This is the whole of the next step |
 
 So the honest summary is: the instrument is finished and calibrated and has not
@@ -65,6 +66,10 @@ delivered rate 33× below what the silicon does.
   profiler that silently competed with it would corrupt the thing it exists to
   measure. **The app does not run unless asked**, so that it never becomes the
   reason another app's measurements are wrong.
+- **It does not throw its inputs away.** Every sample it receives goes to
+  `raw/` verbatim before anything interprets it, and every quantile it reports is
+  accompanied by the histogram it came from. A statistic in the profile can be
+  recomputed and disagreed with.
 - **It does not guess.** Every figure it emits carries its method and its sample
   size, or it is not emitted. A claim below its metric's minimum n stays
   UNVERIFIED with the value recorded and the verdict withheld — because the
@@ -185,13 +190,64 @@ that runs the real writer against the real reader.
 
 | File | Spec | What it is |
 | --- | --- | --- |
-| `profile-<firmware>.json` | `Software/Libs/Header/Profile/ProfileWriter.hpp` | The profile. Manifest plus **every** claim in the catalogue, answered or not. |
-| `runs/<run_id>.csv` | `Software/Libs/Header/Profile/RunLog.hpp` | The raw record: per-interval delivery and per-field domain, appended with the `seek(size())` discipline. |
+| `profile-<firmware>.json` | `Software/Libs/Header/Profile/ProfileWriter.hpp` | The conclusions. Manifest plus **every** claim in the catalogue, answered or not. |
+| `runs/<run_id>.csv` | `Software/Libs/Header/Profile/RunLog.hpp` | The per-interval evidence: delivery, timing, per-field domain, **and the full histograms** behind every quantile. |
+| `raw/<run_id>-<seq>.bin` | `Software/Libs/Header/Profile/RawLog.hpp` | **Every sample, as the wire carried it.** Binary, chunked, verbatim. |
 | `runs/<run_id>.json` | `Software/Libs/Header/Profile/Manifest.hpp` | That run's manifest. Written twice — when the run opens and when it closes. |
 | `state.json` | `Software/Libs/Header/Profile/RunLog.hpp` | Enough to close a run explicitly across a restart. |
 | `settings.json` | `Software/Libs/Header/Settings.hpp`, and `settings.example.json` | What the operator asked for. |
 
-Three things in those specs are worth knowing before reading a file:
+### Three levels, and only the bottom one is not a summary
+
+`profile.json` holds conclusions. `runs/<id>.csv` holds per-interval statistics.
+Both embed the question somebody thought to ask, and on a first profile of an
+undocumented platform that question will be wrong. **An analysis without its
+inputs cannot be corrected**, so `raw/` holds the samples.
+
+Verbatim means verbatim: a record is the `EventData` header plus the frame bytes
+exactly as they arrived. Nothing is interpreted on the way in — not the field
+count, not the timestamps, not the field types. A frame whose stride is not a
+whole number of fields is *rejected for parsing and still recorded*, because it
+is the single most interesting frame this app will ever meet.
+
+Things you can get from `raw/` and from nowhere else: the *shape* of a delivery
+gap (did it stop, thin, or arrive in one burst? a `longest_gap_ms` of 4020 says
+none of those); whether two sensors' samples are simultaneous, which is layer
+8's whole subject; a field's whole trajectory rather than its min, max and mean;
+what a frame from one of the five parser-less types actually contains; and
+whether the profile's statistics are *right*, by recomputing them.
+
+Middle level, same principle: an `S` row reports dt as five quantiles **chosen
+before anyone knew what the distribution looked like**, so every `S` row is
+accompanied by `B` rows carrying the histogram itself, sparsely. The round-trip
+fixture's accelerometer is bimodal — 1224 samples at 21 ms and 152 at 27 ms — and
+a single p50 describes neither mode.
+
+```sh
+python3 Tools/raw_decode.py Profiles/1.4.0-2026-08-21/raw     --verify Profiles/1.4.0-2026-08-21/runs/2.json      # cross-check the counts
+python3 Tools/raw_decode.py .../raw --type 0x10 --kinds --csv accel.csv
+```
+
+`--csv` emits every field three ways — `fN_f`, `fN_u`, `fN_i` — because the frame
+does not say which member of the union it is, and choosing for you would be
+interpreting. `--kinds` labels what the SDK's own parser says each field is
+*meant* to be.
+
+### What it costs, and what it does to the measurement
+
+A 3-field sample is 24 bytes on the wire. At the accelerometer's measured ~48 Hz
+that is **4.15 MB an hour for one sensor**; a dozen subscribed types is roughly
+6–10 MB an hour, so a twelve-hour soak is **70–120 MB**. Capped at 256 MB by
+default, chunked at 512 KB, and **the manifest records how many batches were
+dropped when the cap was reached** — a capture that stopped silently would leave a
+file that still decoded cleanly and was missing eleven hours.
+
+And it is not free of the thing it measures: ~1 MB/s to flash costs power and
+CPU, so a dt distribution taken with capture on is not the same measurement as
+one taken with it off. The manifest records which. `"raw_capture": "off"` is a
+legitimate experiment, not a degraded mode.
+
+Three more things in those specs are worth knowing before reading a file:
 
 **Every claim is written, including the unanswered ones.** A profile that carried
 only the rows it had answers for would be a third of the size and would read as
@@ -291,7 +347,7 @@ own table would inherit whichever version its author read.
 
 ## Tests
 
-113 tests, four suites, about four seconds. See
+126 tests, five suites, about four seconds. See
 [`Tests/README.md`](Tests/README.md), which is worth reading for what they are
 *not* evidence about.
 

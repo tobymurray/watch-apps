@@ -13,7 +13,7 @@ or, in the container the app is built in:
 UNA_SDK=/path/to/una-sdk SensorLab/Tools/docker-build.sh tests
 ```
 
-Four suites, 113 tests, about four seconds.
+Five suites, 126 tests, about four seconds.
 
 | Suite | What it covers | SDK needed |
 | --- | --- | --- |
@@ -21,6 +21,7 @@ Four suites, 113 tests, about four seconds.
 | `sensorlab-catalogue-current` | `Tools/gen_catalogue.py --check` against the configured SDK: the committed type table is not stale. | headers only |
 | `sensorlab-pipeline-tests` | Whole runs through the real `Service`, by scripting the kernel message queue. | test doubles + coreJSON |
 | `sensorlab-report-roundtrip` | The real writers produce files the real python tools read, and `profile_diff.py` finds a change it was given. | as above + python3 |
+| `sensorlab-raw-roundtrip` | The real raw writer produces chunks the real decoder reads, and the decoder cross-checks them against the run manifest. | as above + python3 |
 
 ---
 
@@ -159,6 +160,39 @@ every other assertion.
 round trip treats anything above 1 as a real failure.
 
 Skipped, not failed, without python3.
+
+---
+
+## `sensorlab-raw-roundtrip` — the one a person cannot check by eye
+
+`profile.json` and `runs/<id>.csv` are text: open one and you can see whether it
+holds anything. **A raw chunk is binary, so nothing except a decoder can say
+whether it contains what it claims to** — a writer that quietly emitted zeroes
+would look exactly like a writer that worked.
+
+So `raw_decode.py` is run against real chunks, and it is run in `--verify` mode:
+it cross-checks its own batch and sample counts against the manifest the same run
+wrote, and refuses if the app reported dropping anything. Then a `--csv` pass has
+to produce more than a hundred accelerometer sample rows with each field emitted
+three ways, and `--kinds` has to label them from the generated type table.
+
+The last assertion is about a run with capture *off*: the existence sweep writes
+no chunks by design, and its manifest must say `"capture": false` rather than say
+nothing. "Off" and "broken" must not look alike.
+
+`RawLog_test.cpp` covers the writer itself, and its second half matters as much
+as its first: a byte cap stops capture and **counts what follows**; a batch larger
+than the buffer is dropped and counted rather than truncated to fit; a write
+failure is counted separately from a cap, because one is a fault and the other is
+a decision. A capture that stopped silently would leave a file that decoded
+without error and was missing most of the run.
+
+That file also holds the tests for the `B` rows, one of which exists because of a
+bug the fixture exposed: a histogram's `origin` of 0.0 was being written as the
+`(0, 127)` sentinel that means *never established*, so a measured zero and an
+absent measurement shared an encoding. A genuine `min` of 0.0 would have looked
+unmeasured. Found by reading a `B` row out of the round-trip output — which is
+the only reason it was found.
 
 ---
 

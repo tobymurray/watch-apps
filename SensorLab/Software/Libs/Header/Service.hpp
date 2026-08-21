@@ -66,8 +66,9 @@
  *   ClaimStore                                       ~67 KB
  *   StreamStats  x 37   (two 128-bin + one 64-bin histogram each)  ~48 KB
  *   FieldStats   x 116  (a distinct-value set plus scalars each)   ~10 KB
+ *   RawLog       one 8 KB write buffer                              ~8 KB
  *                                                                 -------
- *                                                                 ~125 KB
+ *                                                                 ~133 KB
  *
  * against the service's 500 KB. Sized statically, so a build that no longer fits
  * fails to link rather than failing at 03:00.
@@ -108,6 +109,7 @@
 #include "Probes/SensorBus.hpp"
 #include "Profile/Manifest.hpp"
 #include "Profile/ProfileWriter.hpp"
+#include "Profile/RawLog.hpp"
 #include "Profile/RunLog.hpp"
 #include "Settings.hpp"
 #include "Stats/FieldStats.hpp"
@@ -248,6 +250,9 @@ private:
     SensorLab::Probes::SensorBus       mBus;
     SensorLab::Evidence::ClaimStore    mClaims;
     SensorLab::Profile::RunLog         mLog;
+    /// Every sample, verbatim. The inputs, so an analysis that turns out to have
+    /// asked the wrong question can be redone -- see `Profile/RawLog.hpp`.
+    SensorLab::Profile::RawLog         mRaw;
     SensorLab::Profile::ProfileWriter  mProfile;
     SensorLab::Profile::RunManifest    mManifest {};
     SensorLab::Profile::RunState       mState {};

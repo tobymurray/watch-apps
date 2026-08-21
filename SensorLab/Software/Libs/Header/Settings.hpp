@@ -133,6 +133,38 @@ struct Settings
     /// it measures what the service costs with no sensors at all.
     uint32_t onlyType = 0;
 
+    // -- Raw capture ----------------------------------------------------------
+
+    /// Keep every sample, as the wire carried it, in `raw/<run>-<seq>.bin`.
+    ///
+    /// **On by default**, because every other file this app writes is derived
+    /// and a statistic embeds the question it was computed to answer. On a first
+    /// profile of an undocumented platform that question will be wrong, and an
+    /// analysis without its inputs cannot be corrected.
+    ///
+    /// It is not free of the thing it measures: at the ~10 MB/h a dozen
+    /// subscribed types produce, capture costs flash writes and power, so a dt
+    /// distribution measured with it on is not the same measurement as one taken
+    /// with it off. The manifest records which, and turning it off is a
+    /// legitimate experiment rather than a degraded mode. See
+    /// `Profile/RawLog.hpp`.
+    bool rawCapture = true;
+
+    /// Total raw bytes for one run, megabytes. Capture stops at the cap and the
+    /// manifest records how many batches were dropped after it -- a capture that
+    /// silently stopped would leave a file that still looked complete.
+    ///
+    /// 256 MB: a twelve-hour soak at ~10 MB/h is 70-120 MB, so this holds one
+    /// with margin. `MapManager` CRC-verified 160.5 MiB of map packs on this
+    /// volume, which is the right order of magnitude to fit and the wrong order
+    /// to be casual about.
+    uint32_t rawMaxMb = 256;
+
+    /// Rotate to a new chunk every this many kilobytes. Following `FwDump`: a
+    /// chunk interrupted by the cable loses itself and not the run, and a host
+    /// can decode chunk 3 without chunk 4 ever having been written.
+    uint32_t rawChunkKb = 512;
+
     // -- Layer 5 --------------------------------------------------------------
 
     /// Accumulate per-field statistics. On by default; the cost is a handful of

@@ -137,6 +137,7 @@ if(EXISTS "${COREJSON_DIR}/core_json.c")
     )
     add_executable(sensorlab-pipeline-tests
         Pipeline_test.cpp
+        RawLog_test.cpp
         ${SENSORLAB_SOURCES}
         "${UNA_SDK_ROOT}/Libs/Source/JSON/JsonStreamReader.cpp"
         "${UNA_SDK_ROOT}/Libs/Source/JSON/JsonStreamWriter.cpp"
@@ -188,8 +189,20 @@ if(EXISTS "${COREJSON_DIR}/core_json.c")
                          -DDIFF=${CMAKE_CURRENT_LIST_DIR}/../Tools/profile_diff.py
                          -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/roundtrip
                          -P ${CMAKE_CURRENT_LIST_DIR}/cmake/RunReportRoundtrip.cmake)
+
+        # The same for the raw log, and this one matters more: the binary format
+        # is the only file here a person cannot read by eye, so nothing but a
+        # decoder can say whether it holds what it claims to.
+        add_test(NAME sensorlab-raw-roundtrip
+                 COMMAND ${CMAKE_COMMAND}
+                         -DEXPORT=$<TARGET_FILE:profile-export>
+                         -DPYTHON=${Python3_EXECUTABLE}
+                         -DDECODE=${CMAKE_CURRENT_LIST_DIR}/../Tools/raw_decode.py
+                         -DAPPROOT=${CMAKE_CURRENT_LIST_DIR}/..
+                         -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/rawtrip
+                         -P ${CMAKE_CURRENT_LIST_DIR}/cmake/RunRawRoundtrip.cmake)
     else()
-        message(STATUS "SensorLab: no python3, skipping the report round trip")
+        message(STATUS "SensorLab: no python3, skipping the round trips")
     endif()
 else()
     message(STATUS "SensorLab: no coreJSON submodule, skipping the pipeline tests")

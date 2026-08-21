@@ -47,6 +47,35 @@ namespace SensorLab::Stats
 {
 
 /**
+ * @brief A histogram's whole contents, without its bin count in the type.
+ *
+ * The three distributions a stream carries have two different bin counts, and
+ * the run log's writer should be one function rather than one per count. This is
+ * that seam: a borrowed pointer plus the scalars, valid as long as the histogram
+ * it came from.
+ *
+ * It exists so the *bins* can be written, not just the quantiles. Quantiles are
+ * five numbers chosen before anyone knew what the distribution looked like; a
+ * bimodal stream has a p50 sitting in the gap between its modes, describing
+ * nothing.
+ */
+struct HistogramView
+{
+    const uint32_t *bins     = nullptr;
+    size_t          binCount = 0;
+    float           binWidth = 1.0f;
+    float           origin   = 0.0f;
+    uint32_t        count    = 0;
+    uint32_t        under    = 0;
+    uint32_t        over     = 0;
+    /// Exact, not bin midpoints -- which is why they travel separately. A single
+    /// 4 s gap in a 20 ms stream lands in the overflow, and the overflow is a
+    /// count rather than a value.
+    float           min      = 0.0f;
+    float           max      = 0.0f;
+};
+
+/**
  * @brief Linear-bin histogram with exact extrema and overflow accounting.
  *
  * @tparam kBins Number of bins. 64 at 1 ms covers 0-64 ms, which spans every
@@ -169,11 +198,28 @@ public:
         return mMax;
     }
 
-    /// Raw bin counts, for the profile. Written as an array so a host tool can
-    /// re-derive any quantile the app did not report -- an analysis without its
-    /// inputs cannot be corrected.
+    /// Raw bin counts. Written to the run log as a `B` row so a host can
+    /// re-derive any quantile this app did not report -- **an analysis without
+    /// its inputs cannot be corrected**, and five quantiles chosen in advance
+    /// are not the inputs.
     uint32_t bin(size_t i) const { return (i < kBins) ? mBin[i] : 0; }
     static constexpr size_t bins() { return kBins; }
+
+    /// Everything, for the writer. See `HistogramView`.
+    HistogramView view() const
+    {
+        HistogramView v;
+        v.bins     = mBin;
+        v.binCount = kBins;
+        v.binWidth = mBinWidth;
+        v.origin   = mOrigin;
+        v.count    = mCount;
+        v.under    = mUnder;
+        v.over     = mOver;
+        v.min      = mMin;
+        v.max      = mMax;
+        return v;
+    }
 
 private:
     uint32_t mBin[kBins] {};
