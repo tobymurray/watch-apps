@@ -1,0 +1,100 @@
+{
+  "_comment": [
+    "Copy this to settings.json in Apps/SensorLab/ on the watch's USB volume.",
+    "Every field is optional; a missing or blank one keeps the documented",
+    "default. An out-of-range value is REFUSED, not clamped, and the refusal is",
+    "logged with the value and the range -- see Software/Libs/Header/Settings.hpp.",
+    "The app never writes this file back.",
+    "",
+    "schema must be 1 exactly. A file with an unknown schema falls back",
+    "entirely rather than guessing at rearranged keys."
+  ],
+  "schema": 1,
+  "values": {
+    "_comment_request": [
+      "What a soak ASKS the sensors for. What they deliver is the whole point of",
+      "layer 6, and on this device the two are known to differ: 5000 ms of",
+      "requested latency produced 195 ms batches, and a requested 40 ms period",
+      "produced ~48 Hz (SleepLab ledger rows S17 and S3).",
+      "These defaults are deliberately the same numbers SleepLab asked for, so",
+      "the first SensorLab soak is a check on those measurements rather than a",
+      "new and incomparable one. 0 for either asks the driver for its default,",
+      "which is a different experiment worth running separately."
+    ],
+    "period_ms": 40,
+    "latency_ms": 5000,
+
+    "_comment_cadence": [
+      "How often a soak writes one interval row per subscribed sensor, and one",
+      "per field. At a dozen subscribed types a minute is ~12 stream rows and up",
+      "to 76 value rows, roughly 12 KB -- against the Sleep Probe's measured",
+      "74 KiB for a whole night at one row a minute. Range 5..3600."
+    ],
+    "interval_sec": 60,
+
+    "_comment_caps": [
+      "Both caps, because the two failure modes differ: a long run fills the",
+      "volume slowly and a misconfigured interval fills it fast. 0 minutes means",
+      "run until stopped -- which is not the default, because an unattended run",
+      "still going three days later has stopped being a measurement of anything."
+    ],
+    "soak_max_minutes": 720,
+    "soak_max_kb": 8192,
+
+    "_comment_subscribe": [
+      "subscribe_all on is the honest default and also the most invasive one.",
+      "Measuring a sensor changes it: subscribing costs power and IPC, and a dt",
+      "distribution taken while eleven other streams are running is NOT the same",
+      "measurement as one taken alone. Both are worth having -- the run manifest",
+      "records which -- but a first profile wants coverage.",
+      "",
+      "To get an uncontended measurement of one sensor, turn subscribe_all off",
+      "and name it. only_type accepts hex ('0x10') or the enumerator name",
+      "('ACCELEROMETER'). With subscribe_all off and only_type absent the run",
+      "subscribes nothing, which measures what the service itself costs -- a",
+      "valid and occasionally useful run, and the app logs a warning so it is",
+      "never that by accident."
+    ],
+    "subscribe_all": "on",
+    "only_type": "",
+
+    "_comment_fields": [
+      "Layer 5: per-field min/max/mean, quantisation step, non-finite count,",
+      "stuck-run length, distinct enum values. A handful of adds and compares",
+      "per field per sample. Turning it off is how a timing-only run avoids that",
+      "cost being part of what it measures."
+    ],
+    "field_stats": "on",
+
+    "_comment_firmware": [
+      "A FALLBACK ONLY, used when the kernel does not answer RequestSystemInfo.",
+      "The profile's primary key is normally read from the device; when it comes",
+      "from here instead, the manifest records firmware_read_from_kernel: false",
+      "and the report says so. A declared version is better than none -- a",
+      "profile with no version cannot be diffed at all -- but presenting one as",
+      "read would put somebody's memory into the field every comparison keys on."
+    ],
+    "firmware": "",
+
+    "_comment_registers": [
+      "Tier 5: read sensor configuration registers directly over I2C. OFF by",
+      "default, READ-ONLY for ever, and NOT IMPLEMENTED in this build -- the flag",
+      "is parsed and recorded in the manifest so a profile can state the tier was",
+      "off.",
+      "",
+      "Apps on this device run with no isolation (MPU disabled, CPU privileged,",
+      "TrustZone off) and FwDump already demonstrates direct hardware access, so",
+      "this is possible. It would turn the accelerometer's configured range and",
+      "ODR from a layer-5 inference into a CONFIRMED fact. It would also, if it",
+      "ever wrote, reconfigure a sensor under the kernel's own driver -- and the",
+      "failure would look like a sensor fault rather than like this app.",
+      "",
+      "There is no write path anywhere in this codebase, which is a stronger",
+      "guarantee than a flag. And Docs/EXPECTED.md shows the layer-5 inference is",
+      "precise enough to name the register value it implies (ACC_RANGE = 0x02,",
+      "+/-8 g, 244 ug per LSB), so a LIKELY row here is probably good enough for",
+      "ever."
+    ],
+    "read_registers": "off"
+  }
+}
