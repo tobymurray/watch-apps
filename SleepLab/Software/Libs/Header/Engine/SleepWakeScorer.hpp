@@ -143,6 +143,16 @@ struct ScoringInput
 
     int16_t  hrMeanX10 = static_cast<int16_t>(kAbsent);
 
+    /// The kernel's own confidence in that heart rate, x10.
+    ///
+    /// Load-bearing, not diagnostic. A watch face down on a pillow produces a
+    /// heart rate in **every** epoch -- 725 of 725, median 63.4 bpm, entirely
+    /// plausible and entirely fabric artefact -- so "a pulse was present" is not
+    /// by itself evidence that a wrist was. Trust is what separates them:
+    /// measured, 8 on that pillow against 30 on a worn night. See
+    /// WornGate::kMinHrTrustX10.
+    int16_t  hrTrustX10 = static_cast<int16_t>(kAbsent);
+
     /// Reserved. Always kAbsent today; ignored by this scorer. See the file
     /// comment.
     int32_t  rmssdX10  = kAbsent;

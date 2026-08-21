@@ -46,7 +46,8 @@ NightSegmenter::Update NightSegmenter::closeNow(bool clockJumped)
     u.event = (mSessionEpochs >= mCfg.minSessionMin) ? Event::Closed
                                                      : Event::Discarded;
     mState         = State::Idle;
-    mStillRun      = 0;
+    mStillWindow   = 0;
+    mStillSeen     = 0;
     mActiveRun     = 0;
     mSessionEpochs = 0;
     u.state = mState;
@@ -65,7 +66,8 @@ void NightSegmenter::resumeOpen(uint16_t epochsSoFar)
     mSessionEpochs = (mCfg.maxSessionMin > 0 && epochsSoFar > mCfg.maxSessionMin)
                          ? mCfg.maxSessionMin
                          : epochsSoFar;
-    mStillRun      = 0;
+    mStillWindow   = 0;
+    mStillSeen     = 0;
     // Deliberately zero, not carried: whatever the wearer was doing before the
     // restart is not evidence about now, and a resumed session that inherited a
     // nine-epoch activity run would close on its very first active epoch.
@@ -110,25 +112,58 @@ NightSegmenter::Update NightSegmenter::update(int16_t localMin, bool worn,
         // No clock, no bedtime. Opening a session needs to know it is night,
         // and without a wall clock there is no such thing.
         if (localMin < 0 || !inWindow(localMin, mCfg.windowStartMin, mCfg.windowEndMin)) {
-            mStillRun = 0;
+            mStillWindow = 0;
+            mStillSeen   = 0;
             u.state = mState;
             return u;
         }
 
-        if (still) {
-            mStillRun++;
-        } else {
-            mStillRun = 0;
+        // A window, not a run. Shift the newest epoch in at bit 0 and keep only
+        // the last `stillnessToOpenMin` bits.
+        const uint16_t win = (mCfg.stillnessToOpenMin > kMaxStillWindow)
+                                 ? kMaxStillWindow
+                                 : mCfg.stillnessToOpenMin;
+        mStillWindow = (mStillWindow << 1) | (still ? 1u : 0u);
+        if (win < 32u) {
+            mStillWindow &= (1u << win) - 1u;
+        }
+        if (mStillSeen < win) { mStillSeen++; }
+
+        uint16_t stillInWindow = 0;
+        for (uint32_t bits = mStillWindow; bits != 0u; bits >>= 1) {
+            stillInWindow = static_cast<uint16_t>(stillInWindow + (bits & 1u));
         }
 
-        if (mStillRun >= mCfg.stillnessToOpenMin) {
+        const uint16_t tolerance = (mCfg.stillnessToleranceEpochs >= win)
+                                       ? static_cast<uint16_t>(win - 1)
+                                       : mCfg.stillnessToleranceEpochs;
+        const uint16_t needed = static_cast<uint16_t>(win - tolerance);
+
+        // The window has to be full before it can be judged, or a night opens on
+        // three still epochs and a tolerance of one.
+        if (mStillSeen >= win && stillInWindow >= needed) {
             mState = State::Open;
-            // Backdate to the start of the run. Those epochs were part of the
-            // night; they simply had not proved it yet.
+
+            // Backdate to the oldest *still* epoch in the window, not to the
+            // window's own start.
+            //
+            // The two differ exactly when the window's leading edge is one of
+            // the epochs the tolerance forgave, and backdating past it would
+            // pull a minute the wearer was moving into the night -- shifting
+            // reported onset earlier than anything observed. The oldest still
+            // epoch is the highest set bit; bit 0 is the epoch just closed, so a
+            // highest bit at position h means h + 1 epochs to carry back.
+            uint16_t oldestStill = 0;
+            for (uint16_t b = 0; b < win; ++b) {
+                if ((mStillWindow >> b) & 1u) { oldestStill = b; }
+            }
+            const uint16_t backdate = static_cast<uint16_t>(oldestStill + 1);
+
             u.event          = Event::Opened;
-            u.backdateEpochs = mStillRun;
-            mSessionEpochs   = mStillRun;
-            mStillRun        = 0;
+            u.backdateEpochs = backdate;
+            mSessionEpochs   = backdate;
+            mStillWindow     = 0;
+            mStillSeen       = 0;
             mActiveRun       = 0;
         }
 

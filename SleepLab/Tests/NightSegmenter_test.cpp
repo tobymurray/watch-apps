@@ -144,17 +144,60 @@ TEST(Segmenter, StillnessWhileNotWornOpensNothing)
     EXPECT_EQ(feed(s, clock, 120, /*worn=*/false, 2).event, Event::None);
 }
 
-TEST(Segmenter, AMovementBreaksTheStillRun)
+TEST(Segmenter, OneRestlessMinuteIsForgivenAndTwoAreNot)
 {
+    // This test used to assert that *one* restless minute restarted the count,
+    // and that rule cost a real night 48 minutes.
+    //
+    // A wrist settling into sleep is intermittently still, not continuously so.
+    // On 2026-08-21 the wearer's diary put lights-out at 00:36; the strict run
+    // rule opened at 01:31 and a tolerance of one epoch would have opened at
+    // 00:43. Time in bed was short by the difference and efficiency was computed
+    // over the wrong window.
+    //
+    // One epoch of slack, and no more: every epoch of tolerance also makes it
+    // easier to open a night on furniture, and 13-of-15 buys only one more
+    // minute on the night that motivated this.
+    {
+        NightSegmenter s;
+        int16_t clock = at(22, 30);
+        feed(s, clock, 10, true, kStillCount);
+        s.update(clock, true, 5000, 0);          // one restless minute
+        clock = static_cast<int16_t>(clock + 1);
+        // Four more still: fifteen epochs seen, fourteen of them still.
+        EXPECT_EQ(feed(s, clock, 4, true, kStillCount).event, Event::Opened)
+            << "one restless minute in a settling quarter hour must be forgiven";
+    }
+    {
+        NightSegmenter s;
+        int16_t clock = at(22, 30);
+        feed(s, clock, 10, true, kStillCount);
+        s.update(clock, true, 5000, 0);
+        clock = static_cast<int16_t>(clock + 1);
+        s.update(clock, true, 5000, 0);
+        clock = static_cast<int16_t>(clock + 1);
+        // Fifteen seen, thirteen still: past the tolerance.
+        EXPECT_EQ(feed(s, clock, 3, true, kStillCount).event, Event::None)
+            << "two restless minutes in one window is not a wrist settling";
+    }
+}
+
+TEST(Segmenter, TheSessionIsBackdatedToTheFirstStillMinuteNotTheWindowStart)
+{
+    // The tolerance forgives an epoch; it does not claim the wearer was settled
+    // during it. If the forgiven epoch is at the window's leading edge,
+    // backdating the whole window would pull a minute of movement into the night
+    // and report onset earlier than anything observed.
     NightSegmenter s;
     int16_t clock = at(22, 30);
 
-    feed(s, clock, 10, true, kStillCount);
-    s.update(clock, true, 5000, 0);        // one restless minute
+    s.update(clock, true, 5000, 0);              // the restless leading edge
     clock = static_cast<int16_t>(clock + 1);
+    const auto u = feed(s, clock, 14, true, kStillCount);
 
-    // Ten more still minutes: the run restarted, so this is not enough.
-    EXPECT_EQ(feed(s, clock, 10, true, kStillCount).event, Event::None);
+    ASSERT_EQ(u.event, Event::Opened);
+    EXPECT_EQ(u.backdateEpochs, 14)
+        << "backdated past the minute the wearer was still moving";
 }
 
 TEST(Segmenter, WithNoWallClockANightCannotOpen)

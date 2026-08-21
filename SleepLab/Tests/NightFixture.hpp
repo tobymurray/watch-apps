@@ -51,6 +51,17 @@ constexpr float kScorerBoundary =
              Engine::SleepWakeScorer::kWeights[6]) *
             Engine::SleepWakeScorer::kCountScale);
 
+/// Kernel trust for a heart rate a fixture means to be believed.
+///
+/// 30 is the median of the one real worn night there is, and the gate requires
+/// 20. Fixtures default to a *trusted* pulse because "this epoch had a heart
+/// rate" is what they nearly all mean; a fixture that means the other thing --
+/// a plausible number the kernel does not stand behind, which is what a watch on
+/// a pillow produces in every epoch -- sets it explicitly.
+constexpr int16_t kTrustedHr = 30;
+/// What six hours face down on a pillow measured.
+constexpr int16_t kUntrustedHr = 8;
+
 static_assert(kQuiet < kScorerBoundary / 2.0f,
               "kQuiet must score as sleep with room to spare");
 static_assert(kActive > kScorerBoundary * 2.0f,
@@ -62,6 +73,12 @@ static_assert(kQuiet <= Engine::SegmenterConfig{}.stillnessCountMax,
               "a run of kQuiet epochs must be still enough to open a night");
 static_assert(kActive >= Engine::SegmenterConfig{}.activityCountMin,
               "a run of kActive epochs must be active enough to close one");
+static_assert(kTrustedHr >= Engine::WornGate::kMinHrTrustX10,
+              "a fixture's default pulse must be one the gate believes");
+static_assert(kUntrustedHr < Engine::WornGate::kMinHrTrustX10,
+              "the pillow's measured trust must fall below the gate's bar, or "
+              "the fixture no longer models the case the bar exists for");
+
 static_assert(kActive > Engine::NightAnalyser::kMovementFloor &&
                   kQuiet < Engine::NightAnalyser::kMovementFloor,
               "the movement index has to be able to tell the two apart");
@@ -74,13 +91,15 @@ constexpr uint8_t  kWorn        = 100;
 inline Engine::ScoringInput epoch(uint32_t count,
                                   int16_t hrX10 = 550,
                                   uint16_t samples = kGoodSamples,
-                                  uint8_t wornPct = kWorn)
+                                  uint8_t wornPct = kWorn,
+                                  int16_t hrTrustX10 = kTrustedHr)
 {
     Engine::ScoringInput e;
-    e.count     = count;
-    e.samples   = samples;
-    e.wornPct   = wornPct;
-    e.hrMeanX10 = hrX10;
+    e.count      = count;
+    e.samples    = samples;
+    e.wornPct    = wornPct;
+    e.hrMeanX10  = hrX10;
+    e.hrTrustX10 = hrTrustX10;
     return e;
 }
 

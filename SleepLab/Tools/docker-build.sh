@@ -40,7 +40,7 @@ SDK="${UNA_SDK:-$(cd "$REPO/../una-sdk" && pwd)}"
 # `BUILD_VERSION` meant bumping SleepLab silently restamped the probe, which is
 # published at 0.1.1 in Kira and has not changed since. `BUILD_VERSION` still
 # overrides either, for a one-off build.
-APP_VERSION="${BUILD_VERSION:-0.3.0}"
+APP_VERSION="${BUILD_VERSION:-0.4.0}"
 PROBE_VERSION="${BUILD_VERSION:-0.1.1}"
 
 ARM_IMAGE="${SLEEPLAB_ARM_IMAGE:-sleeplab-arm:latest}"

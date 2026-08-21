@@ -62,6 +62,9 @@ constexpr int16_t kMinutesPerDay = 24 * 60;
  * Durations are in *scoring epochs* (one minute each), not in wall-clock
  * minutes, so nothing here can be broken by the clock moving.
  */
+/// Widest stillness window the bitmask can hold.
+constexpr uint16_t kMaxStillWindow = 32;
+
 struct SegmenterConfig
 {
     /// Earliest a night may open, local minutes past midnight. Default 21:00.
@@ -70,13 +73,34 @@ struct SegmenterConfig
     /// 11:00 -- the window crosses midnight, which is the normal case.
     int16_t windowEndMin   = 11 * 60;
 
-    /// Consecutive still, worn epochs required to open a night.
+    /// Still, worn epochs required to open a night, out of a window of the same
+    /// length.
     ///
     /// Fifteen minutes. Long enough that sitting still watching something does
     /// not open a night, short enough that it costs at most fifteen minutes of
     /// a real one -- and those minutes are recovered anyway, because the
-    /// session is backdated to the start of the run that opened it.
+    /// session is backdated to the start of the window that opened it.
     uint16_t stillnessToOpenMin = 15;
+
+    /// Epochs inside that window that may fail to be still.
+    ///
+    /// **One, and it was zero.** The rule was a strict consecutive run, which a
+    /// settling wrist does not produce: it is *intermittently* still, and a
+    /// single epoch over the ceiling reset the count. Measured on the night of
+    /// 2026-08-21, whose wearer lay down at 00:36 by their own diary:
+    ///
+    ///     15 of 15 (the old rule)   opened 01:31   +55 min
+    ///     14 of 15                  opens  00:43    +7 min
+    ///     13 of 15                  opens  00:42    +6 min
+    ///
+    /// So one epoch of tolerance recovers 48 minutes and the second buys one
+    /// more. Every epoch of slack also makes it easier to open a night on
+    /// furniture, so the tolerance stops where the evidence stops.
+    ///
+    /// The cost of getting this wrong is not a late timestamp. Time in bed is
+    /// short by the same amount, sleep efficiency is computed over the wrong
+    /// window, and both errors point the same way.
+    uint16_t stillnessToleranceEpochs = 1;
 
     /// Consecutive active epochs required to close a night.
     ///
@@ -285,7 +309,13 @@ private:
 
     SegmenterConfig mCfg;
     State    mState         = State::Idle;
-    uint16_t mStillRun      = 0;  ///< Consecutive still worn epochs, while Idle.
+    /// The last `stillnessToOpenMin` epochs, one bit each, most recent in bit 0.
+    /// A window rather than a run, so one restless epoch in a settling quarter
+    /// hour no longer throws the other fourteen away.
+    uint32_t mStillWindow   = 0;
+    /// Epochs seen since the window was last reset, so a partly-filled window
+    /// cannot open a night by having fewer epochs than it has tolerance for.
+    uint16_t mStillSeen     = 0;
     uint16_t mActiveRun     = 0;  ///< Consecutive active epochs, while Open.
     uint16_t mSessionEpochs = 0;
     int16_t  mLastLocalMin  = -1;

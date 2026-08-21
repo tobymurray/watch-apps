@@ -160,6 +160,33 @@ public:
     /// this number under pressure, and there has not been one.
     static constexpr uint8_t kMinPlausiblePct = 70;
 
+    /// Minimum kernel trust, x10, for a heart rate to count as evidence that a
+    /// wrist was there.
+    ///
+    /// **This constant is the whole nightstand defence now**, and it is measured
+    /// rather than guessed. A watch face down on a pillow for six hours produced
+    /// a heart rate in 725 of 725 epochs -- median 63.4 bpm, range 44 to 99,
+    /// every number plausible -- because soft fabric conforms around the optical
+    /// window, blocks ambient light, and the AFE finds something periodic in the
+    /// noise. Presence alone is therefore not evidence. Trust is:
+    ///
+    ///     pillow, 6 h    p5  8   p50  8   p95  9
+    ///     worn night     p5 22   p50 30   p95 30
+    ///     hard table     no heart rate at all
+    ///
+    /// At 20: 97.7 % of a worn night's epochs count, 0.0 % of the pillow's, and
+    /// the two distributions do not touch. Placed at the worn night's own 5th
+    /// percentile rather than midway, because the failure directions are not
+    /// symmetric -- too low lets furniture through, too high suppresses a real
+    /// night, and only the second one is silent to the wearer.
+    ///
+    /// TODO: one wrist, one strap tension, one night. A loose band on a cold
+    /// wrist is exactly the case that would drop trust on a genuine night, and
+    /// it has not been recorded. Until it has, a night suppressed by this
+    /// constant should be checked against `hr_trust_x10` in its own epoch CSV
+    /// before being believed.
+    static constexpr int16_t kMinHrTrustX10 = 20;
+
     /// Shortest night this gate will pass, in scoring epochs.
     ///
     /// Twenty minutes. Below this there is not enough of a night to gate: a

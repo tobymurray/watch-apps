@@ -154,7 +154,28 @@ NightSummary NightAnalyser::analyse(const ScoringInput *in, const Verdict *v,
     const size_t onset = static_cast<size_t>(s.onsetEpoch);
     const size_t final_ = static_cast<size_t>(s.finalWakeEpoch);
 
-    s.onsetLatencyMin = s.onsetEpoch;
+    // Onset latency, or its absence.
+    //
+    // A night opens only after a window of still epochs and is backdated to the
+    // start of that window, so epoch 0 is by construction the first epoch of a
+    // still stretch -- and Cole-Kripke scores a still stretch as sleep. When
+    // onset lands at epoch 0 the number that comes out is therefore a property
+    // of the segmenter's own rule and not a measurement of the wearer, and
+    // printing it as "0 minutes to fall asleep" is a tautology dressed as a
+    // finding.
+    //
+    // Seen on the first night that ever scored: the wearer's diary said lights
+    // out at 00:36, the session opened at 01:31, and the summary reported an
+    // onset latency of 0. It is not that the wearer fell asleep instantly. It is
+    // that the instrument cannot see the part of the night in which they did
+    // not, because that part is what it waits for before it starts.
+    //
+    // kAbsent, then, which everything downstream already knows means "not
+    // measured" and never zero. The minutes before the session opened are on the
+    // volume in `watching.csv`, which is written whatever the session state --
+    // so latency remains recoverable offline, by a tool that can read both files
+    // and does not have to decide in real time.
+    s.onsetLatencyMin = (s.onsetEpoch > 0) ? s.onsetEpoch : kAbsent;
 
     int32_t sleep = 0, waso = 0, still = 0, moving = 0;
     int32_t awakenings = 0;

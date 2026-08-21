@@ -145,7 +145,14 @@ constexpr uint32_t kEpochCsvSchema = 3;
 /// being added.
 constexpr uint32_t kIndexCsvSchema = 1;
 /// Schema of the summary JSON.
-constexpr uint32_t kSummaryJsonSchema = 1;
+///
+/// **2.** The `method.constants` map lost `gate_min_worn_pct` and gained
+/// `gate_min_hr_trust_x10` and `stillness_tolerance_epochs`, because the worn
+/// gate stopped consulting TOUCH_DETECT and started requiring a heart rate the
+/// kernel trusts. That map is the record of what actually scored a night, so a
+/// reader comparing two nights across the change has to know the rules were not
+/// the same -- which is the entire reason the map exists.
+constexpr uint32_t kSummaryJsonSchema = 2;
 
 /// The app version written into every summary, so a file says which build
 /// produced it.
@@ -155,7 +162,7 @@ constexpr uint32_t kSummaryJsonSchema = 1;
 /// provenance field that only exists under one of two build systems is worse
 /// than one that is maintained by hand. Bump it whenever anything that would move
 /// a number changes -- a threshold, a filter, an epoch length.
-constexpr char kAppVersion[] = "0.3.0";
+constexpr char kAppVersion[] = "0.4.0";
 
 /**
  * @brief What a resumed launch found on disk.

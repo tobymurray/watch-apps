@@ -714,6 +714,16 @@ void Service::fold(const Engine::Epoch &e, Engine::ScoringInput &into,
                 ? e.hrMeanX10
                 : static_cast<int16_t>((into.hrMeanX10 + e.hrMeanX10) / 2);
     }
+    // Averaged like the rate it belongs to, not minimised: the worn night's 5th
+    // percentile is 22 against a threshold of 20, so taking the worse half would
+    // push real epochs under the bar to guard against a case the pillow shows
+    // sitting three times below it.
+    if (e.hrTrustX10 != static_cast<int16_t>(kAbsent)) {
+        into.hrTrustX10 =
+            (into.hrTrustX10 == static_cast<int16_t>(kAbsent))
+                ? e.hrTrustX10
+                : static_cast<int16_t>((into.hrTrustX10 + e.hrTrustX10) / 2);
+    }
 
     // Steps carry through to the scoring epoch, because that is where the
     // segmenter reads them and steps are the least ambiguous out-of-bed signal

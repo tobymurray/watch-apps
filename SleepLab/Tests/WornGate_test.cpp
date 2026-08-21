@@ -87,7 +87,10 @@ TEST(WornGate, AWatchTakenOffMidNightFails)
 
     const auto r = WornGate::evaluate(night.data(), night.size(), true);
     EXPECT_EQ(r.verdict, WornVerdict::NotWorn);
-    EXPECT_STREQ(r.reason(), "not worn for enough of the night");
+    // One reason now, because there is one test. `wornPct` used to pick between
+    // two messages and it reads 100 on a wrist and on a pillow alike, so the
+    // choice was being made at random.
+    EXPECT_STREQ(r.reason(), "no movement or pulse - watch was not on a wrist");
 }
 
 TEST(WornGate, ABriefDropoutDoesNotBlankARealNight)
@@ -148,14 +151,19 @@ TEST(WornGate, WithHeartRateOffATableStillFails)
     EXPECT_EQ(r.verdict, WornVerdict::NotWorn);
 }
 
-TEST(WornGate, AWornSensorThatSaidNothingIsUncertainNotNotWorn)
+TEST(WornGate, AWornSensorThatSaysNothingAllNightNoLongerCostsTheNight)
 {
-    // Measured on hardware 2026-08-18: TOUCH_DETECT is an event sensor and can
-    // deliver nothing for a whole minute while perfectly happily subscribed. If
-    // it says nothing for a whole *night* there is no state to carry forward,
-    // every epoch's worn fraction is a default rather than a measurement, and
-    // reading that as "taken off" would send somebody to put on a watch they
-    // are already wearing.
+    // This test used to assert the opposite, and the opposite was wrong.
+    //
+    // TOUCH_DETECT is an event sensor: measured on 0.3.0, a genuinely worn night
+    // delivered `touch_n` = 0 for all 910 of its epochs. The old rule -- a worn
+    // sensor that never spoke forces Uncertain -- was written to stop the app
+    // telling somebody to put on a watch they were already wearing. What it
+    // actually did on this hardware was suppress every real night, because
+    // silence is what a real night sounds like.
+    //
+    // The evidence a wrist was there is movement and a trusted pulse, and this
+    // night has both.
     auto night = wornNight(400);
     for (auto &e : night) {
         e.wornPct = 0;   // never set, because nothing was ever heard
@@ -164,9 +172,36 @@ TEST(WornGate, AWornSensorThatSaidNothingIsUncertainNotNotWorn)
     const auto r = WornGate::evaluate(night.data(), night.size(),
                                       /*hrSampled=*/true,
                                       /*wornReported=*/false);
-    EXPECT_EQ(r.verdict, WornVerdict::Uncertain);
-    EXPECT_FALSE(r.mayReportSleep()) << "it still suppresses the numbers";
-    EXPECT_STREQ(r.reason(), "worn sensor said nothing all night");
+    EXPECT_EQ(r.verdict, WornVerdict::Worn);
+    EXPECT_TRUE(r.mayReportSleep());
+}
+
+TEST(WornGate, APillowProducesAHeartRateInEveryEpochAndStillFails)
+{
+    // THE test this file gained on 2026-08-21, from six hours face down on a
+    // pillow on a floor. `hr_samples` was non-zero in 725 of 725 epochs, the
+    // rates were 44 to 99 bpm and entirely plausible, `worn_pct` read 100 all
+    // night, and the counts sat below the micro-movement floor. Every input the
+    // gate had said "worn". It reported Worn, and it was a pillow.
+    //
+    // Soft fabric conforms around the optical window, blocks ambient light, and
+    // the AFE finds something periodic in the noise. Presence is not evidence.
+    // Trust is: 8 here against 30 on a wrist.
+    std::vector<ScoringInput> night;
+    for (size_t i = 0; i < 400; ++i) {
+        // Below kMicroMovementFloor, as the pillow measured, with a plausible
+        // but untrusted pulse.
+        night.push_back(Fixture::epoch(/*count=*/366, /*hrX10=*/634,
+                                       Fixture::kGoodSamples, /*wornPct=*/100,
+                                       Fixture::kUntrustedHr));
+    }
+
+    const auto r = WornGate::evaluate(night.data(), night.size(), true);
+    EXPECT_EQ(r.wornPct, 100) << "the fixture's premise: every input said worn";
+    EXPECT_EQ(r.hrEpochs, 0u) << "a pulse the kernel does not stand behind is "
+                                 "not a pulse this gate counts";
+    EXPECT_EQ(r.verdict, WornVerdict::NotWorn);
+    EXPECT_FALSE(r.mayReportSleep());
 }
 
 TEST(WornGate, ASilentSensorIsNotAnExcuseToPassANightstand)

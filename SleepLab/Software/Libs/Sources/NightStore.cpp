@@ -16,6 +16,7 @@
 
 #include "SDK/JSON/JsonStreamWriter.hpp"
 
+#include "Engine/NightSegmenter.hpp"
 #include "Engine/RestfulnessBand.hpp"
 #include "Engine/SleepWakeScorer.hpp"
 
@@ -635,10 +636,19 @@ bool NightStore::finishNight(const Engine::NightSummary &s,
                   static_cast<int32_t>(Engine::NightAnalyser::kMovementFloor));
             w.add("micro_movement_floor",
                   static_cast<int32_t>(Engine::WornGate::kMicroMovementFloor));
-            w.add("gate_min_worn_pct",
-                  static_cast<int32_t>(Engine::WornGate::kMinWornPct));
+            // `gate_min_worn_pct` used to be here and is gone with the rule it
+            // described: TOUCH_DETECT no longer gates anything, because measured
+            // on this hardware it reads 100 on a wrist and on a pillow alike.
+            // A constant recorded in this block is a constant that scored the
+            // night, and one that no longer does may not sit here looking as
+            // though it did.
             w.add("gate_min_plausible_pct",
                   static_cast<int32_t>(Engine::WornGate::kMinPlausiblePct));
+            w.add("gate_min_hr_trust_x10",
+                  static_cast<int32_t>(Engine::WornGate::kMinHrTrustX10));
+            w.add("stillness_tolerance_epochs",
+                  static_cast<int32_t>(
+                      Engine::SegmenterConfig{}.stillnessToleranceEpochs));
             w.add("onset_run_min",
                   static_cast<int32_t>(Engine::NightAnalyser::kOnsetRunMin));
             w.endMap();
