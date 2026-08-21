@@ -99,6 +99,7 @@ Service::Service(SDK::Kernel &kernel)
     : mKernel(kernel)
     , mBus(kernel)
     , mLog(kernel)
+    , mRaw(kernel)
     , mProfile(kernel)
 {
     // Flat field-statistics array, carved up by the catalogue's own prefix sums.
@@ -239,6 +240,19 @@ bool Service::openRun(CustomMessage::Phase phase)
         LOG_WARNING("run %lu could not open its log\n",
                     static_cast<unsigned long>(mManifest.runId));
     }
+
+    // Raw capture, for a soak only. The existence sweep produces no samples --
+    // it connects and immediately lets go -- so a chunk file for it would be a
+    // 32-byte header and nothing else.
+    const bool wantRaw = mSettings.rawCapture
+                         && (phase == CustomMessage::Phase::Soak);
+    mManifest.rawCapture = wantRaw;
+    mRaw.begin(mManifest.runId,
+               wantRaw ? static_cast<uint64_t>(mSettings.rawMaxMb) * 1024ull * 1024ull
+                       : 0ull,
+               mSettings.rawChunkKb * 1024u,
+               now, mManifest.started.wallUtc);
+
     Profile::writeRunManifest(mKernel, mManifest);
 
     mState.runId        = mManifest.runId;
@@ -259,6 +273,19 @@ void Service::closeRun(Profile::RunEnd end)
     if (mState.runId == 0) {
         return;
     }
+
+    // The raw log first: it has a buffer to push, and the manifest has to carry
+    // its final counts. `rawDropped` is the field that matters -- non-zero means
+    // the raw log does not hold everything the run saw, and a file that still
+    // parses cleanly would give no sign of it.
+    mRaw.end();
+    mManifest.rawChunks     = mRaw.chunks();
+    mManifest.rawBytes      = mRaw.bytes();
+    mManifest.rawBatches    = mRaw.batches();
+    mManifest.rawSamples    = mRaw.samples();
+    mManifest.rawDropped    = mRaw.dropped();
+    mManifest.rawFailures   = mRaw.failures();
+    mManifest.rawCapReached = mRaw.capReached();
 
     mManifest.ended.uptimeMs = mKernel.sys.getTimeMs();
     mManifest.ended.wallUtc  = wallNow();
@@ -547,9 +574,17 @@ void Service::onSensorData(uint32_t handle, uint32_t count, uint32_t stride,
         // A stride that is not a whole number of fields. Recorded as a frame
         // finding rather than parsed: this is the case `DataBatch` asserts on
         // and then ignores.
+        const uint32_t badAt = mKernel.sys.getTimeMs();
         mClaims.record(Catalogue::claimIndex(t, Metric::FieldCount),
                        measured(0.0f, 1, Evidence::Verdict::Refuted),
-                       mKernel.sys.getTimeMs(), wallNow());
+                       badAt, wallNow());
+        // Recorded even though it cannot be parsed -- **especially** because it
+        // cannot be parsed. A stride the kernel never intended is the single
+        // most valuable frame this app could capture, and a profiler that threw
+        // it away would be discarding its best finding to protect a statistic.
+        mRaw.write(Catalogue::kTypes[t].value, handle, badAt,
+                   static_cast<uint16_t>(count), static_cast<uint16_t>(stride),
+                   base);
         return;
     }
     const uint16_t fields =
@@ -557,6 +592,19 @@ void Service::onSensorData(uint32_t handle, uint32_t count, uint32_t stride,
 
     Live &live = mLive[t];
     const uint32_t now = mKernel.sys.getTimeMs();
+
+    // **The frame goes to storage before anything interprets it.** Verbatim: the
+    // stride that is not a whole number of fields, the timestamp that goes
+    // backwards, the `mTimeStampUs` of 60000. This app's opinion of the frame
+    // ends up in the profile, and the frame itself ends up here, and the two can
+    // then be checked against each other rather than one being trusted.
+    //
+    // Deliberately after the stride validation above and before the statistics
+    // below: a frame whose stride is not a whole number of fields is *rejected*
+    // for parsing and still *recorded*, because it is the most interesting frame
+    // this app will ever meet.
+    mRaw.write(Catalogue::kTypes[t].value, handle, now,
+               static_cast<uint16_t>(count), static_cast<uint16_t>(stride), base);
 
     live.stream.onBatch(now, static_cast<uint16_t>(count), fields);
     mBatchesSeen++;
@@ -869,6 +917,17 @@ void Service::closeInterval(uint32_t now, uint32_t spanMs)
 
         mLog.writeStream(now, wall, Catalogue::kTypes[t].value, spanMs,
                          live.stream);
+
+        // The histograms the `S` row's quantiles came from. Five quantiles chosen
+        // in advance cannot show a second mode, and a bursty stream has one.
+        const uint32_t type = Catalogue::kTypes[t].value;
+        mLog.writeBins(now, type, Profile::BinSeries::SampleDt,
+                       live.stream.dt().view());
+        mLog.writeBins(now, type, Profile::BinSeries::BatchInterval,
+                       live.stream.batchIntervals().view());
+        mLog.writeBins(now, type, Profile::BinSeries::BatchSize,
+                       live.stream.batchSizes().view());
+
         promoteStreamClaims(t, now, wall);
 
         if (mSettings.fieldStats) {
@@ -896,6 +955,10 @@ void Service::closeInterval(uint32_t now, uint32_t spanMs)
     // interval and can also see the run-to-date figure the claim was promoted
     // from. That is why the `S` row carries `samples` and `ts_span_ms` rather
     // than a rate.
+
+    // Push the raw buffer at the interval boundary, so a cable event loses at
+    // most one interval's tail rather than the whole buffer.
+    mRaw.flush();
 
     mState.lastUptimeMs = now;
     mState.lastWallUtc  = wall;

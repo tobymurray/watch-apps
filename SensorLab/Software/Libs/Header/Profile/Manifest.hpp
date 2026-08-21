@@ -179,6 +179,28 @@ struct RunManifest
     uint32_t rowFailures  = 0;
     uint64_t bytesWritten = 0;
 
+    // -- Raw capture ---------------------------------------------------------
+    //
+    // Whether the run kept its inputs, and whether it kept all of them. The
+    // last two fields are the ones that matter: a raw log that stopped at a cap
+    // or lost a write is *incomplete*, and a file that still parses cleanly
+    // would give no sign of it.
+
+    /// Capture was asked for. Recorded even when it then failed to start,
+    /// because "asked for and unavailable" and "not asked for" are different.
+    bool     rawCapture   = false;
+    uint32_t rawChunks    = 0;
+    uint64_t rawBytes     = 0;
+    uint32_t rawBatches   = 0;
+    uint64_t rawSamples   = 0;
+    /// Batches that never reached storage. **Non-zero means the raw log does
+    /// not contain everything the run saw.**
+    uint32_t rawDropped   = 0;
+    uint32_t rawFailures  = 0;
+    /// The byte cap stopped capture, as opposed to a write having failed. One
+    /// is a decision and one is a fault, and the report distinguishes them.
+    bool     rawCapReached = false;
+
     /// Uptime span, correct across the ~49.7-day wrap. Never derived from the
     /// two wall-clock readings, which can jump.
     uint32_t durationMs() const

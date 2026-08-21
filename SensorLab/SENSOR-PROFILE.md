@@ -15,6 +15,16 @@ python3 Tools/profile_report.py Profiles/1.4.0-2026-08-21/profile-1.4.0.json \
 
 and this file is replaced by that rendering.
 
+The run will also have kept its **inputs**, not only its conclusions: every
+sample verbatim in `raw/<run>-<seq>.bin`, and the full histogram behind every
+quantile in the per-interval log. So a statistic in the resulting profile can be
+recomputed and disagreed with:
+
+```sh
+python3 Tools/raw_decode.py Profiles/1.4.0-2026-08-21/raw \
+    --verify Profiles/1.4.0-2026-08-21/runs/2.json
+```
+
 ---
 
 ## What is known about this device's sensors today, and where it came from

@@ -78,6 +78,7 @@ ADDITIONAL_SOURCES_UNA :=\
 ../../Libs/Sources/Profile/Decimal.cpp\
 ../../Libs/Sources/Profile/Manifest.cpp\
 ../../Libs/Sources/Profile/ProfileWriter.cpp\
+../../Libs/Sources/Profile/RawLog.cpp\
 ../../Libs/Sources/Profile/RunLog.cpp\
 ../../Libs/Sources/Stats/StreamStats.cpp\
 Libs/Source/JSON/JsonStreamReader.cpp\

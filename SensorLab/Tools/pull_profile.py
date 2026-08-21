@@ -10,9 +10,11 @@ becoming the reason it stopped.
 
     python3 pull_profile.py E8:DF:D5:49:4C:40 --out SensorLab/Profiles/1.4.0-2026-08-21
 
-By default it fetches every profile, then the run manifests, then the run logs
-newest-first, skipping anything already present. `--list` shows what is there and
-stops; `--profiles-only` skips the raw logs, which are the bulk.
+By default it fetches every profile, then the run manifests, then the
+per-interval logs, then the raw sample chunks -- newest first within each,
+skipping anything already present. `--list` shows what is there and stops;
+`--no-raw` skips the chunks and `--profiles-only` skips everything but the
+profiles.
 
 ---------------------------------------------------------------------------
 This is a thin wrapper, deliberately
@@ -43,18 +45,26 @@ retry; the fetch is resumable in the only sense that matters, since it skips
 files it already has.
 
 Windowed reads need protocol version >= 5. This client does not use them -- it
-requests one chunk at a time, which is what the prototype found actually works on
-this firmware -- so a profile at a few hundred KB is a few thousand round trips.
-**It is slow.** A full profile is roughly 1 974 claims at ~220 bytes, so ~430 KB,
-and the run logs are larger. `--profiles-only` exists because the profile is the
-document and the logs are the evidence behind it: fetch the document first, and
-the evidence when an analysis turns out to need re-doing.
+requests one BLE chunk at a time, which is what the prototype found actually
+works on this firmware -- so this is **slow**, and the arithmetic is worth knowing
+before starting:
 
-**Order matters here.** The profile is fetched before the run logs, because a
-profile without its logs is still a readable document while logs without their
-profile are a heap of CSV. And `runs/*.json` are fetched before `runs/*.csv`
-because a manifest is a few hundred bytes and a raw log is not: if the transfer
-dies, the manifests are what make the partially-fetched logs interpretable.
+    profile-<fw>.json    ~430 KB    1 974 claims at ~220 bytes
+    runs/<id>.csv        ~1-5 MB    per-interval rows plus histogram bins
+    raw/<id>-<seq>.bin   70-120 MB  every sample, for a twelve-hour soak
+
+So `--no-raw` and `--profiles-only` are not conveniences. Fetch the document
+first; fetch its inputs when an analysis turns out to need re-doing against them.
+For a large raw set, USB is the sane transport -- **once the soak has been
+stopped**, because plugging in ends it.
+
+**Order matters, and it is smallest-and-most-interpretive first.** The profile
+before the logs, because a profile without its logs is still a readable document
+while logs without their profile are a heap of CSV. `runs/*.json` before
+`runs/*.csv`, because a manifest is a few hundred bytes and makes a
+partially-fetched log interpretable. And the raw chunks last, because they are
+the bulk by an order of magnitude and are useless without the manifest that says
+how many batches they should contain.
 
 **Never verified against a watch.** SleepLab's ledger row T4 says the same of
 `pull_nights.py`, and it is still true: the underlying client is validated for
@@ -183,8 +193,8 @@ async def run(args):
 
     if args.profiles_only:
         print(f"\n{total} bytes into {args.out}")
-        print("Raw run logs skipped. Fetch them with --all when an analysis "
-              "needs re-doing against its inputs.")
+        print("Per-interval logs and raw sample chunks skipped. Fetch them when "
+              "an analysis needs re-doing against its inputs.")
         return
 
     # Manifests before logs: a manifest is a few hundred bytes and a raw log is
@@ -215,11 +225,44 @@ async def run(args):
             print(f"  runs/{name}  {n} bytes")
             total += n
 
+    # The raw sample chunks last, and they are the bulk by an order of
+    # magnitude: a twelve-hour soak is 70-120 MB against the profile's ~430 KB.
+    # Last, because the profile and the per-interval logs are readable without
+    # them and they are not readable without the profile -- and because a
+    # transfer that dies partway should have got the small documents first.
+    if not args.no_raw:
+        try:
+            raw = await names_in(client, bus, char, args.remote + "raw/")
+        except Exception:
+            raw = []
+
+        def raw_seq(name: str) -> tuple:
+            stem = name.rsplit(".", 1)[0]
+            parts = stem.split("-")
+            try:
+                return (-int(parts[0]), int(parts[1]))
+            except (IndexError, ValueError):
+                return (0, 0)
+
+        chunks = sorted((n for n in raw if n.endswith(".bin")), key=raw_seq)
+        if args.limit:
+            chunks = chunks[:args.limit]
+        for name in chunks:
+            n = await fetch(client, bus, char, args.remote + "raw/" + name,
+                            os.path.join(args.out, "raw", name), args.all)
+            if n == 0:
+                print(f"  raw/{name}  (have it)")
+            else:
+                print(f"  raw/{name}  {n} bytes")
+                total += n
+
     print(f"\n{total} bytes into {args.out}")
     print("Nothing was stopped. A soak that was running is still running, and "
           "nothing about it was lost to fetching it.")
     print(f"\nNext: python3 profile_report.py {args.out}/profile-*.json "
           f"-o SENSOR-PROFILE.md")
+    print(f"      python3 raw_decode.py {args.out}/raw "
+          f"--verify {args.out}/runs/<run>.json")
 
 
 def main():
@@ -237,7 +280,10 @@ def main():
     ap.add_argument("--list", action="store_true",
                     help="show what is on the watch and stop")
     ap.add_argument("--profiles-only", action="store_true",
-                    help="skip the raw run logs, which are the bulk")
+                    help="just the profiles and state: skip the logs and chunks")
+    ap.add_argument("--no-raw", action="store_true",
+                    help="skip the raw sample chunks, which are the bulk by an "
+                         "order of magnitude")
     ap.add_argument("--limit", type=int, default=0,
                     help="fetch at most N run logs, newest first")
     asyncio.run(run(ap.parse_args()))

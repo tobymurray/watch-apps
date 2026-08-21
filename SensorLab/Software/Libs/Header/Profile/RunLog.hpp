@@ -23,12 +23,12 @@
  * delivery and per-field domain, per sensor, at a cadence coarse enough to
  * store and fine enough to localise where something changed.
  *
- * It does *not* hold every sample. At the measured ~48 Hz for one sensor
- * (ledger row S3) with a dozen subscribed, a full sample log is tens of
- * megabytes an hour, and the volume that has to survive the night is the same
- * one the profile is written to. Per-sample capture is the guided protocols'
- * job (Tier 4), where a run is ninety seconds and the raw samples genuinely are
- * the deliverable.
+ * This file is the *middle* of three levels, and the middle one is the one a
+ * person reads: `profile.json` is the conclusions, this is the per-interval
+ * evidence, and `raw/<run>-<seq>.bin` is every sample as the wire carried it.
+ * See `Profile/RawLog.hpp`. Nothing here is the only copy of anything -- the `S`
+ * and `V` rows can be recomputed from the raw log, which is what makes them
+ * checkable rather than merely believable.
  *
  * ---------------------------------------------------------------------------
  * Record kinds
@@ -41,7 +41,37 @@
  *   E  existence   one per sensor type, from the layer 1 sweep
  *   S  stream      one per subscribed type per interval: layers 2, 3 and 4
  *   V  value       one per field per interval: layer 5
+ *   B  bins        the whole histogram behind an `S` row's quantiles
  *   X  run end     how the run stopped, and the totals
+ *
+ * ---------------------------------------------------------------------------
+ * The `B` rows, and why quantiles alone are not enough
+ *
+ * An `S` row reports a dt distribution as min, p05, p50, p95 and max. Those are
+ * five numbers **chosen before anyone knew what the distribution looked like**.
+ * A bimodal stream -- one arriving in bursts, say -- has a p50 sitting in the gap
+ * between its two modes, describing nothing that is there. A `B` row carries the
+ * histogram itself, so a host can re-derive any quantile, find the second mode,
+ * or run a test nobody thought of.
+ *
+ * Sparse: `<bin index>:<count>` for the non-empty bins only. A periodic stream
+ * puts everything in one or two bins, so the row is short; a stream that fills
+ * forty is telling you something, and the long row is how it tells you. Bin
+ * width and origin travel with it, because a p95 read off 1 ms bins and one read
+ * off 10 ms bins are different numbers.
+ *
+ * `Histogram::bin()` existed with a doc comment saying its counts went to the
+ * profile, and **nothing called it**. That comment was a claim the code did not
+ * honour, which is the exact failure this app exists to catch.
+ *
+ * ---------------------------------------------------------------------------
+ * And the samples themselves are in `raw/`
+ *
+ * Even a histogram is a summary: it fixes a bin width, and it throws away the
+ * order samples arrived in. `Profile/RawLog.hpp` keeps every batch verbatim, and
+ * that is the file to reach for when a question turns out to need the sequence
+ * rather than the distribution -- whether two sensors' samples are simultaneous,
+ * what the shape of a gap was, what an undocumented frame contains.
  *
  * ---------------------------------------------------------------------------
  * Every numeric field is an integer, and here is why
@@ -94,9 +124,25 @@ namespace SensorLab::Profile
 /// and quietly reporting the wrong sensor's counts.
 constexpr uint32_t kRunLogSchema = 1;
 
-/// Widest line the format can produce, plus slack. The `S` row is the widest:
-/// eighteen integer columns, several of them mantissa/exponent pairs.
+/// Widest line the `R`, `E`, `S`, `V` and `X` rows can produce, plus slack. The
+/// `S` row is the widest of those: eighteen integer columns, several of them
+/// mantissa/exponent pairs.
 constexpr size_t kRunLogLineMax = 512;
+
+/// The `B` row needs its own, larger bound: up to 128 sparse `<idx>:<count>`
+/// pairs plus the header columns. Only the bin writer allocates one.
+constexpr size_t kBinLineMax = 2048;
+
+/// Which histogram a `B` row carries, written as this integer so a reader does
+/// not have to match a string.
+enum class BinSeries : uint8_t
+{
+    SampleDt      = 0,  ///< inter-sample dt, ms
+    BatchInterval = 1,  ///< batch arrival interval, ms
+    BatchSize     = 2,  ///< samples per batch
+};
+
+const char *toString(BinSeries s);
 
 /// What layer 1 found out about one type. Written as an `E` row.
 struct ExistenceRecord
@@ -148,6 +194,20 @@ public:
     /// One interval's domain for one field.
     bool writeValue(uint32_t uptimeMs, uint32_t typeValue, uint8_t fieldIdx,
                     const Stats::FieldStats &f);
+
+    /**
+     * @brief One histogram, in full, sparsely.
+     *
+     * The inputs an `S` row's quantiles were computed from -- so any quantile
+     * this app did not report can be re-derived on a host, and so this app's own
+     * quantiles can be checked rather than trusted.
+     *
+     * An empty histogram writes nothing: a row of zeroes says nothing the
+     * absence does not, and at three series per type per interval the absence is
+     * worth a lot of bytes.
+     */
+    bool writeBins(uint32_t uptimeMs, uint32_t typeValue, BinSeries series,
+                   const Stats::HistogramView &h);
 
     /// Close the run. Written even when the cable is going in, because where a
     /// run stopped is the finding and a row that never reached storage cannot

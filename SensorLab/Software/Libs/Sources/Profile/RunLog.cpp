@@ -55,17 +55,31 @@ constexpr char kHeaderLine[] =
     "cadence,first_sample_ms\n"
     "H,V,kind,uptime_ms,type,field,n,nonfinite,denormal,min_m,min_e,max_m,max_e,"
     "mean_m,mean_e,lsb_m,lsb_e,stuck_max_run,ever_changed,distinct,distinct_over\n"
+    "H,B,kind,uptime_ms,type,series,bins,width_m,width_e,origin_m,origin_e,"
+    "count,under,over,min_m,min_e,max_m,max_e,+idx:count per non-empty bin\n"
     "H,X,kind,uptime_ms,wall_utc,run_id,end,rows,failures,bytes\n";
 
 /// Emit a float as the pair of columns `,<m>,<e>`.
 int writePair(char *out, size_t outSize, float v)
 {
     const Decimal d = decompose(v);
+    if (d.kind == DecimalKind::Zero) {
+        // Zero is a *measurement*, and it needs an encoding of its own.
+        // (0, 0) reads back as 0 x 10^0, which is exactly right.
+        //
+        // It used to share the sentinel below, and a real `origin` of 0 was
+        // therefore written as "not established" -- caught by reading a `B` row
+        // out of the round-trip fixture. The same conflation would have made a
+        // genuine `min` of 0.0 look unmeasured, which is the precise failure
+        // this app exists to avoid.
+        return std::snprintf(out, outSize, ",0,0");
+    }
     if (d.kind != DecimalKind::Finite) {
-        // A non-finite statistic is written as the sentinel pair (0, 127),
-        // which no real measurement can produce: the exponent range a finite
-        // value can reach is [-51, 32]. Distinguishable, integer-only, and it
-        // keeps the column count fixed so a reader never has to count fields.
+        // NaN, +-Inf, or a statistic that was never established. The sentinel
+        // pair (0, 127) -- no real measurement can produce it, because the
+        // exponent range a finite value can reach is [-51, 32]. Integer-only,
+        // and it keeps the column count fixed so a reader never has to count
+        // fields.
         return std::snprintf(out, outSize, ",0,127");
     }
     return std::snprintf(out, outSize, ",%ld,%d",
@@ -80,6 +94,16 @@ int32_t orMissing(bool have, uint32_t v)
 }
 
 } // namespace
+
+const char *toString(BinSeries s)
+{
+    switch (s) {
+        case BinSeries::SampleDt:      return "sample_dt_ms";
+        case BinSeries::BatchInterval: return "batch_interval_ms";
+        case BinSeries::BatchSize:     return "batch_size_samples";
+    }
+    return "?";
+}
 
 RunLog::RunLog(const SDK::Kernel &kernel)
     : mKernel(kernel)
@@ -335,6 +359,87 @@ bool RunLog::writeValue(uint32_t uptimeMs, uint32_t typeValue, uint8_t fieldIdx,
         mFailures++;
         return false;
     }
+    return append(mPath, line, n);
+}
+
+bool RunLog::writeBins(uint32_t uptimeMs, uint32_t typeValue, BinSeries series,
+                       const Stats::HistogramView &h)
+{
+    // Nothing to say. Not an error -- a type that delivered no samples this
+    // interval has no distribution, and three empty rows per type per interval
+    // would be most of the file.
+    if (h.count == 0 || h.bins == nullptr) {
+        return true;
+    }
+
+    char   line[kBinLineMax];
+    size_t n   = 0;
+    int    got = 0;
+
+    got = std::snprintf(line, sizeof(line), "B,%lu,0x%lx,%u,%lu",
+                        static_cast<unsigned long>(uptimeMs),
+                        static_cast<unsigned long>(typeValue),
+                        static_cast<unsigned>(series),
+                        static_cast<unsigned long>(h.binCount));
+    if (got <= 0) { mFailures++; return false; }
+    n = static_cast<size_t>(got);
+
+    for (float v : { h.binWidth, h.origin }) {
+        got = writePair(line + n, sizeof(line) - n, v);
+        if (got <= 0) { mFailures++; return false; }
+        n += static_cast<size_t>(got);
+    }
+
+    got = std::snprintf(line + n, sizeof(line) - n, ",%lu,%lu,%lu",
+                        static_cast<unsigned long>(h.count),
+                        static_cast<unsigned long>(h.under),
+                        static_cast<unsigned long>(h.over));
+    if (got <= 0) { mFailures++; return false; }
+    n += static_cast<size_t>(got);
+
+    // Exact extrema alongside the bins, because the bins cannot carry them: a
+    // single 4 s gap in a 20 ms stream lands in the overflow, and the overflow
+    // is a count rather than a value.
+    for (float v : { h.min, h.max }) {
+        got = writePair(line + n, sizeof(line) - n, v);
+        if (got <= 0) { mFailures++; return false; }
+        n += static_cast<size_t>(got);
+    }
+
+    size_t dropped = 0;
+    for (size_t i = 0; i < h.binCount; i++) {
+        if (h.bins[i] == 0) {
+            continue;
+        }
+        // Leave room for the truncation marker and the newline rather than
+        // discovering there is none.
+        if (n + 32 >= sizeof(line)) {
+            dropped++;
+            continue;
+        }
+        got = std::snprintf(line + n, sizeof(line) - n, ",%lu:%lu",
+                            static_cast<unsigned long>(i),
+                            static_cast<unsigned long>(h.bins[i]));
+        if (got <= 0) { mFailures++; return false; }
+        n += static_cast<size_t>(got);
+    }
+
+    // A row that ran out of line says how many bins it could not fit. **Never
+    // silently**: a truncated histogram that looked complete is worse than none,
+    // because a host would re-derive quantiles from it and be confidently wrong.
+    if (dropped > 0) {
+        got = std::snprintf(line + n, sizeof(line) - n, ",trunc:%lu",
+                            static_cast<unsigned long>(dropped));
+        if (got > 0) { n += static_cast<size_t>(got); }
+    }
+
+    if (n + 2 >= sizeof(line)) {
+        mFailures++;
+        return false;
+    }
+    line[n++] = '\n';
+    line[n]   = '\0';
+
     return append(mPath, line, n);
 }
 
