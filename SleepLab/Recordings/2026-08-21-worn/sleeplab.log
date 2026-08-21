@@ -1,0 +1,51 @@
+7227 1787195789 launch v0.2.0 uptime=7218 no settings.json - using defaults bed=1260-660 hr=continuous alarm=0 raw=0
+7265 1787195789 resume present=0 path=- epochs=0 gap=0min fresh
+7282 1787195789 sensors ATMRHXSLCE (ATMRHXSLCE upper=resolved)
+37485467 1787233267 stop night_open=0 epochs=0
+38987748 1787234769 launch v0.2.0 uptime=38987737 no settings.json - using defaults bed=1260-660 hr=continuous alarm=0 raw=0
+38987793 1787234769 resume present=0 path=- epochs=0 gap=0min fresh
+38987807 1787234769 sensors ATMRHXSLCE (ATMRHXSLCE upper=resolved)
+43754303 1787239536 stop night_open=0 epochs=0
+7387 1787239707 launch v0.2.0 uptime=7369 settings.json loaded bed=720-719 hr=continuous alarm=0 raw=1
+7400 1787239707 resume present=0 path=- epochs=0 gap=0min fresh
+7416 1787239707 sensors ATMRHXSLCE (ATMRHXSLCE upper=resolved)
+14086363 1787253786 stop night_open=0 epochs=0
+7270 1787254107 launch v0.3.0 uptime=7247 settings.json loaded bed=1-1439 hr=continuous alarm=0 raw=0
+7284 1787254107 resume present=0 path=- epochs=0 gap=0min fresh
+7300 1787254107 sensors ATMRHXSLCE (ATMRHXSLCE upper=resolved)
+578013 1787254678 stop night_open=0 epochs=0
+775594 1787254876 launch v0.3.0 uptime=775579 settings.json loaded bed=1-1439 hr=continuous alarm=0 raw=0
+775646 1787254876 resume present=0 path=- epochs=0 gap=0min fresh
+775668 1787254876 sensors ATMRHXSLCE (ATMRHXSLCE upper=resolved)
+781663 1787254882 stop night_open=0 epochs=0
+7314 1787254894 launch v0.3.0 uptime=7310 settings.json loaded bed=1-1439 hr=continuous alarm=0 raw=0
+7326 1787254894 resume present=0 path=- epochs=0 gap=0min fresh
+7343 1787254894 sensors ATMRHXSLCE (ATMRHXSLCE upper=resolved)
+649368 1787255536 stop night_open=0 epochs=0
+778688 1787255666 launch v0.3.0 uptime=778672 settings.json loaded bed=1-1439 hr=continuous alarm=0 raw=0
+778732 1787255666 resume present=0 path=- epochs=0 gap=0min fresh
+778748 1787255666 sensors ATMRHXSLCE (ATMRHXSLCE upper=resolved)
+872956 1787255760 stop night_open=0 epochs=0
+951595 1787255839 launch v0.3.0 uptime=951584 no settings.json - using defaults bed=1260-660 hr=continuous alarm=0 raw=0
+951641 1787255839 resume present=0 path=- epochs=0 gap=0min fresh
+951654 1787255839 sensors ATMRHXSLCE (ATMRHXSLCE upper=resolved)
+3352026 1787258239 stop night_open=0 epochs=0
+3511855 1787258399 launch v0.3.0 uptime=3511839 settings.json loaded bed=1-1439 hr=continuous alarm=0 raw=0
+3511899 1787258399 resume present=0 path=- epochs=0 gap=0min fresh
+3511912 1787258399 sensors ATMRHXSLCE (ATMRHXSLCE upper=resolved)
+5253013 1787260140 stop night_open=0 epochs=0
+7522 1787260150 launch v0.3.0 uptime=7518 settings.json loaded bed=1-1439 hr=continuous alarm=0 raw=0
+7536 1787260150 resume present=0 path=- epochs=0 gap=0min fresh
+7552 1787260150 sensors ATMRHXSLCE (ATMRHXSLCE upper=resolved)
+1388139 1787261531 open Nights/20260820T171711.csv backdated=15min recovered=15 flags=0x0
+22252833 1787282396 stop night_open=1 epochs=725
+23247566 1787283391 launch v0.3.0 uptime=23247540 no settings.json - using defaults bed=1260-660 hr=continuous alarm=0 raw=0
+23247597 1787283391 resume present=0 path=- epochs=0 gap=0min fresh
+23247611 1787283391 sensors ATMRHXSLCE (ATMRHXSLCE upper=resolved)
+23316080 1787283459 stop night_open=0 epochs=0
+7335 1787283473 launch v0.3.0 uptime=7323 no settings.json - using defaults bed=1260-660 hr=continuous alarm=0 raw=0
+7350 1787283473 resume present=0 path=- epochs=0 gap=0min fresh
+7367 1787283473 sensors ATMRHXSLCE (ATMRHXSLCE upper=resolved)
+7687933 1787291154 open Nights/20260821T013054.csv backdated=15min recovered=15 flags=0x0
+34087597 1787317554 close worn=0 sleep=386 tib=455 eff=84 acc_hz_x10=500 flags=0x0 epochs=455 lost=0
+35212065 1787318678 stop night_open=0 epochs=0

@@ -1,0 +1,5 @@
+# SleepLab night index, schema 1. One row per completed night.
+# The personal baseline is rebuilt from this file and from nothing else.
+# Rows whose worn verdict is not 0 (worn) are excluded from it.
+start_utc,tib_min,tst_min,eff_pct,hr_min_x10,hr_min_at_pct,worn,interruption
+1787290254,455,386,84,522,82,0,0

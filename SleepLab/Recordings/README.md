@@ -9,17 +9,17 @@ Both are `watching.csv` — the idle record, one row per 30 s recording epoch,
 written while inside the bedtime window with no night open. Neither is a night:
 no night opened in either, which is the finding rather than a fault in them.
 
-| | `2026-08-19-worn` | `2026-08-20-table` | `2026-08-20-pillow` |
-| --- | --- | --- | --- |
-| What | Worn, a full night's sleep | On a hard table, empty room | Face up on a pillow on the floor |
-| Local | 23:16 → 09:40 | 10:06 → 11:00 | 17:09 → 23:19 |
-| Rows | 1249 | 107 | 741 |
-| Schema | **2** | **2** | **3** |
-| Build | 0.2.0 | 0.2.0 | 0.3.0 |
+| | `2026-08-19-worn` | `2026-08-20-table` | `2026-08-20-pillow` | `2026-08-21-worn` |
+| --- | --- | --- | --- | --- |
+| What | Worn, no night opened | Hard table, empty room | Face up on a pillow on the floor | Worn, **a night that opened and scored** |
+| Local | 23:16 → 09:40 | 10:06 → 11:00 | 17:09 → 23:19 | 23:38 → 09:24 |
+| Rows | 1249 | 107 | 741 | 1173 idle + 910 night |
+| Schema | **2** | **2** | **3** | **3** |
+| Build | 0.2.0 | 0.2.0 | 0.3.0 | 0.3.0 |
 
 ## Reading them
 
-**The first two are schema 2; `2026-08-20-pillow` is schema 3.** Do not map
+**The first two are schema 2; the two from 20–21 August are schema 3.** Do not map
 columns by position across them: schema 3 inserts `count_x,count_y,count_z` after
 `samples`, so everything from `motion` rightward shifts by three. Each file
 carries its own header line; use it. `night_report.py` handles both and prints
@@ -98,3 +98,62 @@ and nothing was reading that field.
 
 This recording is kept mainly as the negative fixture the worn gate has never had:
 a known-unworn six-hour night, at schema 3, that the gate as written passes.
+
+
+## What `2026-08-21-worn` adds
+
+The first night this app ever opened, scored and reported: 455 min in bed, 386 min
+asleep, 84 % efficiency, worn verdict `worn`, `flags=0x0`, 0 unscorable epochs. It
+is kept as the positive fixture — the shape a good night has — and for three
+things it says that the earlier recordings could not.
+
+**The constants work.** Against `stillnessCountMax` 900 and `activityCountMin`
+8000: 50.5 % of scoring epochs still, 6.8 % active, 42.7 % in the dead zone
+between them. That is hysteresis doing its job rather than chattering on one
+boundary.
+
+**`onset_latency_min` is a tautology, not a measurement.** The summary reports 0,
+and it cannot report anything else: a night opens only after 15 consecutive still
+epochs and is backdated to the *start* of that run, so epoch 0 is always the first
+epoch of a still stretch and the scorer will call it sleep. The first twenty
+scoring epochs here are 747, 704, 747, 755, … all under 900. Either suppress the
+field or measure it from `watching.csv`, which now covers the hours before the
+night opened.
+
+**The night started about 45 minutes late.** `watching.csv` has the evening, and
+it settles well before the night does:
+
+    00:15   count 13835   still  0/30   HR 75.5    last activity
+    00:30   count  1945   still  7/30   HR 57.1    settling
+    00:45   count   375   still 28/30   HR 55.0    settled
+    01:30   ── night opens, backdated ──
+
+Both movement and heart rate say 00:45. The cause is the *consecutive* rule: a
+settling wrist is intermittently still (28/30, then 19/30, then 28/30) and one
+epoch over threshold resets the run. So time in bed and total sleep are both
+underestimates and efficiency is computed over the wrong window. A tolerance —
+13 of 15 rather than 15 straight — would have caught it.
+
+### Two things it confirms about the worn gate
+
+`hr_trust_x10` separates worn from unworn completely, on a second and larger
+sample: median 30 here with **97.7 %** of epochs at or above 20, against median 8
+and **0.0 %** on the pillow. Nothing overlaps.
+
+And `touch_n` was **0 for all 910 epochs of a genuinely worn night**. TOUCH_DETECT
+never fires in either direction, so `worn_pct` reads 100 by stale fallback on a
+wrist and on a pillow alike. It carries no information and belongs out of the
+gate rather than re-tuned.
+
+### Per-axis, worn against unworn
+
+| | x | y | z |
+| --- | --- | --- | --- |
+| Pillow (noise) | 95 | 102 | **118** |
+| Worn, quiet epochs | 168 | **209** | 203 |
+
+Different shapes: noise is z-dominant, a wrist is y-dominant with x lowest.
+Subtracting the floor in quadrature gives movement components of 139 / 182 / 165.
+The sobering companion number is that this night's quietest scoring epoch was
+**362**, below the pillow's 366 — at the bottom of the range the signal is at or
+under the noise.
