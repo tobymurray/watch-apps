@@ -37,6 +37,7 @@ pub struct State {
     pub accel_z_g: f32,
     pub sample_age_ms: u32,
     pub sample_age_max_ms: u32,
+    pub last_push_ms: u32,
     pub samples: u32,
     pub frames: u32,
     pub valid: u8,
@@ -361,6 +362,10 @@ fn draw_diag(fb: &mut FrameBuf, st: &State) {
     row(fb, b.as_str());
 
     let mut b = Buf::<24>::new();
+    let _ = write!(b, "PUSH{:>7}ms", st.last_push_ms);
+    row(fb, b.as_str());
+
+    let mut b = Buf::<24>::new();
     let _ = write!(b, "STATE{:>8}", st.status_label());
     row(fb, b.as_str());
 
@@ -428,7 +433,7 @@ mod tests {
 
     const W: u32 = 240;
     const H: u32 = 240;
-    const C_STRUCT_SIZE: usize = 32;
+    const C_STRUCT_SIZE: usize = 36;
     const C_STRUCT_ALIGN: usize = 4;
 
     fn live() -> State {
@@ -438,6 +443,7 @@ mod tests {
             accel_z_g: 0.9,
             sample_age_ms: 40,
             sample_age_max_ms: 812,
+            last_push_ms: 1000,
             samples: 123,
             frames: 456,
             valid: 1,

@@ -20,6 +20,7 @@ static constexpr uint32_t kWaitForever = 0xFFFFFFFF;
 // Paths are relative to the app's own directory, which already exists.
 static constexpr char     kLogPath[]    = "accel_log.csv";
 static constexpr char     kFbDumpPath[] = "fb_dump.bin";
+static constexpr char     kRenderLogPath[] = "render_log.csv";
 
 extern "C" void poc_gui_host_panic(const uint8_t *msg, uint32_t len)
 {
@@ -86,13 +87,21 @@ void Gui::renderAndPush()
                    mScreen,
                    &mState);
 
+    // The push is timed because a slow one stalls this whole loop: sample
+    // messages queue behind it and arrive in a burst when it finally returns.
+    uint32_t pushMs = 0;
+    bool     pushOk = false;
     auto *upd = mKernel.comm.allocateMessage<SDK::Message::RequestDisplayUpdate>();
     if (upd) {
-        upd->pBuffer = mFrameBuf;
-        mKernel.comm.sendMessage(upd, kResponseTimeoutMs);
+        upd->pBuffer            = mFrameBuf;
+        const uint32_t sentAt   = mKernel.sys.getTimeMs();
+        pushOk                  = mKernel.comm.sendMessage(upd, kResponseTimeoutMs);
+        pushMs                  = SDK::Timer::elapsed(mKernel.sys.getTimeMs(), sentAt);
         mKernel.comm.releaseMessage(upd);
     }
+    mState.last_push_ms = pushMs;
     ++mState.frames;
+    recordRender(mKernel.sys.getTimeMs(), pushMs, pushOk);
 }
 
 void Gui::recordSample(uint32_t sensorTsMs, uint16_t batch, float x, float y, float z)
@@ -112,6 +121,17 @@ void Gui::recordSample(uint32_t sensorTsMs, uint16_t batch, float x, float y, fl
     if (mLogCount == kLogRows) {
         flushLog();
     }
+}
+
+void Gui::recordRender(uint32_t atMs, uint32_t pushMs, bool ok)
+{
+    if (mRenderFailed || mRenderCount == kRenderRows) {
+        return;
+    }
+    RenderRow &row = mRenderRows[mRenderCount++];
+    row.atMs   = atMs;
+    row.pushMs = pushMs;
+    row.ok     = ok ? 1u : 0u;
 }
 
 void Gui::flushLog()
@@ -156,6 +176,45 @@ void Gui::flushLog()
     LOG_INFO("accel log: +%u rows (%u total)\n",
              static_cast<unsigned>(mLogCount), static_cast<unsigned>(mLogSeq));
     mLogCount = 0;
+
+    flushRenderLog();
+}
+
+void Gui::flushRenderLog()
+{
+    if (mRenderCount == 0 || mRenderFailed) {
+        mRenderCount = 0;
+        return;
+    }
+
+    if (!mRenderFile) {
+        mRenderFile = mKernel.fs.file(kRenderLogPath);
+        if (!mRenderFile || !mRenderFile->open(/*wMode=*/true, /*override=*/true)) {
+            LOG_WARNING("render log: open '%s' failed; logging off\n", kRenderLogPath);
+            mRenderFile.reset();
+            mRenderFailed = true;
+            mRenderCount  = 0;
+            return;
+        }
+        static constexpr char kHeader[] = "at_ms,push_ms,push_ok\n";
+        size_t written = 0;
+        mRenderFile->write(kHeader, sizeof(kHeader) - 1, written);
+    }
+
+    for (uint32_t i = 0; i < mRenderCount; ++i) {
+        const RenderRow &row = mRenderRows[i];
+        char line[48];
+        const int len = snprintf(line, sizeof(line), "%u,%u,%u\n",
+                                 static_cast<unsigned>(row.atMs),
+                                 static_cast<unsigned>(row.pushMs),
+                                 static_cast<unsigned>(row.ok));
+        if (len > 0) {
+            size_t written = 0;
+            mRenderFile->write(line, static_cast<size_t>(len), written);
+        }
+    }
+    mRenderFile->flush();
+    mRenderCount = 0;
 }
 
 void Gui::closeLog()
@@ -164,6 +223,10 @@ void Gui::closeLog()
     if (mLogFile) {
         mLogFile->close();
         mLogFile.reset();
+    }
+    if (mRenderFile) {
+        mRenderFile->close();
+        mRenderFile.reset();
     }
 }
 

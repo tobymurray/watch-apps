@@ -25,8 +25,16 @@ private:
     // Sample arrivals are recorded to a file rather than shown on a 240px
     // screen, so a run can be left going and the timing analysed afterwards.
     void recordSample(uint32_t sensorTsMs, uint16_t batch, float x, float y, float z);
+    void recordRender(uint32_t atMs, uint32_t pushMs, bool ok);
     void flushLog();
+    void flushRenderLog();
     void closeLog();
+
+    struct RenderRow {
+        uint32_t atMs;
+        uint32_t pushMs;
+        uint8_t  ok;
+    };
 
     struct LogRow {
         uint32_t sensorTsMs;
@@ -64,6 +72,12 @@ private:
     uint32_t                  mLogSeq   = 0;
     std::unique_ptr<SDK::Interface::IFile> mLogFile;
     bool                                   mLogFailed = false;
+
+    static constexpr uint32_t kRenderRows = 256;
+    RenderRow                 mRenderRows[kRenderRows];
+    uint32_t                  mRenderCount = 0;
+    std::unique_ptr<SDK::Interface::IFile> mRenderFile;
+    bool                                   mRenderFailed = false;
 
     uint8_t mFrameBuf[kMaxPixels * kBytesPerPixel];
 };

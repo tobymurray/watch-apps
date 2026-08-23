@@ -44,11 +44,22 @@ going and the timing analysed afterwards rather than read off a 240px screen.
 Samples buffer in RAM and flush every 512 rows, on screen suspend, on a long-press
 of `SW3`, and on exit; each run truncates the file, so one run is one experiment.
 
-Pull `accel_log.csv` in the app's own folder over USB mass storage:
+Two files land in the app's own folder. `accel_log.csv`, one row per sample:
 
 ```
 seq,sensor_ts_ms,arrival_ms,batch,x_mg,y_mg,z_mg
 ```
+
+and `render_log.csv`, one row per frame, which times the framebuffer push:
+
+```
+at_ms,push_ms,push_ok
+```
+
+`push_ms` is how long `sendMessage` took for `RequestDisplayUpdate`. It matters
+because that call blocks the message loop: while it waits, sample messages queue
+and then arrive in a burst, so a slow push shows up as bunched arrivals in the
+other file rather than as anything obviously display-related.
 
 `sensor_ts_ms` is the driver's own timestamp for the sample and `arrival_ms` is
 when the GUI got it, so the true sample interval can be told apart from pipeline
@@ -65,7 +76,7 @@ awk -F, 'NR>2 {print $2-p} {p=$2}' accel_log.csv | sort -n | uniq -c
 | Screen | Shows |
 |--------|-------|
 | `ACCEL` | Bubble level driven by live X/Y tilt, and X/Y/Z in milli-g. `NO DATA` when the sample is stale. |
-| `DIAG` | Frames rendered, samples received, age of the newest sample, the largest age seen, and live/stale/none. |
+| `DIAG` | Frames rendered, samples received, age of the newest sample, the largest age seen, how long the last framebuffer push took, and live/stale/none. |
 
 ## Buttons
 
@@ -88,7 +99,7 @@ Targets **`apps-v1.4.0`**. Needs the ARM embedded toolchain, CMake, Python 3 wit
 rustup target add thumbv8m.main-none-eabihf
 export UNA_SDK=/path/to/una-sdk
 cd Software/Apps/RustGuiPoc-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.4.1 .
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.5.0 .
 cmake --build build
 ```
 
@@ -100,7 +111,7 @@ docker run --rm -v /path/to/una-sdk:/sdk -v "$PWD":/apps -e UNA_SDK=/sdk \
   -w /apps/RustGuiPoc/Software/Apps/RustGuiPoc-CMake \
   ghcr.io/tobymurray/kira-toolchain \
   bash -c 'pip3 install --break-system-packages -r /sdk/Utilities/Scripts/app_packer/requirements.txt
-           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.4.1 . && cmake --build build'
+           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.5.0 . && cmake --build build'
 ```
 
 That image ships neither `pyelftools` nor `Pillow`, both of which the SDK's
@@ -116,11 +127,11 @@ framework size is charged against the same budget as the framebuffer. From
 `Output/RustGuiPocGUI.elf.elf.map`:
 
 ```
-.text 26,496   .data 68   .got 68   .bss 66,416   .stack 10,240
-total 103,288 of 614,400  =  16.8%
+.text 27,172   .data 68   .got 68   .bss 69,504   .stack 10,240
+total 107,052 of 614,400  =  17.4%
 ```
 
-`.bss` is the 57,600-byte framebuffer plus the 8 KB sample-log buffer. Re-derive the numbers from
+`.bss` is the 57,600-byte framebuffer plus the two log buffers. Re-derive the numbers from
 the map's `Memory Configuration` block and section headers rather than trusting
 this table.
 
