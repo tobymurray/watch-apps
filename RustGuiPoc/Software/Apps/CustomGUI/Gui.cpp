@@ -1,5 +1,7 @@
 #include "Gui.hpp"
 
+#include <cstdio>
+
 #include "Commands.hpp"
 
 #include "SDK/Messages/MessageTypes.hpp"
@@ -15,6 +17,8 @@
 #include "SDK/UnaLogger/Logger.h"
 
 static constexpr uint32_t kWaitForever = 0xFFFFFFFF;
+static constexpr char     kLogDir[]    = "Apps/RustGuiPoc";
+static constexpr char     kLogPath[]   = "Apps/RustGuiPoc/accel_log.csv";
 
 extern "C" void poc_gui_host_panic(const uint8_t *msg, uint32_t len)
 {
@@ -56,21 +60,23 @@ void Gui::queryDisplayConfig()
     LOG_INFO("Display %dx%d @ %ubpp\n", mWidth, mHeight, mColorDepth);
 }
 
-bool Gui::sampleIsFresh() const
-{
-    return mHaveSample &&
-           SDK::Timer::elapsed(mKernel.sys.getTimeMs(), mLastSampleMs) <= kStaleAfterMs;
-}
-
 void Gui::renderAndPush()
 {
     if (!mResumed) {
         return;
     }
 
-    mState.sample_age_ms =
+    // One clock read. A displayed age and a freshness verdict sampled at
+    // different instants can contradict each other on screen, which discredits
+    // the diagnostics exactly when they are being read.
+    const uint32_t age =
         mHaveSample ? SDK::Timer::elapsed(mKernel.sys.getTimeMs(), mLastSampleMs) : 0;
-    mState.valid = sampleIsFresh() ? 1u : 0u;
+
+    mState.sample_age_ms = age;
+    mState.valid         = (mHaveSample && age <= kStaleAfterMs) ? 1u : 0u;
+    if (age > mState.sample_age_max_ms) {
+        mState.sample_age_max_ms = age;
+    }
 
     poc_gui_render(mFrameBuf,
                    kMaxPixels * kBytesPerPixel,
@@ -88,12 +94,84 @@ void Gui::renderAndPush()
     ++mState.frames;
 }
 
+void Gui::recordSample(uint32_t sensorTsMs, uint16_t batch, float x, float y, float z)
+{
+    if (mLogFailed) {
+        return;
+    }
+
+    LogRow &row   = mLogRows[mLogCount++];
+    row.sensorTsMs = sensorTsMs;
+    row.arrivalMs  = mKernel.sys.getTimeMs();
+    row.batch      = batch;
+    row.xMg        = static_cast<int16_t>(x * 1000.0f);
+    row.yMg        = static_cast<int16_t>(y * 1000.0f);
+    row.zMg        = static_cast<int16_t>(z * 1000.0f);
+
+    if (mLogCount == kLogRows) {
+        flushLog();
+    }
+}
+
+void Gui::flushLog()
+{
+    if (mLogCount == 0 || mLogFailed) {
+        mLogCount = 0;
+        return;
+    }
+
+    if (!mLogFile) {
+        mKernel.fs.mkdir(kLogDir);
+        mLogFile = mKernel.fs.file(kLogPath);
+        // override=true: each run starts a fresh log, so a run is one experiment.
+        if (!mLogFile || !mLogFile->open(/*wMode=*/true, /*override=*/true)) {
+            LOG_WARNING("accel log: open '%s' failed; logging off\n", kLogPath);
+            mLogFile.reset();
+            mLogFailed = true;
+            mLogCount  = 0;
+            return;
+        }
+        static constexpr char kHeader[] = "seq,sensor_ts_ms,arrival_ms,batch,x_mg,y_mg,z_mg\n";
+        size_t written = 0;
+        mLogFile->write(kHeader, sizeof(kHeader) - 1, written);
+    }
+
+    for (uint32_t i = 0; i < mLogCount; ++i) {
+        const LogRow &row = mLogRows[i];
+        char line[80];
+        const int len = snprintf(line, sizeof(line), "%u,%u,%u,%u,%d,%d,%d\n",
+                                 static_cast<unsigned>(mLogSeq++),
+                                 static_cast<unsigned>(row.sensorTsMs),
+                                 static_cast<unsigned>(row.arrivalMs),
+                                 static_cast<unsigned>(row.batch),
+                                 static_cast<int>(row.xMg),
+                                 static_cast<int>(row.yMg),
+                                 static_cast<int>(row.zMg));
+        if (len > 0) {
+            size_t written = 0;
+            mLogFile->write(line, static_cast<size_t>(len), written);
+        }
+    }
+    mLogFile->flush();
+    LOG_INFO("accel log: +%u rows (%u total)\n",
+             static_cast<unsigned>(mLogCount), static_cast<unsigned>(mLogSeq));
+    mLogCount = 0;
+}
+
+void Gui::closeLog()
+{
+    flushLog();
+    if (mLogFile) {
+        mLogFile->close();
+        mLogFile.reset();
+    }
+}
+
 void Gui::dumpFramebuffer()
 {
-    static constexpr char kDir[]  = "Apps/RustGuiPoc";
     static constexpr char kPath[] = "Apps/RustGuiPoc/fb_dump.bin";
 
-    mKernel.fs.mkdir(kDir);
+    mKernel.fs.mkdir(kLogDir);
 
     auto file = mKernel.fs.file(kPath);
     if (!file || !file->open(/*wMode=*/true, /*override=*/true)) {
@@ -130,6 +208,7 @@ void Gui::run()
         switch (msg->getType()) {
 
             case SDK::MessageType::COMMAND_APP_STOP:
+                closeLog();
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 mKernel.comm.releaseMessage(msg);
                 mKernel.sys.exit(0);
@@ -142,6 +221,7 @@ void Gui::run()
 
             case SDK::MessageType::COMMAND_APP_GUI_SUSPEND:
                 mResumed = false;
+                flushLog();
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 break;
 
@@ -159,6 +239,8 @@ void Gui::run()
                 mLastSampleMs    = mKernel.sys.getTimeMs();
                 mHaveSample      = true;
                 ++mState.samples;
+                recordSample(accel->sensor_ts_ms, accel->batch_size,
+                             accel->x_g, accel->y_g, accel->z_g);
                 msg->setResult(SDK::MessageResult::SUCCESS);
             } break;
 
@@ -169,6 +251,7 @@ void Gui::run()
 
                 if (btn->event == Event::CLICK && btn->id == Id::SW4) {
                     LOG_INFO("Back pressed; exiting\n");
+                    closeLog();
                     msg->setResult(SDK::MessageResult::SUCCESS);
                     mKernel.comm.releaseMessage(msg);
                     mKernel.sys.exit(0);
@@ -180,6 +263,7 @@ void Gui::run()
                     renderAndPush();
                 } else if (btn->event == Event::LONG_PRESS && btn->id == Id::SW3) {
                     dumpFramebuffer();
+                    flushLog();
                 }
                 msg->setResult(SDK::MessageResult::SUCCESS);
             } break;

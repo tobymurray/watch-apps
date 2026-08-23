@@ -2,8 +2,10 @@
 #define GUI_HPP
 
 #include <cstdint>
+#include <memory>
 
 #include "SDK/Kernel/Kernel.hpp"
+#include "SDK/Interfaces/IFileSystem.hpp"
 
 #include "poc_gui.h"
 
@@ -19,7 +21,21 @@ private:
     void queryDisplayConfig();
     void renderAndPush();
     void dumpFramebuffer();
-    bool sampleIsFresh() const;
+
+    // Sample arrivals are recorded to a file rather than shown on a 240px
+    // screen, so a run can be left going and the timing analysed afterwards.
+    void recordSample(uint32_t sensorTsMs, uint16_t batch, float x, float y, float z);
+    void flushLog();
+    void closeLog();
+
+    struct LogRow {
+        uint32_t sensorTsMs;
+        uint32_t arrivalMs;
+        uint16_t batch;
+        int16_t  xMg;
+        int16_t  yMg;
+        int16_t  zMg;
+    };
 
     static constexpr uint32_t kStaleAfterMs      = 500;
     static constexpr int16_t  kFallbackWidth     = 240;
@@ -39,6 +55,15 @@ private:
     poc_gui_state mState{};
     uint32_t      mLastSampleMs = 0;
     bool          mHaveSample   = false;
+
+    // ~51 s of buffer at 10 Hz, so the flush is rare compared with the sample
+    // rate it is measuring and cannot itself distort the timing being recorded.
+    static constexpr uint32_t kLogRows = 512;
+    LogRow                    mLogRows[kLogRows];
+    uint32_t                  mLogCount = 0;
+    uint32_t                  mLogSeq   = 0;
+    std::unique_ptr<SDK::Interface::IFile> mLogFile;
+    bool                                   mLogFailed = false;
 
     uint8_t mFrameBuf[kMaxPixels * kBytesPerPixel];
 };

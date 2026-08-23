@@ -37,12 +37,35 @@ A Rust panic reaches the SDK logger through `poc_gui_host_panic` in `Gui.cpp`,
 which logs the message and location and then exits the app. Without that a panic
 would hang the GUI thread silently, and the only way out would be a reboot.
 
+## Sample log
+
+Every accelerometer sample that reaches the GUI is recorded, so a run can be left
+going and the timing analysed afterwards rather than read off a 240px screen.
+Samples buffer in RAM and flush every 512 rows, on screen suspend, on a long-press
+of `SW3`, and on exit; each run truncates the file, so one run is one experiment.
+
+Pull `Apps/RustGuiPoc/accel_log.csv` over USB mass storage:
+
+```
+seq,sensor_ts_ms,arrival_ms,batch,x_mg,y_mg,z_mg
+```
+
+`sensor_ts_ms` is the driver's own timestamp for the sample and `arrival_ms` is
+when the GUI got it, so the true sample interval can be told apart from pipeline
+latency. `batch` is how many samples the sensor layer delivered in that event —
+if the driver batches, the interval between events is not the sample interval.
+
+```sh
+# actual delivery interval, from the driver's own clock
+awk -F, 'NR>2 {print $2-p} {p=$2}' accel_log.csv | sort -n | uniq -c
+```
+
 ## Screens
 
 | Screen | Shows |
 |--------|-------|
 | `ACCEL` | Bubble level driven by live X/Y tilt, and X/Y/Z in milli-g. `NO DATA` when the sample is stale. |
-| `DIAG` | Frames rendered, samples received, age of the newest sample, and live/stale/none. |
+| `DIAG` | Frames rendered, samples received, age of the newest sample, the largest age seen, and live/stale/none. |
 
 ## Buttons
 
@@ -50,7 +73,7 @@ would hang the GUI thread silently, and the only way out would be a reboot.
 |---|---|---|
 | `SW2` / R1 | top right | cycle to the next screen |
 | `SW4` / R2 | bottom right | back — leaves the app |
-| `SW3` / L2, long press | bottom left | write the framebuffer to `Apps/RustGuiPoc/fb_dump.bin` |
+| `SW3` / L2, long press | bottom left | dump the framebuffer and flush the sample log |
 
 The screens are a cycle, not a stack, so back exits. This app owns the kernel
 message loop and swallows every button event: with nothing handling back, the
@@ -65,7 +88,7 @@ Targets **`apps-v1.4.0`**. Needs the ARM embedded toolchain, CMake, Python 3 wit
 rustup target add thumbv8m.main-none-eabihf
 export UNA_SDK=/path/to/una-sdk
 cd Software/Apps/RustGuiPoc-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.3.0 .
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.4.0 .
 cmake --build build
 ```
 
@@ -77,12 +100,12 @@ docker run --rm -v /path/to/una-sdk:/sdk -v "$PWD":/apps -e UNA_SDK=/sdk \
   -w /apps/RustGuiPoc/Software/Apps/RustGuiPoc-CMake \
   ghcr.io/tobymurray/kira-toolchain \
   bash -c 'pip3 install --break-system-packages -r /sdk/Utilities/Scripts/app_packer/requirements.txt
-           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.3.0 . && cmake --build build'
+           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.4.0 . && cmake --build build'
 ```
 
-That image does not ship `pyelftools`, which the SDK's `app_packer.py` imports,
-hence the `pip3` line — installing it in the job is at odds with what the image
-is for, so it belongs in the image instead.
+That image ships neither `pyelftools` nor `Pillow`, both of which the SDK's
+packing scripts import, hence the `pip3` line. Installing them in the job is at
+odds with what the image is for, so they belong in the image.
 
 The `.uapp` lands in `Output/`; deploy it per the SDK's `Docs/deploy.md`.
 
@@ -93,11 +116,11 @@ framework size is charged against the same budget as the framebuffer. From
 `Output/RustGuiPocGUI.elf.elf.map`:
 
 ```
-.text 25,584   .data 68   .got 68   .bss 58,204   .stack 10,240
-total 94,164 of 614,400  =  15.3%
+.text 26,420   .data 68   .got 68   .bss 66,416   .stack 10,240
+total 103,212 of 614,400  =  16.8%
 ```
 
-`.bss` is almost entirely the 57,600-byte framebuffer. Re-derive the numbers from
+`.bss` is the 57,600-byte framebuffer plus the 8 KB sample-log buffer. Re-derive the numbers from
 the map's `Memory Configuration` block and section headers rather than trusting
 this table.
 

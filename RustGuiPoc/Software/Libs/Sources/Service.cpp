@@ -40,7 +40,8 @@ void Service::handleSensorData(uint16_t handle, SDK::Sensor::DataBatch &batch)
         return;
     }
 
-    SDK::send_msg<CustomMessage::AccelValues>(mKernel, x, y, z);
+    SDK::send_msg<CustomMessage::AccelValues>(
+        mKernel, x, y, z, parser.getTimestamp(), batch.size());
 }
 
 void Service::run()

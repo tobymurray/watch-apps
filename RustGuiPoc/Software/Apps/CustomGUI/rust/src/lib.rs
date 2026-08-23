@@ -36,6 +36,7 @@ pub struct State {
     pub accel_y_g: f32,
     pub accel_z_g: f32,
     pub sample_age_ms: u32,
+    pub sample_age_max_ms: u32,
     pub samples: u32,
     pub frames: u32,
     pub valid: u8,
@@ -337,7 +338,7 @@ fn draw_diag(fb: &mut FrameBuf, st: &State) {
     title(fb, &g, "DIAG");
 
     let x = g.cx - g.inscribed_half + 6;
-    let mut y = g.cy - 26;
+    let mut y = g.cy - 35;
     let mut row = |fb: &mut FrameBuf, s: &str| {
         text(fb, s, Point::new(x, y), BRIGHT_READING, Alignment::Left);
         y += DIAG_ROW_HEIGHT;
@@ -353,6 +354,10 @@ fn draw_diag(fb: &mut FrameBuf, st: &State) {
 
     let mut b = Buf::<24>::new();
     let _ = write!(b, "AGE{:>8}ms", st.sample_age_ms);
+    row(fb, b.as_str());
+
+    let mut b = Buf::<24>::new();
+    let _ = write!(b, "PEAK{:>7}ms", st.sample_age_max_ms);
     row(fb, b.as_str());
 
     let mut b = Buf::<24>::new();
@@ -415,7 +420,7 @@ mod tests {
 
     const W: u32 = 240;
     const H: u32 = 240;
-    const C_STRUCT_SIZE: usize = 28;
+    const C_STRUCT_SIZE: usize = 32;
     const C_STRUCT_ALIGN: usize = 4;
 
     fn live() -> State {
@@ -424,6 +429,7 @@ mod tests {
             accel_y_g: -0.5,
             accel_z_g: 0.9,
             sample_age_ms: 40,
+            sample_age_max_ms: 812,
             samples: 123,
             frames: 456,
             valid: 1,
