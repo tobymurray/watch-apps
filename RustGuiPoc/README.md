@@ -44,7 +44,7 @@ going and the timing analysed afterwards rather than read off a 240px screen.
 Samples buffer in RAM and flush every 512 rows, on screen suspend, on a long-press
 of `SW3`, and on exit; each run truncates the file, so one run is one experiment.
 
-Pull `Apps/RustGuiPoc/accel_log.csv` over USB mass storage:
+Pull `accel_log.csv` in the app's own folder over USB mass storage:
 
 ```
 seq,sensor_ts_ms,arrival_ms,batch,x_mg,y_mg,z_mg
@@ -88,7 +88,7 @@ Targets **`apps-v1.4.0`**. Needs the ARM embedded toolchain, CMake, Python 3 wit
 rustup target add thumbv8m.main-none-eabihf
 export UNA_SDK=/path/to/una-sdk
 cd Software/Apps/RustGuiPoc-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.4.0 .
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.4.1 .
 cmake --build build
 ```
 
@@ -100,7 +100,7 @@ docker run --rm -v /path/to/una-sdk:/sdk -v "$PWD":/apps -e UNA_SDK=/sdk \
   -w /apps/RustGuiPoc/Software/Apps/RustGuiPoc-CMake \
   ghcr.io/tobymurray/kira-toolchain \
   bash -c 'pip3 install --break-system-packages -r /sdk/Utilities/Scripts/app_packer/requirements.txt
-           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.4.0 . && cmake --build build'
+           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.4.1 . && cmake --build build'
 ```
 
 That image ships neither `pyelftools` nor `Pillow`, both of which the SDK's
@@ -116,8 +116,8 @@ framework size is charged against the same budget as the framebuffer. From
 `Output/RustGuiPocGUI.elf.elf.map`:
 
 ```
-.text 26,420   .data 68   .got 68   .bss 66,416   .stack 10,240
-total 103,212 of 614,400  =  16.8%
+.text 26,496   .data 68   .got 68   .bss 66,416   .stack 10,240
+total 103,288 of 614,400  =  16.8%
 ```
 
 `.bss` is the 57,600-byte framebuffer plus the 8 KB sample-log buffer. Re-derive the numbers from

@@ -29,14 +29,17 @@ set(RUST_LIB "${RUST_CRATE_DIR}/target/${RUST_TARGET}/release/libpoc_gui.a")
 
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
 
-add_custom_command(
-    OUTPUT ${RUST_LIB}
+# Always invoke cargo and let it decide whether to rebuild. An OUTPUT/DEPENDS
+# rule would have to restate cargo's own inputs -- sources, Cargo.lock, features,
+# profile, toolchain -- and anything it missed would silently link a stale
+# archive against a changed ABI.
+add_custom_target(poc_gui_rust ALL
     COMMAND ${CARGO_EXECUTABLE} build --release --target ${RUST_TARGET}
     WORKING_DIRECTORY ${RUST_CRATE_DIR}
+    BYPRODUCTS ${RUST_LIB}
     COMMENT "Building Rust GUI core -> libpoc_gui.a"
     VERBATIM
 )
-add_custom_target(poc_gui_rust DEPENDS ${RUST_LIB})
 
 set(SERVICE_SOURCES
     ${LIBS_SOURCES}

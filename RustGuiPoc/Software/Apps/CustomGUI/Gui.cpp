@@ -17,8 +17,9 @@
 #include "SDK/UnaLogger/Logger.h"
 
 static constexpr uint32_t kWaitForever = 0xFFFFFFFF;
-static constexpr char     kLogDir[]    = "Apps/RustGuiPoc";
-static constexpr char     kLogPath[]   = "Apps/RustGuiPoc/accel_log.csv";
+// Paths are relative to the app's own directory, which already exists.
+static constexpr char     kLogPath[]    = "accel_log.csv";
+static constexpr char     kFbDumpPath[] = "fb_dump.bin";
 
 extern "C" void poc_gui_host_panic(const uint8_t *msg, uint32_t len)
 {
@@ -121,7 +122,6 @@ void Gui::flushLog()
     }
 
     if (!mLogFile) {
-        mKernel.fs.mkdir(kLogDir);
         mLogFile = mKernel.fs.file(kLogPath);
         // override=true: each run starts a fresh log, so a run is one experiment.
         if (!mLogFile || !mLogFile->open(/*wMode=*/true, /*override=*/true)) {
@@ -169,13 +169,9 @@ void Gui::closeLog()
 
 void Gui::dumpFramebuffer()
 {
-    static constexpr char kPath[] = "Apps/RustGuiPoc/fb_dump.bin";
-
-    mKernel.fs.mkdir(kLogDir);
-
-    auto file = mKernel.fs.file(kPath);
+    auto file = mKernel.fs.file(kFbDumpPath);
     if (!file || !file->open(/*wMode=*/true, /*override=*/true)) {
-        LOG_WARNING("fb dump: open '%s' failed\n", kPath);
+        LOG_WARNING("fb dump: open '%s' failed\n", kFbDumpPath);
         return;
     }
 
@@ -187,7 +183,7 @@ void Gui::dumpFramebuffer()
     file->close();
 
     LOG_INFO("fb dump: %s screen=%u %dx%d -> %u/%u bytes %s\n",
-             kPath, static_cast<unsigned>(mScreen), mWidth, mHeight,
+             kFbDumpPath, static_cast<unsigned>(mScreen), mWidth, mHeight,
              static_cast<unsigned>(written), static_cast<unsigned>(bytes),
              (ok && written == bytes) ? "OK" : "FAIL");
 }
@@ -195,6 +191,14 @@ void Gui::dumpFramebuffer()
 void Gui::run()
 {
     LOG_INFO("Started\n");
+
+    if (poc_gui_state_size() != sizeof(poc_gui_state)) {
+        LOG_ERROR("ABI mismatch: Rust state %u bytes, C++ %u -- stale libpoc_gui.a\n",
+                  static_cast<unsigned>(poc_gui_state_size()),
+                  static_cast<unsigned>(sizeof(poc_gui_state)));
+        mKernel.sys.exit(1);
+        return;
+    }
 
     queryDisplayConfig();
     const uint32_t screenCount = poc_gui_screen_count();

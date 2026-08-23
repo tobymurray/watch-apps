@@ -21,6 +21,9 @@ typedef struct {
 
 uint32_t poc_gui_screen_count(void);
 
+/* Size of poc_gui_state as the Rust core sees it. */
+uint32_t poc_gui_state_size(void);
+
 /* Called by the Rust panic handler. Must not return normally. */
 void poc_gui_host_panic(const uint8_t* msg, uint32_t len);
 

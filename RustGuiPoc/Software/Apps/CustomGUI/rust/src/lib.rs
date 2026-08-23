@@ -395,6 +395,14 @@ pub extern "C" fn poc_gui_screen_count() -> u32 {
     screen_count()
 }
 
+/// Lets the caller confirm it was linked against the archive it thinks it was:
+/// a stale one disagrees here instead of silently reading every field at the
+/// wrong offset.
+#[no_mangle]
+pub extern "C" fn poc_gui_state_size() -> u32 {
+    core::mem::size_of::<State>() as u32
+}
+
 /// # Safety
 /// `buf` must point to at least `buf_len` writable bytes and `state` to a valid
 /// `poc_gui_state`, both valid for the duration of the call.
