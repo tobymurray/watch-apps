@@ -489,7 +489,164 @@ fn draw_dither(fb: &mut FrameBuf, st: &State) {
     text(fb, "DITHER", Point::new(g.cx + 44, label_y), BRIGHT_HEADING, Alignment::Center);
 }
 
-const SCREEN_COUNT: u32 = 3;
+
+// -- PLASMA --------------------------------------------------------------------
+// A per-pixel field, recomputed every frame. The measured budget is ~217 cycles
+// per pixel per frame (100 ms tick, 22 ms of it spent pushing), which is enough
+// for this and is CPU nothing else on the watch spends.
+
+/// A hue wheel walked along the saturated hull of the colour cube: every entry
+/// has one channel at maximum and one at zero.
+///
+/// Chosen that way because of what MapKit measured about this panel -- at two
+/// bits a channel, CyclOSM tiles quantise well and OSM standard washes out. The
+/// difference is saturation: colours near the grey axis collapse onto each other
+/// with only four levels to land on, and no amount of dithering brings them back.
+/// A field that drifted through pastels would wash out the same way, so this one
+/// only ever traverses the hull, and dithers *between adjacent hues* rather than
+/// per channel.
+const HUE_WHEEL_LEN: i32 = 18;
+const HUE_WHEEL: [Abgr2222; 18] = [
+    Abgr2222::from_levels(3, 1, 0), Abgr2222::from_levels(3, 2, 0), Abgr2222::from_levels(3, 3, 0),
+    Abgr2222::from_levels(2, 3, 0), Abgr2222::from_levels(1, 3, 0), Abgr2222::from_levels(0, 3, 0),
+    Abgr2222::from_levels(0, 3, 1), Abgr2222::from_levels(0, 3, 2), Abgr2222::from_levels(0, 3, 3),
+    Abgr2222::from_levels(0, 2, 3), Abgr2222::from_levels(0, 1, 3), Abgr2222::from_levels(0, 0, 3),
+    Abgr2222::from_levels(1, 0, 3), Abgr2222::from_levels(2, 0, 3), Abgr2222::from_levels(3, 0, 3),
+    Abgr2222::from_levels(3, 0, 2), Abgr2222::from_levels(3, 0, 1), Abgr2222::from_levels(3, 0, 0),
+];
+
+const SINE_U8: [u8; 256] = [
+    128, 131, 134, 137, 140, 143, 146, 149, 152, 155, 158, 162, 165, 167, 170, 173,
+    176, 179, 182, 185, 188, 190, 193, 196, 198, 201, 203, 206, 208, 211, 213, 215,
+    218, 220, 222, 224, 226, 228, 230, 232, 234, 235, 237, 238, 240, 241, 243, 244,
+    245, 246, 248, 249, 250, 250, 251, 252, 253, 253, 254, 254, 254, 255, 255, 255,
+    255, 255, 255, 255, 254, 254, 254, 253, 253, 252, 251, 250, 250, 249, 248, 246,
+    245, 244, 243, 241, 240, 238, 237, 235, 234, 232, 230, 228, 226, 224, 222, 220,
+    218, 215, 213, 211, 208, 206, 203, 201, 198, 196, 193, 190, 188, 185, 182, 179,
+    176, 173, 170, 167, 165, 162, 158, 155, 152, 149, 146, 143, 140, 137, 134, 131,
+    128, 124, 121, 118, 115, 112, 109, 106, 103, 100,  97,  93,  90,  88,  85,  82,
+     79,  76,  73,  70,  67,  65,  62,  59,  57,  54,  52,  49,  47,  44,  42,  40,
+     37,  35,  33,  31,  29,  27,  25,  23,  21,  20,  18,  17,  15,  14,  12,  11,
+     10,   9,   7,   6,   5,   5,   4,   3,   2,   2,   1,   1,   1,   0,   0,   0,
+      0,   0,   0,   0,   1,   1,   1,   2,   2,   3,   4,   5,   5,   6,   7,   9,
+     10,  11,  12,  14,  15,  17,  18,  20,  21,  23,  25,  27,  29,  31,  33,  35,
+     37,  40,  42,  44,  47,  49,  52,  54,  57,  59,  62,  65,  67,  70,  73,  76,
+     79,  82,  85,  88,  90,  93,  97, 100, 103, 106, 109, 112, 115, 118, 121, 124,
+];
+
+/// `sqrt(i << SQRT_SHIFT)`, so a radius comes from one shift and one lookup
+/// instead of a square root.
+const SQRT_SHIFT: u32 = 7;
+const SQRT_LUT: [u8; 256] = [
+      0,  11,  16,  20,  23,  25,  28,  30,  32,  34,  36,  38,  39,  41,  42,  44,
+     45,  47,  48,  49,  51,  52,  53,  54,  55,  57,  58,  59,  60,  61,  62,  63,
+     64,  65,  66,  67,  68,  69,  70,  71,  72,  72,  73,  74,  75,  76,  77,  78,
+     78,  79,  80,  81,  82,  82,  83,  84,  85,  85,  86,  87,  88,  88,  89,  90,
+     91,  91,  92,  93,  93,  94,  95,  95,  96,  97,  97,  98,  99,  99, 100, 101,
+    101, 102, 102, 103, 104, 104, 105, 106, 106, 107, 107, 108, 109, 109, 110, 110,
+    111, 111, 112, 113, 113, 114, 114, 115, 115, 116, 116, 117, 118, 118, 119, 119,
+    120, 120, 121, 121, 122, 122, 123, 123, 124, 124, 125, 125, 126, 126, 127, 127,
+    128, 128, 129, 129, 130, 130, 131, 131, 132, 132, 133, 133, 134, 134, 135, 135,
+    136, 136, 137, 137, 138, 138, 139, 139, 139, 140, 140, 141, 141, 142, 142, 143,
+    143, 144, 144, 144, 145, 145, 146, 146, 147, 147, 148, 148, 148, 149, 149, 150,
+    150, 151, 151, 151, 152, 152, 153, 153, 153, 154, 154, 155, 155, 156, 156, 156,
+    157, 157, 158, 158, 158, 159, 159, 160, 160, 160, 161, 161, 162, 162, 162, 163,
+    163, 164, 164, 164, 165, 165, 166, 166, 166, 167, 167, 167, 168, 168, 169, 169,
+    169, 170, 170, 170, 171, 171, 172, 172, 172, 173, 173, 173, 174, 174, 175, 175,
+    175, 176, 176, 176, 177, 177, 177, 178, 178, 179, 179, 179, 180, 180, 180, 181,
+];
+
+const PLASMA_MS_PER_PHASE: u32 = 40;
+
+/// Angle around the circle as 0..255, by the diamond approximation: one divide,
+/// no trig. It is monotonic with true angle but not linear in it, which warps the
+/// angular structure slightly -- on a field that reads as character, not error.
+fn diamond_angle(dx: i32, dy: i32) -> i32 {
+    let (quadrant, num, den) = if dy >= 0 {
+        if dx >= 0 { (0, dy, dx + dy) } else { (1, -dx, dy - dx) }
+    } else if dx < 0 {
+        (2, -dy, -dx - dy)
+    } else {
+        (3, dx, dx - dy)
+    };
+    if den == 0 {
+        return quadrant * 64;
+    }
+    (quadrant * 64 + (num * 64) / den) & 0xFF
+}
+
+fn sine(phase: i32) -> i32 {
+    SINE_U8[(phase & 0xFF) as usize] as i32
+}
+
+/// A marker that has to stay readable over an arbitrary colour, so it carries its
+/// own dark border rather than relying on the background it lands on.
+fn outlined_dot(fb: &mut FrameBuf, cx: i32, cy: i32, radius: i32, color: Abgr2222) {
+    draw_circle(fb, cx, cy, radius + 1, PrimitiveStyle::with_fill(DARK_GROUND));
+    draw_circle(fb, cx, cy, radius, PrimitiveStyle::with_fill(color));
+}
+
+fn draw_plasma(fb: &mut FrameBuf, st: &State) {
+    let g = geom(fb);
+    let phase = (st.uptime_ms / PLASMA_MS_PER_PHASE) as i32;
+    let limit = g.radius * g.radius;
+    let w = fb.w as i32;
+    let h = fb.h as i32;
+
+    for y in 0..h {
+        let dy = y - g.cy;
+        for x in 0..w {
+            let dx = x - g.cx;
+            let dist2 = dx * dx + dy * dy;
+            if dist2 > limit {
+                continue;
+            }
+            let r = SQRT_LUT[((dist2 >> SQRT_SHIFT) as usize).min(255)] as i32;
+            let a = diamond_angle(dx, dy);
+
+            // Three terms: rings, spokes, and a spiral from mixing the two, so
+            // the structure is native to a round display rather than a rectangle
+            // with its corners hidden.
+            let field = sine(r * 2 + phase)
+                + sine(a * 3 - phase)
+                + sine(r + a * 2 + phase / 2);
+
+            // Straight to a hue index with a fractional part, then dither between
+            // that hue and the next. Six is close enough to (18 * 256) / 766 to
+            // spare a divide per pixel.
+            let scaled = field * 6;
+            let index = scaled >> 8;
+            let frac = scaled & 0xFF;
+            let threshold =
+                (BAYER_8X8[(y as usize) % BAYER_SIZE][(x as usize) % BAYER_SIZE] as i32) * 4;
+            let hue = if frac > threshold { index + 1 } else { index };
+
+            let idx = (y as u32 * fb.w + x as u32) as usize;
+            fb.buf[idx] = HUE_WHEEL[hue.rem_euclid(HUE_WHEEL_LEN) as usize].0;
+        }
+    }
+
+    let (sx, sy) = UNIT_CIRCLE_Q7[((st.uptime_ms / HEARTBEAT_STEP_MS) % HEARTBEAT_STEPS) as usize];
+    let hr = g.radius - 8;
+    outlined_dot(
+        fb,
+        g.cx + (sx as i32) * hr / Q7_ONE,
+        g.cy + (sy as i32) * hr / Q7_ONE,
+        HEARTBEAT_DOT_RADIUS,
+        BRIGHT_HEADING,
+    );
+
+    const DIAMETER: i32 = 6;
+    const SPACING: i32 = 14;
+    let dots_y = g.cy + g.inscribed_half - 7;
+    let x0 = g.cx - ((SCREEN_COUNT as i32 - 1) * SPACING) / 2;
+    for i in 0..SCREEN_COUNT as i32 {
+        let color = if i == 3 { BRIGHT_READING } else { BRIGHT_CHROME };
+        outlined_dot(fb, x0 + i * SPACING, dots_y, DIAMETER / 2, color);
+    }
+}
+
+const SCREEN_COUNT: u32 = 4;
 
 pub const fn screen_count() -> u32 {
     SCREEN_COUNT
@@ -509,7 +666,8 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, screen: u32, state: &Stat
     match screen % SCREEN_COUNT {
         0 => draw_accel(&mut fb, state),
         1 => draw_diag(&mut fb, state),
-        _ => draw_dither(&mut fb, state),
+        2 => draw_dither(&mut fb, state),
+        _ => draw_plasma(&mut fb, state),
     }
 }
 
@@ -694,6 +852,56 @@ mod tests {
             dith_mixed,
             rows.len()
         );
+    }
+
+    /// The rule MapKit's panel measurements imply: at four levels a channel,
+    /// colours near the grey axis collapse onto each other. Every hue this screen
+    /// can emit must therefore sit on the saturated hull -- one channel at
+    /// maximum and one at zero -- or it would wash out the way OSM standard tiles
+    /// do, and dithering would not save it.
+    #[test]
+    fn plasma_only_uses_fully_saturated_colours() {
+        for (i, c) in HUE_WHEEL.iter().enumerate() {
+            let r = c.0 & 0b11;
+            let g = (c.0 >> 2) & 0b11;
+            let b = (c.0 >> 4) & 0b11;
+            let (lo, hi) = ([r, g, b].iter().copied().min().unwrap(),
+                            [r, g, b].iter().copied().max().unwrap());
+            assert_eq!(lo, 0, "hue {i} has no channel at zero: {r},{g},{b}");
+            assert_eq!(hi, 3, "hue {i} has no channel at maximum: {r},{g},{b}");
+        }
+    }
+
+    /// And that the field actually traverses the wheel rather than sitting in one
+    /// corner of it -- the gamut is only used if the picture uses it.
+    #[test]
+    fn plasma_traverses_the_whole_wheel() {
+        let n = (W * H) as usize;
+        let mut buf = vec![0u8; n];
+        render(&mut buf, W, H, 3, &live());
+        let used: std::collections::BTreeSet<u8> = HUE_WHEEL
+            .iter()
+            .map(|c| c.0)
+            .filter(|v| buf.contains(v))
+            .collect();
+        assert_eq!(used.len(), HUE_WHEEL.len(), "only {} hues reached the screen", used.len());
+    }
+
+    /// The corners fall outside the panel's circle, so the field skips them and
+    /// they keep the background `render()` cleared them to. Asserting they are
+    /// background rather than untouched, because the clear reaches them first.
+    #[test]
+    fn plasma_skips_the_corners() {
+        let n = (W * H) as usize;
+        let mut buf = vec![0xAAu8; n];
+        render(&mut buf, W, H, 3, &live());
+        for (x, y) in [(0u32, 0u32), (W - 1, 0), (0, H - 1), (W - 1, H - 1)] {
+            assert_eq!(
+                buf[(y * W + x) as usize],
+                DARK_GROUND.0,
+                "corner ({x},{y}) got field colour"
+            );
+        }
     }
 
     #[test]
