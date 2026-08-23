@@ -35,6 +35,7 @@ pub struct State {
     pub accel_x_g: f32,
     pub accel_y_g: f32,
     pub accel_z_g: f32,
+    pub uptime_ms: u32,
     pub sample_age_ms: u32,
     pub samples: u32,
     pub frames: u32,
@@ -240,11 +241,20 @@ const UNIT_CIRCLE_Q7: [(i8, i8); 32] = [
 const Q7_ONE: i32 = 127;
 const HEARTBEAT_DOT_RADIUS: i32 = 3;
 
-/// A marker stepping one position per rendered frame. Without it a screen whose
-/// numbers happen not to change is indistinguishable from a stalled render loop
-/// -- and at 10 fps with samples arriving once a second, most of them do.
-fn draw_heartbeat(fb: &mut FrameBuf, g: &Geom, frames: u32) {
-    let (sx, sy) = UNIT_CIRCLE_Q7[(frames % HEARTBEAT_STEPS) as usize];
+const HEARTBEAT_STEP_MS: u32 = 100;
+
+/// A marker whose position is a function of the clock, not of the frame count.
+///
+/// Either grounding proves the loop is running, since a stalled one stops
+/// redrawing and the marker freezes. Uptime additionally makes a lap a known
+/// duration -- `HEARTBEAT_STEPS * HEARTBEAT_STEP_MS` -- so it can be used to time
+/// a run, which a frame-counted marker cannot: timing by it would assume the
+/// frame rate it is supposed to reveal. And when frames are dropped it resumes
+/// where the clock says rather than at the next position along, so falling behind
+/// shows up as a visible jump instead of as a silently slower orbit.
+fn draw_heartbeat(fb: &mut FrameBuf, g: &Geom, uptime_ms: u32) {
+    let step = uptime_ms / HEARTBEAT_STEP_MS;
+    let (sx, sy) = UNIT_CIRCLE_Q7[(step % HEARTBEAT_STEPS) as usize];
     let r = g.radius - 8;
     let x = g.cx + (sx as i32) * r / Q7_ONE;
     let y = g.cy + (sy as i32) * r / Q7_ONE;
@@ -255,7 +265,7 @@ fn draw_heartbeat(fb: &mut FrameBuf, g: &Geom, frames: u32) {
 /// page you are on.
 fn chrome(fb: &mut FrameBuf, g: &Geom, st: &State, page: u32) {
     draw_rim(fb, g);
-    draw_heartbeat(fb, g, st.frames);
+    draw_heartbeat(fb, g, st.uptime_ms);
     page_dots(fb, g, page);
 }
 
@@ -524,6 +534,7 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(State, accel_x_g));
     let h = fnv1a(h, core::mem::offset_of!(State, accel_y_g));
     let h = fnv1a(h, core::mem::offset_of!(State, accel_z_g));
+    let h = fnv1a(h, core::mem::offset_of!(State, uptime_ms));
     let h = fnv1a(h, core::mem::offset_of!(State, sample_age_ms));
     let h = fnv1a(h, core::mem::offset_of!(State, samples));
     let h = fnv1a(h, core::mem::offset_of!(State, frames));
@@ -541,16 +552,17 @@ pub extern "C" fn poc_gui_abi_fingerprint() -> u32 {
 
 // Per field, because a size check passes when two fields are swapped. poc_gui.h
 // asserts the same offsets, so a hand edit to either declaration breaks a build.
-const _: () = assert!(core::mem::size_of::<State>() == 28);
+const _: () = assert!(core::mem::size_of::<State>() == 32);
 const _: () = assert!(core::mem::align_of::<State>() == 4);
 const _: () = assert!(core::mem::offset_of!(State, accel_x_g) == 0);
 const _: () = assert!(core::mem::offset_of!(State, accel_y_g) == 4);
 const _: () = assert!(core::mem::offset_of!(State, accel_z_g) == 8);
-const _: () = assert!(core::mem::offset_of!(State, sample_age_ms) == 12);
-const _: () = assert!(core::mem::offset_of!(State, samples) == 16);
-const _: () = assert!(core::mem::offset_of!(State, frames) == 20);
-const _: () = assert!(core::mem::offset_of!(State, valid) == 24);
-const _: () = assert!(core::mem::offset_of!(State, _pad) == 25);
+const _: () = assert!(core::mem::offset_of!(State, uptime_ms) == 12);
+const _: () = assert!(core::mem::offset_of!(State, sample_age_ms) == 16);
+const _: () = assert!(core::mem::offset_of!(State, samples) == 20);
+const _: () = assert!(core::mem::offset_of!(State, frames) == 24);
+const _: () = assert!(core::mem::offset_of!(State, valid) == 28);
+const _: () = assert!(core::mem::offset_of!(State, _pad) == 29);
 
 /// # Safety
 /// `buf` must point to at least `buf_len` writable bytes and `state` to a valid
@@ -577,7 +589,7 @@ mod tests {
 
     const W: u32 = 240;
     const H: u32 = 240;
-    const C_STRUCT_SIZE: usize = 28;
+    const C_STRUCT_SIZE: usize = 32;
     const C_STRUCT_ALIGN: usize = 4;
 
     fn live() -> State {
@@ -585,6 +597,7 @@ mod tests {
             accel_x_g: 0.25,
             accel_y_g: -0.5,
             accel_z_g: 0.9,
+            uptime_ms: 12_345,
             sample_age_ms: 40,
             samples: 123,
             frames: 456,
@@ -603,7 +616,7 @@ mod tests {
     /// here rather than as a refusal to start on a watch.
     #[test]
     fn abi_fingerprint_is_stable() {
-        assert_eq!(poc_gui_abi_fingerprint(), 0x8884_046E);
+        assert_eq!(poc_gui_abi_fingerprint(), 0xEDE6_6FD4);
     }
 
     #[test]

@@ -33,9 +33,12 @@ Two properties that path relies on:
   Past `kStaleAfterMs` the screen shows `NO DATA` rather than the last number it
   saw. That threshold is set from measurement, not from the sample period: the
   sensor layer aggregates on a ~1 s timer that no app-side setting moves.
-- **Every screen carries a heartbeat.** The marker steps one position per
-  rendered frame, so a screen whose numbers happen not to change still cannot be
-  mistaken for a stalled render loop.
+- **Every screen carries a heartbeat, positioned from the clock.** It only moves
+  when a frame is drawn, so a stalled loop freezes it — but because the position
+  is a function of uptime rather than of the frame count, a lap is a known 3.2 s
+  and dropped frames show as a visible jump rather than as a silently slower
+  orbit. A frame-counted marker proves liveness and nothing else: timing a run by
+  it would assume the frame rate it is meant to reveal.
 
 A Rust panic reaches the SDK logger through `poc_gui_host_panic` in `Gui.cpp`,
 which logs the message and location and then exits the app. Without that a panic
@@ -70,7 +73,7 @@ Targets **`apps-v1.4.0`**. Needs the ARM embedded toolchain, CMake, Python 3 wit
 rustup target add thumbv8m.main-none-eabihf
 export UNA_SDK=/path/to/una-sdk
 cd Software/Apps/RustGuiPoc-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.11.0 .
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.12.0 .
 cmake --build build
 ```
 
@@ -82,7 +85,7 @@ docker run --rm -v /path/to/una-sdk:/sdk -v "$PWD":/apps -e UNA_SDK=/sdk \
   -w /apps/RustGuiPoc/Software/Apps/RustGuiPoc-CMake \
   ghcr.io/tobymurray/kira-toolchain \
   bash -c 'pip3 install --break-system-packages -r /sdk/Utilities/Scripts/app_packer/requirements.txt
-           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.11.0 . && cmake --build build'
+           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.12.0 . && cmake --build build'
 ```
 
 That image ships neither `pyelftools` nor `Pillow`, both of which the SDK's
@@ -98,8 +101,8 @@ framework size is charged against the same budget as the framebuffer. From
 `Output/RustGuiPocGUI.elf.elf.map`:
 
 ```
-.text 26,820   .data 68   .got 68   .bss 58,204   .stack 10,240
-total 95,400 of 614,400  =  15.5%
+.text 26,844   .data 68   .got 68   .bss 58,204   .stack 10,240
+total 95,428 of 614,400  =  15.5%
 ```
 
 `.bss` is almost entirely the 57,600-byte framebuffer. Re-derive the numbers from
