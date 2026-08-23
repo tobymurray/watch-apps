@@ -108,6 +108,7 @@ void Gui::renderAndPush()
 void Gui::applySensorConfig(uint32_t index)
 {
     mConfigIndex = index % kSensorConfigCount;
+    ++mSegment;
     const SensorConfig &cfg = kSensorConfigs[mConfigIndex];
 
     mState.cfg_period_ms  = cfg.periodMs;
@@ -137,6 +138,7 @@ void Gui::recordSample(uint32_t sensorTsMs, uint16_t batch, float x, float y, fl
     LogRow &row   = mLogRows[mLogCount++];
     row.sensorTsMs = sensorTsMs;
     row.arrivalMs  = mKernel.sys.getTimeMs();
+    row.seg        = static_cast<uint16_t>(mSegment);
     row.cfg        = static_cast<uint16_t>(mConfigIndex);
     row.batch      = batch;
     row.xMg        = static_cast<int16_t>(x * 1000.0f);
@@ -184,7 +186,7 @@ void Gui::flushLog()
             mLogCount  = 0;
             return;
         }
-        static constexpr char kHeader[] = "seq,cfg,sensor_ts_ms,arrival_ms,batch,x_mg,y_mg,z_mg\n";
+        static constexpr char kHeader[] = "seq,seg,cfg,sensor_ts_ms,arrival_ms,batch,x_mg,y_mg,z_mg\n";
         size_t written = 0;
         mLogFile->write(kHeader, sizeof(kHeader) - 1, written);
     }
@@ -192,8 +194,9 @@ void Gui::flushLog()
     for (uint32_t i = 0; i < mLogCount; ++i) {
         const LogRow &row = mLogRows[i];
         char line[80];
-        const int len = snprintf(line, sizeof(line), "%u,%u,%u,%u,%u,%d,%d,%d\n",
+        const int len = snprintf(line, sizeof(line), "%u,%u,%u,%u,%u,%u,%d,%d,%d\n",
                                  static_cast<unsigned>(mLogSeq++),
+                                 static_cast<unsigned>(row.seg),
                                  static_cast<unsigned>(row.cfg),
                                  static_cast<unsigned>(row.sensorTsMs),
                                  static_cast<unsigned>(row.arrivalMs),

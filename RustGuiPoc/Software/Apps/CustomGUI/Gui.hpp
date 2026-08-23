@@ -58,6 +58,7 @@ private:
     struct LogRow {
         uint32_t sensorTsMs;
         uint32_t arrivalMs;
+        uint16_t seg;
         uint16_t cfg;
         uint16_t batch;
         int16_t  xMg;
@@ -95,6 +96,9 @@ private:
     uint32_t                  mLogCount = 0;
     uint32_t                  mLogSeq   = 0;
     uint32_t                  mConfigIndex = 0;
+    // Which visit, not which setting: cycling back to a cell must not read
+    // as a continuation of the earlier one.
+    uint32_t                  mSegment     = 0;
     std::unique_ptr<SDK::Interface::IFile> mLogFile;
     bool                                   mLogFailed = false;
 

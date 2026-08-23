@@ -52,12 +52,15 @@ of `SW3`, and on exit; each run truncates the file, so one run is one experiment
 Two files land in the app's own folder. `accel_log.csv`, one row per sample:
 
 ```
-seq,sensor_ts_ms,arrival_ms,batch,x_mg,y_mg,z_mg
+seq,seg,cfg,sensor_ts_ms,arrival_ms,batch,x_mg,y_mg,z_mg
 ```
 
-The `cfg` column records which sensor configuration a row was taken under, so
-one run can walk the matrix. `SW1` steps through it, flushing first so buffered
-rows keep the cell they belong to:
+`cfg` records which sensor configuration a row was taken under and `seg` which
+visit, so cycling back to a cell reads as a new segment rather than a
+continuation of the earlier one. Analyse by `seg`: grouping by `cfg` alone merges
+separate visits and manufactures a gap the length of everything in between.
+`SW1` steps the matrix, flushing first so buffered rows keep the cell they
+belong to:
 
 | cfg | period | latency | asks |
 |---|---|---|---|
@@ -84,7 +87,7 @@ if the driver batches, the interval between events is not the sample interval.
 
 ```sh
 # actual delivery interval, from the driver's own clock
-awk -F, 'NR>2 {print $2-p} {p=$2}' accel_log.csv | sort -n | uniq -c
+awk -F, 'NR>2 {print $4-p} {p=$4}' accel_log.csv | sort -n | uniq -c
 ```
 
 ## Screens
@@ -117,7 +120,7 @@ Targets **`apps-v1.4.0`**. Needs the ARM embedded toolchain, CMake, Python 3 wit
 rustup target add thumbv8m.main-none-eabihf
 export UNA_SDK=/path/to/una-sdk
 cd Software/Apps/RustGuiPoc-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.8.0 .
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.9.0 .
 cmake --build build
 ```
 
@@ -129,7 +132,7 @@ docker run --rm -v /path/to/una-sdk:/sdk -v "$PWD":/apps -e UNA_SDK=/sdk \
   -w /apps/RustGuiPoc/Software/Apps/RustGuiPoc-CMake \
   ghcr.io/tobymurray/kira-toolchain \
   bash -c 'pip3 install --break-system-packages -r /sdk/Utilities/Scripts/app_packer/requirements.txt
-           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.8.0 . && cmake --build build'
+           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.9.0 . && cmake --build build'
 ```
 
 That image ships neither `pyelftools` nor `Pillow`, both of which the SDK's
@@ -145,8 +148,8 @@ framework size is charged against the same budget as the framebuffer. From
 `Output/RustGuiPocGUI.elf.elf.map`:
 
 ```
-.text 29,000   .data 68   .got 68   .bss 71,564   .stack 10,240
-total 110,964 of 614,400  =  18.1%
+.text 29,044   .data 68   .got 68   .bss 71,564   .stack 10,240
+total 111,008 of 614,400  =  18.1%
 ```
 
 `.bss` is the 57,600-byte framebuffer plus the two log buffers. Re-derive the numbers from
