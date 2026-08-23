@@ -125,13 +125,21 @@ void Gui::recordSample(uint32_t sensorTsMs, uint16_t batch, float x, float y, fl
 
 void Gui::recordRender(uint32_t atMs, uint32_t pushMs, bool ok)
 {
-    if (mRenderFailed || mRenderCount == kRenderRows) {
+    if (mRenderFailed) {
         return;
     }
+
     RenderRow &row = mRenderRows[mRenderCount++];
     row.atMs   = atMs;
     row.pushMs = pushMs;
     row.ok     = ok ? 1u : 0u;
+
+    // Flush rather than drop. This buffer previously filled and then discarded
+    // silently, because it was only written out when the sample buffer filled --
+    // a run shorter than 512 samples lost every frame past the 256th.
+    if (mRenderCount == kRenderRows) {
+        flushRenderLog();
+    }
 }
 
 void Gui::flushLog()
@@ -176,8 +184,6 @@ void Gui::flushLog()
     LOG_INFO("accel log: +%u rows (%u total)\n",
              static_cast<unsigned>(mLogCount), static_cast<unsigned>(mLogSeq));
     mLogCount = 0;
-
-    flushRenderLog();
 }
 
 void Gui::flushRenderLog()
@@ -220,6 +226,7 @@ void Gui::flushRenderLog()
 void Gui::closeLog()
 {
     flushLog();
+    flushRenderLog();
     if (mLogFile) {
         mLogFile->close();
         mLogFile.reset();
@@ -289,6 +296,7 @@ void Gui::run()
             case SDK::MessageType::COMMAND_APP_GUI_SUSPEND:
                 mResumed = false;
                 flushLog();
+                flushRenderLog();
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 break;
 
@@ -331,6 +339,7 @@ void Gui::run()
                 } else if (btn->event == Event::LONG_PRESS && btn->id == Id::SW3) {
                     dumpFramebuffer();
                     flushLog();
+                    flushRenderLog();
                 }
                 msg->setResult(SDK::MessageResult::SUCCESS);
             } break;
