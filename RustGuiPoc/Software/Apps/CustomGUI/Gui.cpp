@@ -1,17 +1,12 @@
-/**
- ******************************************************************************
- * @file    Gui.cpp
- * @brief   CustomGUI shim implementation. Mirrors the message-loop idiom of
- *          Libs/Source/Port/TouchGFX/TouchGFXCommandProcessor.cpp, minus
- *          TouchGFX: query display config, then on each GUI tick have the Rust
- *          core paint the framebuffer and push it via RequestDisplayUpdate.
- ******************************************************************************
- */
 #include "Gui.hpp"
+
+#include "Commands.hpp"
 
 #include "SDK/Messages/MessageTypes.hpp"
 #include "SDK/Messages/CommandMessages.hpp"
 #include "SDK/Interfaces/IFileSystem.hpp"
+#include "SDK/Kernel/KernelProviderGUI.hpp"
+#include "SDK/Timer/Timer.hpp"
 
 #include "poc_gui.h"
 
@@ -20,6 +15,17 @@
 #include "SDK/UnaLogger/Logger.h"
 
 static constexpr uint32_t kWaitForever = 0xFFFFFFFF;
+// Paths are relative to the app's own directory, which already exists.
+static constexpr char     kFbDumpPath[] = "fb_dump.bin";
+
+extern "C" void poc_gui_host_panic(const uint8_t *msg, uint32_t len)
+{
+    LOG_ERROR("Rust panic: %.*s\n", static_cast<int>(len),
+              reinterpret_cast<const char *>(msg));
+    SDK::KernelProviderGUI::GetInstance().getKernel().sys.exit(1);
+    while (true) {
+    }
+}
 
 Gui::Gui(SDK::Kernel &kernel)
     : mKernel(kernel)
@@ -30,8 +36,7 @@ void Gui::queryDisplayConfig()
 {
     auto *cfg = mKernel.comm.allocateMessage<SDK::Message::RequestDisplayConfig>();
     if (cfg) {
-        // Request-response: the kernel fills width/height/colorDepth/format.
-        if (mKernel.comm.sendMessage(cfg, 1000) &&
+        if (mKernel.comm.sendMessage(cfg, kResponseTimeoutMs) &&
             cfg->getResult() == SDK::MessageResult::SUCCESS) {
             mWidth      = cfg->width;
             mHeight     = cfg->height;
@@ -40,14 +45,15 @@ void Gui::queryDisplayConfig()
         mKernel.comm.releaseMessage(cfg);
     }
 
-    // Fall back / clamp to what the static framebuffer can hold. Never trust the
-    // config blindly — a wrong size here writes past mFrameBuf.
-    if (mWidth <= 0 || mHeight <= 0 ||
-        static_cast<uint32_t>(mWidth) * static_cast<uint32_t>(mHeight) > kMaxPixels) {
-        LOG_WARNING("Display config unusable (%dx%d); falling back to 240x240\n",
-                    mWidth, mHeight);
-        mWidth  = 240;
-        mHeight = 240;
+    const bool fitsFramebuffer =
+        mWidth > 0 && mHeight > 0 &&
+        static_cast<uint32_t>(mWidth) * static_cast<uint32_t>(mHeight) <= kMaxPixels;
+
+    if (!fitsFramebuffer) {
+        LOG_WARNING("Display config unusable (%dx%d); falling back to %dx%d\n",
+                    mWidth, mHeight, kFallbackWidth, kFallbackHeight);
+        mWidth  = kFallbackWidth;
+        mHeight = kFallbackHeight;
     }
     LOG_INFO("Display %dx%d @ %ubpp\n", mWidth, mHeight, mColorDepth);
 }
@@ -58,44 +64,48 @@ void Gui::renderAndPush()
         return;
     }
 
+    // One clock read. A displayed age and a freshness verdict sampled at
+    // different instants can contradict each other on screen, which discredits
+    // the diagnostics exactly when they are being read.
+    const uint32_t age =
+        mHaveSample ? SDK::Timer::elapsed(mKernel.sys.getTimeMs(), mLastSampleMs) : 0;
+
+    mState.sample_age_ms = age;
+    mState.valid         = (mHaveSample && age <= kStaleAfterMs) ? 1u : 0u;
+
     poc_gui_render(mFrameBuf,
+                   kMaxPixels * kBytesPerPixel,
                    static_cast<uint16_t>(mWidth),
                    static_cast<uint16_t>(mHeight),
                    mScreen,
-                   mFrame);
+                   &mState);
 
     auto *upd = mKernel.comm.allocateMessage<SDK::Message::RequestDisplayUpdate>();
     if (upd) {
-        upd->pBuffer = mFrameBuf;   // buffer must stay valid until response (it is static)
-        mKernel.comm.sendMessage(upd, 1000);
+        upd->pBuffer = mFrameBuf;
+        mKernel.comm.sendMessage(upd, kResponseTimeoutMs);
         mKernel.comm.releaseMessage(upd);
     }
-    ++mFrame;
+    ++mState.frames;
 }
 
 void Gui::dumpFramebuffer()
 {
-    // The framebuffer is exactly what poc_gui_render() produced, so this file is
-    // byte-comparable to the sim's render() output for the same screen.
-    static constexpr char kDir[]  = "Apps/RustGuiPoc";
-    static constexpr char kPath[] = "Apps/RustGuiPoc/fb_dump.bin";
-
-    mKernel.fs.mkdir(kDir);
-
-    auto file = mKernel.fs.file(kPath);
+    auto file = mKernel.fs.file(kFbDumpPath);
     if (!file || !file->open(/*wMode=*/true, /*override=*/true)) {
-        LOG_WARNING("fb dump: open '%s' failed\n", kPath);
+        LOG_WARNING("fb dump: open '%s' failed\n", kFbDumpPath);
         return;
     }
 
-    const size_t bytes = static_cast<size_t>(mWidth) * static_cast<size_t>(mHeight); // 8bpp: 1 byte/px
+    const size_t bytes = static_cast<size_t>(mWidth) *
+                         static_cast<size_t>(mHeight) * kBytesPerPixel;
     size_t written = 0;
     const bool ok = file->write(reinterpret_cast<const char *>(mFrameBuf), bytes, written);
     file->flush();
     file->close();
 
     LOG_INFO("fb dump: %s screen=%u %dx%d -> %u/%u bytes %s\n",
-             kPath, static_cast<unsigned>(mScreen), mWidth, mHeight,
+             kFbDumpPath, static_cast<unsigned>(mScreen), mWidth, mHeight,
              static_cast<unsigned>(written), static_cast<unsigned>(bytes),
              (ok && written == bytes) ? "OK" : "FAIL");
 }
@@ -103,6 +113,14 @@ void Gui::dumpFramebuffer()
 void Gui::run()
 {
     LOG_INFO("Started\n");
+
+    if (poc_gui_abi_fingerprint() != poc_gui_abi::fingerprint()) {
+        LOG_ERROR("ABI mismatch: Rust 0x%08X, C++ 0x%08X -- stale libpoc_gui.a\n",
+                  static_cast<unsigned>(poc_gui_abi_fingerprint()),
+                  static_cast<unsigned>(poc_gui_abi::fingerprint()));
+        mKernel.sys.exit(1);
+        return;
+    }
 
     queryDisplayConfig();
     const uint32_t screenCount = poc_gui_screen_count();
@@ -118,7 +136,7 @@ void Gui::run()
             case SDK::MessageType::COMMAND_APP_STOP:
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 mKernel.comm.releaseMessage(msg);
-                mKernel.sys.exit(0); // no return
+                mKernel.sys.exit(0);
                 return;
 
             case SDK::MessageType::COMMAND_APP_GUI_RESUME:
@@ -132,41 +150,38 @@ void Gui::run()
                 break;
 
             case SDK::MessageType::EVENT_GUI_TICK:
-                // Ack + release before painting (mirrors the TouchGFX port).
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 mKernel.comm.releaseMessage(msg);
                 renderAndPush();
-                continue; // already released
+                continue;
+
+            case CustomMessage::ACCEL_VALUES: {
+                auto *accel = static_cast<CustomMessage::AccelValues *>(msg);
+                mState.accel_x_g = accel->x_g;
+                mState.accel_y_g = accel->y_g;
+                mState.accel_z_g = accel->z_g;
+                mLastSampleMs    = mKernel.sys.getTimeMs();
+                mHaveSample      = true;
+                ++mState.samples;
+                msg->setResult(SDK::MessageResult::SUCCESS);
+            } break;
 
             case SDK::MessageType::EVENT_BUTTON: {
                 auto *btn = static_cast<SDK::Message::EventButton *>(msg);
                 using Id    = SDK::Message::EventButton::Id;
                 using Event = SDK::Message::EventButton::Event;
 
-                // SW4 (bottom-right) is BACK. The screens here are a cycle, not
-                // a stack, so there is nothing to go back *to* — back leaves the
-                // app, which is what the SDK's own apps do with R2. This loop
-                // owns the message queue and swallows every button, so without
-                // it the only way out of the app is rebooting the watch.
-                //
-                // Acked and released first, exactly as COMMAND_APP_STOP does:
-                // sys.exit() does not return on the device.
                 if (btn->event == Event::CLICK && btn->id == Id::SW4) {
                     LOG_INFO("Back pressed; exiting\n");
                     msg->setResult(SDK::MessageResult::SUCCESS);
                     mKernel.comm.releaseMessage(msg);
                     mKernel.sys.exit(0);
-                    // Reached only on the simulator, where exit() sets a flag
-                    // and returns rather than tearing the app down.
                     return;
                 }
 
-                // SW2 (top-right / SELECT) cycles screens — the "move between
-                // two UIs" demo. SW3 (bottom-left / DOWN) long-press dumps the
-                // framebuffer for the desktop sim. Everything else is ignored.
                 if (btn->event == Event::CLICK && btn->id == Id::SW2 && screenCount > 0) {
                     mScreen = (mScreen + 1) % screenCount;
-                    renderAndPush(); // repaint immediately so the switch feels instant
+                    renderAndPush();
                 } else if (btn->event == Event::LONG_PRESS && btn->id == Id::SW3) {
                     dumpFramebuffer();
                 }

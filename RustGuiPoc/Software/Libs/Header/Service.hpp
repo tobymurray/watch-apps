@@ -1,28 +1,27 @@
-/**
- ******************************************************************************
- * @file    Service.hpp
- * @brief   Minimal Service half of the RustGuiPoc app.
- *
- * Every .uapp has a Service ELF as well as a GUI ELF. This PoC is a pure
- * frontend demo, so the service holds no state — it just stays alive while the
- * app is up and exits when the GUI goes away.
- ******************************************************************************
- */
 #ifndef SERVICE_HPP
 #define SERVICE_HPP
 
 #include "SDK/Kernel/Kernel.hpp"
+#include "SDK/SensorLayer/SensorConnection.hpp"
+#include "SDK/SensorLayer/SensorDataBatch.hpp"
 
 class Service
 {
 public:
     explicit Service(SDK::Kernel &kernel);
-    virtual ~Service() = default;
+    virtual ~Service();
 
     void run();
 
 private:
-    SDK::Kernel &mKernel;
+    void handleSensorData(uint16_t handle, SDK::Sensor::DataBatch &batch);
+
+    static constexpr float    skSamplePeriodMs = 100.0f;
+    static constexpr uint32_t skSampleLatency  = 0;
+
+    SDK::Kernel            &mKernel;
+    SDK::Sensor::Connection mAccel;
+    bool                    mGuiStarted;
 };
 
 #endif // SERVICE_HPP

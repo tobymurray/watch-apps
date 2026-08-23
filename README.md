@@ -16,7 +16,7 @@ than living inside it.
 | [`HikeMap`](HikeMap) | The stock Hiking activity with the same live map. |
 | [`MapManager`](MapManager) | A background, autostart `Utility` app that discovers and CRC-verifies offline map packs dropped into the shared `SharedData/maps/` directory, so map-consuming apps read from one already-verified location instead of each running their own copy of this pipeline. |
 | [`RunMap`](RunMap) | The stock Running activity with the same live map. |
-| [`RustGuiPoc`](RustGuiPoc) | A proof of concept: a watch app whose GUI is drawn by Rust and `embedded-graphics` through the SDK's CustomGUI entry point, instead of TouchGFX. |
+| [`RustGuiPoc`](RustGuiPoc) | A proof of concept: a watch app whose GUI is drawn by Rust and `embedded-graphics` through the SDK's CustomGUI entry point, instead of TouchGFX. It shows a live accelerometer reading, which a GUI process cannot read on its own, so the Service half feeds it over the message bus. |
 | [`SleepLab`](SleepLab) | A background, autostart `Utility` app that records a night of wrist data and scores it with a published actigraphy algorithm — and refuses to report sleep stages, an unworn night, or a heart-rate figure it has not earned a baseline for, because a sleep app's failures are silent. |
 | [`Squash`](Squash) | A squash activity app, and the raw 100 Hz IMU recorder it is being built out of — because tuning shot detection needs labelled court data that does not exist yet. |
 | [`SunGlance`](SunGlance) | A `Glance` card that says what the sun does next — sunrise or sunset, and how long until it — for a position written into the app's folder at install time, because a three-second card cannot afford a GNSS fix and does not need one. |
@@ -37,21 +37,21 @@ Each app is a self-contained app root: a `Software/` directory holding exactly o
 `*-CMake` project, which finds the SDK through `$UNA_SDK` rather than by relative
 path. So an SDK checkout anywhere will do — but **it has to be the right one.**
 
-**`$UNA_SDK` must point at an `apps-v1.3.0` checkout, not at mainline.** An app
-carries the kernel interface version it was built against: `apps-v1.3.0` is
-`KERNEL_INTERFACE_VERSION 2`, mainline is `3`, and the watch runs the 1.3 line.
-The two are not compatible and nothing catches the mistake — the build succeeds,
-the `.uapp` header looks identical (it carries app id, app version and libc
-version, none of which change), and the app simply does not run once installed.
-Chrono's and Map Manager's READMEs explain the pinning; it applies to every app
-here.
+**`$UNA_SDK` should point at an `apps-v1.4.0` checkout.** An app carries the
+kernel interface version it was built against, and `Libs/Source/AppSystem/system.cpp`
+refuses to launch when the running kernel's version is *lower* than the app's. So
+the mistake to avoid is building against an SDK newer than the watch's firmware:
+the build succeeds, the `.uapp` header looks identical, and the app simply does
+not run once installed. The check is one-directional, so an app built against an
+older SDK still runs on newer firmware — it just cannot use what the newer line
+added.
 
 The three map apps additionally reach `MapKit/` by relative path within this repository, which is the arrangement
 Kira's registry recommends for a monorepo and which its one-`*-CMake`-per-app
 rule is unaffected by — see [MapKit's README](MapKit/README.md#layout-and-why-kira-is-fine-with-it).
 
 ```sh
-export UNA_SDK=/path/to/una-sdk-apps-v1.3.0    # not mainline; see above
+export UNA_SDK=/path/to/una-sdk-apps-v1.4.0
 cd GpsLab/Software/Apps/GpsLab-CMake
 cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=1.0.0 .. && cmake --build build
 ```
@@ -72,16 +72,17 @@ kira build-app --app GpsLab --sdk /path/to/una-sdk --version 1.0.0 --out GpsLab.
 storage under [`SleepLab/Tests`](SleepLab/Tests), `SunGlance` carries its solar
 core, its wording and its glance wiring under
 [`SunGlance/Tests`](SunGlance/Tests), and the three map apps share one suite
-under [`MapKit/Tests`](MapKit/Tests).
+under [`MapKit/Tests`](MapKit/Tests). `RustGuiPoc`'s tests live inside its own
+crate rather than in a `Tests/` directory — see
+[its README](RustGuiPoc/README.md#tests).
 
-Two different SDKs, depending on the app. `Chrono`, `MapManager` and the three
-map apps are pinned to `apps-v1.3.0` — point `$UNA_SDK` at a checkout of that
-tag, and see their READMEs
+`SleepLab`, `SunGlance` and `RustGuiPoc` target `apps-v1.4.0`. `Chrono`,
+`MapManager` and the three map apps were pinned to `apps-v1.3.0` back when no
+1.4 firmware had shipped — their binaries still run on 1.4, since the launch
+check only refuses a kernel older than the app, but the pinning rationale in
+their READMEs
 ([Chrono](Chrono/README.md#why-13-matters), [MapManager](MapManager/README.md#why-its-pinned-to-sdk-13))
-for why. `SleepLab` and `SunGlance` target **`apps-v1.4.0`** and will not run
-on a 1.3 kernel: an app carries the interface version it was built against, and
-the mismatch shows up as an instant `App PID` error screen rather than as a
-build failure — see [SleepLab's README](SleepLab/README.md#building).
+no longer applies and neither has been rebuilt against 1.4 here.
 
 ## Licence
 
