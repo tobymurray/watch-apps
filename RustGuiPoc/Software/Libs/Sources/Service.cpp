@@ -71,6 +71,18 @@ void Service::run()
                 mGuiStarted = true;
                 break;
 
+            case CustomMessage::SET_SENSOR_CONFIG: {
+                auto *cfg = static_cast<CustomMessage::SetSensorConfig *>(msg);
+                // connect() rejects a parameter change while connected, so the
+                // old connection has to go first.
+                mAccel.disconnect();
+                const bool ok = mAccel.connect(cfg->period_ms, cfg->latency_ms);
+                LOG_INFO("sensor cfg period=%u latency=%u -> %s\n",
+                         static_cast<unsigned>(cfg->period_ms),
+                         static_cast<unsigned>(cfg->latency_ms),
+                         ok ? "ok" : "FAILED");
+            } break;
+
             case SDK::MessageType::EVENT_SENSOR_LAYER_DATA: {
                 auto *event = static_cast<SDK::Message::Sensor::EventData *>(msg);
                 SDK::Sensor::DataBatch batch(event->data, event->count, event->stride);

@@ -50,6 +50,17 @@ Two files land in the app's own folder. `accel_log.csv`, one row per sample:
 seq,sensor_ts_ms,arrival_ms,batch,x_mg,y_mg,z_mg
 ```
 
+The `cfg` column records which sensor configuration a row was taken under, so
+one run can walk the matrix. `SW1` steps through it, flushing first so buffered
+rows keep the cell they belong to:
+
+| cfg | period | latency | asks |
+|---|---|---|---|
+| 0 | 100 ms | 0 | baseline |
+| 1 | 100 ms | 20 ms | does a latency of 0 mean "none", or "driver default"? |
+| 2 | 100 ms | 2000 ms | does latency move the flush interval at all? |
+| 3 | 20 ms | 0 | the flush is on a ~1 s timer, so this should change how many samples land per drain and not the interval between drains |
+
 and `render_log.csv`, one row per frame, which times the framebuffer push:
 
 ```
@@ -85,6 +96,7 @@ awk -F, 'NR>2 {print $2-p} {p=$2}' accel_log.csv | sort -n | uniq -c
 |---|---|---|
 | `SW2` / R1 | top right | cycle to the next screen |
 | `SW4` / R2 | bottom right | back — leaves the app |
+| `SW1` / L1 | top left | next sensor configuration (see below) |
 | `SW3` / L2, long press | bottom left | dump the framebuffer and flush the sample log |
 
 The screens are a cycle, not a stack, so back exits. This app owns the kernel
@@ -100,7 +112,7 @@ Targets **`apps-v1.4.0`**. Needs the ARM embedded toolchain, CMake, Python 3 wit
 rustup target add thumbv8m.main-none-eabihf
 export UNA_SDK=/path/to/una-sdk
 cd Software/Apps/RustGuiPoc-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.6.0 .
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.7.0 .
 cmake --build build
 ```
 
@@ -112,7 +124,7 @@ docker run --rm -v /path/to/una-sdk:/sdk -v "$PWD":/apps -e UNA_SDK=/sdk \
   -w /apps/RustGuiPoc/Software/Apps/RustGuiPoc-CMake \
   ghcr.io/tobymurray/kira-toolchain \
   bash -c 'pip3 install --break-system-packages -r /sdk/Utilities/Scripts/app_packer/requirements.txt
-           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.6.0 . && cmake --build build'
+           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.7.0 . && cmake --build build'
 ```
 
 That image ships neither `pyelftools` nor `Pillow`, both of which the SDK's
@@ -128,8 +140,8 @@ framework size is charged against the same budget as the framebuffer. From
 `Output/RustGuiPocGUI.elf.elf.map`:
 
 ```
-.text 28,256   .data 68   .got 68   .bss 69,504   .stack 10,240
-total 108,136 of 614,400  =  17.6%
+.text 28,756   .data 68   .got 68   .bss 71,564   .stack 10,240
+total 110,720 of 614,400  =  18.0%
 ```
 
 `.bss` is the 57,600-byte framebuffer plus the two log buffers. Re-derive the numbers from

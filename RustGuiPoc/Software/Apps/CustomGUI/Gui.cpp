@@ -4,6 +4,7 @@
 
 #include "Commands.hpp"
 
+#include "SDK/Messages/MessageGuard.hpp"
 #include "SDK/Messages/MessageTypes.hpp"
 #include "SDK/Messages/CommandMessages.hpp"
 #include "SDK/Interfaces/IFileSystem.hpp"
@@ -104,6 +105,29 @@ void Gui::renderAndPush()
     recordRender(mKernel.sys.getTimeMs(), pushMs, pushOk);
 }
 
+void Gui::applySensorConfig(uint32_t index)
+{
+    mConfigIndex = index % kSensorConfigCount;
+    const SensorConfig &cfg = kSensorConfigs[mConfigIndex];
+
+    mState.cfg_period_ms  = cfg.periodMs;
+    mState.cfg_latency_ms = cfg.latencyMs;
+    // Each cell of the matrix gets its own peak, or the first cell's worst gap
+    // would be read as every later cell's.
+    mState.sample_age_max_ms = 0;
+
+    SDK::send_msg<CustomMessage::SetSensorConfig>(
+        mKernel, static_cast<float>(cfg.periodMs), cfg.latencyMs);
+    LOG_INFO("sensor cfg %u: period=%u latency=%u\n",
+             static_cast<unsigned>(mConfigIndex),
+             static_cast<unsigned>(cfg.periodMs),
+             static_cast<unsigned>(cfg.latencyMs));
+
+    // Flush first: the rows already buffered belong to the previous cell.
+    flushLog();
+    flushRenderLog();
+}
+
 void Gui::recordSample(uint32_t sensorTsMs, uint16_t batch, float x, float y, float z)
 {
     if (mLogFailed) {
@@ -113,6 +137,7 @@ void Gui::recordSample(uint32_t sensorTsMs, uint16_t batch, float x, float y, fl
     LogRow &row   = mLogRows[mLogCount++];
     row.sensorTsMs = sensorTsMs;
     row.arrivalMs  = mKernel.sys.getTimeMs();
+    row.cfg        = static_cast<uint16_t>(mConfigIndex);
     row.batch      = batch;
     row.xMg        = static_cast<int16_t>(x * 1000.0f);
     row.yMg        = static_cast<int16_t>(y * 1000.0f);
@@ -159,7 +184,7 @@ void Gui::flushLog()
             mLogCount  = 0;
             return;
         }
-        static constexpr char kHeader[] = "seq,sensor_ts_ms,arrival_ms,batch,x_mg,y_mg,z_mg\n";
+        static constexpr char kHeader[] = "seq,cfg,sensor_ts_ms,arrival_ms,batch,x_mg,y_mg,z_mg\n";
         size_t written = 0;
         mLogFile->write(kHeader, sizeof(kHeader) - 1, written);
     }
@@ -167,8 +192,9 @@ void Gui::flushLog()
     for (uint32_t i = 0; i < mLogCount; ++i) {
         const LogRow &row = mLogRows[i];
         char line[80];
-        const int len = snprintf(line, sizeof(line), "%u,%u,%u,%u,%d,%d,%d\n",
+        const int len = snprintf(line, sizeof(line), "%u,%u,%u,%u,%u,%d,%d,%d\n",
                                  static_cast<unsigned>(mLogSeq++),
+                                 static_cast<unsigned>(row.cfg),
                                  static_cast<unsigned>(row.sensorTsMs),
                                  static_cast<unsigned>(row.arrivalMs),
                                  static_cast<unsigned>(row.batch),
@@ -271,6 +297,8 @@ void Gui::run()
     }
 
     queryDisplayConfig();
+    mState.cfg_period_ms  = kSensorConfigs[0].periodMs;
+    mState.cfg_latency_ms = kSensorConfigs[0].latencyMs;
     const uint32_t screenCount = poc_gui_screen_count();
 
     while (true) {
@@ -333,7 +361,9 @@ void Gui::run()
                     return;
                 }
 
-                if (btn->event == Event::CLICK && btn->id == Id::SW2 && screenCount > 0) {
+                if (btn->event == Event::CLICK && btn->id == Id::SW1) {
+                    applySensorConfig(mConfigIndex + 1);
+                } else if (btn->event == Event::CLICK && btn->id == Id::SW2 && screenCount > 0) {
                     mScreen = (mScreen + 1) % screenCount;
                     renderAndPush();
                 } else if (btn->event == Event::LONG_PRESS && btn->id == Id::SW3) {

@@ -38,6 +38,8 @@ pub struct State {
     pub sample_age_ms: u32,
     pub sample_age_max_ms: u32,
     pub last_push_ms: u32,
+    pub cfg_period_ms: u32,
+    pub cfg_latency_ms: u32,
     pub samples: u32,
     pub frames: u32,
     pub valid: u8,
@@ -343,7 +345,7 @@ fn draw_diag(fb: &mut FrameBuf, st: &State) {
     title(fb, &g, "DIAG");
 
     let x = g.cx - g.inscribed_half + 6;
-    let mut y = g.cy - 35;
+    let mut y = g.cy - 48;
     let mut row = |fb: &mut FrameBuf, s: &str| {
         text(fb, s, Point::new(x, y), BRIGHT_READING, Alignment::Left);
         y += DIAG_ROW_HEIGHT;
@@ -367,6 +369,10 @@ fn draw_diag(fb: &mut FrameBuf, st: &State) {
 
     let mut b = Buf::<24>::new();
     let _ = write!(b, "PUSH{:>7}ms", st.last_push_ms);
+    row(fb, b.as_str());
+
+    let mut b = Buf::<24>::new();
+    let _ = write!(b, "CFG {:>4}/{:<4}", st.cfg_period_ms, st.cfg_latency_ms);
     row(fb, b.as_str());
 
     let mut b = Buf::<24>::new();
@@ -524,7 +530,7 @@ mod tests {
 
     const W: u32 = 240;
     const H: u32 = 240;
-    const C_STRUCT_SIZE: usize = 36;
+    const C_STRUCT_SIZE: usize = 44;
     const C_STRUCT_ALIGN: usize = 4;
 
     fn live() -> State {
@@ -534,7 +540,9 @@ mod tests {
             accel_z_g: 0.9,
             sample_age_ms: 40,
             sample_age_max_ms: 812,
-            last_push_ms: 1000,
+            last_push_ms: 22,
+            cfg_period_ms: 100,
+            cfg_latency_ms: 0,
             samples: 123,
             frames: 456,
             valid: 1,

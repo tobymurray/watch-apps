@@ -26,6 +26,7 @@ private:
     // screen, so a run can be left going and the timing analysed afterwards.
     void recordSample(uint32_t sensorTsMs, uint16_t batch, float x, float y, float z);
     void recordRender(uint32_t atMs, uint32_t pushMs, bool ok);
+    void applySensorConfig(uint32_t index);
     void flushLog();
     void flushRenderLog();
     void closeLog();
@@ -36,9 +37,28 @@ private:
         uint8_t  ok;
     };
 
+    struct SensorConfig {
+        uint32_t periodMs;
+        uint32_t latencyMs;
+    };
+
+    // The matrix a run walks. 0 is the baseline; 20 asks whether a latency of 0
+    // means "none" or "driver default"; 2000 asks whether latency moves the
+    // flush interval at all; the last cell changes the period instead, which the
+    // timer model predicts will change drain size and not the interval.
+    static constexpr SensorConfig kSensorConfigs[] = {
+        {100, 0},
+        {100, 20},
+        {100, 2000},
+        {20, 0},
+    };
+    static constexpr uint32_t kSensorConfigCount =
+        sizeof(kSensorConfigs) / sizeof(kSensorConfigs[0]);
+
     struct LogRow {
         uint32_t sensorTsMs;
         uint32_t arrivalMs;
+        uint16_t cfg;
         uint16_t batch;
         int16_t  xMg;
         int16_t  yMg;
@@ -70,6 +90,7 @@ private:
     LogRow                    mLogRows[kLogRows];
     uint32_t                  mLogCount = 0;
     uint32_t                  mLogSeq   = 0;
+    uint32_t                  mConfigIndex = 0;
     std::unique_ptr<SDK::Interface::IFile> mLogFile;
     bool                                   mLogFailed = false;
 
