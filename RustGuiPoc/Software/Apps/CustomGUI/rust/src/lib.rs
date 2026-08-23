@@ -229,6 +229,47 @@ fn draw_rim(fb: &mut FrameBuf, g: &Geom) {
     draw_circle(fb, g.cx, g.cy, g.radius - 1, stroke(BRIGHT_CHROME));
 }
 
+const HEARTBEAT_STEPS: u32 = 32;
+const UNIT_CIRCLE_Q7: [(i8, i8); 32] = [
+    (0, -127), (25, -125), (49, -117), (71, -106),
+    (90, -90), (106, -71), (117, -49), (125, -25),
+    (127, 0), (125, 25), (117, 49), (106, 71),
+    (90, 90), (71, 106), (49, 117), (25, 125),
+    (0, 127), (-25, 125), (-49, 117), (-71, 106),
+    (-90, 90), (-106, 71), (-117, 49), (-125, 25),
+    (-127, 0), (-125, -25), (-117, -49), (-106, -71),
+    (-90, -90), (-71, -106), (-49, -117), (-25, -125),
+];
+
+const Q7_ONE: i32 = 127;
+const HEARTBEAT_DOT_RADIUS: i32 = 3;
+
+/// A marker stepping one position per rendered frame. Without it a screen whose
+/// numbers happen not to change is indistinguishable from a stalled render loop
+/// -- and at 10 fps with samples arriving once a second, most of them do.
+fn draw_heartbeat(fb: &mut FrameBuf, g: &Geom, frames: u32) {
+    let (sx, sy) = UNIT_CIRCLE_Q7[(frames % HEARTBEAT_STEPS) as usize];
+    let r = g.radius - 8;
+    let x = g.cx + (sx as i32) * r / Q7_ONE;
+    let y = g.cy + (sy as i32) * r / Q7_ONE;
+    draw_circle(fb, x, y, HEARTBEAT_DOT_RADIUS, PrimitiveStyle::with_fill(BRIGHT_HEADING));
+}
+
+/// Everything every screen carries: the rim, proof the loop is running, which
+/// page you are on, and which sensor configuration produced what you are looking
+/// at. The last one matters because the button that changes it is not on a screen
+/// that shows it.
+fn chrome(fb: &mut FrameBuf, g: &Geom, st: &State, page: u32) {
+    draw_rim(fb, g);
+    draw_heartbeat(fb, g, st.frames);
+    page_dots(fb, g, page);
+
+    let mut cfg = Buf::<16>::new();
+    let _ = write!(cfg, "{}/{}", st.cfg_period_ms, st.cfg_latency_ms);
+    let at = Point::new(g.cx, g.cy + g.inscribed_half + 14);
+    text(fb, cfg.as_str(), at, BRIGHT_CHROME, Alignment::Center);
+}
+
 fn text(fb: &mut FrameBuf, s: &str, at: Point, color: Abgr2222, align: Alignment) {
     Text::with_alignment(s, at, MonoTextStyle::new(&FONT_9X15_BOLD, color), align)
         .draw(fb)
@@ -297,7 +338,7 @@ fn tilt_to_screen_offset(st: &State) -> (i32, i32) {
 
 fn draw_accel(fb: &mut FrameBuf, st: &State) {
     let g = geom(fb);
-    draw_rim(fb, &g);
+    chrome(fb, &g, st, 0);
     title(fb, &g, "ACCEL mg");
 
     let (bubble_cx, bubble_cy) = (g.cx, g.cy - 16);
@@ -306,7 +347,6 @@ fn draw_accel(fb: &mut FrameBuf, st: &State) {
     if !st.is_live() {
         let at = Point::new(g.cx, g.cy + 52);
         text(fb, "NO DATA", at, BRIGHT_WARNING, Alignment::Center);
-        page_dots(fb, &g, 0);
         return;
     }
 
@@ -333,15 +373,13 @@ fn draw_accel(fb: &mut FrameBuf, st: &State) {
     let _ = write!(z, "Z{:>5}", to_milli_g_clamped(st.accel_z_g));
     let at = Point::new(g.cx, g.cy + 66);
     text(fb, z.as_str(), at, BRIGHT_READING, Alignment::Center);
-
-    page_dots(fb, &g, 0);
 }
 
 const DIAG_ROW_HEIGHT: i32 = 18;
 
 fn draw_diag(fb: &mut FrameBuf, st: &State) {
     let g = geom(fb);
-    draw_rim(fb, &g);
+    chrome(fb, &g, st, 1);
     title(fb, &g, "DIAG");
 
     let x = g.cx - g.inscribed_half + 6;
@@ -378,8 +416,6 @@ fn draw_diag(fb: &mut FrameBuf, st: &State) {
     let mut b = Buf::<24>::new();
     let _ = write!(b, "STATE{:>8}", st.status_label());
     row(fb, b.as_str());
-
-    page_dots(fb, &g, 1);
 }
 
 // Ordered-dither threshold matrix. Values 0..63 spread so that neighbouring
@@ -424,9 +460,9 @@ fn quantise_dithered(value: u8, x: i32, y: i32) -> u8 {
 const GRADIENT_HALF_HEIGHT: i32 = 55;
 const SPLIT_GAP: i32 = 2;
 
-fn draw_dither(fb: &mut FrameBuf) {
+fn draw_dither(fb: &mut FrameBuf, st: &State) {
     let g = geom(fb);
-    draw_rim(fb, &g);
+    chrome(fb, &g, st, 2);
 
     let top = g.cy - GRADIENT_HALF_HEIGHT;
     let bottom = g.cy + GRADIENT_HALF_HEIGHT;
@@ -464,8 +500,6 @@ fn draw_dither(fb: &mut FrameBuf) {
     let label_y = g.cy - g.inscribed_half + 16;
     text(fb, "FLAT", Point::new(g.cx - 42, label_y), BRIGHT_READING, Alignment::Center);
     text(fb, "DITHER", Point::new(g.cx + 44, label_y), BRIGHT_HEADING, Alignment::Center);
-
-    page_dots(fb, &g, 2);
 }
 
 const SCREEN_COUNT: u32 = 3;
@@ -488,7 +522,7 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, screen: u32, state: &Stat
     match screen % SCREEN_COUNT {
         0 => draw_accel(&mut fb, state),
         1 => draw_diag(&mut fb, state),
-        _ => draw_dither(&mut fb),
+        _ => draw_dither(&mut fb, state),
     }
 }
 

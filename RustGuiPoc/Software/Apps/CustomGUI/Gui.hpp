@@ -65,7 +65,11 @@ private:
         int16_t  zMg;
     };
 
-    static constexpr uint32_t kStaleAfterMs      = 500;
+    // The sensor layer aggregates on a ~1 s timer that no app-side period or
+    // latency setting moves, and delivery is lossless. Measured worst gaps are
+    // 1249 ms at the default config and 2009 ms with a 2 s driver latency, so a
+    // gate under that reports complete data as missing.
+    static constexpr uint32_t kStaleAfterMs      = 2500;
     static constexpr int16_t  kFallbackWidth     = 240;
     static constexpr int16_t  kFallbackHeight    = 240;
     static constexpr uint32_t kBytesPerPixel     = 1;

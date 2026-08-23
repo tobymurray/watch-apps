@@ -31,7 +31,12 @@ Two properties that path relies on:
   cannot disagree about what a given reading looks like.
 - **`Gui.cpp` decides whether a sample is fresh; the renderer never guesses.**
   Past `kStaleAfterMs` the screen shows `NO DATA` rather than the last number it
-  saw.
+  saw. That threshold has to clear the transport's own cadence: the sensor layer
+  aggregates on a ~1 s timer that no app-side period or latency setting moves.
+- **Every screen carries a heartbeat and the live sensor config.** The marker
+  steps one position per rendered frame, so a screen whose numbers happen not to
+  change still cannot be mistaken for a stalled loop, and the button that retunes
+  the sensor is not on the screen that reports it.
 
 A Rust panic reaches the SDK logger through `poc_gui_host_panic` in `Gui.cpp`,
 which logs the message and location and then exits the app. Without that a panic
@@ -112,7 +117,7 @@ Targets **`apps-v1.4.0`**. Needs the ARM embedded toolchain, CMake, Python 3 wit
 rustup target add thumbv8m.main-none-eabihf
 export UNA_SDK=/path/to/una-sdk
 cd Software/Apps/RustGuiPoc-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.7.0 .
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.8.0 .
 cmake --build build
 ```
 
@@ -124,7 +129,7 @@ docker run --rm -v /path/to/una-sdk:/sdk -v "$PWD":/apps -e UNA_SDK=/sdk \
   -w /apps/RustGuiPoc/Software/Apps/RustGuiPoc-CMake \
   ghcr.io/tobymurray/kira-toolchain \
   bash -c 'pip3 install --break-system-packages -r /sdk/Utilities/Scripts/app_packer/requirements.txt
-           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.7.0 . && cmake --build build'
+           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.8.0 . && cmake --build build'
 ```
 
 That image ships neither `pyelftools` nor `Pillow`, both of which the SDK's
@@ -140,8 +145,8 @@ framework size is charged against the same budget as the framebuffer. From
 `Output/RustGuiPocGUI.elf.elf.map`:
 
 ```
-.text 28,756   .data 68   .got 68   .bss 71,564   .stack 10,240
-total 110,720 of 614,400  =  18.0%
+.text 29,000   .data 68   .got 68   .bss 71,564   .stack 10,240
+total 110,964 of 614,400  =  18.1%
 ```
 
 `.bss` is the 57,600-byte framebuffer plus the two log buffers. Re-derive the numbers from

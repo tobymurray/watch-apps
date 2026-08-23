@@ -32,16 +32,20 @@ void Service::handleSensorData(uint16_t handle, SDK::Sensor::DataBatch &batch)
         return;
     }
 
-    const uint16_t newest = batch.size() - 1;
-    SDK::SensorDataParser::Accelerometer parser(batch[newest]);
+    // Forward every sample, not just the newest. A latency of 2000 ms makes the
+    // driver deliver ten per DataBatch, and keeping only the last discarded nine
+    // of every ten while still reporting size() honestly.
+    for (uint16_t i = 0; i < batch.size(); ++i) {
+        SDK::SensorDataParser::Accelerometer parser(batch[i]);
 
-    float x = 0.0f, y = 0.0f, z = 0.0f;
-    if (!parser.getXYZ(x, y, z)) {
-        return;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        if (!parser.getXYZ(x, y, z)) {
+            continue;
+        }
+
+        SDK::send_msg<CustomMessage::AccelValues>(
+            mKernel, x, y, z, parser.getTimestamp(), batch.size());
     }
-
-    SDK::send_msg<CustomMessage::AccelValues>(
-        mKernel, x, y, z, parser.getTimestamp(), batch.size());
 }
 
 void Service::run()
