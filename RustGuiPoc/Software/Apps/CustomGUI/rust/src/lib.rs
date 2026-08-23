@@ -6,7 +6,7 @@ use embedded_graphics::{
     mono_font::{ascii::FONT_9X15_BOLD, MonoTextStyle},
     pixelcolor::{raw::RawU8, PixelColor},
     prelude::*,
-    primitives::{Circle, Line, PrimitiveStyle},
+    primitives::{Circle, Line, PrimitiveStyle, Rectangle},
     text::{Alignment, Text},
 };
 
@@ -76,13 +76,17 @@ const fn keep_high_bits(channel: u8) -> u8 {
 }
 
 impl Abgr2222 {
-    pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
+    pub const fn from_levels(r2: u8, g2: u8, b2: u8) -> Self {
         Abgr2222(
             (ALPHA_OPAQUE << ALPHA_SHIFT)
-                | (keep_high_bits(b) << BLUE_SHIFT)
-                | (keep_high_bits(g) << GREEN_SHIFT)
-                | (keep_high_bits(r) << RED_SHIFT),
+                | ((b2 & CHANNEL_MASK) << BLUE_SHIFT)
+                | ((g2 & CHANNEL_MASK) << GREEN_SHIFT)
+                | ((r2 & CHANNEL_MASK) << RED_SHIFT),
         )
+    }
+
+    pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
+        Abgr2222::from_levels(keep_high_bits(r), keep_high_bits(g), keep_high_bits(b))
     }
 
     pub const BLACK: Abgr2222 = Abgr2222::rgb(0, 0, 0);
@@ -372,7 +376,93 @@ fn draw_diag(fb: &mut FrameBuf, st: &State) {
     page_dots(fb, &g, 1);
 }
 
-const SCREEN_COUNT: u32 = 2;
+// Ordered-dither threshold matrix. Values 0..63 spread so that neighbouring
+// pixels round in different directions, trading spatial resolution for apparent
+// colour depth -- which is the whole trick on a panel with four levels a channel.
+const BAYER_8X8: [[u8; 8]; 8] = [
+    [0, 32, 8, 40, 2, 34, 10, 42],
+    [48, 16, 56, 24, 50, 18, 58, 26],
+    [12, 44, 4, 36, 14, 46, 6, 38],
+    [60, 28, 52, 20, 62, 30, 54, 22],
+    [3, 35, 11, 43, 1, 33, 9, 41],
+    [51, 19, 59, 27, 49, 17, 57, 25],
+    [15, 47, 7, 39, 13, 45, 5, 37],
+    [63, 31, 55, 23, 61, 29, 53, 21],
+];
+
+const CHANNEL_LEVELS_MAX: u32 = 3;
+const FULL_SCALE: u32 = 255;
+const BAYER_SIZE: usize = 8;
+const BAYER_MAX: u32 = 63;
+
+/// Quantise 0..255 to a 2-bit level by truncation: what asking for a colour the
+/// panel cannot show gets you, and the reason a ramp becomes four bands.
+fn quantise_flat(value: u8) -> u8 {
+    keep_high_bits(value)
+}
+
+/// Quantise with a per-pixel threshold, so a value between two levels lands on
+/// the lower one in some pixels and the upper one in others.
+fn quantise_dithered(value: u8, x: i32, y: i32) -> u8 {
+    let threshold = BAYER_8X8[(y as usize) % BAYER_SIZE][(x as usize) % BAYER_SIZE] as u32;
+    let scaled = value as u32 * CHANNEL_LEVELS_MAX
+        + threshold * (FULL_SCALE + 1) / (BAYER_MAX + 1);
+    let level = scaled / FULL_SCALE;
+    if level > CHANNEL_LEVELS_MAX {
+        CHANNEL_LEVELS_MAX as u8
+    } else {
+        level as u8
+    }
+}
+
+const GRADIENT_HALF_HEIGHT: i32 = 55;
+const SPLIT_GAP: i32 = 2;
+
+fn draw_dither(fb: &mut FrameBuf) {
+    let g = geom(fb);
+    draw_rim(fb, &g);
+
+    let top = g.cy - GRADIENT_HALF_HEIGHT;
+    let bottom = g.cy + GRADIENT_HALF_HEIGHT;
+    let span = (bottom - top) as u32;
+    let left = g.cx - g.inscribed_half;
+    let right = g.cx + g.inscribed_half;
+
+    for y in top..bottom {
+        // One luminance ramp, drawn twice: the only difference between the
+        // halves is how the same value is turned into a pixel.
+        let value = (((y - top) as u32 * FULL_SCALE) / span) as u8;
+        for x in left..right {
+            if (x - g.cx).abs() < SPLIT_GAP {
+                continue;
+            }
+            let level = if x < g.cx {
+                quantise_flat(value)
+            } else {
+                quantise_dithered(value, x, y)
+            };
+            let idx = (y as u32 * fb.w + x as u32) as usize;
+            fb.buf[idx] = Abgr2222::from_levels(level, level, level).0;
+        }
+    }
+
+    // Both halves are framed because the flat side quantises the top of the ramp
+    // to pure black, which without a border reads as a missing gradient rather
+    // than as the first of its four bands.
+    let frame = Rectangle::new(
+        Point::new(g.cx - g.inscribed_half, top),
+        Size::new((g.inscribed_half as u32) * 2, span),
+    );
+    frame.into_styled(stroke(BRIGHT_CHROME)).draw(fb).ok();
+
+    let label_y = g.cy - g.inscribed_half + 16;
+    text(fb, "FLAT", Point::new(g.cx - 42, label_y), BRIGHT_READING, Alignment::Center);
+    text(fb, "DITHER", Point::new(g.cx + 44, label_y), BRIGHT_HEADING, Alignment::Center);
+
+    page_dots(fb, &g, 2);
+}
+
+const SCREEN_COUNT: u32 = 3;
 
 pub const fn screen_count() -> u32 {
     SCREEN_COUNT
@@ -391,7 +481,8 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, screen: u32, state: &Stat
     fb.buf.fill(DARK_GROUND.0);
     match screen % SCREEN_COUNT {
         0 => draw_accel(&mut fb, state),
-        _ => draw_diag(&mut fb, state),
+        1 => draw_diag(&mut fb, state),
+        _ => draw_dither(&mut fb),
     }
 }
 
@@ -496,6 +587,42 @@ mod tests {
                 assert!(buf[n..].iter().all(|&b| b == 0xAA), "overran on {v} screen {screen}");
             }
         }
+    }
+
+    /// The whole claim of the dither screen. Four levels a channel is all the
+    /// panel has, so the flat half can only render a ramp as uniform bands --
+    /// every row one value. The dithered half mixes two levels within a row,
+    /// which is what buys apparent depth the hardware does not have.
+    #[test]
+    fn dithering_beats_flat_quantisation() {
+        let n = (W * H) as usize;
+        let mut buf = vec![0u8; n];
+        render(&mut buf, W, H, 2, &live());
+
+        let distinct_in_row = |y: u32, x0: u32, x1: u32| {
+            (x0..x1)
+                .map(|x| buf[(y * W + x) as usize])
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+        };
+
+        let rows: Vec<u32> = (70..170).collect();
+        let flat_uniform = rows.iter().filter(|&&y| distinct_in_row(y, 60, 110) == 1).count();
+        let dith_mixed = rows.iter().filter(|&&y| distinct_in_row(y, 130, 180) >= 2).count();
+
+        assert_eq!(
+            flat_uniform,
+            rows.len(),
+            "flat half should be uniform per row; {} of {} were not",
+            rows.len() - flat_uniform,
+            rows.len()
+        );
+        assert!(
+            dith_mixed * 2 > rows.len(),
+            "dithered half mixed levels in only {} of {} rows",
+            dith_mixed,
+            rows.len()
+        );
     }
 
     #[test]

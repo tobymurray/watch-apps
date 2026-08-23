@@ -77,6 +77,7 @@ awk -F, 'NR>2 {print $2-p} {p=$2}' accel_log.csv | sort -n | uniq -c
 |--------|-------|
 | `ACCEL` | Bubble level driven by live X/Y tilt, and X/Y/Z in milli-g. `NO DATA` when the sample is stale. |
 | `DIAG` | Frames rendered, samples received, age of the newest sample, the largest age seen, how long the last framebuffer push took, and live/stale/none. |
+| `DITHER` | One luminance ramp quantised two ways. The panel has four levels a channel, so the left half can only render it as four bands; the right half ordered-dithers it and reads as a smooth gradient. TouchGFX has a gradient painter for this format and no dithering anywhere in the framework, so it draws the left half. |
 
 ## Buttons
 
@@ -99,7 +100,7 @@ Targets **`apps-v1.4.0`**. Needs the ARM embedded toolchain, CMake, Python 3 wit
 rustup target add thumbv8m.main-none-eabihf
 export UNA_SDK=/path/to/una-sdk
 cd Software/Apps/RustGuiPoc-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.5.0 .
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.6.0 .
 cmake --build build
 ```
 
@@ -111,7 +112,7 @@ docker run --rm -v /path/to/una-sdk:/sdk -v "$PWD":/apps -e UNA_SDK=/sdk \
   -w /apps/RustGuiPoc/Software/Apps/RustGuiPoc-CMake \
   ghcr.io/tobymurray/kira-toolchain \
   bash -c 'pip3 install --break-system-packages -r /sdk/Utilities/Scripts/app_packer/requirements.txt
-           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.5.0 . && cmake --build build'
+           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.6.0 . && cmake --build build'
 ```
 
 That image ships neither `pyelftools` nor `Pillow`, both of which the SDK's
@@ -127,8 +128,8 @@ framework size is charged against the same budget as the framebuffer. From
 `Output/RustGuiPocGUI.elf.elf.map`:
 
 ```
-.text 27,172   .data 68   .got 68   .bss 69,504   .stack 10,240
-total 107,052 of 614,400  =  17.4%
+.text 28,256   .data 68   .got 68   .bss 69,504   .stack 10,240
+total 108,136 of 614,400  =  17.6%
 ```
 
 `.bss` is the 57,600-byte framebuffer plus the two log buffers. Re-derive the numbers from
