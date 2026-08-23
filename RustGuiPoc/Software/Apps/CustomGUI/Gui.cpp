@@ -1,10 +1,7 @@
 #include "Gui.hpp"
 
-#include <cstdio>
-
 #include "Commands.hpp"
 
-#include "SDK/Messages/MessageGuard.hpp"
 #include "SDK/Messages/MessageTypes.hpp"
 #include "SDK/Messages/CommandMessages.hpp"
 #include "SDK/Interfaces/IFileSystem.hpp"
@@ -19,9 +16,7 @@
 
 static constexpr uint32_t kWaitForever = 0xFFFFFFFF;
 // Paths are relative to the app's own directory, which already exists.
-static constexpr char     kLogPath[]    = "accel_log.csv";
 static constexpr char     kFbDumpPath[] = "fb_dump.bin";
-static constexpr char     kRenderLogPath[] = "render_log.csv";
 
 extern "C" void poc_gui_host_panic(const uint8_t *msg, uint32_t len)
 {
@@ -77,9 +72,6 @@ void Gui::renderAndPush()
 
     mState.sample_age_ms = age;
     mState.valid         = (mHaveSample && age <= kStaleAfterMs) ? 1u : 0u;
-    if (age > mState.sample_age_max_ms) {
-        mState.sample_age_max_ms = age;
-    }
 
     poc_gui_render(mFrameBuf,
                    kMaxPixels * kBytesPerPixel,
@@ -88,182 +80,13 @@ void Gui::renderAndPush()
                    mScreen,
                    &mState);
 
-    // The push is timed because a slow one stalls this whole loop: sample
-    // messages queue behind it and arrive in a burst when it finally returns.
-    uint32_t pushMs = 0;
-    bool     pushOk = false;
     auto *upd = mKernel.comm.allocateMessage<SDK::Message::RequestDisplayUpdate>();
     if (upd) {
-        upd->pBuffer            = mFrameBuf;
-        const uint32_t sentAt   = mKernel.sys.getTimeMs();
-        pushOk                  = mKernel.comm.sendMessage(upd, kResponseTimeoutMs);
-        pushMs                  = SDK::Timer::elapsed(mKernel.sys.getTimeMs(), sentAt);
+        upd->pBuffer = mFrameBuf;
+        mKernel.comm.sendMessage(upd, kResponseTimeoutMs);
         mKernel.comm.releaseMessage(upd);
     }
-    mState.last_push_ms = pushMs;
     ++mState.frames;
-    recordRender(mKernel.sys.getTimeMs(), pushMs, pushOk);
-}
-
-void Gui::applySensorConfig(uint32_t index)
-{
-    mConfigIndex = index % kSensorConfigCount;
-    ++mSegment;
-    const SensorConfig &cfg = kSensorConfigs[mConfigIndex];
-
-    mState.cfg_period_ms  = cfg.periodMs;
-    mState.cfg_latency_ms = cfg.latencyMs;
-    // Each cell of the matrix gets its own peak, or the first cell's worst gap
-    // would be read as every later cell's.
-    mState.sample_age_max_ms = 0;
-
-    SDK::send_msg<CustomMessage::SetSensorConfig>(
-        mKernel, static_cast<float>(cfg.periodMs), cfg.latencyMs);
-    LOG_INFO("sensor cfg %u: period=%u latency=%u\n",
-             static_cast<unsigned>(mConfigIndex),
-             static_cast<unsigned>(cfg.periodMs),
-             static_cast<unsigned>(cfg.latencyMs));
-
-    // Flush first: the rows already buffered belong to the previous cell.
-    flushLog();
-    flushRenderLog();
-}
-
-void Gui::recordSample(uint32_t sensorTsMs, uint16_t batch, float x, float y, float z)
-{
-    if (mLogFailed) {
-        return;
-    }
-
-    LogRow &row   = mLogRows[mLogCount++];
-    row.sensorTsMs = sensorTsMs;
-    row.arrivalMs  = mKernel.sys.getTimeMs();
-    row.seg        = static_cast<uint16_t>(mSegment);
-    row.cfg        = static_cast<uint16_t>(mConfigIndex);
-    row.batch      = batch;
-    row.xMg        = static_cast<int16_t>(x * 1000.0f);
-    row.yMg        = static_cast<int16_t>(y * 1000.0f);
-    row.zMg        = static_cast<int16_t>(z * 1000.0f);
-
-    if (mLogCount == kLogRows) {
-        flushLog();
-    }
-}
-
-void Gui::recordRender(uint32_t atMs, uint32_t pushMs, bool ok)
-{
-    if (mRenderFailed) {
-        return;
-    }
-
-    RenderRow &row = mRenderRows[mRenderCount++];
-    row.atMs   = atMs;
-    row.pushMs = pushMs;
-    row.ok     = ok ? 1u : 0u;
-
-    // Flush rather than drop. This buffer previously filled and then discarded
-    // silently, because it was only written out when the sample buffer filled --
-    // a run shorter than 512 samples lost every frame past the 256th.
-    if (mRenderCount == kRenderRows) {
-        flushRenderLog();
-    }
-}
-
-void Gui::flushLog()
-{
-    if (mLogCount == 0 || mLogFailed) {
-        mLogCount = 0;
-        return;
-    }
-
-    if (!mLogFile) {
-        mLogFile = mKernel.fs.file(kLogPath);
-        // override=true: each run starts a fresh log, so a run is one experiment.
-        if (!mLogFile || !mLogFile->open(/*wMode=*/true, /*override=*/true)) {
-            LOG_WARNING("accel log: open '%s' failed; logging off\n", kLogPath);
-            mLogFile.reset();
-            mLogFailed = true;
-            mLogCount  = 0;
-            return;
-        }
-        static constexpr char kHeader[] = "seq,seg,cfg,sensor_ts_ms,arrival_ms,batch,x_mg,y_mg,z_mg\n";
-        size_t written = 0;
-        mLogFile->write(kHeader, sizeof(kHeader) - 1, written);
-    }
-
-    for (uint32_t i = 0; i < mLogCount; ++i) {
-        const LogRow &row = mLogRows[i];
-        char line[80];
-        const int len = snprintf(line, sizeof(line), "%u,%u,%u,%u,%u,%u,%d,%d,%d\n",
-                                 static_cast<unsigned>(mLogSeq++),
-                                 static_cast<unsigned>(row.seg),
-                                 static_cast<unsigned>(row.cfg),
-                                 static_cast<unsigned>(row.sensorTsMs),
-                                 static_cast<unsigned>(row.arrivalMs),
-                                 static_cast<unsigned>(row.batch),
-                                 static_cast<int>(row.xMg),
-                                 static_cast<int>(row.yMg),
-                                 static_cast<int>(row.zMg));
-        if (len > 0) {
-            size_t written = 0;
-            mLogFile->write(line, static_cast<size_t>(len), written);
-        }
-    }
-    mLogFile->flush();
-    LOG_INFO("accel log: +%u rows (%u total)\n",
-             static_cast<unsigned>(mLogCount), static_cast<unsigned>(mLogSeq));
-    mLogCount = 0;
-}
-
-void Gui::flushRenderLog()
-{
-    if (mRenderCount == 0 || mRenderFailed) {
-        mRenderCount = 0;
-        return;
-    }
-
-    if (!mRenderFile) {
-        mRenderFile = mKernel.fs.file(kRenderLogPath);
-        if (!mRenderFile || !mRenderFile->open(/*wMode=*/true, /*override=*/true)) {
-            LOG_WARNING("render log: open '%s' failed; logging off\n", kRenderLogPath);
-            mRenderFile.reset();
-            mRenderFailed = true;
-            mRenderCount  = 0;
-            return;
-        }
-        static constexpr char kHeader[] = "at_ms,push_ms,push_ok\n";
-        size_t written = 0;
-        mRenderFile->write(kHeader, sizeof(kHeader) - 1, written);
-    }
-
-    for (uint32_t i = 0; i < mRenderCount; ++i) {
-        const RenderRow &row = mRenderRows[i];
-        char line[48];
-        const int len = snprintf(line, sizeof(line), "%u,%u,%u\n",
-                                 static_cast<unsigned>(row.atMs),
-                                 static_cast<unsigned>(row.pushMs),
-                                 static_cast<unsigned>(row.ok));
-        if (len > 0) {
-            size_t written = 0;
-            mRenderFile->write(line, static_cast<size_t>(len), written);
-        }
-    }
-    mRenderFile->flush();
-    mRenderCount = 0;
-}
-
-void Gui::closeLog()
-{
-    flushLog();
-    flushRenderLog();
-    if (mLogFile) {
-        mLogFile->close();
-        mLogFile.reset();
-    }
-    if (mRenderFile) {
-        mRenderFile->close();
-        mRenderFile.reset();
-    }
 }
 
 void Gui::dumpFramebuffer()
@@ -300,8 +123,6 @@ void Gui::run()
     }
 
     queryDisplayConfig();
-    mState.cfg_period_ms  = kSensorConfigs[0].periodMs;
-    mState.cfg_latency_ms = kSensorConfigs[0].latencyMs;
     const uint32_t screenCount = poc_gui_screen_count();
 
     while (true) {
@@ -313,7 +134,6 @@ void Gui::run()
         switch (msg->getType()) {
 
             case SDK::MessageType::COMMAND_APP_STOP:
-                closeLog();
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 mKernel.comm.releaseMessage(msg);
                 mKernel.sys.exit(0);
@@ -326,8 +146,6 @@ void Gui::run()
 
             case SDK::MessageType::COMMAND_APP_GUI_SUSPEND:
                 mResumed = false;
-                flushLog();
-                flushRenderLog();
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 break;
 
@@ -345,8 +163,6 @@ void Gui::run()
                 mLastSampleMs    = mKernel.sys.getTimeMs();
                 mHaveSample      = true;
                 ++mState.samples;
-                recordSample(accel->sensor_ts_ms, accel->batch_size,
-                             accel->x_g, accel->y_g, accel->z_g);
                 msg->setResult(SDK::MessageResult::SUCCESS);
             } break;
 
@@ -357,22 +173,17 @@ void Gui::run()
 
                 if (btn->event == Event::CLICK && btn->id == Id::SW4) {
                     LOG_INFO("Back pressed; exiting\n");
-                    closeLog();
                     msg->setResult(SDK::MessageResult::SUCCESS);
                     mKernel.comm.releaseMessage(msg);
                     mKernel.sys.exit(0);
                     return;
                 }
 
-                if (btn->event == Event::CLICK && btn->id == Id::SW1) {
-                    applySensorConfig(mConfigIndex + 1);
-                } else if (btn->event == Event::CLICK && btn->id == Id::SW2 && screenCount > 0) {
+                if (btn->event == Event::CLICK && btn->id == Id::SW2 && screenCount > 0) {
                     mScreen = (mScreen + 1) % screenCount;
                     renderAndPush();
                 } else if (btn->event == Event::LONG_PRESS && btn->id == Id::SW3) {
                     dumpFramebuffer();
-                    flushLog();
-                    flushRenderLog();
                 }
                 msg->setResult(SDK::MessageResult::SUCCESS);
             } break;

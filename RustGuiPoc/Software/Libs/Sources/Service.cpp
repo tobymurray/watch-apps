@@ -32,9 +32,8 @@ void Service::handleSensorData(uint16_t handle, SDK::Sensor::DataBatch &batch)
         return;
     }
 
-    // Forward every sample, not just the newest. A latency of 2000 ms makes the
-    // driver deliver ten per DataBatch, and keeping only the last discarded nine
-    // of every ten while still reporting size() honestly.
+    // Forward every sample. Keeping only the newest silently discarded nine in
+    // ten once a driver latency was configured -- see Docs/FINDINGS.md.
     for (uint16_t i = 0; i < batch.size(); ++i) {
         SDK::SensorDataParser::Accelerometer parser(batch[i]);
 
@@ -43,8 +42,7 @@ void Service::handleSensorData(uint16_t handle, SDK::Sensor::DataBatch &batch)
             continue;
         }
 
-        SDK::send_msg<CustomMessage::AccelValues>(
-            mKernel, x, y, z, parser.getTimestamp(), batch.size());
+        SDK::send_msg<CustomMessage::AccelValues>(mKernel, x, y, z);
     }
 }
 
@@ -74,18 +72,6 @@ void Service::run()
                 LOG_INFO("GUI is now running\n");
                 mGuiStarted = true;
                 break;
-
-            case CustomMessage::SET_SENSOR_CONFIG: {
-                auto *cfg = static_cast<CustomMessage::SetSensorConfig *>(msg);
-                // connect() rejects a parameter change while connected, so the
-                // old connection has to go first.
-                mAccel.disconnect();
-                const bool ok = mAccel.connect(cfg->period_ms, cfg->latency_ms);
-                LOG_INFO("sensor cfg period=%u latency=%u -> %s\n",
-                         static_cast<unsigned>(cfg->period_ms),
-                         static_cast<unsigned>(cfg->latency_ms),
-                         ok ? "ok" : "FAILED");
-            } break;
 
             case SDK::MessageType::EVENT_SENSOR_LAYER_DATA: {
                 auto *event = static_cast<SDK::Message::Sensor::EventData *>(msg);

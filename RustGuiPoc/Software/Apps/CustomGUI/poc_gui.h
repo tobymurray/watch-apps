@@ -12,10 +12,6 @@ typedef struct {
     float    accel_y_g;
     float    accel_z_g;
     uint32_t sample_age_ms;
-    uint32_t sample_age_max_ms;
-    uint32_t last_push_ms;
-    uint32_t cfg_period_ms;
-    uint32_t cfg_latency_ms;
     uint32_t samples;
     uint32_t frames;
     uint8_t  valid;

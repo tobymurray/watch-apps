@@ -8,55 +8,26 @@
 
 namespace CustomMessage {
 
-constexpr SDK::MessageType::Type ACCEL_VALUES      = 0x00000001;
-constexpr SDK::MessageType::Type SET_SENSOR_CONFIG = 0x00000002;
+constexpr SDK::MessageType::Type ACCEL_VALUES = 0x00000001;
 
 struct AccelValues : public SDK::MessageBase {
-    float    x_g;
-    float    y_g;
-    float    z_g;
-    // The driver's own timestamp for this sample, not the moment it arrived, so
-    // the true sample interval can be told apart from IPC latency.
-    uint32_t sensor_ts_ms;
-    uint16_t batch_size;
+    float x_g;
+    float y_g;
+    float z_g;
 
     AccelValues()
         : SDK::MessageBase(ACCEL_VALUES)
         , x_g(0.0f)
         , y_g(0.0f)
         , z_g(0.0f)
-        , sensor_ts_ms(0)
-        , batch_size(0)
     {}
 
-    AccelValues(float x_g, float y_g, float z_g, uint32_t sensor_ts_ms, uint16_t batch_size)
+    AccelValues(float x_g, float y_g, float z_g)
         : AccelValues()
     {
-        this->x_g          = x_g;
-        this->y_g          = y_g;
-        this->z_g          = z_g;
-        this->sensor_ts_ms = sensor_ts_ms;
-        this->batch_size   = batch_size;
-    }
-};
-
-/// Retunes the accelerometer connection so a run can walk the period/latency
-/// matrix without a reflash per cell.
-struct SetSensorConfig : public SDK::MessageBase {
-    float    period_ms;
-    uint32_t latency_ms;
-
-    SetSensorConfig()
-        : SDK::MessageBase(SET_SENSOR_CONFIG)
-        , period_ms(0.0f)
-        , latency_ms(0)
-    {}
-
-    SetSensorConfig(float period_ms, uint32_t latency_ms)
-        : SetSensorConfig()
-    {
-        this->period_ms  = period_ms;
-        this->latency_ms = latency_ms;
+        this->x_g = x_g;
+        this->y_g = y_g;
+        this->z_g = z_g;
     }
 };
 

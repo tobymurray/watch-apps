@@ -31,71 +31,22 @@ Two properties that path relies on:
   cannot disagree about what a given reading looks like.
 - **`Gui.cpp` decides whether a sample is fresh; the renderer never guesses.**
   Past `kStaleAfterMs` the screen shows `NO DATA` rather than the last number it
-  saw. That threshold has to clear the transport's own cadence: the sensor layer
-  aggregates on a ~1 s timer that no app-side period or latency setting moves.
-- **Every screen carries a heartbeat and the live sensor config.** The marker
-  steps one position per rendered frame, so a screen whose numbers happen not to
-  change still cannot be mistaken for a stalled loop, and the button that retunes
-  the sensor is not on the screen that reports it.
+  saw. That threshold is set from measurement, not from the sample period: the
+  sensor layer aggregates on a ~1 s timer that no app-side setting moves.
+- **Every screen carries a heartbeat.** The marker steps one position per
+  rendered frame, so a screen whose numbers happen not to change still cannot be
+  mistaken for a stalled render loop.
 
 A Rust panic reaches the SDK logger through `poc_gui_host_panic` in `Gui.cpp`,
 which logs the message and location and then exits the app. Without that a panic
 would hang the GUI thread silently, and the only way out would be a reboot.
-
-## Sample log
-
-Every accelerometer sample that reaches the GUI is recorded, so a run can be left
-going and the timing analysed afterwards rather than read off a 240px screen.
-Samples buffer in RAM and flush every 512 rows, on screen suspend, on a long-press
-of `SW3`, and on exit; each run truncates the file, so one run is one experiment.
-
-Two files land in the app's own folder. `accel_log.csv`, one row per sample:
-
-```
-seq,seg,cfg,sensor_ts_ms,arrival_ms,batch,x_mg,y_mg,z_mg
-```
-
-`cfg` records which sensor configuration a row was taken under and `seg` which
-visit, so cycling back to a cell reads as a new segment rather than a
-continuation of the earlier one. Analyse by `seg`: grouping by `cfg` alone merges
-separate visits and manufactures a gap the length of everything in between.
-`SW1` steps the matrix, flushing first so buffered rows keep the cell they
-belong to:
-
-| cfg | period | latency | asks |
-|---|---|---|---|
-| 0 | 100 ms | 0 | baseline |
-| 1 | 100 ms | 20 ms | does a latency of 0 mean "none", or "driver default"? |
-| 2 | 100 ms | 2000 ms | does latency move the flush interval at all? |
-| 3 | 20 ms | 0 | the flush is on a ~1 s timer, so this should change how many samples land per drain and not the interval between drains |
-
-and `render_log.csv`, one row per frame, which times the framebuffer push:
-
-```
-at_ms,push_ms,push_ok
-```
-
-`push_ms` is how long `sendMessage` took for `RequestDisplayUpdate`. It matters
-because that call blocks the message loop: while it waits, sample messages queue
-and then arrive in a burst, so a slow push shows up as bunched arrivals in the
-other file rather than as anything obviously display-related.
-
-`sensor_ts_ms` is the driver's own timestamp for the sample and `arrival_ms` is
-when the GUI got it, so the true sample interval can be told apart from pipeline
-latency. `batch` is how many samples the sensor layer delivered in that event —
-if the driver batches, the interval between events is not the sample interval.
-
-```sh
-# actual delivery interval, from the driver's own clock
-awk -F, 'NR>2 {print $4-p} {p=$4}' accel_log.csv | sort -n | uniq -c
-```
 
 ## Screens
 
 | Screen | Shows |
 |--------|-------|
 | `ACCEL` | Bubble level driven by live X/Y tilt, and X/Y/Z in milli-g. `NO DATA` when the sample is stale. |
-| `DIAG` | Frames rendered, samples received, age of the newest sample, the largest age seen, how long the last framebuffer push took, and live/stale/none. |
+| `DIAG` | Frames rendered, samples received, age of the newest sample, and live/stale/none. |
 | `DITHER` | One luminance ramp quantised two ways. The panel has four levels a channel, so the left half can only render it as four bands; the right half ordered-dithers it and reads as a smooth gradient. TouchGFX has a gradient painter for this format and no dithering anywhere in the framework, so it draws the left half. |
 
 ## Buttons
@@ -104,8 +55,7 @@ awk -F, 'NR>2 {print $4-p} {p=$4}' accel_log.csv | sort -n | uniq -c
 |---|---|---|
 | `SW2` / R1 | top right | cycle to the next screen |
 | `SW4` / R2 | bottom right | back — leaves the app |
-| `SW1` / L1 | top left | next sensor configuration (see below) |
-| `SW3` / L2, long press | bottom left | dump the framebuffer and flush the sample log |
+| `SW3` / L2, long press | bottom left | write the framebuffer to `fb_dump.bin` |
 
 The screens are a cycle, not a stack, so back exits. This app owns the kernel
 message loop and swallows every button event: with nothing handling back, the
@@ -120,7 +70,7 @@ Targets **`apps-v1.4.0`**. Needs the ARM embedded toolchain, CMake, Python 3 wit
 rustup target add thumbv8m.main-none-eabihf
 export UNA_SDK=/path/to/una-sdk
 cd Software/Apps/RustGuiPoc-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.9.0 .
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.10.0 .
 cmake --build build
 ```
 
@@ -132,7 +82,7 @@ docker run --rm -v /path/to/una-sdk:/sdk -v "$PWD":/apps -e UNA_SDK=/sdk \
   -w /apps/RustGuiPoc/Software/Apps/RustGuiPoc-CMake \
   ghcr.io/tobymurray/kira-toolchain \
   bash -c 'pip3 install --break-system-packages -r /sdk/Utilities/Scripts/app_packer/requirements.txt
-           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.9.0 . && cmake --build build'
+           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.10.0 . && cmake --build build'
 ```
 
 That image ships neither `pyelftools` nor `Pillow`, both of which the SDK's
@@ -148,11 +98,11 @@ framework size is charged against the same budget as the framebuffer. From
 `Output/RustGuiPocGUI.elf.elf.map`:
 
 ```
-.text 29,044   .data 68   .got 68   .bss 71,564   .stack 10,240
-total 111,008 of 614,400  =  18.1%
+.text 26,820   .data 68   .got 68   .bss 58,204   .stack 10,240
+total 95,400 of 614,400  =  15.5%
 ```
 
-`.bss` is the 57,600-byte framebuffer plus the two log buffers. Re-derive the numbers from
+`.bss` is almost entirely the 57,600-byte framebuffer. Re-derive the numbers from
 the map's `Memory Configuration` block and section headers rather than trusting
 this table.
 
@@ -198,6 +148,14 @@ since the readouts are a function of the live sample.
 `emulate_panel()` in `sim.rs` is where device-only behaviour goes. It is an
 identity function, so the simulator confirms the framebuffer matches; it does not
 predict the glass.
+
+## What the hardware runs established
+
+Five runs of instrumented captures went into this app and have been taken back
+out. What they found — the sensor pipeline's real cadence, the ODR ladder, the
+tick rate, the push cost, the TouchGFX comparison and the traps — is in
+[`Docs/FINDINGS.md`](Docs/FINDINGS.md), with the raw logs in
+[`Captures/`](Captures).
 
 ## The panel drops dark-on-light text
 
