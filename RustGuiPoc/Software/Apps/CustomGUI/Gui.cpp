@@ -114,10 +114,10 @@ void Gui::run()
 {
     LOG_INFO("Started\n");
 
-    if (poc_gui_state_size() != sizeof(poc_gui_state)) {
-        LOG_ERROR("ABI mismatch: Rust state %u bytes, C++ %u -- stale libpoc_gui.a\n",
-                  static_cast<unsigned>(poc_gui_state_size()),
-                  static_cast<unsigned>(sizeof(poc_gui_state)));
+    if (poc_gui_abi_fingerprint() != poc_gui_abi::fingerprint()) {
+        LOG_ERROR("ABI mismatch: Rust 0x%08X, C++ 0x%08X -- stale libpoc_gui.a\n",
+                  static_cast<unsigned>(poc_gui_abi_fingerprint()),
+                  static_cast<unsigned>(poc_gui_abi::fingerprint()));
         mKernel.sys.exit(1);
         return;
     }

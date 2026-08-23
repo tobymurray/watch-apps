@@ -508,13 +508,49 @@ pub extern "C" fn poc_gui_screen_count() -> u32 {
     screen_count()
 }
 
-/// Lets the caller confirm it was linked against the archive it thinks it was:
-/// a stale one disagrees here instead of silently reading every field at the
-/// wrong offset.
-#[no_mangle]
-pub extern "C" fn poc_gui_state_size() -> u32 {
-    core::mem::size_of::<State>() as u32
+const FNV_OFFSET_BASIS: u32 = 0x811C_9DC5;
+const FNV_PRIME: u32 = 0x0100_0193;
+
+const fn fnv1a(hash: u32, byte: usize) -> u32 {
+    (hash ^ ((byte as u32) & 0xFF)).wrapping_mul(FNV_PRIME)
 }
+
+/// Must walk the same values in the same order as `poc_gui_abi::fingerprint()`
+/// in poc_gui.h.
+const fn abi_fingerprint() -> u32 {
+    let h = FNV_OFFSET_BASIS;
+    let h = fnv1a(h, core::mem::size_of::<State>());
+    let h = fnv1a(h, core::mem::align_of::<State>());
+    let h = fnv1a(h, core::mem::offset_of!(State, accel_x_g));
+    let h = fnv1a(h, core::mem::offset_of!(State, accel_y_g));
+    let h = fnv1a(h, core::mem::offset_of!(State, accel_z_g));
+    let h = fnv1a(h, core::mem::offset_of!(State, sample_age_ms));
+    let h = fnv1a(h, core::mem::offset_of!(State, samples));
+    let h = fnv1a(h, core::mem::offset_of!(State, frames));
+    let h = fnv1a(h, core::mem::offset_of!(State, valid));
+    fnv1a(h, core::mem::offset_of!(State, _pad))
+}
+
+/// Lets the caller confirm it was linked against the archive it thinks it was.
+/// The compile-time assertions below cannot do this: a stale archive and a newer
+/// header each satisfy their own, having been compiled at different times.
+#[no_mangle]
+pub extern "C" fn poc_gui_abi_fingerprint() -> u32 {
+    abi_fingerprint()
+}
+
+// Per field, because a size check passes when two fields are swapped. poc_gui.h
+// asserts the same offsets, so a hand edit to either declaration breaks a build.
+const _: () = assert!(core::mem::size_of::<State>() == 28);
+const _: () = assert!(core::mem::align_of::<State>() == 4);
+const _: () = assert!(core::mem::offset_of!(State, accel_x_g) == 0);
+const _: () = assert!(core::mem::offset_of!(State, accel_y_g) == 4);
+const _: () = assert!(core::mem::offset_of!(State, accel_z_g) == 8);
+const _: () = assert!(core::mem::offset_of!(State, sample_age_ms) == 12);
+const _: () = assert!(core::mem::offset_of!(State, samples) == 16);
+const _: () = assert!(core::mem::offset_of!(State, frames) == 20);
+const _: () = assert!(core::mem::offset_of!(State, valid) == 24);
+const _: () = assert!(core::mem::offset_of!(State, _pad) == 25);
 
 /// # Safety
 /// `buf` must point to at least `buf_len` writable bytes and `state` to a valid
@@ -561,6 +597,13 @@ mod tests {
     fn state_layout_matches_c() {
         assert_eq!(core::mem::size_of::<State>(), C_STRUCT_SIZE);
         assert_eq!(core::mem::align_of::<State>(), C_STRUCT_ALIGN);
+    }
+
+    /// Pinned so that a change to either fingerprint implementation shows up
+    /// here rather than as a refusal to start on a watch.
+    #[test]
+    fn abi_fingerprint_is_stable() {
+        assert_eq!(poc_gui_abi_fingerprint(), 0x8884_046E);
     }
 
     #[test]
