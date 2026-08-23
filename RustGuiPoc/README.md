@@ -18,7 +18,48 @@ bare-metal Embassy firmware work.
   — mirroring `Libs/Source/Port/TouchGFX/TouchGFXCommandProcessor.cpp`.
 - A clean **C++ ⇄ Rust seam**: the C++ shim owns all kernel plumbing; the Rust
   `no_std` staticlib owns *only* rendering, over a tiny C ABI (`poc_gui.h`).
-- **Switching between two UIs** on-device: `SW2` (top-right button) cycles screens.
+- **A real sensor on screen**, over the whole path a real app has to use —
+  see below. Nothing on either screen is invented.
+
+## The data path is the point
+
+A GUI process on this platform **cannot read a sensor.** `SDK::Kernel` is
+`{sys, log, mem, comm, fs}` and nothing more; `SDK::Sensor::Connection` only
+works from the Service half. So a live accelerometer reading has to travel:
+
+```
+accelerometer
+  → Service (SDK::Sensor::Connection, 10 Hz)     Software/Libs/Sources/Service.cpp
+  → CustomMessage::AccelValues over the bus      Software/Libs/Header/Commands.hpp
+  → Gui.cpp (ages the sample, owns the clock)    Software/Apps/CustomGUI/Gui.cpp
+  → Rust render(&State)                          rust/src/lib.rs
+  → RequestDisplayUpdate → panel
+```
+
+That is the half of the architecture a rendering demo cannot prove, and it is
+the half that decides whether the approach is usable. Two details worth copying:
+
+- **`render()` is a pure function of `(buffer, geometry, screen, state)`.** The
+  device, the host simulator and the unit tests all drive the one renderer
+  through the one `State` struct, so none of them can drift and none has a
+  private path to the truth.
+- **The shim decides what is trustworthy, not the renderer.** `Gui.cpp` ages the
+  newest sample against `sys.getTimeMs()` and clears `valid` past 500 ms; the
+  screen then shows `NO DATA` rather than the last number it happened to see. A
+  sensor display that keeps showing a stale reading is worse than one that admits
+  it has nothing.
+
+Handling a custom message costs exactly one `case` here. The TouchGFX port has to
+queue custom messages and replay them outside its frame cycle (see
+`Docs/TouchGFX-Port-Architecture.md` on `mUserQueue`); owning the loop outright
+means the sensor sample is just another message.
+
+## Screens
+
+| # | Screen | Shows |
+|---|--------|-------|
+| 1 | `ACCEL` | Bubble level driven by live X/Y tilt, plus X/Y/Z in milli-g. Tilt the watch and the dot moves — the whole path in one gesture, with no strap, no GNSS fix and no warm-up. `NO DATA` when the sample is stale. |
+| 2 | `DIAG` | Frames rendered, samples received, age of the newest sample, and live/stale/none. What you actually want while bringing up a rendering stack. |
 
 ## Buttons
 
@@ -37,35 +78,39 @@ so with nothing handling back there is no way out of it but rebooting the watch.
 
 ```
 Software/
-├── Libs/                          # minimal, stateless Service half (every .uapp needs one)
+├── Libs/                          # Service half: owns the sensor
+│   ├── Header/Commands.hpp        # CustomMessage::AccelValues (Service -> GUI)
 │   ├── Header/Service.hpp
-│   ├── Sources/Service.cpp
+│   ├── Sources/Service.cpp        # SDK::Sensor::Connection -> send_msg
 │   └── libs.cmake
 └── Apps/
     ├── RustGuiPoc-CMake/CMakeLists.txt   # build glue (mirrors an example app)
     └── CustomGUI/
-        ├── Gui.hpp / Gui.cpp             # C++ shim: message loop + framebuffer
-        ├── poc_gui.h                     # C ABI to the Rust core
+        ├── Gui.hpp / Gui.cpp             # C++ shim: message loop, framebuffer, State
+        ├── poc_gui.h                     # C ABI to the Rust core (+ poc_gui_state)
         └── rust/                         # no_std embedded-graphics rendering crate
             ├── Cargo.toml                # device staticlib + optional `sim` bin
             ├── .cargo/config.toml
             └── src/
-                ├── lib.rs                # ABGR2222 DrawTarget + render() (shared)
+                ├── lib.rs                # ABGR2222 DrawTarget + render() + tests
                 └── bin/sim.rs            # desktop SDL simulator (--features sim)
 ```
 
-## Build status (as scaffolded)
+## Build status
 
 | Piece | Status |
 |---|---|
-| **Rust core** (`libpoc_gui.a`, Cortex-M33) | ✅ **Builds** — `cargo build --release` compiles clean for `thumbv8m.main-none-eabihf` (hard-float, matching the SDK's `-mfpu=fpv5-sp-d16 -mfloat-abi=hard`); exports `poc_gui_render` + `poc_gui_screen_count`. |
-| **C++ shim + `.uapp` link** | ⏳ **Not built in the authoring env** — needs `arm-none-eabi-gcc` + `cmake`, which weren't installed there. The sources are written against the SDK's verbatim idioms; build on a toolchain machine or in CI (below). |
-| **Desktop `sim` bin** | ✅ **Compiles** — links the same crate/`render()`; only the SDL2 *system* library is needed to finish linking (`brew install sdl2`). |
-| **On-device run** | ⏳ Iterating on hardware (see the render notes above). |
+| **Rust core** (`libpoc_gui.a`, Cortex-M33) | ✅ **Builds clean** for `thumbv8m.main-none-eabihf` (hard-float, matching the SDK's `-mfpu=fpv5-sp-d16 -mfloat-abi=hard`); exports `poc_gui_render` + `poc_gui_screen_count`. |
+| **Host tests** | ✅ **5 pass** (`cargo test --features std`) — ABI struct layout, undersized-buffer no-op, no writes past the stated geometry, stale ≠ live, determinism. |
+| **Both screens** | ✅ **Rendered and visually checked** off-device, by calling the same `render()` into a 240×240 buffer and decoding it through the panel's gamut + round mask. |
+| **Desktop `sim` bin** | ✅ **Type-checks** (`cargo check --bin sim --features sim`). Linking additionally needs the SDL2 *system* library (`brew install sdl2`). |
+| **C++ shim + `.uapp` link** | ⏳ **Not built here** — needs `arm-none-eabi-gcc` + `cmake`. The sources follow the SDK's verbatim idioms; build on a toolchain machine or in CI. |
+| **Sensor path on hardware** | ⏳ **Unproven.** The Service → message → shim → render path compiles and is exercised in the sim with synthetic state, but has not been on a wrist. |
 
-The interesting/novel half (Rust rendering into ABGR2222 on Cortex-M33) is
-proven to compile; the remaining work is the ordinary arm-gcc link, which the
-CMake expresses.
+Note the split: the *rendering* half is verified off-device several ways, and the
+panel-legibility findings below came from earlier hardware runs. The **data path
+is the part still owed a hardware run** — treat its numbers as untested until
+that happens.
 
 ## Building the full `.uapp`
 
@@ -83,6 +128,25 @@ cmake --build build                       # cargo builds libpoc_gui.a, then arm-
 The resulting `*.uapp` is copied to `Software/Output/`; deploy it over USB mass
 storage per `Docs/deploy.md`.
 
+## Tests
+
+```sh
+cd Software/Apps/CustomGUI/rust
+cargo test --features std
+```
+
+Six tests, in `src/lib.rs`. They exist to pin the properties the design leans on
+rather than to cover drawing code:
+
+| Test | Pins |
+|---|---|
+| `state_layout_matches_c` | `State` is 28 bytes, 4-aligned — a silent mismatch with `poc_gui_state` would corrupt every reading. |
+| `undersized_buffer_is_a_no_op` | A buffer too small for the stated geometry is left untouched, not partly painted. The caller cannot make `render()` overrun. |
+| `never_writes_past_the_stated_geometry` | Every screen stays inside `width * height`, even handed a longer buffer — which the device does, since it always passes the whole 240×240 array. |
+| `stale_state_renders_differently` | Stale data does not render as live data. This is the behaviour the whole `valid`/age path exists to produce. |
+| `hostile_sensor_values_stay_in_bounds` | NaN, ±∞ and absurd magnitudes from a glitching driver neither escape the framebuffer nor panic — and the GUI's panic handler is an infinite loop, so a panic here is a frozen watch. |
+| `render_is_deterministic` | Same state in, same pixels out — the property the simulator's fidelity claim rests on. |
+
 ## Desktop simulator (develop without the watch)
 
 A host SDL window that renders the GUI, so you can iterate layout/animation/logic
@@ -95,7 +159,14 @@ cargo run --bin sim --features sim                   # live animation
 cargo run --bin sim --features sim -- fb_dump.bin    # view a raw device fb dump
 ```
 
-Controls: any key = next screen; close the window = quit.
+Controls: **arrow keys** = tilt (drives the bubble and the milli-g readout),
+**TAB** = next screen, **S** = freeze the sample feed to exercise the `NO DATA`
+path, close the window = quit.
+
+The sim stands in for the Service: it synthesises a `State` at the same 10 Hz the
+device samples at, and applies the same 500 ms staleness rule as `Gui.cpp`. So
+layout, staleness and the diagnostics screen can all be exercised without a
+watch — including the stale path, which is awkward to reproduce on a wrist.
 
 ### Accuracy: the sim runs the same code as the device
 
@@ -114,10 +185,11 @@ The sim then applies only what the physical panel does:
 
 What the sim **cannot** show without calibration: the on-device **dark-on-light
 drop-out**. Verified on hardware — bright text on the dark background renders
-crisply (title, footer), but dark thin glyphs on a light fill vanish (an early
-black-text-on-white-box clock showed as a blank white band; hence the clock is now
-bold white 7-segment digits on black). That asymmetry is physical panel behavior,
-not in the buffer, so the sim shows dark-on-light text the watch would drop.
+crisply, but dark thin glyphs on a light fill vanish (an early
+black-text-on-white-box readout showed as a blank white band). That asymmetry is
+physical panel behavior, not in the buffer, so the sim will happily show
+dark-on-light text that the watch would drop. It is why every label in `lib.rs`
+is bright-on-black, and why that is a rule rather than a style choice.
 
 ## Tightening the sim ↔ hardware loop
 
@@ -131,8 +203,9 @@ The goal is that "looks right in the sim" ⇒ "looks right on the watch". Three 
    sim: `cargo run --bin sim --features sim -- fb_dump.bin`. Because both sides use
    the same `render()`, the dumped bytes equal what the sim renders for that
    screen — so this confirms parity at the framebuffer level and isolates every
-   remaining visual difference as *pure panel behavior*. (Static elements match
-   exactly; animated ones like the ball depend on the frame counter.)
+   remaining visual difference as *pure panel behavior*. (To compare exactly,
+   feed the sim the same `State` the device had: the readouts are a function of
+   the live sample, so a dump is only reproducible alongside its numbers.)
 3. **Calibrate `emulate_panel()`.** Feed the differences from step 2 into the
    `emulate_panel()` hook (e.g. modelling the dark-on-light drop-out — eroding dark
    thin runs that sit on a light fill). Once calibrated, the sim predicts what the
@@ -147,9 +220,14 @@ The goal is that "looks right in the sim" ⇒ "looks right on the watch". Three 
 - **Display config is queried but clamped** to a 240×240 / 8bpp static
   framebuffer. Confirm the real panel's resolution/format via `RequestDisplayConfig`
   on hardware and size the buffer to it.
-- **The "clock" is derived from the frame counter**, not a real time source — the
-  PoC proves the render loop is live, not timekeeping.
-- **No icons / minimal Service** — frontend demo only.
+- **The panic handler is `loop {}`** — on-device a Rust panic freezes the GUI
+  thread silently, with no diagnostic. A real app should route it to the SDK
+  logger and then exit. Flagged here because this file invites copying.
+- **`emulate_panel()` is still an identity hook**, so the sim confirms parity at
+  the framebuffer level but does not yet *predict* the panel. See above.
+- **No CI**, so none of the build-status claims above are independently
+  reproducible yet. A workflow that builds for `thumbv8m` and runs the host tests
+  would fix that; a headless render backend (no SDL) would let it check frames too.
 
 ## Why this and not Slint
 

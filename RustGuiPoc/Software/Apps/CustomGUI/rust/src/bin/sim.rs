@@ -1,9 +1,10 @@
 //! Desktop simulator for the RustGuiPoc GUI.
 //!
 //! Accuracy by construction: this binary links the PoC crate and calls the same
-//! [`poc_gui::render`] the device firmware calls, into an identical 240x240
-//! ABGR2222 buffer. So the framebuffer is byte-identical to the device's. The
-//! sim then only applies the transforms the *physical panel* applies:
+//! [`poc_gui::render`] the device firmware calls, with the same [`poc_gui::State`]
+//! struct the C++ shim fills, into an identical 240x240 ABGR2222 buffer. So the
+//! framebuffer is byte-identical to the device's. The sim then only applies the
+//! transforms the *physical panel* applies:
 //!
 //!   1. Color: decode ABGR2222 -> RGB888 using the panel's 2-bits-per-channel
 //!      palette (0/85/170/255), so on-screen colors match the device's 64-color
@@ -14,18 +15,23 @@
 //!      place to encode device-only behavior once it's characterized against
 //!      real hardware (see README "Tightening the sim<->hardware loop").
 //!
+//! Because the device gets its `State` from the accelerometer and the sim gets it
+//! from the arrow keys, layout and staleness behaviour can be exercised here —
+//! including the NO DATA path, which is awkward to reproduce on a wrist.
+//!
 //! Usage:
-//!   cargo run --bin sim --features sim              # live animation
+//!   cargo run --bin sim --features sim              # interactive
 //!   cargo run --bin sim --features sim -- dump.bin  # view a raw device fb dump
 //!
-//! Controls: any key = next screen; close window = quit.
+//! Controls: arrows = tilt, TAB = next screen, S = toggle stale, close = quit.
 
 use std::time::{Duration, Instant};
 
 use embedded_graphics::{pixelcolor::Rgb888, prelude::*};
 use embedded_graphics_simulator::{
-    OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window,
+    sdl2::Keycode, OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window,
 };
+use poc_gui::State;
 
 const W: u32 = 240;
 const H: u32 = 240;
@@ -70,7 +76,7 @@ fn blit(display: &mut SimulatorDisplay<Rgb888>, buf: &[u8]) {
 fn main() {
     let output = OutputSettingsBuilder::new().scale(2).build();
     let mut display = SimulatorDisplay::<Rgb888>::new(Size::new(W, H));
-    let mut window = Window::new("RustGuiPoc sim (240x240, 6bpp, round)", &output);
+    let mut window = Window::new("RustGuiPoc sim (240x240, ABGR2222, round)", &output);
 
     let mut buf = vec![0u8; (W * H) as usize];
 
@@ -92,30 +98,51 @@ fn main() {
         }
     }
 
-    // Live mode: run the real render loop.
-    println!("Live sim. Any key = next screen, close window = quit.");
+    println!("Interactive sim. Arrows = tilt, TAB = next screen, S = toggle stale.");
+
     let mut screen = 0u32;
-    let mut frame = 0u32;
-    let tick = Duration::from_millis(33); // ~30 fps, matching the device tick assumption
+    let mut st = State { accel_z: 1.0, valid: 1, ..Default::default() };
+    let mut stale = false;
+    // The device's Service samples at 10 Hz; mimic that so AGE on the
+    // diagnostics screen behaves the way it does on the watch.
+    let sample_every = Duration::from_millis(100);
+    let mut last_sample = Instant::now();
+    let tick = Duration::from_millis(33); // ~30 fps, matching the device tick
+
     loop {
         let start = Instant::now();
-
-        poc_gui::render(&mut buf, W, H, screen, frame);
-        emulate_panel(&mut buf);
-        blit(&mut display, &buf);
-        window.update(&display);
 
         for event in window.events() {
             match event {
                 SimulatorEvent::Quit => return,
-                SimulatorEvent::KeyDown { .. } => {
-                    screen = (screen + 1) % poc_gui::screen_count();
-                }
+                SimulatorEvent::KeyDown { keycode, .. } => match keycode {
+                    Keycode::Tab => screen = (screen + 1) % poc_gui::screen_count(),
+                    Keycode::S => stale = !stale,
+                    Keycode::Left => st.accel_x = (st.accel_x - 0.1).max(-1.5),
+                    Keycode::Right => st.accel_x = (st.accel_x + 0.1).min(1.5),
+                    Keycode::Down => st.accel_y = (st.accel_y - 0.1).max(-1.5),
+                    Keycode::Up => st.accel_y = (st.accel_y + 0.1).min(1.5),
+                    _ => {}
+                },
                 _ => {}
             }
         }
 
-        frame = frame.wrapping_add(1);
+        // Stand in for the Service: a new sample every 100 ms unless "stale" is
+        // toggled, which is how the NO DATA path gets exercised.
+        if !stale && last_sample.elapsed() >= sample_every {
+            last_sample = Instant::now();
+            st.samples = st.samples.wrapping_add(1);
+        }
+        st.sample_age_ms = last_sample.elapsed().as_millis() as u32;
+        st.valid = u8::from(st.sample_age_ms <= 500); // matches Gui.hpp kStaleAfterMs
+
+        poc_gui::render(&mut buf, W, H, screen, &st);
+        emulate_panel(&mut buf);
+        blit(&mut display, &buf);
+        window.update(&display);
+
+        st.frames = st.frames.wrapping_add(1);
         if let Some(rem) = tick.checked_sub(start.elapsed()) {
             std::thread::sleep(rem);
         }

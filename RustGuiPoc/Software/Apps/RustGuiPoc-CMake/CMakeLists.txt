@@ -49,12 +49,15 @@ add_custom_command(
 add_custom_target(poc_gui_rust DEPENDS ${RUST_LIB})
 
 # ---------------------------------------------------------------------------
-# Service ELF (minimal, stateless)
+# Service ELF — owns the accelerometer and forwards samples to the GUI.
+# UNA_SDK_SOURCES_SENSOR is required: a GUI process cannot reach a sensor at all
+# (SDK::Kernel is {sys, log, mem, comm, fs}), so the sensor lives here.
 # ---------------------------------------------------------------------------
 set(SERVICE_SOURCES
     ${LIBS_SOURCES}
     ${UNA_SDK_SOURCES_COMMON}
     ${UNA_SDK_SOURCES_APPSYSTEM}
+    ${UNA_SDK_SOURCES_SENSOR}
 )
 set(SERVICE_INCLUDE_DIRS
     ${LIBS_INCLUDE_DIRS}

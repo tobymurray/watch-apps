@@ -5,9 +5,16 @@
  *          Libs/Source/Port/TouchGFX/TouchGFXCommandProcessor.cpp, minus
  *          TouchGFX: query display config, then on each GUI tick have the Rust
  *          core paint the framebuffer and push it via RequestDisplayUpdate.
+ *
+ * Note what a custom message costs here: one `case`. The TouchGFX port has to
+ * queue custom messages and replay them outside the frame cycle (see
+ * Docs/TouchGFX-Port-Architecture.md on mUserQueue); owning the loop outright
+ * means the sensor sample is just another message.
  ******************************************************************************
  */
 #include "Gui.hpp"
+
+#include "Commands.hpp"
 
 #include "SDK/Messages/MessageTypes.hpp"
 #include "SDK/Messages/CommandMessages.hpp"
@@ -41,7 +48,8 @@ void Gui::queryDisplayConfig()
     }
 
     // Fall back / clamp to what the static framebuffer can hold. Never trust the
-    // config blindly — a wrong size here writes past mFrameBuf.
+    // config blindly — a wrong size here would write past mFrameBuf. (render()
+    // also checks buf_len on its own side; this is the outer of the two gates.)
     if (mWidth <= 0 || mHeight <= 0 ||
         static_cast<uint32_t>(mWidth) * static_cast<uint32_t>(mHeight) > kMaxPixels) {
         LOG_WARNING("Display config unusable (%dx%d); falling back to 240x240\n",
@@ -58,11 +66,23 @@ void Gui::renderAndPush()
         return;
     }
 
+    // Age the newest sample against our own clock and decide, here, whether the
+    // renderer is allowed to show a number at all. The renderer never guesses.
+    if (mHaveSample) {
+        const uint32_t now = mKernel.sys.getTimeMs();
+        mState.sample_age_ms = now - mLastSampleMs;  // unsigned wrap is correct here
+        mState.valid = (mState.sample_age_ms <= kStaleAfterMs) ? 1u : 0u;
+    } else {
+        mState.sample_age_ms = 0;
+        mState.valid         = 0;
+    }
+
     poc_gui_render(mFrameBuf,
+                   kMaxPixels,
                    static_cast<uint16_t>(mWidth),
                    static_cast<uint16_t>(mHeight),
                    mScreen,
-                   mFrame);
+                   &mState);
 
     auto *upd = mKernel.comm.allocateMessage<SDK::Message::RequestDisplayUpdate>();
     if (upd) {
@@ -70,13 +90,13 @@ void Gui::renderAndPush()
         mKernel.comm.sendMessage(upd, 1000);
         mKernel.comm.releaseMessage(upd);
     }
-    ++mFrame;
+    ++mState.frames;
 }
 
 void Gui::dumpFramebuffer()
 {
     // The framebuffer is exactly what poc_gui_render() produced, so this file is
-    // byte-comparable to the sim's render() output for the same screen.
+    // byte-comparable to the sim's render() output for the same screen + state.
     static constexpr char kDir[]  = "Apps/RustGuiPoc";
     static constexpr char kPath[] = "Apps/RustGuiPoc/fb_dump.bin";
 
@@ -138,6 +158,19 @@ void Gui::run()
                 renderAndPush();
                 continue; // already released
 
+            // The whole reason the Service half exists: sensors are unreachable
+            // from a GUI process, so the newest sample arrives as a message.
+            case CustomMessage::ACCEL_VALUES: {
+                auto *accel = static_cast<CustomMessage::AccelValues *>(msg);
+                mState.accel_x = accel->x;
+                mState.accel_y = accel->y;
+                mState.accel_z = accel->z;
+                mLastSampleMs  = mKernel.sys.getTimeMs();
+                mHaveSample    = true;
+                ++mState.samples;
+                msg->setResult(SDK::MessageResult::SUCCESS);
+            } break;
+
             case SDK::MessageType::EVENT_BUTTON: {
                 auto *btn = static_cast<SDK::Message::EventButton *>(msg);
                 using Id    = SDK::Message::EventButton::Id;
@@ -161,9 +194,9 @@ void Gui::run()
                     return;
                 }
 
-                // SW2 (top-right / SELECT) cycles screens — the "move between
-                // two UIs" demo. SW3 (bottom-left / DOWN) long-press dumps the
-                // framebuffer for the desktop sim. Everything else is ignored.
+                // SW2 (top-right / SELECT) cycles screens. SW3 (bottom-left /
+                // DOWN) long-press dumps the framebuffer for the desktop sim.
+                // Everything else is ignored.
                 if (btn->event == Event::CLICK && btn->id == Id::SW2 && screenCount > 0) {
                     mScreen = (mScreen + 1) % screenCount;
                     renderAndPush(); // repaint immediately so the switch feels instant

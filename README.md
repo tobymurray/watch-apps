@@ -16,7 +16,7 @@ than living inside it.
 | [`HikeMap`](HikeMap) | The stock Hiking activity with the same live map. |
 | [`MapManager`](MapManager) | A background, autostart `Utility` app that discovers and CRC-verifies offline map packs dropped into the shared `SharedData/maps/` directory, so map-consuming apps read from one already-verified location instead of each running their own copy of this pipeline. |
 | [`RunMap`](RunMap) | The stock Running activity with the same live map. |
-| [`RustGuiPoc`](RustGuiPoc) | A proof of concept: a watch app whose GUI is drawn by Rust and `embedded-graphics` through the SDK's CustomGUI entry point, instead of TouchGFX. |
+| [`RustGuiPoc`](RustGuiPoc) | A proof of concept: a watch app whose GUI is drawn by Rust and `embedded-graphics` through the SDK's CustomGUI entry point, instead of TouchGFX — showing a live accelerometer reading, because a GUI process cannot read a sensor and the Service→GUI path is the half a rendering demo can't prove. |
 | [`SleepLab`](SleepLab) | A background, autostart `Utility` app that records a night of wrist data and scores it with a published actigraphy algorithm — and refuses to report sleep stages, an unworn night, or a heart-rate figure it has not earned a baseline for, because a sleep app's failures are silent. |
 | [`Squash`](Squash) | A squash activity app, and the raw 100 Hz IMU recorder it is being built out of — because tuning shot detection needs labelled court data that does not exist yet. |
 | [`SunGlance`](SunGlance) | A `Glance` card that says what the sun does next — sunrise or sunset, and how long until it — for a position written into the app's folder at install time, because a three-second card cannot afford a GNSS fix and does not need one. |
@@ -72,7 +72,9 @@ kira build-app --app GpsLab --sdk /path/to/una-sdk --version 1.0.0 --out GpsLab.
 storage under [`SleepLab/Tests`](SleepLab/Tests), `SunGlance` carries its solar
 core, its wording and its glance wiring under
 [`SunGlance/Tests`](SunGlance/Tests), and the three map apps share one suite
-under [`MapKit/Tests`](MapKit/Tests).
+under [`MapKit/Tests`](MapKit/Tests). `RustGuiPoc`'s tests are Rust unit tests
+inside its own crate (`cargo test --features std`) rather than a `Tests/`
+directory — see [its README](RustGuiPoc/README.md#tests).
 
 Two different SDKs, depending on the app. `Chrono`, `MapManager` and the three
 map apps are pinned to `apps-v1.3.0` — point `$UNA_SDK` at a checkout of that
