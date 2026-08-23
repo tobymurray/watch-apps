@@ -1,13 +1,3 @@
-/**
- ******************************************************************************
- * @file    Service.cpp
- * @brief   Accelerometer -> GUI forwarding service for RustGuiPoc.
- *
- * Mirrors the idiom of the SDK's own HRMonitor service, minus the FIT recording:
- * connect the sensor at startup, forward samples only while the GUI is up, and
- * retire when the GUI goes away.
- ******************************************************************************
- */
 #include "Service.hpp"
 
 #include "Commands.hpp"
@@ -26,7 +16,7 @@ static constexpr uint32_t kWaitForever = 0xFFFFFFFF;
 
 Service::Service(SDK::Kernel &kernel)
     : mKernel(kernel)
-    , mAccel(SDK::Sensor::Type::ACCELEROMETER, skSamplePeriod, skSampleLatency)
+    , mAccel(SDK::Sensor::Type::ACCELEROMETER, skSamplePeriodMs, skSampleLatency)
     , mGuiStarted(false)
 {
 }
@@ -42,13 +32,12 @@ void Service::handleSensorData(uint16_t handle, SDK::Sensor::DataBatch &batch)
         return;
     }
 
-    // Take the newest sample in the batch. At latency 0 there is exactly one,
-    // but the sensor layer is free to batch and a display only wants the latest.
-    SDK::SensorDataParser::Accelerometer parser(batch[batch.size() - 1]);
+    const uint16_t newest = batch.size() - 1;
+    SDK::SensorDataParser::Accelerometer parser(batch[newest]);
 
     float x = 0.0f, y = 0.0f, z = 0.0f;
     if (!parser.getXYZ(x, y, z)) {
-        return; // wrong field count for this driver; say nothing rather than lie
+        return;
     }
 
     SDK::send_msg<CustomMessage::AccelValues>(mKernel, x, y, z);
@@ -59,8 +48,6 @@ void Service::run()
     LOG_INFO("Started\n");
 
     if (!mAccel.connect()) {
-        // Keep running: the GUI's own staleness gate will show NO DATA, which is
-        // a truer report than an app that dies silently on a sensor failure.
         LOG_WARNING("Accelerometer connect failed\n");
     }
 
@@ -73,7 +60,6 @@ void Service::run()
         switch (msg->getType()) {
             case SDK::MessageType::COMMAND_APP_STOP:
             case SDK::MessageType::COMMAND_APP_NOTIF_GUI_STOP:
-                // Frontend-only PoC: no state to keep, so retire with the GUI.
                 LOG_INFO("Exiting\n");
                 mAccel.disconnect();
                 mKernel.comm.releaseMessage(msg);

@@ -1,20 +1,3 @@
-//! no_std Rust frontend core for the UNA Watch CustomGUI PoC.
-//!
-//! This crate owns *rendering only*. It draws with `embedded-graphics` into a
-//! caller-provided 8bpp **ABGR2222** framebuffer and hands nothing back but
-//! pixels. All watch plumbing — querying the display, pushing the buffer over
-//! the kernel message bus, input, lifecycle, and reading the sensor — lives
-//! outside: in the C++ shim (`Gui.cpp`) and the Service half.
-//!
-//! [`render`] is a **pure function of `(buffer, geometry, screen, state)`**.
-//! That is the point of the design, not a stylistic preference: the device, the
-//! host simulator and the tests all drive this one renderer through the one
-//! [`State`] struct, so none of them can drift from the others and none has a
-//! private path to the truth.
-//!
-//! The layout is **round-display aware**: the physical panel shows only a
-//! circular region of the rectangular framebuffer, so all content is kept inside
-//! the inscribed square (the largest axis-aligned box that fits in the circle).
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use core::fmt::Write as _;
@@ -27,40 +10,34 @@ use embedded_graphics::{
     text::{Alignment, Text},
 };
 
-// -----------------------------------------------------------------------------
-// Panic handler (device/no_std only; the host sim and tests use std's)
-// -----------------------------------------------------------------------------
-// NOTE: `loop {}` freezes the GUI thread silently, which is the wrong behaviour
-// for anything but a PoC — a real app should route this to the SDK logger and
-// then exit. Left deliberately minimal, and deliberately flagged.
+#[cfg(not(feature = "std"))]
+extern "C" {
+    fn poc_gui_host_panic(msg: *const u8, len: u32);
+}
+
 #[cfg(not(feature = "std"))]
 #[panic_handler]
-fn on_panic(_info: &core::panic::PanicInfo) -> ! {
+fn on_panic(info: &core::panic::PanicInfo) -> ! {
+    let mut msg = Buf::<192>::new();
+    if let Some(loc) = info.location() {
+        let _ = write!(msg, "{}:{}: ", loc.file(), loc.line());
+    }
+    let _ = write!(msg, "{}", info.message());
+
+    let s = msg.as_str();
+    unsafe { poc_gui_host_panic(s.as_ptr(), s.len() as u32) };
     loop {}
 }
 
-// -----------------------------------------------------------------------------
-// State — everything the UI is allowed to know
-// -----------------------------------------------------------------------------
-
-/// Mirror of `poc_gui_state` in `poc_gui.h`. Field order and types must match.
-///
-/// The renderer never decides whether data is trustworthy; `valid` is computed
-/// by the shim, which owns the clock. This crate's job is to *respect* it.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct State {
-    /// Acceleration in g. Meaningless unless `valid != 0`.
-    pub accel_x: f32,
-    pub accel_y: f32,
-    pub accel_z: f32,
-    /// Milliseconds since the newest sample arrived.
+    pub accel_x_g: f32,
+    pub accel_y_g: f32,
+    pub accel_z_g: f32,
     pub sample_age_ms: u32,
-    /// Samples received this session.
     pub samples: u32,
-    /// Frames rendered this session.
     pub frames: u32,
-    /// 0 = never sampled, or too stale to display.
     pub valid: u8,
     pub _pad: [u8; 3],
 }
@@ -69,27 +46,41 @@ impl State {
     fn is_live(&self) -> bool {
         self.valid != 0
     }
+
+    fn status_label(&self) -> &'static str {
+        if self.is_live() {
+            "LIVE"
+        } else if self.samples > 0 {
+            "STALE"
+        } else {
+            "NONE"
+        }
+    }
 }
 
-// -----------------------------------------------------------------------------
-// ABGR2222 — the watch's 8-bits-per-pixel packed color
-// -----------------------------------------------------------------------------
-// One byte per pixel. From MSB: A[7:6] B[5:4] G[3:2] R[1:0], 2 bits per channel.
-// NOTE: RequestDisplayConfig reports colorDepth=6 — that is the count of
-// *displayed color* bits (3 channels x 2), NOT the storage width. Storage is a
-// full 8bpp byte; the top 2 (alpha) bits must be 0b11 (opaque), which rgb() OR's
-// in unconditionally. Do not "shrink" this to 6bpp.
+const ALPHA_SHIFT: u8 = 6;
+const BLUE_SHIFT: u8 = 4;
+const GREEN_SHIFT: u8 = 2;
+const RED_SHIFT: u8 = 0;
+const CHANNEL_MASK: u8 = 0b11;
+const CHANNEL_BITS: u8 = 2;
+const ALPHA_OPAQUE: u8 = 0b11;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Abgr2222(pub u8);
 
+const fn keep_high_bits(channel: u8) -> u8 {
+    (channel >> (8 - CHANNEL_BITS)) & CHANNEL_MASK
+}
+
 impl Abgr2222 {
-    /// Pack 8-bit RGB into ABGR2222, alpha forced opaque (3).
     pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
-        let a2 = 0b11u8;
-        let r2 = (r >> 6) & 0b11;
-        let g2 = (g >> 6) & 0b11;
-        let b2 = (b >> 6) & 0b11;
-        Abgr2222((a2 << 6) | (b2 << 4) | (g2 << 2) | r2)
+        Abgr2222(
+            (ALPHA_OPAQUE << ALPHA_SHIFT)
+                | (keep_high_bits(b) << BLUE_SHIFT)
+                | (keep_high_bits(g) << GREEN_SHIFT)
+                | (keep_high_bits(r) << RED_SHIFT),
+        )
     }
 
     pub const BLACK: Abgr2222 = Abgr2222::rgb(0, 0, 0);
@@ -109,9 +100,12 @@ impl PixelColor for Abgr2222 {
     type Raw = RawU8;
 }
 
-// -----------------------------------------------------------------------------
-// Framebuffer as an embedded-graphics DrawTarget
-// -----------------------------------------------------------------------------
+const DARK_GROUND: Abgr2222 = Abgr2222::BLACK;
+const BRIGHT_HEADING: Abgr2222 = Abgr2222::CYAN;
+const BRIGHT_READING: Abgr2222 = Abgr2222::WHITE;
+const BRIGHT_WARNING: Abgr2222 = Abgr2222::YELLOW;
+const BRIGHT_CHROME: Abgr2222 = Abgr2222::GRAY;
+
 struct FrameBuf<'a> {
     buf: &'a mut [u8],
     w: u32,
@@ -143,13 +137,6 @@ impl DrawTarget for FrameBuf<'_> {
     }
 }
 
-// -----------------------------------------------------------------------------
-// Fixed-capacity string formatting (no alloc)
-// -----------------------------------------------------------------------------
-/// A tiny `core::fmt::Write` sink over a stack array, so labels can be built with
-/// `write!` without an allocator. Values are formatted as integers on purpose:
-/// integer formatting is a fraction of the code size of float formatting, and
-/// milli-g is the right resolution for a 240px panel anyway.
 struct Buf<const N: usize> {
     b: [u8; N],
     n: usize,
@@ -159,6 +146,7 @@ impl<const N: usize> Buf<N> {
     fn new() -> Self {
         Buf { b: [0; N], n: 0 }
     }
+
     fn as_str(&self) -> &str {
         core::str::from_utf8(&self.b[..self.n]).unwrap_or("")
     }
@@ -177,54 +165,62 @@ impl<const N: usize> core::fmt::Write for Buf<N> {
     }
 }
 
-/// g -> milli-g, saturating. Keeps all display maths in integers.
-fn to_mg(g: f32) -> i32 {
-    let v = g * 1000.0;
-    if v > 9999.0 {
-        9999
-    } else if v < -9999.0 {
-        -9999
+const MILLI_G_PER_G: f32 = 1000.0;
+const MILLI_G_DISPLAY_LIMIT: i32 = 9999;
+
+fn to_milli_g_clamped(accel_g: f32) -> i32 {
+    let milli_g = accel_g * MILLI_G_PER_G;
+    let limit = MILLI_G_DISPLAY_LIMIT as f32;
+    if milli_g > limit {
+        MILLI_G_DISPLAY_LIMIT
+    } else if milli_g < -limit {
+        -MILLI_G_DISPLAY_LIMIT
     } else {
-        v as i32
+        milli_g as i32
     }
 }
 
-// -----------------------------------------------------------------------------
-// Round-display geometry
-// -----------------------------------------------------------------------------
-/// The circular panel's center, radius, and the half-side of the inscribed
-/// square (the largest box guaranteed fully visible). Everything important is
-/// laid out within `cx±half, cy±half`.
+const INV_SQRT2_NUMERATOR: i32 = 181;
+const INV_SQRT2_DENOMINATOR: i32 = 256;
+
+fn inscribed_square_half(radius: i32) -> i32 {
+    radius * INV_SQRT2_NUMERATOR / INV_SQRT2_DENOMINATOR
+}
+
 struct Geom {
     cx: i32,
     cy: i32,
-    r: i32,
-    half: i32,
+    radius: i32,
+    inscribed_half: i32,
 }
 
 fn geom(fb: &FrameBuf) -> Geom {
     let w = fb.w as i32;
     let h = fb.h as i32;
-    let r = w.min(h) / 2;
+    let radius = w.min(h) / 2;
     Geom {
         cx: w / 2,
         cy: h / 2,
-        r,
-        half: r * 181 / 256, // r / sqrt(2) ~= 0.707 r
+        radius,
+        inscribed_half: inscribed_square_half(radius),
     }
 }
 
-/// Faint rim so the round edge / clipped region is visible on-device.
-fn draw_rim(fb: &mut FrameBuf, g: &Geom) {
-    Circle::new(Point::new(g.cx - g.r + 1, g.cy - g.r + 1), (g.r as u32 - 1) * 2)
-        .into_styled(PrimitiveStyle::with_stroke(Abgr2222::GRAY, 1))
+fn stroke(color: Abgr2222) -> PrimitiveStyle<Abgr2222> {
+    PrimitiveStyle::with_stroke(color, 1)
+}
+
+fn draw_circle(fb: &mut FrameBuf, cx: i32, cy: i32, radius: i32, style: PrimitiveStyle<Abgr2222>) {
+    Circle::new(Point::new(cx - radius, cy - radius), (radius as u32) * 2)
+        .into_styled(style)
         .draw(fb)
         .ok();
 }
 
-// Panel legibility rule (verified on-device): BRIGHT text on the DARK background
-// renders crisply, but DARK thin glyphs on a LIGHT fill drop out. Every label
-// here is therefore bright-on-black.
+fn draw_rim(fb: &mut FrameBuf, g: &Geom) {
+    draw_circle(fb, g.cx, g.cy, g.radius - 1, stroke(BRIGHT_CHROME));
+}
+
 fn text(fb: &mut FrameBuf, s: &str, at: Point, color: Abgr2222, align: Alignment) {
     Text::with_alignment(s, at, MonoTextStyle::new(&FONT_9X15_BOLD, color), align)
         .draw(fb)
@@ -232,157 +228,146 @@ fn text(fb: &mut FrameBuf, s: &str, at: Point, color: Abgr2222, align: Alignment
 }
 
 fn title(fb: &mut FrameBuf, g: &Geom, s: &str) {
-    text(fb, s, Point::new(g.cx, g.cy - g.half + 16), Abgr2222::CYAN, Alignment::Center);
+    let at = Point::new(g.cx, g.cy - g.inscribed_half + 16);
+    text(fb, s, at, BRIGHT_HEADING, Alignment::Center);
 }
 
-/// Which screen you are on, as dots rather than a line of text. The button
-/// mapping lives in the README: a watch UI that has to print its own key
-/// bindings on every screen is spending its scarcest resource — vertical space
-/// inside a circle — on documentation.
 fn page_dots(fb: &mut FrameBuf, g: &Geom, current: u32) {
-    const D: i32 = 6;
-    const GAP: i32 = 14;
+    const DIAMETER: i32 = 6;
+    const SPACING: i32 = 14;
     let n = SCREEN_COUNT as i32;
-    let y = g.cy + g.half - 7;
-    let x0 = g.cx - ((n - 1) * GAP) / 2;
+    let y = g.cy + g.inscribed_half - 7;
+    let x0 = g.cx - ((n - 1) * SPACING) / 2;
     for i in 0..n {
-        let c = Circle::new(Point::new(x0 + i * GAP - D / 2, y - D / 2), D as u32);
-        if i == current as i32 % n {
-            c.into_styled(PrimitiveStyle::with_fill(Abgr2222::WHITE)).draw(fb).ok();
+        let style = if i == current as i32 % n {
+            PrimitiveStyle::with_fill(BRIGHT_READING)
         } else {
-            c.into_styled(PrimitiveStyle::with_stroke(Abgr2222::GRAY, 1)).draw(fb).ok();
-        }
+            stroke(BRIGHT_CHROME)
+        };
+        draw_circle(fb, x0 + i * SPACING, y, DIAMETER / 2, style);
     }
 }
 
-// -----------------------------------------------------------------------------
-// Screen 0 — live accelerometer
-// -----------------------------------------------------------------------------
-// A bubble-level: the dot's offset from centre is the wrist's tilt. Chosen over
-// a numeric-only readout because it is *self-evidently live* — tilt the watch and
-// the dot moves, which demonstrates the whole sensor -> Service -> IPC -> Rust ->
-// panel path in one gesture, with no strap, no fix and no warm-up.
+const BUBBLE_RADIUS: i32 = 40;
+const BUBBLE_DOT_RADIUS: i32 = 6;
+const CROSSHAIR_ARM: i32 = 4;
+const FULL_DEFLECTION_G: f32 = 1.0;
+
+fn draw_bubble_reference(fb: &mut FrameBuf, cx: i32, cy: i32) {
+    draw_circle(fb, cx, cy, BUBBLE_RADIUS, stroke(BRIGHT_CHROME));
+    Line::new(
+        Point::new(cx - CROSSHAIR_ARM, cy),
+        Point::new(cx + CROSSHAIR_ARM, cy),
+    )
+    .into_styled(stroke(BRIGHT_CHROME))
+    .draw(fb)
+    .ok();
+    Line::new(
+        Point::new(cx, cy - CROSSHAIR_ARM),
+        Point::new(cx, cy + CROSSHAIR_ARM),
+    )
+    .into_styled(stroke(BRIGHT_CHROME))
+    .draw(fb)
+    .ok();
+}
+
+fn deflection_px(accel_g: f32) -> i32 {
+    let limit = BUBBLE_RADIUS as f32;
+    let px = accel_g / FULL_DEFLECTION_G * limit;
+    if px > limit {
+        BUBBLE_RADIUS
+    } else if px < -limit {
+        -BUBBLE_RADIUS
+    } else {
+        px as i32
+    }
+}
+
+fn tilt_to_screen_offset(st: &State) -> (i32, i32) {
+    (deflection_px(st.accel_x_g), deflection_px(-st.accel_y_g))
+}
+
 fn draw_accel(fb: &mut FrameBuf, st: &State) {
     let g = geom(fb);
     draw_rim(fb, &g);
     title(fb, &g, "ACCEL mg");
 
-    let (bx, by, br) = (g.cx, g.cy - 16, 40i32);
-
-    // Reference ring + crosshair: drawn whether or not there is data, so a stale
-    // screen reads as "no reading" rather than "app broken".
-    Circle::new(Point::new(bx - br, by - br), (br as u32) * 2)
-        .into_styled(PrimitiveStyle::with_stroke(Abgr2222::GRAY, 1))
-        .draw(fb)
-        .ok();
-    Line::new(Point::new(bx - 4, by), Point::new(bx + 4, by))
-        .into_styled(PrimitiveStyle::with_stroke(Abgr2222::GRAY, 1))
-        .draw(fb)
-        .ok();
-    Line::new(Point::new(bx, by - 4), Point::new(bx, by + 4))
-        .into_styled(PrimitiveStyle::with_stroke(Abgr2222::GRAY, 1))
-        .draw(fb)
-        .ok();
+    let (bubble_cx, bubble_cy) = (g.cx, g.cy - 16);
+    draw_bubble_reference(fb, bubble_cx, bubble_cy);
 
     if !st.is_live() {
-        text(fb, "NO DATA", Point::new(g.cx, g.cy + 52), Abgr2222::YELLOW, Alignment::Center);
+        let at = Point::new(g.cx, g.cy + 52);
+        text(fb, "NO DATA", at, BRIGHT_WARNING, Alignment::Center);
         page_dots(fb, &g, 0);
         return;
     }
 
-    // Bubble: 1 g of tilt on an axis = the full ring radius. Screen y is inverted
-    // relative to the accelerometer's y, so it is negated for a natural feel.
-    let off = |acc: f32| -> i32 {
-        let v = acc * br as f32;
-        let lim = br as f32;
-        let c = if v > lim {
-            lim
-        } else if v < -lim {
-            -lim
-        } else {
-            v
-        };
-        c as i32
-    };
-    let dx = off(st.accel_x);
-    let dy = -off(st.accel_y);
-    Circle::new(Point::new(bx + dx - 6, by + dy - 6), 12)
-        .into_styled(PrimitiveStyle::with_fill(Abgr2222::YELLOW))
-        .draw(fb)
-        .ok();
+    let (dx, dy) = tilt_to_screen_offset(st);
+    draw_circle(
+        fb,
+        bubble_cx + dx,
+        bubble_cy + dy,
+        BUBBLE_DOT_RADIUS,
+        PrimitiveStyle::with_fill(BRIGHT_WARNING),
+    );
 
-    let mut l1 = Buf::<24>::new();
-    let _ = write!(l1, "X{:>5} Y{:>5}", to_mg(st.accel_x), to_mg(st.accel_y));
-    text(fb, l1.as_str(), Point::new(g.cx, g.cy + 48), Abgr2222::WHITE, Alignment::Center);
+    let mut xy = Buf::<24>::new();
+    let _ = write!(
+        xy,
+        "X{:>5} Y{:>5}",
+        to_milli_g_clamped(st.accel_x_g),
+        to_milli_g_clamped(st.accel_y_g)
+    );
+    let at = Point::new(g.cx, g.cy + 48);
+    text(fb, xy.as_str(), at, BRIGHT_READING, Alignment::Center);
 
-    let mut l2 = Buf::<24>::new();
-    let _ = write!(l2, "Z{:>5}", to_mg(st.accel_z));
-    text(fb, l2.as_str(), Point::new(g.cx, g.cy + 66), Abgr2222::WHITE, Alignment::Center);
+    let mut z = Buf::<24>::new();
+    let _ = write!(z, "Z{:>5}", to_milli_g_clamped(st.accel_z_g));
+    let at = Point::new(g.cx, g.cy + 66);
+    text(fb, z.as_str(), at, BRIGHT_READING, Alignment::Center);
 
     page_dots(fb, &g, 0);
 }
 
-// -----------------------------------------------------------------------------
-// Screen 1 — diagnostics
-// -----------------------------------------------------------------------------
-// Real numbers about the render loop and the data path, which is what you
-// actually want while bringing up a rendering stack — and unlike a shapes demo,
-// nothing here is invented.
+const DIAG_ROW_HEIGHT: i32 = 18;
+
 fn draw_diag(fb: &mut FrameBuf, st: &State) {
     let g = geom(fb);
     draw_rim(fb, &g);
     title(fb, &g, "DIAG");
 
-    let x = g.cx - g.half + 6;
+    let x = g.cx - g.inscribed_half + 6;
     let mut y = g.cy - 26;
-
-    let row = |fb: &mut FrameBuf, s: &str, yy: i32| {
-        text(fb, s, Point::new(x, yy), Abgr2222::WHITE, Alignment::Left);
+    let mut row = |fb: &mut FrameBuf, s: &str| {
+        text(fb, s, Point::new(x, y), BRIGHT_READING, Alignment::Left);
+        y += DIAG_ROW_HEIGHT;
     };
 
     let mut b = Buf::<24>::new();
     let _ = write!(b, "FRAMES{:>7}", st.frames);
-    row(fb, b.as_str(), y);
-    y += 18;
+    row(fb, b.as_str());
 
     let mut b = Buf::<24>::new();
     let _ = write!(b, "SAMPLE{:>7}", st.samples);
-    row(fb, b.as_str(), y);
-    y += 18;
+    row(fb, b.as_str());
 
     let mut b = Buf::<24>::new();
     let _ = write!(b, "AGE{:>8}ms", st.sample_age_ms);
-    row(fb, b.as_str(), y);
-    y += 18;
+    row(fb, b.as_str());
 
-    let state = if st.is_live() {
-        "LIVE"
-    } else if st.samples > 0 {
-        "STALE"
-    } else {
-        "NONE"
-    };
     let mut b = Buf::<24>::new();
-    let _ = write!(b, "STATE{:>8}", state);
-    row(fb, b.as_str(), y);
+    let _ = write!(b, "STATE{:>8}", st.status_label());
+    row(fb, b.as_str());
 
     page_dots(fb, &g, 1);
 }
 
-// -----------------------------------------------------------------------------
-// Rendering entry point — the single source of truth for the device (via the
-// C ABI below), the host simulator, and the tests.
-// -----------------------------------------------------------------------------
 const SCREEN_COUNT: u32 = 2;
 
-/// Number of selectable screens.
 pub const fn screen_count() -> u32 {
     SCREEN_COUNT
 }
 
-/// Render one frame into `buf`, an 8bpp ABGR2222 framebuffer of at least
-/// `width * height` bytes. Does nothing at all if the buffer is too small for
-/// the stated geometry — the caller cannot make this function overrun.
 pub fn render(buf: &mut [u8], width: u32, height: u32, screen: u32, state: &State) {
     if width == 0 || height == 0 {
         return;
@@ -393,32 +378,21 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, screen: u32, state: &Stat
     }
 
     let mut fb = FrameBuf { buf: &mut buf[..needed], w: width, h: height };
-    fb.buf.fill(Abgr2222::BLACK.0);
+    fb.buf.fill(DARK_GROUND.0);
     match screen % SCREEN_COUNT {
         0 => draw_accel(&mut fb, state),
         _ => draw_diag(&mut fb, state),
     }
 }
 
-// -----------------------------------------------------------------------------
-// C ABI — the seam the C++ shim (Gui.cpp) calls on-device
-// -----------------------------------------------------------------------------
-
-/// C ABI wrapper for [`screen_count`].
 #[no_mangle]
 pub extern "C" fn poc_gui_screen_count() -> u32 {
     screen_count()
 }
 
-/// C ABI wrapper for [`render`].
-///
-/// `buf_len` is passed explicitly rather than inferred from `width * height`, so
-/// the size invariant is enforced where the writing happens instead of being a
-/// promise the caller makes and the callee trusts.
-///
 /// # Safety
-/// `buf` must point to at least `buf_len` writable bytes, and `state` to a valid
-/// `poc_gui_state`; both must stay valid for the duration of the call.
+/// `buf` must point to at least `buf_len` writable bytes and `state` to a valid
+/// `poc_gui_state`, both valid for the duration of the call.
 #[no_mangle]
 pub unsafe extern "C" fn poc_gui_render(
     buf: *mut u8,
@@ -435,30 +409,34 @@ pub unsafe extern "C" fn poc_gui_render(
     render(slice, width as u32, height as u32, screen, &*state);
 }
 
-// -----------------------------------------------------------------------------
-// Tests (host: `cargo test --features std`)
-// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const W: u32 = 240;
     const H: u32 = 240;
+    const C_STRUCT_SIZE: usize = 28;
+    const C_STRUCT_ALIGN: usize = 4;
 
     fn live() -> State {
-        State { accel_x: 0.25, accel_y: -0.5, accel_z: 0.9, sample_age_ms: 40,
-                samples: 123, frames: 456, valid: 1, _pad: [0; 3] }
+        State {
+            accel_x_g: 0.25,
+            accel_y_g: -0.5,
+            accel_z_g: 0.9,
+            sample_age_ms: 40,
+            samples: 123,
+            frames: 456,
+            valid: 1,
+            _pad: [0; 3],
+        }
     }
 
-    /// The C struct is 28 bytes; a mismatch here is a silently corrupt ABI.
     #[test]
     fn state_layout_matches_c() {
-        assert_eq!(core::mem::size_of::<State>(), 28);
-        assert_eq!(core::mem::align_of::<State>(), 4);
+        assert_eq!(core::mem::size_of::<State>(), C_STRUCT_SIZE);
+        assert_eq!(core::mem::align_of::<State>(), C_STRUCT_ALIGN);
     }
 
-    /// A buffer too small for the stated geometry must be left untouched, not
-    /// partially painted and not overrun.
     #[test]
     fn undersized_buffer_is_a_no_op() {
         let mut buf = vec![0xAAu8; (W * H) as usize - 1];
@@ -466,8 +444,6 @@ mod tests {
         assert!(buf.iter().all(|&b| b == 0xAA));
     }
 
-    /// Every screen must stay inside width*height even when handed a longer
-    /// buffer — the device passes the whole 240x240 array regardless of config.
     #[test]
     fn never_writes_past_the_stated_geometry() {
         let n = (W * H) as usize;
@@ -478,8 +454,6 @@ mod tests {
         }
     }
 
-    /// Stale data must not render as live data. This is the behaviour the whole
-    /// valid/age plumbing exists to produce, so it is worth pinning.
     #[test]
     fn stale_state_renders_differently() {
         let n = (W * H) as usize;
@@ -490,9 +464,6 @@ mod tests {
         assert_ne!(a, b);
     }
 
-    /// Sensor values are untrusted input: a driver glitch can hand us NaN or a
-    /// wild magnitude. Neither may escape the framebuffer or panic the GUI
-    /// thread, whose panic handler is an infinite loop.
     #[test]
     fn hostile_sensor_values_stay_in_bounds() {
         let n = (W * H) as usize;
@@ -500,15 +471,13 @@ mod tests {
         for &v in &nasty {
             for screen in 0..screen_count() {
                 let mut buf = vec![0xAAu8; n + 64];
-                let st = State { accel_x: v, accel_y: v, accel_z: v, ..live() };
+                let st = State { accel_x_g: v, accel_y_g: v, accel_z_g: v, ..live() };
                 render(&mut buf, W, H, screen, &st);
                 assert!(buf[n..].iter().all(|&b| b == 0xAA), "overran on {v} screen {screen}");
             }
         }
     }
 
-    /// Same state in, same pixels out — the property the simulator's fidelity
-    /// claim rests on.
     #[test]
     fn render_is_deterministic() {
         let n = (W * H) as usize;
