@@ -67,9 +67,11 @@ void Gui::renderAndPush()
     // One clock read. A displayed age and a freshness verdict sampled at
     // different instants can contradict each other on screen, which discredits
     // the diagnostics exactly when they are being read.
+    const uint32_t now = mKernel.sys.getTimeMs();
     const uint32_t age =
-        mHaveSample ? SDK::Timer::elapsed(mKernel.sys.getTimeMs(), mLastSampleMs) : 0;
+        mHaveSample ? SDK::Timer::elapsed(now, mLastSampleMs) : 0;
 
+    mState.uptime_ms     = now;
     mState.sample_age_ms = age;
     mState.valid         = (mHaveSample && age <= kStaleAfterMs) ? 1u : 0u;
 

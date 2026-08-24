@@ -12,6 +12,9 @@ typedef struct {
     float    accel_x_g;
     float    accel_y_g;
     float    accel_z_g;
+    /* Monotonic, from the kernel. Grounds anything that has to advance at a
+       known rate rather than at whatever rate frames happen to arrive. */
+    uint32_t uptime_ms;
     uint32_t sample_age_ms;
     uint32_t samples;
     uint32_t frames;
@@ -56,6 +59,7 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(poc_gui_state, accel_x_g));
     h = fnv1a(h, offsetof(poc_gui_state, accel_y_g));
     h = fnv1a(h, offsetof(poc_gui_state, accel_z_g));
+    h = fnv1a(h, offsetof(poc_gui_state, uptime_ms));
     h = fnv1a(h, offsetof(poc_gui_state, sample_age_ms));
     h = fnv1a(h, offsetof(poc_gui_state, samples));
     h = fnv1a(h, offsetof(poc_gui_state, frames));
@@ -69,16 +73,17 @@ constexpr uint32_t fingerprint()
 /* Per field, because a size check passes when two fields are swapped. These fail
    at compile time here; lib.rs asserts the same offsets on the other side, so a
    hand edit to either declaration has to break one of the two builds. */
-static_assert(sizeof(poc_gui_state) == 28, "poc_gui_state size changed");
+static_assert(sizeof(poc_gui_state) == 32, "poc_gui_state size changed");
 static_assert(alignof(poc_gui_state) == 4, "poc_gui_state alignment changed");
 static_assert(offsetof(poc_gui_state, accel_x_g) == 0, "accel_x_g moved");
 static_assert(offsetof(poc_gui_state, accel_y_g) == 4, "accel_y_g moved");
 static_assert(offsetof(poc_gui_state, accel_z_g) == 8, "accel_z_g moved");
-static_assert(offsetof(poc_gui_state, sample_age_ms) == 12, "sample_age_ms moved");
-static_assert(offsetof(poc_gui_state, samples) == 16, "samples moved");
-static_assert(offsetof(poc_gui_state, frames) == 20, "frames moved");
-static_assert(offsetof(poc_gui_state, valid) == 24, "valid moved");
-static_assert(offsetof(poc_gui_state, _pad) == 25, "_pad moved");
+static_assert(offsetof(poc_gui_state, uptime_ms) == 12, "uptime_ms moved");
+static_assert(offsetof(poc_gui_state, sample_age_ms) == 16, "sample_age_ms moved");
+static_assert(offsetof(poc_gui_state, samples) == 20, "samples moved");
+static_assert(offsetof(poc_gui_state, frames) == 24, "frames moved");
+static_assert(offsetof(poc_gui_state, valid) == 28, "valid moved");
+static_assert(offsetof(poc_gui_state, _pad) == 29, "_pad moved");
 #endif
 
 #endif // POC_GUI_H

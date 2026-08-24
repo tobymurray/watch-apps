@@ -149,12 +149,15 @@ had grown, one that read every field past the third at the wrong offset. Restati
 cargo's inputs in a `DEPENDS` list is the wrong fix; anything the list misses
 fails the same way.
 
-**The hand-maintained C ABI is the weakest part of the design.** Every field must
-be declared in `poc_gui.h` and `lib.rs` and can silently disagree. `poc_gui_state_size()`
-catches size drift at startup but **would not catch a reordering** — swap two
-`u32` fields and the size is identical while every read is wrong. Per-field
-`offset_of!` / `offsetof` assertions would make both a compile error on both
-sides; generating one header from the other would make the class impossible.
+**The hand-maintained C ABI is the weakest part of the design.** Every field has
+to be declared in `poc_gui.h` and `lib.rs`, and the two can silently disagree —
+five hand-edits to that struct in one branch produced one shipped bug. It now
+carries per-field `offsetof` / `offset_of!` assertions, so an edit to either
+declaration breaks a build, plus a startup fingerprint over the whole layout,
+because compile-time assertions cannot catch a stale archive: it and a newer
+header each satisfy their own. A size check alone would not have caught a
+reordering. Generating one declaration from the other would remove the class
+rather than guard it, and is still the better answer.
 
 **Three separate instrument defects masqueraded as hardware findings.** A stale
 archive faked a sensor fault; a log buffer that dropped instead of flushing

@@ -33,9 +33,12 @@ Two properties that path relies on:
   Past `kStaleAfterMs` the screen shows `NO DATA` rather than the last number it
   saw. That threshold is set from measurement, not from the sample period: the
   sensor layer aggregates on a ~1 s timer that no app-side setting moves.
-- **Every screen carries a heartbeat.** The marker steps one position per
-  rendered frame, so a screen whose numbers happen not to change still cannot be
-  mistaken for a stalled render loop.
+- **Every screen carries a heartbeat, positioned from the clock.** It only moves
+  when a frame is drawn, so a stalled loop freezes it — but because the position
+  is a function of uptime rather than of the frame count, a lap is a known 3.2 s
+  and dropped frames show as a visible jump rather than as a silently slower
+  orbit. A frame-counted marker proves liveness and nothing else: timing a run by
+  it would assume the frame rate it is meant to reveal.
 
 A Rust panic reaches the SDK logger through `poc_gui_host_panic` in `Gui.cpp`,
 which logs the message and location and then exits the app. Without that a panic
@@ -47,6 +50,7 @@ would hang the GUI thread silently, and the only way out would be a reboot.
 |--------|-------|
 | `ACCEL` | Bubble level driven by live X/Y tilt, and X/Y/Z in milli-g. `NO DATA` when the sample is stale. |
 | `DIAG` | Frames rendered, samples received, age of the newest sample, and live/stale/none. |
+| `PLASMA` | A per-pixel interference field in polar coordinates, recomputed every frame, edge to edge. Every colour it can emit sits on the saturated hull of the gamut, and it dithers between adjacent hues rather than per channel — because at four levels a channel, colours near the grey axis collapse, which is the same reason [MapKit](../MapKit/README.md) found CyclOSM tiles quantise well and OSM standard washes out. |
 | `DITHER` | One luminance ramp quantised two ways. The panel has four levels a channel, so the left half can only render it as four bands; the right half ordered-dithers it and reads as a smooth gradient. TouchGFX has a gradient painter for this format and no dithering anywhere in the framework, so it draws the left half. |
 
 ## Buttons
@@ -70,7 +74,7 @@ Targets **`apps-v1.4.0`**. Needs the ARM embedded toolchain, CMake, Python 3 wit
 rustup target add thumbv8m.main-none-eabihf
 export UNA_SDK=/path/to/una-sdk
 cd Software/Apps/RustGuiPoc-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.11.0 .
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.13.0 .
 cmake --build build
 ```
 
@@ -82,7 +86,7 @@ docker run --rm -v /path/to/una-sdk:/sdk -v "$PWD":/apps -e UNA_SDK=/sdk \
   -w /apps/RustGuiPoc/Software/Apps/RustGuiPoc-CMake \
   ghcr.io/tobymurray/kira-toolchain \
   bash -c 'pip3 install --break-system-packages -r /sdk/Utilities/Scripts/app_packer/requirements.txt
-           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.11.0 . && cmake --build build'
+           cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.13.0 . && cmake --build build'
 ```
 
 That image ships neither `pyelftools` nor `Pillow`, both of which the SDK's
@@ -98,8 +102,8 @@ framework size is charged against the same budget as the framebuffer. From
 `Output/RustGuiPocGUI.elf.elf.map`:
 
 ```
-.text 26,820   .data 68   .got 68   .bss 58,204   .stack 10,240
-total 95,400 of 614,400  =  15.5%
+.text 28,020   .data 68   .got 68   .bss 58,204   .stack 10,240
+total 96,604 of 614,400  =  15.7%
 ```
 
 `.bss` is almost entirely the 57,600-byte framebuffer. Re-derive the numbers from
