@@ -7,6 +7,10 @@ ledger. It uses the repository's verification convention: **CONFIRMED** (traced
 to code, text or an experiment on this device), **LIKELY** (reasoned from
 something confirmed), **UNVERIFIED**, **REFUTED**.
 
+One section below is **prior art** rather than evidence: third-party text about
+what other vendors ship. It is marked as such and sits deliberately outside the
+convention, because none of it is a measurement of this device.
+
 Update it from `Tools/maplab_report.py` output after every hardware session,
 and cite the run id so a number can be traced back to the rows it came from.
 
@@ -21,7 +25,7 @@ drawn from.
 | --- | --- | --- | --- |
 | **A** | Size: is a vector pack ≥10x smaller than the RLE raster equivalent? | **REFUTED against this cartography** | 3.1× like-for-like, 6.2× crediting overzoom, on the Athens extent, 2026-08-19. The answer swings 1.9×–19.7× with raster style. See below |
 | **B** | RAM: does the renderer's static set link into `RunMap`? | **CONFIRMED — fits** | `Tools/gate_b_link_test.sh`, 2026-08-18, SDK at `apps-v1.4.0`. See below |
-| **C** | Time: does a dense viewport render inside 100 ms? | **REFUTED — 4.8× over at real city density** | Runs 56/151 gave 160.5 ms on a preset since shown to be 3× too sparse; a real downtown z14 is ~480 ms. Rural passes. See below |
+| **C** | Time: does a dense viewport render inside 100 ms? | **REFUTED — 4.8× over at real city density**, against a bar no surveyed competitor meets | Runs 56/151 gave 160.5 ms on a preset since shown to be 3× too sparse; a real downtown z14 is ~480 ms. Rural passes. The 100 ms bar itself is now in question — see prior art |
 | **D** | Legibility: does the palette-first cartography hold up on glass? | **REFUTED as specified; CONFIRMED with a cased trace** | 24 cards across indoor, overcast and sun spanning 9.0 EV, 2026-08-19. R5 fails on the palette as written and holds once the trace is cased. See below |
 
 ## Gate A — measured, and it does not clear the bar
@@ -445,6 +449,47 @@ itself calls "context only". Roads, water and landuse together are 102 ms;
 buildings on top are 192 ms. So the question the pivot actually turns on is
 whether the map can drop buildings. If it can, everything closes. If it cannot,
 Gate C fails at 192 ms whatever the format does.
+
+## Prior art — what Garmin and Coros do (not evidence)
+
+Survey, with sources:
+[`Investigations/2026-08-24-prior-art-garmin-coros`](Investigations/2026-08-24-prior-art-garmin-coros).
+
+**This section is outside the verification convention.** It is third-party text
+— reverse-engineered format documentation, vendor manuals, user forum reports —
+not a measurement of this device. Its job is to say which of our own questions
+were worth asking. Nothing in it changes a number above.
+
+**Corroborated, from three independent directions.**
+
+- Garmin's `.img` carries several **levels**, each at a **resolution** 1–24 where
+  every step down is half as detailed, with **fewer coordinate bits at
+  zoomed-out levels**, and features assigned to levels **at pack time**. That is
+  precisely the pair of levers
+  [the format ceiling](Investigations/2026-08-19-format-ceiling) reached by
+  measurement — quantise to what the zoom can show, generalise when packing.
+- **Both vendors drop buildings.** Garmin's detail setting exists to remove
+  "POIs, buildings etc that you do not normally need for navigation"; Coros
+  Landscape maps ship streets, major roads, natural features and waterways, with
+  no buildings at all. We measured buildings at 90.0 ms of a 100 ms budget for a
+  slot the spec itself calls "context only", and arrived in the same place.
+- **The constraint that bites is memory, not rasterising.** Fenix map slowness
+  is attributed to a 5 MB SoC that cannot cache map data and must keep pulling
+  from storage; Suunto at ~37 MB is reported as much faster. Gate B gives this
+  project **~93 KB** — a different kind of arena, but roughly fifty times less
+  than the device whose users already call the map slow. That promotes **I07**
+  (638 µs per seek, per (tile, layer)) to the number most likely to decide the
+  design: 24 seeks for a 2×2 viewport with six layers is ~15 ms before a pixel
+  is drawn, and there is no room to cache our way out of it.
+
+**Challenged: the 100 ms bar.** On a Fenix, zoomed-out redraws "slow down
+considerably" and take "many seconds" — a long-standing characteristic rather
+than a bug awaiting a fix. So Gate C is judged against a threshold **no surveyed
+competitor meets**, whose provenance is one line of charter prose. Gate C's
+verdict stands exactly as measured — 479.9 ms at real density — because a bar is
+not moved to fit a measurement. But whether 100 ms is the right bar is now an
+open question in its own right, and a far cheaper one to answer than a 4.8×
+rasteriser.
 
 ## Not measured here, deliberately
 
