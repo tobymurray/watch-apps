@@ -11,10 +11,12 @@ than living inside it.
 | --- | --- |
 | [`Barcode`](Barcode) | A parkrun-style Code 128 barcode for an id you supply, read from a small JSON file you write into the app's folder over USB — because the SDK has no supported way to get a user-specific value onto the watch. |
 | [`BikeMap`](BikeMap) | The stock Cycling activity with a live map on the in-activity screen: offline basemap tiles under the GPS breadcrumb, instead of breadcrumb-on-black. |
+| [`ButtonProbe`](ButtonProbe) | Reads the GPIO input registers on a watch you own to find out which pin is which button — and whether a glance service, which is never sent a button event, can catch the edge itself. Read-only: it never writes a register. |
 | [`Chrono`](Chrono) | The SDK's Stopwatch example backported to SDK 1.3, which upstream never had a build of — so it launches on a watch whose kernel is still on interface version 2. |
 | [`GpsLab`](GpsLab) | The Running activity plus GNSS instrumentation — per-sample error estimate, fix and dead-reckoning state, recorded alongside the activity. |
 | [`HikeMap`](HikeMap) | The stock Hiking activity with the same live map. |
 | [`MapManager`](MapManager) | A background, autostart `Utility` app that discovers and CRC-verifies offline map packs dropped into the shared `SharedData/maps/` directory, so map-consuming apps read from one already-verified location instead of each running their own copy of this pipeline. |
+| [`RunGuiProbe`](RunGuiProbe) | One experiment in an app: a `Glance`-type app that also carries a GUI, which asks the kernel to launch it three seconds after its card appears — to find out whether a glance can open a screen at all, since the SDK gives it no way to notice a button. |
 | [`RunMap`](RunMap) | The stock Running activity with the same live map. |
 | [`RustGuiPoc`](RustGuiPoc) | A proof of concept: a watch app whose GUI is drawn by Rust and `embedded-graphics` through the SDK's CustomGUI entry point, instead of TouchGFX. |
 | [`SensorLab`](SensorLab) | An instrument, not a product: a `Utility` app that measures every property of every sensor an app can reach — existence, frame structure, delivered rate, value domain, resolution — and turns it into a profile that diffs against the next firmware, with a confidence on every claim and a completeness on every sensor. |
