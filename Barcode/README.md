@@ -222,7 +222,7 @@ watch write the id back to the file — and it still should not.
 ```sh
 export UNA_SDK=/path/to/una-sdk
 cd Barcode/Software/Apps/Barcode-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=1.0.0 .. && cmake --build build
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.1.0 .. && cmake --build build
 ```
 
 Or the desktop simulator, which is where the provisioning flow is easiest to
