@@ -44,7 +44,7 @@ struct BarcodeState : public SDK::MessageBase {
     Barcode::State state;
     BarcodeState()
         : SDK::MessageBase(BARCODE_STATE)
-        , state(Barcode::makeUnsetState(Barcode::Problem::NoFile))
+        , state(Barcode::makeUnsetState(Barcode::Problem::NoConfig))
     {}
 };
 
@@ -87,11 +87,12 @@ public:
     }
 
     /**
-     * @brief GUI --> Service: re-check the provisioning file and reply.
+     * @brief GUI --> Service: re-read the configuration and reply.
      *
-     * Nothing tells an app that a file it does not own was rewritten, so the
-     * GUI asking on every resume is the notification: the service re-stats
-     * the file, and only re-reads it if something outside changed it.
+     * Nothing tells an app that its values file was rewritten -- not from the
+     * phone, not over USB -- so the GUI asking on every resume is the
+     * notification. SDK::AppConfig reads once in its constructor and offers
+     * no refresh, so the service answers by building a new one.
      */
     bool requestState() { return send<BarcodeRequest>(); }
 

@@ -18,31 +18,31 @@ struct Prompt
  * @brief What to say, for each way there can be no id.
  *
  * Every line has to earn its place on a 240x240 round screen and fit one
- * 200px row, so these name the file and the key and nothing else -- enough to
- * know what to go and change, with the README carrying the rest.
+ * 200px row, so these say where to go and nothing else -- with the README
+ * carrying the rest.
+ *
+ * Blunter than they were. This app used to read the file itself and could
+ * name the fault -- too big, not JSON, wrong schema. SDK::AppConfig reports
+ * all of those as one unusable configuration and logs the detail where a
+ * wearer cannot see it, so kNoConfig has to cover the lot and point at the
+ * two places an id can come from instead of naming what is wrong.
  */
 const Prompt &promptFor(Barcode::Problem problem)
 {
-    static const Prompt kNoFile      = {{ "No id yet", "Write your id to", "Apps/Barcode/", "input.json" }};
-    static const Prompt kTooLarge    = {{ "input.json", "is too big", "(max 4 KB)", "" }};
-    static const Prompt kUnreadable  = {{ "input.json", "could not", "be read", "" }};
-    static const Prompt kNotJson     = {{ "input.json is", "not valid JSON", "", "" }};
-    static const Prompt kWrongSchema = {{ "input.json", "needs", "schema 1", "" }};
-    static const Prompt kNoKey       = {{ "input.json has", "no values.id", "", "" }};
-    static const Prompt kBadValue    = {{ "values.id must be", "1-16 plain", "characters", "" }};
+    static const Prompt kNoConfig = {{ "No id yet", "Set one in the", "UNA app, or write", "input.json" }};
+    static const Prompt kNoValue  = {{ "input.json has", "no usable id", "", "" }};
+    static const Prompt kNotSet   = {{ "No id set yet", "Open the UNA app", "and enter the", "number on yours" }};
+    static const Prompt kBadValue = {{ "That id cannot", "be drawn: 1-16", "plain characters", "" }};
 
     switch (problem) {
-    case Barcode::Problem::TooLarge:    return kTooLarge;
-    case Barcode::Problem::Unreadable:  return kUnreadable;
-    case Barcode::Problem::NotJson:     return kNotJson;
-    case Barcode::Problem::WrongSchema: return kWrongSchema;
-    case Barcode::Problem::NoKey:       return kNoKey;
-    case Barcode::Problem::BadValue:    return kBadValue;
-    case Barcode::Problem::NoFile:
+    case Barcode::Problem::NoValue:  return kNoValue;
+    case Barcode::Problem::NotSet:   return kNotSet;
+    case Barcode::Problem::BadValue: return kBadValue;
+    case Barcode::Problem::NoConfig:
     case Barcode::Problem::None:
         break;
     }
-    return kNoFile;
+    return kNoConfig;
 }
 
 } // namespace

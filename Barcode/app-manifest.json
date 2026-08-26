@@ -1,0 +1,38 @@
+{
+  "manifest_version": 1,
+  "type": [
+    "utility"
+  ],
+  "name": "Barcode",
+  "icon": "Resources/icon_60x60.png",
+  "binary": "Barcode_1.0.0.uapp",
+  "appVersion": "1.0.0",
+  "minKernelVersion": "1.4.0",
+  "requiredHardware": [],
+  "description": "Shows a Code 128 barcode for an id you supply -- a parkrun athlete id, a membership number, a transit pass. The id comes from your phone; the watch only draws it.",
+  "id": "865E8CB21BF7E1ED",
+  "stravaExport": false,
+  "supportsLaps": false,
+  "supportsDistance": false,
+  "supportsTrack": false,
+  "supportsHeartbeat": false,
+  "supportsElevation": false,
+  "supportsStep": false,
+  "supportsSpeed": "none",
+  "customMeasures": [],
+  "configFile": "input.json",
+  "configFields": [
+    {
+      "id": "id",
+      "type": "string",
+      "label": "Your id",
+      "description": "The number under your barcode, copied exactly. Case matters. Leave it blank until you have it in front of you -- a guessed id scans as somebody else.",
+      "default": " ",
+      "minLength": 1,
+      "maxLength": 17,
+      "pattern": "[ -~]{1,16}",
+      "required": true,
+      "validationMessage": "1 to 16 plain characters, exactly as printed."
+    }
+  ]
+}

@@ -34,7 +34,8 @@ VPATH := $(SDK)\
 #If you want to add a source file from UNA-SDK, just write the path starting with the internal UNA-SDK folder
 ADDITIONAL_SOURCES_UNA :=\
 ../../Libs/Sources/Service.cpp\
-../../Libs/Sources/InputConfig.cpp\
+../../Libs/Sources/AppConfigFields.cpp\
+Libs/Source/AppConfig/AppConfig.cpp\
 Libs/Source/JSON/JsonStreamReader.cpp\
 ThirdParty/coreJSON/source/core_json.c\
 Libs/Source/Simulator/Kernel/Mock/FileSystem.cpp\

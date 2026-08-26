@@ -42,13 +42,14 @@ una_app_setup_version(BUILD_VERSION ${CMAKE_CURRENT_SOURCE_DIR})
 # Build service
 # The app owns no sensors and has nothing to time, so the FIT, sensor,
 # track-map and calibration groups of UNA_SDK_SOURCES_SERVICE are deliberately
-# left out, same as Stopwatch. JSON is in: the service reads the provisioning
-# file the user's id arrives in.
+# left out, same as Stopwatch. APPCONFIG is in: the service reads the user's
+# id through SDK::AppConfig, and that needs JSON in the same link.
 set(SERVICE_SOURCES
     ${LIBS_SOURCES}
     ${UNA_SDK_SOURCES_COMMON}
     ${UNA_SDK_SOURCES_APPSYSTEM}
     ${UNA_SDK_SOURCES_JSON}
+    ${UNA_SDK_SOURCES_APPCONFIG}
 )
 set(SERVICE_INCLUDE_DIRS
     ${LIBS_INCLUDE_DIRS}
