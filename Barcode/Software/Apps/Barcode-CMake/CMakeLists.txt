@@ -7,7 +7,10 @@ set(APP_NAME "Barcode")
 set(APP_USER_NAME "Barcode")
 set(APP_TYPE "Utility")
 set(DEV_ID "UNA")
-set(APP_ID "865E8CB21BF7E1ED")
+# Identity of the app in the store, and how the mobile app matches a new
+# *.uapp to the installed one when the file name changes. Stable for the life
+# of the app: it must equal "id" in app-manifest.json.
+set(APP_ID "409506B8B69EC13E")
 set(RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Resources")
 set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")
 set(LIBS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../Libs")

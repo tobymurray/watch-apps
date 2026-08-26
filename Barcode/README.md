@@ -189,6 +189,23 @@ python3 $UNA_SDK/Utilities/Scripts/app_packer/validate_app_config.py \
     --check-bounds Barcode/Software/Libs/Sources/AppConfigFields.cpp
 ```
 
+`minKernelVersion` is not hand-written either. It is a floor derived from the
+SDK ABI, so let the resolver set and check it:
+
+```sh
+python3 $UNA_SDK/Utilities/Scripts/app_packer/min_kernel_version.py \
+    --stamp Barcode/app-manifest.json    # raise it to the floor
+python3 $UNA_SDK/Utilities/Scripts/app_packer/min_kernel_version.py \
+    --check Barcode/app-manifest.json    # verify it is >= the floor
+```
+
+`id` in the manifest is the same value as `APP_ID` in
+[`Barcode-CMake/CMakeLists.txt`](Software/Apps/Barcode-CMake/CMakeLists.txt),
+and the two have to stay equal: it is how the store tracks the app and how the
+phone matches a new `.uapp` to the installed one when the file name changes.
+The build prints it, so it can be checked rather than assumed —
+`INFO:root:ID : 409506B8B69EC13E` in the `app_merging.py` output.
+
 ## Buttons
 
 | Button | Position | Does |
