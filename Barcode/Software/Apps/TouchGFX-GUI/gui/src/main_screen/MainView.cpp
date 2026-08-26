@@ -51,7 +51,16 @@ MainView::MainView()
     : idBuffer{}
     , promptBuffer{}
 {
-    barcodeBackground.setPosition(10, 65, 220, 110);
+    // Sized so its corners stay inside the round panel. The screen is a 240px
+    // circle, so a rectangle centred on it may only be as tall as
+    // 2*sqrt(120^2 - halfWidth^2): at 220 wide that is 95, and the 110 this
+    // used to be put all four corners 3px into the bezel, where the display
+    // cut the tips off. 94 leaves the furthest corner at radius 119.6.
+    //
+    // Height rather than width, because the white either side of the bars is
+    // the barcode's quiet zone and a scanner needs it; the white above and
+    // below is decoration. Code 128 has no vertical quiet zone requirement.
+    barcodeBackground.setPosition(10, 73, 220, 94);
     barcodeBackground.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
     add(barcodeBackground);
 
