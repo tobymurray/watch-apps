@@ -31,9 +31,8 @@ a real loss — see [Concessions](#concessions).
 The app declares one configuration field, so the UNA app asks for it while it
 installs:
 
-> **Your id** — The number under your barcode, copied exactly. Case matters.
-> Leave it blank until you have it in front of you — a guessed id scans as
-> somebody else.
+> **Your ID** — The number printed under your barcode, copied exactly. Case
+> matters.
 
 It is a required field, so the install will not finish until it is filled in.
 Editing it later is the same screen, and the new value applies the next time you

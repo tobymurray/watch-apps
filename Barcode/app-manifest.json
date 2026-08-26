@@ -25,8 +25,8 @@
     {
       "id": "id",
       "type": "string",
-      "label": "Your id",
-      "description": "The number under your barcode, copied exactly. Case matters. Leave it blank until you have it in front of you -- a guessed id scans as somebody else.",
+      "label": "Your ID",
+      "description": "The number printed under your barcode, copied exactly. Case matters.",
       "default": " ",
       "minLength": 1,
       "maxLength": 17,

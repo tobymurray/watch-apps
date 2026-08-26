@@ -29,10 +29,10 @@ struct Prompt
  */
 const Prompt &promptFor(Barcode::Problem problem)
 {
-    static const Prompt kNoConfig = {{ "No id yet", "Set one in the", "UNA app, or write", "input.json" }};
-    static const Prompt kNoValue  = {{ "input.json has", "no usable id", "", "" }};
-    static const Prompt kNotSet   = {{ "No id set yet", "Open the UNA app", "and enter the", "number on yours" }};
-    static const Prompt kBadValue = {{ "That id cannot", "be drawn: 1-16", "plain characters", "" }};
+    static const Prompt kNoConfig = {{ "No ID yet", "Set one in the", "UNA app, or write", "input.json" }};
+    static const Prompt kNoValue  = {{ "input.json has", "no usable ID", "", "" }};
+    static const Prompt kNotSet   = {{ "No ID set yet", "Open the UNA app", "and enter your ID", "" }};
+    static const Prompt kBadValue = {{ "That ID cannot", "be drawn: 1-16", "plain characters", "" }};
 
     switch (problem) {
     case Barcode::Problem::NoValue:  return kNoValue;
