@@ -243,6 +243,29 @@ python3 $UNA_SDK/Utilities/Scripts/app_packer/min_kernel_version.py \
     --check Barcode/app-manifest.json    # verify it is >= the floor
 ```
 
+### Icons
+
+There are **two**, and they are not the same picture:
+
+| File | Where it goes | Constraints |
+| --- | --- | --- |
+| `Resources/icon_60x60.png`, `icon_30x30.png` | baked into the `.uapp`, shown in the watch menu | Converted to **ABGR2222** — one byte per pixel, two bits per channel. Four shades, four alpha levels, by truncation. |
+| `Resources/icon_store.png` → packaged as `icon.png` | the phone's app store, re-hosted as an ordinary PNG | None. 512×512 full colour. |
+
+Both are drawn by scripts rather than kept as hand-made PNGs, because the watch
+pair is pixel-critical: a bar narrower than one whole pixel downsamples to grey,
+and grey truncates to a muddy mid-tone instead of black. The bars are therefore
+drawn at 1× on integer boundaries and never resampled, while the rounded corner
+— the one place antialiasing is wanted — is drawn at 16× and downsampled.
+
+```sh
+python3 Barcode/Resources/make_icon.py       Barcode/Resources   # watch, 60 + 30
+python3 Barcode/Resources/make_store_icon.py Barcode/Resources   # store, 512
+```
+
+`make_icon.py` reports the left/right bar margins and any shade that survived
+quantisation muddy, so a change that unbalances or greys the icon says so.
+
 `id` in the manifest is the same value as `APP_ID` in
 [`Barcode-CMake/CMakeLists.txt`](Software/Apps/Barcode-CMake/CMakeLists.txt),
 and the two have to stay equal: it is how the store tracks the app and how the
