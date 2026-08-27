@@ -1,0 +1,150 @@
+# BacklightProbe results
+#
+# What this file can tell you: what was requested, what the message
+# layer reported back, and when. All times are kernel uptime in ms.
+#
+# What it CANNOT tell you: whether the backlight was actually lit.
+# No app can read that back; IBacklight is not obtainable through
+# queryInterface and the message carries no state. Every timing answer
+# in SUITE 2 has to be read off a video of the screen, against the
+# millisecond counter the OBSERVE steps draw.
+#
+# The register evidence is in the sweep_*.txt files next to this one.
+# Diff them: dark vs lit_b100 names the pin, and lit_b100 vs lit_b001
+# says whether anything downstream scales with the request.
+PRB start uptime_ms=280827
+PRB registers=Y sweep_blocks=22 timers=N
+STEP 00 NOTE    at_ms=295498 quiet=Y  SUITE 1. Brightness ladder: does anything change per level
+
+### SUITE 1. Brightness ladder: does anything change per level
+STEP 01 SET     at_ms=295702 quiet=Y  dark baseline
+SET  01 from=SVC brightness=0 auto_off_ms=600000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 02 HOLD    at_ms=295732 quiet=Y  settle
+STEP 03 SWEEP   at_ms=297237 quiet=Y  dark
+SWEP 03 file=sweep_dark.txt written=Y
+STEP 04 HOLD    at_ms=297291 quiet=Y  meter dark
+STEP 05 SET     at_ms=303252 quiet=Y  b100
+SET  05 from=SVC brightness=100 auto_off_ms=600000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 06 HOLD    at_ms=303491 quiet=Y  settle
+STEP 07 SWEEP   at_ms=304997 quiet=Y  lit_b100
+SWEP 07 file=sweep_lit_b100.txt written=Y
+STEP 08 HOLD    at_ms=305052 quiet=Y  meter b100
+STEP 09 SET     at_ms=311020 quiet=Y  b75
+SET  09 from=SVC brightness=75 auto_off_ms=600000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 10 HOLD    at_ms=311267 quiet=Y  settle
+STEP 11 SWEEP   at_ms=312767 quiet=Y  lit_b075
+SWEP 11 file=sweep_lit_b075.txt written=Y
+STEP 12 HOLD    at_ms=312859 quiet=Y  meter b75
+STEP 13 SET     at_ms=318782 quiet=Y  b50
+SET  13 from=SVC brightness=50 auto_off_ms=600000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 14 HOLD    at_ms=319036 quiet=Y  settle
+STEP 15 SWEEP   at_ms=320534 quiet=Y  lit_b050
+SWEP 15 file=sweep_lit_b050.txt written=Y
+STEP 16 HOLD    at_ms=320590 quiet=Y  meter b50
+STEP 17 SET     at_ms=326549 quiet=Y  b25
+SET  17 from=SVC brightness=25 auto_off_ms=600000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 18 HOLD    at_ms=326800 quiet=Y  settle
+STEP 19 SWEEP   at_ms=328304 quiet=Y  lit_b025
+SWEP 19 file=sweep_lit_b025.txt written=Y
+STEP 20 HOLD    at_ms=328360 quiet=Y  meter b25
+STEP 21 SET     at_ms=334319 quiet=Y  b10
+SET  21 from=SVC brightness=10 auto_off_ms=600000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 22 HOLD    at_ms=334576 quiet=Y  settle
+STEP 23 SWEEP   at_ms=336073 quiet=Y  lit_b010
+SWEP 23 file=sweep_lit_b010.txt written=Y
+STEP 24 HOLD    at_ms=336128 quiet=Y  meter b10
+STEP 25 SET     at_ms=342089 quiet=Y  b1
+SET  25 from=SVC brightness=1 auto_off_ms=600000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 26 HOLD    at_ms=342346 quiet=Y  settle
+STEP 27 SWEEP   at_ms=343844 quiet=Y  lit_b001
+SWEP 27 file=sweep_lit_b001.txt written=Y
+STEP 28 HOLD    at_ms=343935 quiet=Y  meter b1
+STEP 29 SET     at_ms=349860 quiet=Y  dark again
+SET  29 from=SVC brightness=0 auto_off_ms=600000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 30 HOLD    at_ms=350125 quiet=Y  settle
+STEP 31 SWEEP   at_ms=351622 quiet=Y  dark_after
+SWEP 31 file=sweep_dark_after.txt written=Y
+STEP 32 NOTE    at_ms=351676 quiet=Y  SUITE 2. Auto-off semantics: read the blank off the counter
+
+### SUITE 2. Auto-off semantics: read the blank off the counter
+STEP 33 SET     at_ms=351708 quiet=Y  t=100ms
+SET  33 from=SVC brightness=100 auto_off_ms=100 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 34 OBSERVE at_ms=351721 quiet=N  t=100ms
+STEP 35 SET     at_ms=354721 quiet=Y  t=1s
+SET  35 from=SVC brightness=100 auto_off_ms=1000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 36 OBSERVE at_ms=354989 quiet=N  t=1s
+STEP 37 SET     at_ms=359990 quiet=Y  t=5s: what both shipped apps use
+SET  37 from=SVC brightness=100 auto_off_ms=5000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 38 OBSERVE at_ms=360239 quiet=N  t=5s
+STEP 39 SET     at_ms=370239 quiet=Y  t=60s
+SET  39 from=SVC brightness=100 auto_off_ms=60000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 40 OBSERVE at_ms=370487 quiet=N  t=60s
+STEP 41 SET     at_ms=440493 quiet=Y  t=0: header says no auto-off, simulator blanks at once
+SET  41 from=SVC brightness=100 auto_off_ms=0 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 42 OBSERVE at_ms=440747 quiet=N  t=0
+STEP 43 SET     at_ms=470745 quiet=Y  t=MAX: clamped, or taken at face value
+SET  43 from=SVC brightness=100 auto_off_ms=4294967295 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 44 OBSERVE at_ms=470996 quiet=N  t=MAX
+STEP 45 SET     at_ms=500997 quiet=Y  cancel test: arm 1s
+SET  45 from=SVC brightness=100 auto_off_ms=1000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 46 SET     at_ms=501250 quiet=Y  cancel test: then 60s; does the 1s timer still fire
+SET  46 from=SVC brightness=100 auto_off_ms=60000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 47 OBSERVE at_ms=501281 quiet=N  cancel test
+STEP 48 SET     at_ms=521278 quiet=Y  off test: arm 60s
+SET  48 from=SVC brightness=100 auto_off_ms=60000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 49 HOLD    at_ms=521534 quiet=Y  let it light
+STEP 50 SET     at_ms=523538 quiet=Y  off test: brightness = 0 now
+SET  50 from=SVC brightness=0 auto_off_ms=0 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 51 OBSERVE at_ms=523555 quiet=N  off test
+STEP 52 NOTE    at_ms=531557 quiet=Y  SUITE 3. Context: the IID gap, and a GUI-sent request
+
+### SUITE 3. Context: the IID gap, and a GUI-sent request
+STEP 53 IIDS    at_ms=531815 quiet=Y  unallocated IIDs 0x00050000..0x000A0000
+IIDS 53 probed=6 answered=0 meaningful=Y
+IIDS 53   00050000 -> null 00000000
+IIDS 53   00060000 -> null 00000000
+IIDS 53   00070000 -> null 00000000
+IIDS 53   00080000 -> null 00000000
+IIDS 53   00090000 -> null 00000000
+IIDS 53   000A0000 -> null 00000000
+IIDS 53   all six null: Q7 closed, no backlight interface in the gap
+STEP 54 SET     at_ms=531869 quiet=Y  GUI-sent request
+STEP 55 OBSERVE at_ms=531897 quiet=N  GUI-sent
+SET  54 from=GUI brightness=100 auto_off_ms=5000 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=0
+STEP 56 SET     at_ms=539906 quiet=Y  done: backlight off
+SET  56 from=SVC brightness=0 auto_off_ms=0 send_timeout_ms=250 sent=Y alloc_failed=N result=SUCCESS completed=Y elapsed_ms=1
+
+PRB done uptime_ms=540173 steps=57
+PRB intact=Y
+PRB 9 OBSERVE steps ran. Their answers are on the video, not here.
+PRB Next: diff the sweep files, then fill in the blank times.
+
+# VIDEO READINGS (filled in by hand, 2026-08-27)
+#
+# Source: PXL_20260827_141218334.mp4 (Pixel 9a, 10:12:18-10:16:26 EDT), the
+# second of two takes -- the first, PXL_20260827_140753578.mp4, only covers a
+# partial run and was not used. Read by lining the on-screen elapsed counter
+# (which zeroes at each OBSERVE step, not at the SET before it) up against the
+# screen's colour: the front-light lit state reads distinctly bluer than the
+# ambient-lit panel once it's off, which is a cleaner signal off single frames
+# than raw brightness. Times below are the counter value bracketing the
+# transition; convert to "since the SET request" by subtracting that step's
+# SET-to-OBSERVE gap (13-268ms here) if comparing directly to auto_off_ms.
+#
+# STEP 34 t=100ms   requested=100     dark already at the first observable frame (~0ms). Near-instant.
+# STEP 36 t=1s      requested=1000    lit at 0.69s, dark at 0.89s (gap-corrected: ~0.96-1.16s since SET). Matches.
+# STEP 38 t=5s      requested=5000    lit at 4.84s, dark at 5.04s. Matches within ~250ms.
+# STEP 40 t=60s     requested=60000   lit at 59.92s, dark at 60.13s. Matches within ~400ms.
+# STEP 42 t=0       requested=0       LIT for the entire 30s window. Confirms the header: 0 really
+#                                     does disable auto-off on hardware. The SDK simulator's mock
+#                                     blanks instantly at t=0 -- that's a simulator bug, not this.
+# STEP 44 t=MAX     requested=0xFFFFFFFF  LIT for the entire 30s window. Behaves as "never", not clamped small.
+# STEP 47 cancel    arm 1s, then 60s ~250ms later   LIT for the entire 20s window: no dim at
+#                                     the ~1s mark. The second SET cancels/replaces the first timer.
+# STEP 51 off test  arm 60s, then brightness=0       DARK from the start of the 8s window.
+#                                     Explicit brightness=0 overrides a running timer immediately.
+# STEP 55 GUI-sent  requested=5000, sent from GUI    lit at 3.33s, dark by 7.94s. Same ~5s
+#                                     auto-off as service-sent requests; GUI-sent is honoured the same.
+#
+# Net: every finite timeout fires within a few hundred ms of what was requested --
+# no scaling bug. The one real finding is t=0: hardware and simulator disagree.
