@@ -191,11 +191,23 @@ void MainView::showBarcode()
     composeCaption(mState, mIndex, text, sizeof(text));
     touchgfx::Unicode::strncpy(captionBuffer, text, kCaptionChars);
 
-    // The hints only appear when there is somewhere to go, so a single code
-    // does not advertise a button that would do nothing.
-    const bool cyclable = mState.count > 1;
-    buttons.setL1(cyclable ? ButtonsSet::WHITE : ButtonsSet::NONE);
-    buttons.setL2(cyclable ? ButtonsSet::WHITE : ButtonsSet::NONE);
+    // NO ON-SCREEN BUTTON HINTS. Not an oversight, and not a style choice:
+    // the indicators are 23x35 ABGR2222 bitmaps and they blit corrupt on
+    // device -- a smear of horizontal dashes where the arc should be. That
+    // was found and worked around in 6b7de05 ("correct Barcode rendering on
+    // device") by leaving every indicator NONE, and reintroduced here in
+    // 0.3.0 by lighting L1/L2 for cycling, which put the same artifact on the
+    // left edge instead of the bottom-right.
+    //
+    // The caption carries the affordance instead: "Gym 4/4" says there are
+    // four codes without drawing anything the blit path can corrupt.
+    //
+    // To have real hints back, the arcs have to be *drawn* rather than
+    // blitted -- SleepLab and Squash replaced this container with one built
+    // from touchgfx::Circle and PainterABGR2222 for exactly that reason.
+    // Until then, leave these alone.
+    buttons.setL1(ButtonsSet::NONE);
+    buttons.setL2(ButtonsSet::NONE);
 
     barcodeBackground.setVisible(true);
     barcode.setVisible(true);

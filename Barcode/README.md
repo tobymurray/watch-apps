@@ -281,10 +281,24 @@ The build prints it, so it can be checked rather than assumed —
 | `SW1` / L1 | top left | previous code |
 | `SW4` / R2 | bottom right | **back — leaves the app** |
 
-`L1` and `L2` wrap, and their hints only light when there is more than one code
-to move between — a single code does not advertise a button that would do
-nothing. Cycling is handled entirely in the GUI, which already holds every code,
-so pressing `L2` never waits on the service.
+`L1` and `L2` wrap. Cycling is handled entirely in the GUI, which already holds
+every code, so pressing `L2` never waits on the service.
+
+**There are deliberately no on-screen button hints.** The bezel indicators are
+23×35 ABGR2222 bitmaps and they blit corrupt on device — a smear of horizontal
+dashes where the arc should be. That was found and worked around in `6b7de05`
+("correct Barcode rendering on device") by leaving all four `NONE`, and
+reintroduced in 0.3.0 by lighting `L1`/`L2` for cycling, which simply moved the
+artifact from the bottom-right corner to the left edge. Fixed again in 0.3.2.
+
+The caption carries the affordance instead: `Gym 4/4` says there are four codes
+without drawing anything the blit path can corrupt.
+
+Getting real hints back means *drawing* the arcs rather than blitting them —
+[`SleepLab`](../SleepLab) and [`Squash`](../Squash) both replaced this container
+with one built from `touchgfx::Circle` and `PainterABGR2222` for exactly that
+reason, and gained a five-colour palette in the process. Barcode still uses the
+SDK template's bitmap version.
 
 Nothing else is bound. There was a GUI-to-Service "set the id" message; it went
 when the file arrived, because a GUI path that can overwrite a provisioned value
