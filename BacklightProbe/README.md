@@ -218,6 +218,42 @@ If nothing anywhere in the sweep differs between dark and lit, then either the
 actuator is off-chip (the `PCA9420` PMIC, or an I2C part) or the sweep is missing
 the block that matters. Both are real findings. Say which blocks were covered.
 
+## Suite 2 results: the blanks filled in from video (2026-08-27)
+
+One run, watched on the wrist. The on-screen counter (zeroed at each `OBSERVE`
+step, not at the `SET` before it) was read against the screen's colour: the
+front-light lit state reads distinctly bluer than the ambient-lit panel once
+it's off, which turned out to be a cleaner signal off a single frame than raw
+brightness.
+
+| Step | Requested | Observed |
+| --- | --- | --- |
+| `t=100ms` | 100 ms | Dark already at the first observable frame. Near-instant. |
+| `t=1s` | 1000 ms | Lit to 0.69s, dark by 0.89s (~0.96-1.16s since the `SET`, gap-corrected). Matches. |
+| `t=5s` | 5000 ms | Lit to 4.84s, dark by 5.04s. Matches within ~250ms. |
+| `t=60s` | 60000 ms | Lit to 59.92s, dark by 60.13s. Matches within ~400ms. |
+| `t=0` | 0 (header says disabled) | **Lit for the entire 30s window.** |
+| `t=MAX` (`0xFFFFFFFF`) | ~4.29B ms | Lit for the entire 30s window. |
+| cancel test | arm 1s, re-arm 60s ~250ms later | Lit for the entire 20s window: no dim at the ~1s mark. |
+| off test | arm 60s, then `brightness=0` | Dark from the start of the 8s window. |
+| GUI-sent | 5000 ms, from the GUI process | Lit at 3.33s, dark by 7.94s. Same as a service-sent request. |
+
+Every finite timeout fired within a few hundred milliseconds of what was
+requested — no scaling bug anywhere in Suite 2. The one real finding is `t=0`:
+**the header is right and the simulator is wrong.** `auto_off_ms=0` disables
+auto-off on hardware, holding the light for the full 30-second window, where
+the SDK simulator's mock blanks within about 50ms of the same request (see
+"Suite 2" above). Anyone validating this path against the simulator alone
+would conclude the opposite of what the device does.
+
+The cancel and off tests both came back as documented: a second `SET` replaces
+a running timer rather than racing it, and an explicit `brightness=0` beats
+whatever timer is already running instead of waiting for it.
+
+Full per-frame reasoning and the raw counter brackets are in
+`Output/backlight_probe.txt`'s `VIDEO READINGS` block, appended by hand next to
+the run it describes.
+
 ## Tests
 
 ```sh
