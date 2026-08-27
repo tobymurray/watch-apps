@@ -49,27 +49,6 @@ private:
     mutable uint32_t mNow;
 };
 
-/// Advances the fake clock by the requested sleep, and counts how much was given
-/// back. That count is the whole point of the sleeper existing.
-class FakeSleeper : public ISleeper
-{
-public:
-    explicit FakeSleeper(FakeClock& clock) : mClock(clock) {}
-
-    void sleepMs(uint32_t ms) override
-    {
-        sleptMs += ms;
-        ++calls;
-        mClock.advance(ms * 1000u);
-    }
-
-    uint32_t sleptMs = 0;
-    uint32_t calls   = 0;
-
-private:
-    FakeClock& mClock;
-};
-
 /// Records every edge with the clock reading at the moment it was issued.
 class RecordingPin : public IPin
 {
@@ -191,78 +170,6 @@ TEST(SoftPwm, AnEndpointReturnsImmediatelyRatherThanSpinning)
     }
 }
 
-TEST(SoftPwm, SleepsThroughPartOfALongOffPhase)
-{
-    // At 25 percent duty three quarters of every period is off time that does not
-    // need the CPU. Only part of it is actually slept, and the arithmetic is worth
-    // stating because it bounds how much this helps: `delay()` takes whole
-    // milliseconds and may overshoot by a tick, so the engine sleeps one
-    // millisecond fewer than would fit and spins the rest. Against a 4 ms period
-    // that leaves about a quarter of it recovered, not three quarters.
-    FakeClock clock(1);
-    RecordingPin pin(clock);
-    FakeSleeper sleeper(clock);
-    SoftPwm pwm(pin, clock, &sleeper);
-    pwm.setPeriodUs(4000);
-    pwm.setDuty(25);
-
-    const BurstStats stats = pwm.runBurst(40000);
-
-    ASSERT_GT(stats.periods, 0u);
-    EXPECT_GT(sleeper.calls, 0u) << "the off phase was spun, not slept";
-    EXPECT_GE(sleeper.sleptMs, stats.periods) << "less than a millisecond per period recovered";
-}
-
-TEST(SoftPwm, DoesNotSleepWhenTheOffPhaseIsTooShortToBeSafe)
-{
-    // At 75 percent the off phase is one millisecond, which is the same as
-    // `delay()`'s granularity and its worst-case overshoot. Sleeping there would
-    // stretch the period rather than save anything, so this rung genuinely does
-    // spin. Recorded as a test because it is the honest limit of the technique:
-    // the high end of the ladder still costs a full thread.
-    FakeClock clock(1);
-    RecordingPin pin(clock);
-    FakeSleeper sleeper(clock);
-    SoftPwm pwm(pin, clock, &sleeper);
-    pwm.setPeriodUs(4000);
-    pwm.setDuty(75);
-
-    pwm.runBurst(40000);
-
-    EXPECT_EQ(sleeper.calls, 0u) << "slept through an off phase shorter than a tick";
-}
-
-TEST(SoftPwm, StillWorksWithNoSleeperAtAll)
-{
-    // The sleeper is optional, and without one the engine must simply spin. A
-    // host build has no kernel to sleep on.
-    FakeClock clock(1);
-    RecordingPin pin(clock);
-    SoftPwm pwm(pin, clock, nullptr);
-    pwm.setPeriodUs(4000);
-    pwm.setDuty(50);
-
-    const BurstStats stats = pwm.runBurst(40000);
-    EXPECT_GE(stats.periods, 8u);
-    EXPECT_NEAR(measuredDuty(pin.edges), 50.0, 6.0);
-}
-
-TEST(SoftPwm, SleepingDoesNotWreckTheDuty)
-{
-    // Sleeping is only worth doing if the waveform survives it. The sleeper here
-    // advances the clock exactly, so this checks the arithmetic rather than the
-    // kernel's timer accuracy, which is what the on-screen achieved duty is for.
-    FakeClock clock(1);
-    RecordingPin pin(clock);
-    FakeSleeper sleeper(clock);
-    SoftPwm pwm(pin, clock, &sleeper);
-    pwm.setPeriodUs(4000);
-    pwm.setDuty(25);
-
-    pwm.runBurst(40000);
-    EXPECT_NEAR(measuredDuty(pin.edges), 25.0, 6.0);
-}
-
 TEST(SoftPwm, ZeroIsHeldOffRatherThanPulsed)
 {
     FakeClock clock(1);
@@ -310,6 +217,36 @@ TEST(SoftPwm, EndsOnAPeriodBoundary)
 
     ASSERT_FALSE(pin.edges.empty());
     EXPECT_FALSE(pin.edges.back().on) << "burst ended with the light left on";
+}
+
+TEST(SoftPwm, EveryRungIsFarFromEveryOther)
+{
+    // Stronger than "monotonically dimmer", and it exists because a run came back
+    // monotonic-looking and useless: with the clock miscalibrated, 75 and 50 both
+    // photographed as near-full and 25, 10 and 1 all photographed as off. The
+    // ladder had collapsed into three levels while still passing a strictly
+    // decreasing check.
+    //
+    // So: adjacent rungs must differ by a margin an eye or a meter could actually
+    // resolve.
+    const uint8_t rungs[] = {75, 50, 25, 10};
+    double previous = 100.0;
+
+    for (uint8_t duty : rungs) {
+        FakeClock clock(1);
+        RecordingPin pin(clock);
+        SoftPwm pwm(pin, clock);
+        pwm.setPeriodUs(4000);
+        pwm.setDuty(duty);
+        pwm.runBurst(40000);
+
+        const double got = measuredDuty(pin.edges);
+        EXPECT_NEAR(got, static_cast<double>(duty), 6.0)
+            << "duty " << static_cast<unsigned>(duty) << " came out at " << got;
+        EXPECT_LT(got, previous - 8.0)
+            << "duty " << static_cast<unsigned>(duty) << " is too close to the rung above it";
+        previous = got;
+    }
 }
 
 TEST(SoftPwm, DutyAboveOneHundredIsClamped)

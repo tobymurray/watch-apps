@@ -38,10 +38,24 @@ inline uint32_t rd(uint32_t a) { return *reinterpret_cast<volatile uint32_t*>(st
 inline void     wr(uint32_t a, uint32_t v) { *reinterpret_cast<volatile uint32_t*>(static_cast<uintptr_t>(a)) = v; }
 #endif
 
-/// How long to count cycles over when working out the clock rate. Long enough
-/// that the millisecond tick's own quantisation is under a percent, short enough
-/// that startup does not visibly stall.
-constexpr uint32_t kCalibrateMs = 100;
+/// How long to count cycles over when working out the clock rate.
+///
+/// Short, because this interval is a **busy wait** and busy waits are what
+/// rebooted this watch once already. 25 ms is three PWM bursts, and the tick
+/// quantisation over it is a few percent, which is far better than this
+/// measurement needs.
+constexpr uint32_t kCalibrateMs = 25;
+
+/// Refuse a calibration slower than this. The part is a Cortex-M33 running an
+/// RTOS, a GUI and a BLE stack; single-digit megahertz is not a plausible answer,
+/// it is a broken measurement.
+///
+/// This floor exists because its absence cost a whole run. Calibrating across
+/// `delay()` returned **1 cycle per microsecond**, which is nonsense but not
+/// zero, so it sailed past the only check there was and every timing in the app
+/// came out about 160 times too fast. The ladder still looked plausible on the
+/// screen and meant nothing.
+constexpr uint32_t kMinCyclesPerUs = 8;
 
 } // namespace
 
@@ -88,14 +102,24 @@ bool CycleClock::calibrate(uint32_t (*millis)(), void (*sleepMs)(uint32_t))
         mTouched = true;
     }
 
-    // Sleep, do not spin. Both loops here used to be busy waits on getTimeMs()
-    // and the watch rebooted before the screen could even repaint. A quantisation
-    // error of one tick over 100 ms is under a percent, which is far better than
-    // this measurement needs and infinitely better than not yielding.
+    // A busy wait, deliberately, and this is the one place in the app that has to
+    // be one.
+    //
+    // `DWT_CYCCNT` counts core clocks and **stops when the core sleeps**. So
+    // calibrating across `ISystem::delay()` measures the cycles the CPU happened
+    // to be awake for during that interval rather than the cycles in it, and
+    // returns a number far too small. That is exactly what happened: it reported
+    // 1 cycle per microsecond, the PWM period became 4000 cycles instead of
+    // 4000 microseconds, and the whole ladder ran at tens of kilohertz.
+    //
+    // Bounded at 25 ms, which is the same order as a single PWM burst.
+    (void)sleepMs;
     const uint32_t startMs = millis();
     const uint32_t startCy = rd(kDwtCycnt);
 
-    sleepMs(kCalibrateMs);
+    while ((millis() - startMs) < kCalibrateMs) {
+        // Spinning on purpose: the core must stay awake for the counter to count.
+    }
 
     const uint32_t elapsedMs = millis() - startMs;
     const uint32_t elapsedCy = rd(kDwtCycnt) - startCy;
@@ -114,9 +138,11 @@ bool CycleClock::calibrate(uint32_t (*millis)(), void (*sleepMs)(uint32_t))
     mLastCycles  = rd(kDwtCycnt);
     mAccumUs     = 0;
     mCarry       = 0;
-    if (mCyclesPerUs == 0u) {
-        LOG_INFO("core clock below 1 MHz? %lu cycles in %lu ms, refusing\n",
-                 static_cast<unsigned long>(elapsedCy), static_cast<unsigned long>(elapsedMs));
+    if (mCyclesPerUs < kMinCyclesPerUs) {
+        // Nonsense rather than zero, which is the case that got through before.
+        LOG_INFO("calibration implausible: %lu cycles in %lu ms is %lu MHz, refusing\n",
+                 static_cast<unsigned long>(elapsedCy), static_cast<unsigned long>(elapsedMs),
+                 static_cast<unsigned long>(mCyclesPerUs));
         release();
         return false;
     }

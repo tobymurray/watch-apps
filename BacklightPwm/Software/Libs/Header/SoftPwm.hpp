@@ -47,30 +47,24 @@
  * unavoidable short of the DMA-driven waveform, which is the correct production
  * answer and a great deal more machinery.
  *
- * Everything else gives the CPU back:
+ * An **endpoint** duty (0 or 100) is the one case that costs nothing: the pin is
+ * set and the call returns, because holding a level needs no CPU whatsoever.
  *
- *   - An **endpoint** duty (0 or 100) sets the pin and returns. Holding a level
- *     needs no CPU whatsoever.
- *   - The **off** phase of a modulated period is slept through when it is longer
- *     than a couple of milliseconds, and only its last stretch is spun.
+ * ## Why the off phase is not slept through
  *
- * The first version spun through all of it and ran the whole 44 second ladder at
- * 100 percent CPU.
+ * It was, briefly, and it produced a run that looked plausible and was worthless.
  *
- * How much that recovers is worth being precise about, because it is less than it
- * sounds. `delay()` takes whole milliseconds and may overshoot by a tick, so an
- * off phase is only slept when it is comfortably longer than one, and one
- * millisecond fewer than would fit is slept so the spin can close the gap.
- * Against a 4 ms period that means:
+ * `DWT_CYCCNT` counts core clocks and stops when the core sleeps. So a period
+ * that sleeps through its off phase loses its own clock while it does: the
+ * counter barely advances during the sleep, the spin afterwards still thinks
+ * almost the whole period is left, and real time and measured time come apart. On
+ * hardware the three lowest rungs of the ladder collapsed to about 0.3 percent
+ * duty and photographed as fully off.
  *
- *   - duty 0 and 100: nothing spun at all.
- *   - duty 25, 10, 1: most of the period recovered, since the off phase is long.
- *   - **duty 75 and 50: still spun flat out.** Their off phases are one and two
- *     milliseconds, which is inside the granularity, so nothing can safely be
- *     given back.
- *
- * So the ladder is cheaper than it was but the top of it is not cheap. Fixing
- * that properly means the DMA waveform, not a better sleep.
+ * Sleeping and cycle-counting cannot be mixed. Given the choice, accurate timing
+ * wins and the modulated rungs cost a busy thread; the endpoints are free, the
+ * service yields between bursts, and the real answer to the CPU cost is the DMA
+ * waveform rather than a cleverer sleep.
  *
  ******************************************************************************
  */
@@ -112,7 +106,7 @@ struct BurstStats {
 class SoftPwm
 {
 public:
-    SoftPwm(IPin& pin, const IClock& clock, ISleeper* sleeper = nullptr);
+    SoftPwm(IPin& pin, const IClock& clock);
 
     /// 0 to 100. Values above 100 are clamped; the plan never sends one, but a
     /// silent overflow into a tiny on-time would look like a hardware fault.
@@ -149,7 +143,6 @@ public:
 private:
     IPin&         mPin;
     const IClock& mClock;
-    ISleeper*     mSleeper; ///< Optional. Without one the off phase is spun.
 
     uint8_t  mDuty     = 0;
     uint32_t mPeriodUs = 4000; ///< 250 Hz.
@@ -162,10 +155,6 @@ private:
     /// duty instead of being hidden.
     uint32_t spinUntil(uint32_t deadlineUs) const;
 
-    /// Sleep most of the way to `deadlineUs`, then spin the rest. Falls back to
-    /// spinning entirely when there is no sleeper or too little time to be worth
-    /// one.
-    uint32_t sleepThenSpinUntil(uint32_t deadlineUs);
 };
 
 } // namespace Pwm

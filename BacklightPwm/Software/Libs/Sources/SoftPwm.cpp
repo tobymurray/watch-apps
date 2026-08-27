@@ -20,17 +20,11 @@ constexpr uint32_t kMinPeriodUs = 200;    // 5 kHz
 /// every photograph taken of it worthless.
 constexpr uint32_t kMaxPeriodUs = 20000;  // 50 Hz
 
-/// Only sleep through an off phase longer than this, and always spin the last
-/// millisecond. `delay()` takes whole milliseconds and may overshoot by a tick,
-/// which against a 4 ms period would distort the duty badly if it were used for
-/// the fine end of the wait.
-constexpr uint32_t kSleepFloorUs = 2000;
 } // namespace
 
-SoftPwm::SoftPwm(IPin& pin, const IClock& clock, ISleeper* sleeper)
+SoftPwm::SoftPwm(IPin& pin, const IClock& clock)
     : mPin(pin)
     , mClock(clock)
-    , mSleeper(sleeper)
 {
 }
 
@@ -58,24 +52,6 @@ uint32_t SoftPwm::spinUntil(uint32_t deadlineUs) const
         now = mClock.nowUs();
     }
     return now;
-}
-
-uint32_t SoftPwm::sleepThenSpinUntil(uint32_t deadlineUs)
-{
-    if (mSleeper != nullptr) {
-        const uint32_t now       = mClock.nowUs();
-        const int32_t  remaining = static_cast<int32_t>(deadlineUs - now);
-
-        if (remaining > static_cast<int32_t>(kSleepFloorUs)) {
-            // One millisecond short of the target, so the spin below closes the
-            // gap rather than the sleep overshooting past it.
-            const uint32_t sleepMs = (static_cast<uint32_t>(remaining) / 1000u) - 1u;
-            if (sleepMs > 0u) {
-                mSleeper->sleepMs(sleepMs);
-            }
-        }
-    }
-    return spinUntil(deadlineUs);
 }
 
 void SoftPwm::off()
@@ -126,8 +102,9 @@ BurstStats SoftPwm::runBurst(uint32_t budgetUs)
 
         mPin.lightOff();
         ++stats.edges;
-        // The off phase does not need the CPU. This is where most of it goes back.
-        const uint32_t cycleEnd = sleepThenSpinUntil(cycleStart + mPeriodUs);
+        // Spun, not slept: the cycle counter stops when the core sleeps, so a
+        // sleep here would take this loop's own clock with it. See the header.
+        const uint32_t cycleEnd = spinUntil(cycleStart + mPeriodUs);
 
         // Measured from the edges actually issued, not from the requested
         // on-time, so busy-wait overshoot lands in the reported duty rather than

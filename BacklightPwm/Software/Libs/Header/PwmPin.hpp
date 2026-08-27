@@ -78,26 +78,6 @@ public:
     virtual uint32_t nowUs() const = 0;
 };
 
-/**
- * @brief Giving time back to the kernel, in whole milliseconds.
- *
- * The off phase of a PWM period does not need the CPU. Holding it by spinning
- * works and is what the first version did, at the cost of running the whole
- * ladder at 100 percent CPU for 44 seconds, which the watch did not survive.
- * Sleeping through it instead drops the cost of each rung to roughly its own duty
- * cycle.
- *
- * Millisecond granularity is coarse against a 4 ms period, so a sleep is only
- * used when the remaining off time is comfortably longer than one tick and the
- * last stretch is always spun. What it costs in timing accuracy shows up in the
- * achieved duty, which is measured rather than assumed.
- */
-class ISleeper
-{
-public:
-    virtual ~ISleeper() = default;
-    virtual void sleepMs(uint32_t ms) = 0;
-};
 
 /// True on a build with the registers this file needs.
 bool available();

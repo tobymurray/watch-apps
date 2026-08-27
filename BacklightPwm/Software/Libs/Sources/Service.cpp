@@ -40,15 +40,6 @@ void sleepThunk(uint32_t ms)
     }
 }
 
-/// Hands ISystem::delay to the PWM engine so it can sleep through off phases
-/// rather than spinning them.
-class KernelSleeper : public Pwm::ISleeper
-{
-public:
-    void sleepMs(uint32_t ms) override { sleepThunk(ms); }
-};
-
-KernelSleeper gSleeper;
 
 /// How long to wait for the kernel to acknowledge a backlight request. Bounded
 /// so a kernel that does not answer costs a blink rather than a stall.
@@ -60,7 +51,7 @@ constexpr char kProgressPath[] = "progress.txt";
 
 Service::Service(SDK::Kernel& kernel)
     : mKernel(kernel)
-    , mPwm(mPin, mClock, &gSleeper)
+    , mPwm(mPin, mClock)
 {
     gKernelForMillis = &kernel;
     mPwm.setPeriodUs(Pwm::kPeriodUs);

@@ -92,27 +92,53 @@ applied twice more:
 One rule behind all three: an app thread that does not yield takes the whole
 system down with it.
 
-**It rebooted a second time**, near the end of a run rather than at the start, so
-yielding once per burst was necessary and not sufficient. The ladder was still
-spending its entire 44 seconds at 100 percent CPU, because every path spun:
-holding the pin at duty 0 or 100 spun out the whole budget to do nothing, and the
-off phase of every modulated period was spun as well. Two changes followed:
+### The calibration bug, which was the real cause
 
-- **An endpoint duty is now held, not spun.** `runBurst` sets the pin and returns
-  immediately, and the service blocks on the message queue instead of coming
-  straight back. That is eight seconds of the ladder recovered outright.
-- **A long off phase is slept through.** `ISystem::delay` takes whole
-  milliseconds and may overshoot by a tick, so a sleep is only used when the off
-  phase is comfortably longer than one and the last stretch is always spun.
+Moving calibration off the busy wait and onto `ISystem::delay()` fixed the freeze
+and broke something quieter. **`DWT_CYCCNT` counts core clocks and stops when the
+core sleeps**, so measuring it across a `delay()` counts only the cycles the CPU
+happened to be awake for. It returned **1 cycle per microsecond**.
 
-Be precise about what that buys, because it is less than it sounds. At a 4 ms
-period, duties 25, 10 and 1 recover most of each period; **75 and 50 still spin
-flat out**, since their off phases of one and two milliseconds are inside the
-granularity. Fixing the top of the ladder properly means the DMA waveform, not a
-better sleep.
+That is nonsense, but it is not zero, and the only check in the code was for zero.
+So it sailed through, and every duration in the app came out about 160 times too
+short: the 4 ms PWM period became 4000 *cycles*, roughly 25 microseconds, and the
+ladder ran at tens of kilohertz while the service yielded twenty thousand times a
+second.
+
+A run filmed at 30 fps and measured frame by frame showed exactly what that did:
+
+| Rung | Requested | Screen luminance | What it looked like |
+| --- | --- | --- | --- |
+| off | 0 | 46 % | off |
+| d100 | 100 | 67 % | full |
+| d75 | 75 | 63 % | near full |
+| d50 | 50 | 63 % | near full |
+| d25 | 25 | 46 % | off |
+| d10 | 10 | 45 % | off |
+| d1 | 1 | 45 % | off |
+| d100_again | 100 | 67 % | full |
+
+The ladder had collapsed into three levels, and the watch reported `got 94 %` at a
+requested 25 percent while photographing as fully dark. The cliff between 50 and
+25 is where the off-phase sleep started being used, which is the second half of
+the same bug: a period that sleeps loses its own clock, so the spin afterwards
+still believed the whole period was left.
+
+Three changes came out of it:
+
+- **Calibration busy-waits again**, bounded at 25 ms, because the core has to stay
+  awake for the counter to count. That was never what rebooted the watch.
+- **A plausibility floor.** Anything under 8 MHz is refused outright. Its absence
+  is what let a wrong-but-nonzero answer produce a run that looked fine.
+- **The off phase is spun, not slept.** Sleeping and cycle-counting cannot be
+  mixed. Accurate timing wins; the endpoints are still free and the service still
+  yields between bursts.
+
+An endpoint duty is held rather than spun, which is a genuine saving and the one
+part of the sleeping experiment worth keeping.
 
 If it reboots again, `kBurstUs` in `PwmPlan.hpp` is the first number to reduce,
-and dropping the 75 and 50 rungs is the second.
+and shortening the rung holds is the second.
 
 ### Finding out where it died
 
