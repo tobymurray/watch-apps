@@ -5,11 +5,11 @@
   ],
   "name": "Barcode",
   "icon": "icon.png",
-  "binary": "Barcode_0.2.0.uapp",
-  "appVersion": "0.2.0",
+  "binary": "Barcode_0.3.0.uapp",
+  "appVersion": "0.3.0",
   "minKernelVersion": "1.4.0",
   "requiredHardware": [],
-  "description": "Shows a Code 128 barcode for an id you supply -- a parkrun athlete id, a membership number, a transit pass. The id comes from your phone; the watch only draws it.",
+  "description": "Shows a Code 128 barcode for an ID you supply -- a parkrun athlete ID, a membership number, a transit pass. Holds up to six, cycled on the watch. The IDs come from your phone; the watch only draws them.",
   "id": "409506B8B69EC13E",
   "stravaExport": false,
   "supportsLaps": false,
@@ -23,16 +23,125 @@
   "configFile": "input.json",
   "configFields": [
     {
-      "id": "id",
+      "id": "id1",
       "type": "string",
-      "label": "Your ID",
-      "description": "The number printed under your barcode, copied exactly. Case matters.",
-      "default": " ",
-      "minLength": 1,
+      "label": "Code 1 ID",
+      "description": "The number printed under your barcode, copied exactly. Case matters. This is the code the watch shows first.",
+      "default": "",
       "maxLength": 17,
-      "pattern": "[ -~]{1,16}",
+      "pattern": "[ -~]{0,16}",
       "required": true,
-      "validationMessage": "1 to 16 plain characters, exactly as printed."
+      "validationMessage": "Up to 16 plain characters, exactly as printed."
+    },
+    {
+      "id": "name1",
+      "type": "string",
+      "label": "Code 1 name",
+      "description": "What the watch calls this code, so you know which is which when you cycle through them. Optional.",
+      "default": "",
+      "maxLength": 12,
+      "pattern": "[ -~]{0,12}",
+      "validationMessage": "Up to 12 plain characters."
+    },
+    {
+      "id": "id2",
+      "type": "string",
+      "label": "Code 2 ID",
+      "description": "A second barcode to carry -- a family member's parkrun ID, a membership number. Leave empty if you do not need it.",
+      "default": "",
+      "maxLength": 17,
+      "pattern": "[ -~]{0,16}",
+      "validationMessage": "Up to 16 plain characters, exactly as printed."
+    },
+    {
+      "id": "name2",
+      "type": "string",
+      "label": "Code 2 name",
+      "description": "What the watch calls the second code. Optional.",
+      "default": "",
+      "maxLength": 12,
+      "pattern": "[ -~]{0,12}",
+      "validationMessage": "Up to 12 plain characters."
+    },
+    {
+      "id": "id3",
+      "type": "string",
+      "label": "Code 3 ID",
+      "description": "A third barcode to carry. Leave empty if you do not need it.",
+      "default": "",
+      "maxLength": 17,
+      "pattern": "[ -~]{0,16}",
+      "validationMessage": "Up to 16 plain characters, exactly as printed."
+    },
+    {
+      "id": "name3",
+      "type": "string",
+      "label": "Code 3 name",
+      "description": "What the watch calls the third code. Optional.",
+      "default": "",
+      "maxLength": 12,
+      "pattern": "[ -~]{0,12}",
+      "validationMessage": "Up to 12 plain characters."
+    },
+    {
+      "id": "id4",
+      "type": "string",
+      "label": "Code 4 ID",
+      "description": "A fourth barcode to carry. Leave empty if you do not need it.",
+      "default": "",
+      "maxLength": 17,
+      "pattern": "[ -~]{0,16}",
+      "validationMessage": "Up to 16 plain characters, exactly as printed."
+    },
+    {
+      "id": "name4",
+      "type": "string",
+      "label": "Code 4 name",
+      "description": "What the watch calls the fourth code. Optional.",
+      "default": "",
+      "maxLength": 12,
+      "pattern": "[ -~]{0,12}",
+      "validationMessage": "Up to 12 plain characters."
+    },
+    {
+      "id": "id5",
+      "type": "string",
+      "label": "Code 5 ID",
+      "description": "A fifth barcode to carry. Leave empty if you do not need it.",
+      "default": "",
+      "maxLength": 17,
+      "pattern": "[ -~]{0,16}",
+      "validationMessage": "Up to 16 plain characters, exactly as printed."
+    },
+    {
+      "id": "name5",
+      "type": "string",
+      "label": "Code 5 name",
+      "description": "What the watch calls the fifth code. Optional.",
+      "default": "",
+      "maxLength": 12,
+      "pattern": "[ -~]{0,12}",
+      "validationMessage": "Up to 12 plain characters."
+    },
+    {
+      "id": "id6",
+      "type": "string",
+      "label": "Code 6 ID",
+      "description": "A sixth barcode to carry. Leave empty if you do not need it.",
+      "default": "",
+      "maxLength": 17,
+      "pattern": "[ -~]{0,16}",
+      "validationMessage": "Up to 16 plain characters, exactly as printed."
+    },
+    {
+      "id": "name6",
+      "type": "string",
+      "label": "Code 6 name",
+      "description": "What the watch calls the sixth code. Optional.",
+      "default": "",
+      "maxLength": 12,
+      "pattern": "[ -~]{0,12}",
+      "validationMessage": "Up to 12 plain characters."
     }
   ]
 }

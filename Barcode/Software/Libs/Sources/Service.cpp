@@ -11,14 +11,30 @@
 
 static constexpr uint32_t kWaitForever = 0xFFFFFFFF;
 
-// The encoder's limit and the state buffer's are the same number in two
-// headers, and adopt() relies on that for memory safety: it copies only after
-// the encoder has accepted the value.
+// The encoder's limit and the id buffer's are the same number in two headers,
+// and adopt() relies on that for memory safety: it copies only after the
+// encoder has accepted the value.
 static_assert(Barcode::kMaxIdLength == Code128::kMaxDataLength,
               "the id buffer and the encoder must agree on the longest id");
 static_assert(Barcode::kConfigMaxLength > Barcode::kMaxIdLength,
               "the declared field must be longer than an id, so over-length "
               "values arrive detectable rather than truncated into valid ones");
+
+namespace {
+
+/// Everything Code 128 subset B can draw, which is also everything the screen
+/// font has a glyph for. Applied to names, which the encoder never sees.
+bool isPlainAscii(const char *text)
+{
+    for (size_t i = 0; text[i] != '\0'; i++) {
+        if (text[i] < 32 || text[i] > 126) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
 
 Service::Service(SDK::Kernel &kernel)
     : mKernel(kernel)
@@ -105,6 +121,53 @@ void Service::load()
         BarcodeConfig::kFields, BarcodeConfig::kFieldCount));
 }
 
+bool Service::adoptCode(size_t index, Barcode::Code &out) const
+{
+    // One byte longer than an id, so a value too long to be one arrives
+    // detectably over-length instead of quietly shortened. See Barcode.hpp.
+    char raw[Barcode::kConfigMaxLength + 1] {};
+    const size_t length =
+        mConfig->getString(BarcodeConfig::idField(index), raw, sizeof(raw));
+
+    if (length == 0) {
+        // An empty id is how a slot says it is unused. Every field defaults to
+        // the empty string, so this is also what an untouched slot reads as.
+        return false;
+    }
+
+    // Checked before the encoder rather than left to it: the encoder would
+    // refuse an over-length value too, but this is what makes the copy below
+    // provably fit, without depending on two headers agreeing.
+    if (length > Barcode::kMaxIdLength) {
+        LOG_WARNING("%s is %u bytes, too long for an id\n",
+                    BarcodeConfig::idField(index), static_cast<unsigned>(length));
+        return false;
+    }
+
+    // The encoder is the remaining validator, and it is the right one: it
+    // refuses anything outside printable ASCII, which is exactly the set this
+    // app can draw. SDK::AppConfig decodes JSON escapes before this point, so
+    // a `\\` in the file arrives as a real backslash and encodes as one.
+    Code128::Encoded probe {};
+    if (!Code128::encode(raw, probe)) {
+        LOG_WARNING("%s cannot be drawn as Code 128\n",
+                    BarcodeConfig::idField(index));
+        return false;
+    }
+
+    std::memcpy(out.id, raw, length + 1);
+
+    // The name is decoration: a bad one costs the label, never the code.
+    char name[Barcode::kMaxNameLength + 1] {};
+    const size_t nameLength =
+        mConfig->getString(BarcodeConfig::nameField(index), name, sizeof(name));
+    if (nameLength > 0 && isPlainAscii(name)) {
+        std::memcpy(out.name, name, nameLength + 1);
+    }
+
+    return true;
+}
+
 void Service::adopt()
 {
     if (!mConfig || !mConfig->isLoaded()) {
@@ -115,58 +178,52 @@ void Service::adopt()
         return;
     }
 
-    if (!mConfig->has(Barcode::kIdField)) {
-        // The key is missing, or it is present and unusable -- wrong JSON
-        // type, null, or shorter than the declared minimum. has() folds those
-        // together because the value in play is the default either way.
-        mState = Barcode::makeUnsetState(Barcode::Problem::NoValue);
+    Barcode::State next {};
+    next.problem = Barcode::Problem::None;
+
+    bool anyKeyPresent = false;  // a slot carried a value, even an empty one
+    bool anyRefused    = false;  // a slot carried something undrawable
+
+    for (size_t i = 0; i < Barcode::kMaxCodes; i++) {
+        if (mConfig->has(BarcodeConfig::idField(i))) {
+            anyKeyPresent = true;
+        }
+
+        Barcode::Code code {};
+        if (adoptCode(i, code)) {
+            next.codes[next.count] = code;
+            next.count++;
+        } else if (mConfig->has(BarcodeConfig::idField(i))) {
+            // Present, non-empty and still not drawable is the only case
+            // adoptCode rejects that the wearer needs telling about. An empty
+            // slot is normal, so distinguish the two by asking the reader
+            // whether anything was stored at all.
+            char raw[Barcode::kConfigMaxLength + 1] {};
+            if (mConfig->getString(BarcodeConfig::idField(i), raw, sizeof(raw)) > 0) {
+                anyRefused = true;
+            }
+        }
+    }
+
+    if (next.count > 0) {
+        // A bad slot alongside good ones is skipped rather than announced: the
+        // phone validates before it writes, so one bad slot means a hand-edited
+        // file, and hiding the codes that work would be the wrong trade.
+        LOG_INFO("Using %u code(s) from %s\n",
+                 static_cast<unsigned>(next.count), BarcodeConfig::kConfigFile);
+        mState = next;
         return;
     }
 
-    // One byte longer than an id, so a value too long to be one arrives
-    // detectably over-length instead of quietly shortened. See Barcode.hpp.
-    char raw[Barcode::kConfigMaxLength + 1] {};
-    const size_t length = mConfig->getString(Barcode::kIdField, raw, sizeof(raw));
-
-    if (length == 0) {
-        mState = Barcode::makeUnsetState(Barcode::Problem::NoValue);
-        return;
-    }
-
-    if (std::strcmp(raw, Barcode::kUnsetId) == 0) {
-        // The declared default came back. Either nobody has set an id, or the
-        // phone's form was accepted with the field left as it was found --
-        // which the SDK counts as satisfying a required field. Both mean the
-        // same thing here: there is no id, and drawing one would be a lie.
+    if (anyRefused) {
+        mState = Barcode::makeUnsetState(Barcode::Problem::BadValue);
+    } else if (anyKeyPresent) {
+        // The form was filled in and left empty, which is what accepting a
+        // required field's pre-filled default looks like from here.
         mState = Barcode::makeUnsetState(Barcode::Problem::NotSet);
-        return;
+    } else {
+        mState = Barcode::makeUnsetState(Barcode::Problem::NoValue);
     }
-
-    // Checked before the encoder rather than left to it: the encoder would
-    // refuse an over-length value too, but this is what makes the copy below
-    // provably fit, without depending on two headers agreeing.
-    if (length > Barcode::kMaxIdLength) {
-        mState = Barcode::makeUnsetState(Barcode::Problem::BadValue);
-        return;
-    }
-
-    // The encoder is the remaining validator, and it is the right one: it
-    // refuses anything outside printable ASCII, which is exactly the set this
-    // app can draw. SDK::AppConfig decodes JSON escapes before this point, so
-    // a `\\` in the file arrives as a real backslash and encodes as one --
-    // the old hand-rolled reader had to refuse it, because it saw the escape
-    // sequence undecoded.
-    Barcode::State next = Barcode::makeUnsetState(Barcode::Problem::None);
-    Code128::Encoded probe {};
-    if (!Code128::encode(raw, probe)) {
-        mState = Barcode::makeUnsetState(Barcode::Problem::BadValue);
-        return;
-    }
-
-    std::memcpy(next.id, raw, length + 1);
-
-    LOG_INFO("Using id from %s\n", BarcodeConfig::kConfigFile);
-    mState = next;
 }
 
 void Service::publish()

@@ -48,8 +48,13 @@ struct BarcodeState : public SDK::MessageBase {
     {}
 };
 
+/// The ceiling on Barcode::kMaxCodes, and the reason it is 7 rather than the
+/// 16 the SDK's 32-field limit would allow: a whole state travels in one
+/// message, and the largest kernel pool block is 256 bytes. Raising kMaxCodes
+/// too far fails the build here rather than truncating a wearer's codes.
 static_assert(sizeof(BarcodeState) <= 256,
-              "BarcodeState must fit the largest kernel message pool block");
+              "BarcodeState must fit the largest kernel message pool block -- "
+              "lower Barcode::kMaxCodes, or shorten the id and name limits");
 
 /**
  * @brief Ask the service to re-check the file and reply with the result.

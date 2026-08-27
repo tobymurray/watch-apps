@@ -64,6 +64,13 @@ private:
      */
     void load();
 
+    /**
+     * @brief Read one declared slot into @p out.
+     * @retval true  @p out holds a drawable code; its name may be empty.
+     * @retval false The slot is empty, or holds something that cannot be drawn.
+     */
+    bool adoptCode(size_t index, Barcode::Code &out) const;
+
     /// Turn whatever the configuration currently holds into a publishable state.
     void adopt();
 

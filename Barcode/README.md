@@ -1,11 +1,16 @@
-# Barcode — a Code 128 barcode for a value you supply
+# Barcode — Code 128 barcodes for values you supply
 
-Displays a parkrun-style **Code 128** barcode, plus the id underneath it in
-readable text. The id is not compiled in: you type it into the UNA phone app
-when you install this one, and the watch reads it at launch.
+Displays a parkrun-style **Code 128** barcode, plus the ID underneath it in
+readable text. The IDs are not compiled in: you type them into the UNA phone app
+when you install this one, and the watch reads them at launch.
+
+It holds **up to six**, so a parent can carry the whole family's parkrun IDs and
+step between them at the finish funnel with `L2`. That is what every comparable
+app on Garmin and Apple does, and it is the one thing a single-code app cannot
+be asked to do at the moment it matters.
 
 That second half is the point. The watch has four buttons and no keyboard, so a
-value only you know — an athlete id here, but the shape is the same for a
+value only you know — an athlete ID here, but the shape is the same for a
 transit pass or a membership number — has to come from outside.
 
 This app was originally built because the SDK had no supported way to get one
@@ -24,19 +29,28 @@ still does what it always did. That is not luck: the original copied
 What did change is what the app can *say* when something is wrong, and that is
 a real loss — see [Concessions](#concessions).
 
-## Setting your id
+## Setting your codes
 
 ### From the phone
 
-The app declares one configuration field, so the UNA app asks for it while it
-installs:
+The app declares six numbered slots, so the UNA app asks for them while it
+installs — a flat list of twelve rows, an ID and a name per code:
 
-> **Your ID** — The number printed under your barcode, copied exactly. Case
-> matters.
+> **Code 1 ID** — The number printed under your barcode, copied exactly. Case
+> matters. This is the code the watch shows first.
+> **Code 1 name** — What the watch calls this code, so you know which is which
+> when you cycle through them. Optional.
+> **Code 2 ID** — A second barcode to carry — a family member's parkrun ID, a
+> membership number. Leave empty if you do not need it.
+> … and so on to Code 6.
 
-It is a required field, so the install will not finish until it is filled in.
-Editing it later is the same screen, and the new value applies the next time you
-open the app.
+Only **Code 1** is required; the rest are left empty unless you want them. The
+names are what the watch shows above the bars, so `Sam` beats `Code 3` when you
+are looking for the right one in a hurry. Editing later is the same screen, and
+new values apply the next time you open the app.
+
+Slots do not have to be contiguous — filling 1, 3 and 6 gives you three codes,
+and the watch cycles between exactly those three.
 
 ### Or over USB
 
@@ -44,19 +58,24 @@ The values file is a plain file in the app's own folder, so it can still be
 written by hand:
 
 1. Connect the watch by USB and wait for the drive to mount.
-2. Open `Apps/Barcode/` on it — the same folder the `.uapp` lives in.
+2. Open `Apps/<APP_ID>/` on it — the same folder the `.uapp` lives in. The
+   watch names that folder after the app's ID, not its name.
 3. Create `input.json`:
 
    ```json
    {
      "schema": 1,
      "values": {
-       "id": "A1234567"
+       "id1": "A1234567",
+       "name1": "Me",
+       "id2": "A7654321",
+       "name2": "Sam"
      }
    }
    ```
 
    [`input.example.json`](input.example.json) is that file, ready to copy.
+   Leave out any slot you do not want.
 4. Eject the drive safely, unplug, and power-cycle the watch.
 
 Until an id arrives by one route or the other, the app says so on screen and
@@ -132,14 +151,21 @@ false` and writes the detail to a log nobody wearing the watch can read. The
 prompt is now one message covering the lot, pointing at the phone and the file
 instead of naming what is wrong.
 
-**There is no "unset".** Every field in `app-manifest.json` must declare a
-`default`, and it must satisfy the field's own constraints, so an app cannot say
-"there is no safe value for this". The default here is a single space, which the
-app treats as the absence of an id — a sentinel that is checked by an explicit
-comparison, because a space is a perfectly legal Code 128 character. It also
-means `required: true` is weaker than it looks: the SDK counts accepting the
-pre-filled value as satisfying a required field, so the sentinel can reach the
-file, and the app has to recognise it rather than trust that a value is a value.
+**There is no "unset" — but the empty string does the job.** Every field in
+`app-manifest.json` must declare a `default` that satisfies its own constraints,
+so an app cannot say "there is no safe value for this". Earlier versions of this
+app answered that with a sentinel: a single space, recognised by an explicit
+comparison because a space is a legal Code 128 character. That is gone. Since
+these fields declare **no `minLength`**, the empty string is itself a legal
+value, so `""` is the default and "empty" means "not set" with no magic constant
+anywhere.
+
+That is worth knowing generally: a field that declares `minLength: 1` forces you
+to invent a placeholder, and one that does not lets you say nothing. It does not
+fix `required: true` being weaker than it looks — the SDK counts accepting the
+pre-filled value as satisfying a required field, so an empty Code 1 can still
+reach the file — but the app reads that as "no code" and says so, which is the
+right outcome anyway.
 
 **Truncation had to be bought back.** `SDK::AppConfig` truncates an over-long
 string to the declared `maxLength` on a UTF-8 boundary and tells the caller
@@ -164,8 +190,8 @@ undecoded.
 app-manifest.json                 # package metadata + the one configuration field
 Software/
 ├── Libs/
-│   ├── Header/AppConfigFields.hpp    # the app's copy of that field, CI-checked
-│   ├── Header/Barcode.hpp        # id + why-there-is-no-id, shared Service <-> GUI
+│   ├── Header/AppConfigFields.hpp # the app's copy of the fields, CI-checked
+│   ├── Header/Barcode.hpp        # kMaxCodes, the codes, and why there is no fallback
 │   ├── Header/Code128.hpp        # header-only Subset B encoder, no SDK dependency
 │   ├── Header/Commands.hpp       # the two-message contract between the halves
 │   ├── Sources/AppConfigFields.cpp
@@ -175,9 +201,28 @@ Software/
     └── TouchGFX-GUI/             # the GUI: bars, or a prompt saying what to do
 ```
 
-The Service owns the value and the GUI only renders what it is sent, so the
+The Service owns the codes and the GUI only renders what it is sent, so the
 configuration is read in exactly one place — which is also what `SDK::AppConfig`
-requires, since it is one instance per app on one thread.
+requires, since it is one instance per app on one thread. Cycling is the one
+thing the GUI does alone: it already has every code, so `L1`/`L2` never round-trip.
+
+### Changing how many codes it holds
+
+`Barcode::kMaxCodes` is the single number. The service loop, the message, the
+screen and the cycling are all written against it, so **no logic changes** — but
+the *declaration* is per-field by construction, so raising it means adding an
+`idN`/`nameN` pair in two places: `configFields` in `app-manifest.json`, and
+`kFields` in `AppConfigFields.cpp`. (The SDK's `--check-bounds` reads that table
+as text and rejects named constants, so it cannot be generated from a loop.)
+
+Two `static_assert`s make a mismatch a build error rather than a silent bug:
+
+- `AppConfigFields.cpp` fails if the table is not `kMaxCodes * 2` entries
+- `Commands.hpp` fails if a full state no longer fits a 256-byte message block
+
+**Seven is the ceiling**, and it is that second assert that sets it — not the
+SDK's 32-field limit, which would allow sixteen. A `Code` is 30 bytes and a
+`State` is 182 at six; eight would overrun the pool block.
 
 `app-manifest.json` never reaches the watch, so the binary carries its own copy
 of what it declared. The two must agree, and CI is what makes sure they do:
@@ -209,12 +254,19 @@ The build prints it, so it can be checked rather than assumed —
 
 | Button | Position | Does |
 | --- | --- | --- |
+| `SW2` / L2 | bottom left | **next code** |
+| `SW1` / L1 | top left | previous code |
 | `SW4` / R2 | bottom right | **back — leaves the app** |
+
+`L1` and `L2` wrap, and their hints only light when there is more than one code
+to move between — a single code does not advertise a button that would do
+nothing. Cycling is handled entirely in the GUI, which already holds every code,
+so pressing `L2` never waits on the service.
 
 Nothing else is bound. There was a GUI-to-Service "set the id" message; it went
 when the file arrived, because a GUI path that can overwrite a provisioned value
 only gives the app a way to lose it. `SDK::AppConfig` would now happily let the
-watch write the id back to the file — and it still should not.
+watch write an ID back to the file — and it still should not.
 
 ## Building
 
