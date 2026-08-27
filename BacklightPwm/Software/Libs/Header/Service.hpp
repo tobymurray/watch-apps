@@ -99,6 +99,11 @@ private:
     /// Message wait with nothing to do.
     static constexpr uint32_t kIdleWaitMs = 1000;
 
+    /// Message wait during a held rung, where there is nothing to modulate.
+    /// Short enough to re-assert the pin about fifty times a second, which is
+    /// what overrides the kernel if it writes the pin while a level is held.
+    static constexpr uint32_t kHeldWaitMs = 20;
+
     /// How often to publish while the ladder runs.
     static constexpr uint32_t kPublishPeriodMs = 200;
 
@@ -132,6 +137,10 @@ private:
     /// When driving began, for the cap above.
     uint32_t mDriveStartedMs = 0;
 
+    /// Whether the last burst simply held a level. Decides whether the loop
+    /// blocks on the message queue or comes straight back for more modulation.
+    bool mLastBurstHeld = false;
+
     /// Whether calibration succeeded and the pin is ours to write. False means
     /// the app runs, shows why it declined, and touches nothing.
     bool mDriving = false;
@@ -147,6 +156,21 @@ private:
     void askKernelToHoldLight();
 
     void beginRung(size_t index);
+
+    /**
+     * @brief Rewrite the breadcrumb file with the rung about to start.
+     *
+     * `Apps/BacklightPwm/progress.txt`, overwritten and flushed at every rung.
+     *
+     * This exists because the failure being chased is a **reboot**, and a reboot
+     * takes the log with it unless a dev tool happened to be capturing UART. A
+     * one-line file costs nothing and survives, so the question "which rung was
+     * it on" is answerable by plugging in afterwards rather than by reproducing
+     * the fault with a cable attached. FwDump learned the same lesson the hard
+     * way when its first real dump lost its register context to a log nobody was
+     * capturing.
+     */
+    void writeBreadcrumb(size_t index);
 };
 
 #endif // SERVICE_HPP

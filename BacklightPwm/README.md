@@ -90,8 +90,36 @@ applied twice more:
   blocking with no feedback is indistinguishable from a hang.
 
 One rule behind all three: an app thread that does not yield takes the whole
-system down with it. If the watch ever reboots during a run again, `kBurstUs` in
-`PwmPlan.hpp` is the first number to reduce.
+system down with it.
+
+**It rebooted a second time**, near the end of a run rather than at the start, so
+yielding once per burst was necessary and not sufficient. The ladder was still
+spending its entire 44 seconds at 100 percent CPU, because every path spun:
+holding the pin at duty 0 or 100 spun out the whole budget to do nothing, and the
+off phase of every modulated period was spun as well. Two changes followed:
+
+- **An endpoint duty is now held, not spun.** `runBurst` sets the pin and returns
+  immediately, and the service blocks on the message queue instead of coming
+  straight back. That is eight seconds of the ladder recovered outright.
+- **A long off phase is slept through.** `ISystem::delay` takes whole
+  milliseconds and may overshoot by a tick, so a sleep is only used when the off
+  phase is comfortably longer than one and the last stretch is always spun.
+
+Be precise about what that buys, because it is less than it sounds. At a 4 ms
+period, duties 25, 10 and 1 recover most of each period; **75 and 50 still spin
+flat out**, since their off phases of one and two milliseconds are inside the
+granularity. Fixing the top of the ladder properly means the DMA waveform, not a
+better sleep.
+
+If it reboots again, `kBurstUs` in `PwmPlan.hpp` is the first number to reduce,
+and dropping the 75 and 50 rungs is the second.
+
+### Finding out where it died
+
+`Apps/BacklightPwm/progress.txt` is rewritten and flushed at every rung, naming
+the rung about to start. A reboot takes the log with it unless a dev tool happened
+to be capturing UART; the file survives, so plug in afterwards and read it. If the
+last line names a rung, that is where the watch died.
 
 There is also a hard ceiling, `kMaxDriveMs`, on how long the app may hold the pin
 at all. Nothing should reach it; it exists so a timing bug ends with the light

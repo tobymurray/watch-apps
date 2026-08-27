@@ -40,13 +40,37 @@
  * dimming at full brightness, which is exactly the artefact that would discredit
  * the result.
  *
- * ## It is a busy wait, and that is deliberate
+ * ## It spins only where it has to
  *
- * There is no sleep an app can use at this resolution, and there is no timer
- * interrupt available to it. The CPU spins on the cycle counter. For a
- * proof of concept measured in seconds that is the right trade: the alternative
- * is a DMA-driven waveform, which is the correct production answer and a great
- * deal more machinery. See the README.
+ * There is no sleep at microsecond resolution and no timer interrupt available to
+ * an app, so the **on** phase is a busy wait on the cycle counter. That much is
+ * unavoidable short of the DMA-driven waveform, which is the correct production
+ * answer and a great deal more machinery.
+ *
+ * Everything else gives the CPU back:
+ *
+ *   - An **endpoint** duty (0 or 100) sets the pin and returns. Holding a level
+ *     needs no CPU whatsoever.
+ *   - The **off** phase of a modulated period is slept through when it is longer
+ *     than a couple of milliseconds, and only its last stretch is spun.
+ *
+ * The first version spun through all of it and ran the whole 44 second ladder at
+ * 100 percent CPU.
+ *
+ * How much that recovers is worth being precise about, because it is less than it
+ * sounds. `delay()` takes whole milliseconds and may overshoot by a tick, so an
+ * off phase is only slept when it is comfortably longer than one, and one
+ * millisecond fewer than would fit is slept so the spin can close the gap.
+ * Against a 4 ms period that means:
+ *
+ *   - duty 0 and 100: nothing spun at all.
+ *   - duty 25, 10, 1: most of the period recovered, since the off phase is long.
+ *   - **duty 75 and 50: still spun flat out.** Their off phases are one and two
+ *     milliseconds, which is inside the granularity, so nothing can safely be
+ *     given back.
+ *
+ * So the ladder is cheaper than it was but the top of it is not cheap. Fixing
+ * that properly means the DMA waveform, not a better sleep.
  *
  ******************************************************************************
  */
@@ -69,6 +93,12 @@ struct BurstStats {
     uint32_t totalUs   = 0; ///< Total microseconds the burst covered.
     uint32_t edges     = 0; ///< Pin writes issued.
 
+    /// True when the duty was an endpoint and the pin was simply set and left.
+    /// The caller uses this to know it can sleep rather than call straight back:
+    /// holding a level needs no CPU at all, and spinning to do it is what put the
+    /// first version of this app at 100 percent for the whole ladder.
+    bool held = false;
+
     /// Achieved duty in percent, from the microseconds actually spent rather
     /// than from the requested figure. A gap between this and the request is the
     /// interesting number: it is how much the busy wait and the message loop
@@ -82,7 +112,7 @@ struct BurstStats {
 class SoftPwm
 {
 public:
-    SoftPwm(IPin& pin, const IClock& clock);
+    SoftPwm(IPin& pin, const IClock& clock, ISleeper* sleeper = nullptr);
 
     /// 0 to 100. Values above 100 are clamped; the plan never sends one, but a
     /// silent overflow into a tiny on-time would look like a hardware fault.
@@ -100,6 +130,12 @@ public:
      *
      * Stops at a period boundary when one falls inside the budget, so a burst
      * does not end mid-pulse and leave the light on for the length of the gap.
+     *
+     * At duty 0 and 100 it sets the pin and returns **immediately**, with
+     * `BurstStats::held` set. There is nothing to modulate at an endpoint, and
+     * the caller is expected to sleep rather than spin. Re-asserting the level
+     * once per call is still worth doing: it is what overrides the kernel if the
+     * kernel writes the pin during a held rung.
      */
     BurstStats runBurst(uint32_t budgetUs);
 
@@ -113,6 +149,7 @@ public:
 private:
     IPin&         mPin;
     const IClock& mClock;
+    ISleeper*     mSleeper; ///< Optional. Without one the off phase is spun.
 
     uint8_t  mDuty     = 0;
     uint32_t mPeriodUs = 4000; ///< 250 Hz.
@@ -124,6 +161,11 @@ private:
     /// rather than from the deadline, so overshoot accumulates into the reported
     /// duty instead of being hidden.
     uint32_t spinUntil(uint32_t deadlineUs) const;
+
+    /// Sleep most of the way to `deadlineUs`, then spin the rest. Falls back to
+    /// spinning entirely when there is no sleeper or too little time to be worth
+    /// one.
+    uint32_t sleepThenSpinUntil(uint32_t deadlineUs);
 };
 
 } // namespace Pwm

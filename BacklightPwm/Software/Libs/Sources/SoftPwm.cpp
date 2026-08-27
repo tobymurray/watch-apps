@@ -19,11 +19,18 @@ constexpr uint32_t kMinPeriodUs = 200;    // 5 kHz
 /// Above this the eye sees flicker rather than a dimmed light, which would make
 /// every photograph taken of it worthless.
 constexpr uint32_t kMaxPeriodUs = 20000;  // 50 Hz
+
+/// Only sleep through an off phase longer than this, and always spin the last
+/// millisecond. `delay()` takes whole milliseconds and may overshoot by a tick,
+/// which against a 4 ms period would distort the duty badly if it were used for
+/// the fine end of the wait.
+constexpr uint32_t kSleepFloorUs = 2000;
 } // namespace
 
-SoftPwm::SoftPwm(IPin& pin, const IClock& clock)
+SoftPwm::SoftPwm(IPin& pin, const IClock& clock, ISleeper* sleeper)
     : mPin(pin)
     , mClock(clock)
+    , mSleeper(sleeper)
 {
 }
 
@@ -53,6 +60,24 @@ uint32_t SoftPwm::spinUntil(uint32_t deadlineUs) const
     return now;
 }
 
+uint32_t SoftPwm::sleepThenSpinUntil(uint32_t deadlineUs)
+{
+    if (mSleeper != nullptr) {
+        const uint32_t now       = mClock.nowUs();
+        const int32_t  remaining = static_cast<int32_t>(deadlineUs - now);
+
+        if (remaining > static_cast<int32_t>(kSleepFloorUs)) {
+            // One millisecond short of the target, so the spin below closes the
+            // gap rather than the sleep overshooting past it.
+            const uint32_t sleepMs = (static_cast<uint32_t>(remaining) / 1000u) - 1u;
+            if (sleepMs > 0u) {
+                mSleeper->sleepMs(sleepMs);
+            }
+        }
+    }
+    return spinUntil(deadlineUs);
+}
+
 void SoftPwm::off()
 {
     mPin.lightOff();
@@ -78,15 +103,16 @@ BurstStats SoftPwm::runBurst(uint32_t budgetUs)
         }
         ++stats.edges;
 
-        const uint32_t stoppedUs = spinUntil(endUs);
-        stats.totalUs = stoppedUs - startUs;
-        stats.onUs    = (mDuty == 100u) ? stats.totalUs : 0u;
-        stats.periods = 1;
+        // Set and return. Holding a level costs nothing, and the caller is
+        // expected to sleep rather than call straight back; see BurstStats::held.
+        // The first version spun out the whole budget here, which bought nothing
+        // and cost eight seconds of the ladder at full CPU.
+        stats.held    = true;
+        stats.totalUs = 0;
+        stats.onUs    = 0;
+        stats.periods = 0;
 
-        mTotals.periods += stats.periods;
-        mTotals.onUs    += stats.onUs;
-        mTotals.totalUs += stats.totalUs;
-        mTotals.edges   += stats.edges;
+        mTotals.edges += stats.edges;
         return stats;
     }
 
@@ -100,7 +126,8 @@ BurstStats SoftPwm::runBurst(uint32_t budgetUs)
 
         mPin.lightOff();
         ++stats.edges;
-        const uint32_t cycleEnd = spinUntil(cycleStart + mPeriodUs);
+        // The off phase does not need the CPU. This is where most of it goes back.
+        const uint32_t cycleEnd = sleepThenSpinUntil(cycleStart + mPeriodUs);
 
         // Measured from the edges actually issued, not from the requested
         // on-time, so busy-wait overshoot lands in the reported duty rather than

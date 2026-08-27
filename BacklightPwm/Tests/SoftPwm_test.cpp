@@ -42,10 +42,32 @@ public:
     }
 
     void set(uint32_t us) { mNow = us; }
+    void advance(uint32_t us) { mNow += us; }
 
 private:
     uint32_t         mStep;
     mutable uint32_t mNow;
+};
+
+/// Advances the fake clock by the requested sleep, and counts how much was given
+/// back. That count is the whole point of the sleeper existing.
+class FakeSleeper : public ISleeper
+{
+public:
+    explicit FakeSleeper(FakeClock& clock) : mClock(clock) {}
+
+    void sleepMs(uint32_t ms) override
+    {
+        sleptMs += ms;
+        ++calls;
+        mClock.advance(ms * 1000u);
+    }
+
+    uint32_t sleptMs = 0;
+    uint32_t calls   = 0;
+
+private:
+    FakeClock& mClock;
 };
 
 /// Records every edge with the clock reading at the moment it was issued.
@@ -141,10 +163,104 @@ TEST(SoftPwm, FullBrightnessIsHeldRatherThanToggled)
     SoftPwm pwm(pin, clock);
     pwm.setDuty(100);
 
-    pwm.runBurst(40000);
+    const BurstStats stats = pwm.runBurst(40000);
 
     ASSERT_EQ(pin.edges.size(), 1u) << "full brightness emitted more than one edge";
     EXPECT_TRUE(pin.edges[0].on);
+    EXPECT_TRUE(stats.held);
+}
+
+TEST(SoftPwm, AnEndpointReturnsImmediatelyRatherThanSpinning)
+{
+    // Holding a level needs no CPU. The first version spun out the whole budget
+    // here, which is eight seconds of the ladder at full tilt for nothing, and
+    // the watch rebooted near the end of a run.
+    for (uint8_t duty : {uint8_t{0}, uint8_t{100}}) {
+        FakeClock clock(1);
+        RecordingPin pin(clock);
+        SoftPwm pwm(pin, clock);
+        pwm.setDuty(duty);
+
+        const uint32_t before = clock.nowUs();
+        const BurstStats stats = pwm.runBurst(40000);
+        const uint32_t after = clock.nowUs();
+
+        EXPECT_TRUE(stats.held) << "duty " << static_cast<unsigned>(duty) << " did not report held";
+        EXPECT_LT(after - before, 100u)
+            << "duty " << static_cast<unsigned>(duty) << " burned clock time holding a level";
+    }
+}
+
+TEST(SoftPwm, SleepsThroughPartOfALongOffPhase)
+{
+    // At 25 percent duty three quarters of every period is off time that does not
+    // need the CPU. Only part of it is actually slept, and the arithmetic is worth
+    // stating because it bounds how much this helps: `delay()` takes whole
+    // milliseconds and may overshoot by a tick, so the engine sleeps one
+    // millisecond fewer than would fit and spins the rest. Against a 4 ms period
+    // that leaves about a quarter of it recovered, not three quarters.
+    FakeClock clock(1);
+    RecordingPin pin(clock);
+    FakeSleeper sleeper(clock);
+    SoftPwm pwm(pin, clock, &sleeper);
+    pwm.setPeriodUs(4000);
+    pwm.setDuty(25);
+
+    const BurstStats stats = pwm.runBurst(40000);
+
+    ASSERT_GT(stats.periods, 0u);
+    EXPECT_GT(sleeper.calls, 0u) << "the off phase was spun, not slept";
+    EXPECT_GE(sleeper.sleptMs, stats.periods) << "less than a millisecond per period recovered";
+}
+
+TEST(SoftPwm, DoesNotSleepWhenTheOffPhaseIsTooShortToBeSafe)
+{
+    // At 75 percent the off phase is one millisecond, which is the same as
+    // `delay()`'s granularity and its worst-case overshoot. Sleeping there would
+    // stretch the period rather than save anything, so this rung genuinely does
+    // spin. Recorded as a test because it is the honest limit of the technique:
+    // the high end of the ladder still costs a full thread.
+    FakeClock clock(1);
+    RecordingPin pin(clock);
+    FakeSleeper sleeper(clock);
+    SoftPwm pwm(pin, clock, &sleeper);
+    pwm.setPeriodUs(4000);
+    pwm.setDuty(75);
+
+    pwm.runBurst(40000);
+
+    EXPECT_EQ(sleeper.calls, 0u) << "slept through an off phase shorter than a tick";
+}
+
+TEST(SoftPwm, StillWorksWithNoSleeperAtAll)
+{
+    // The sleeper is optional, and without one the engine must simply spin. A
+    // host build has no kernel to sleep on.
+    FakeClock clock(1);
+    RecordingPin pin(clock);
+    SoftPwm pwm(pin, clock, nullptr);
+    pwm.setPeriodUs(4000);
+    pwm.setDuty(50);
+
+    const BurstStats stats = pwm.runBurst(40000);
+    EXPECT_GE(stats.periods, 8u);
+    EXPECT_NEAR(measuredDuty(pin.edges), 50.0, 6.0);
+}
+
+TEST(SoftPwm, SleepingDoesNotWreckTheDuty)
+{
+    // Sleeping is only worth doing if the waveform survives it. The sleeper here
+    // advances the clock exactly, so this checks the arithmetic rather than the
+    // kernel's timer accuracy, which is what the on-screen achieved duty is for.
+    FakeClock clock(1);
+    RecordingPin pin(clock);
+    FakeSleeper sleeper(clock);
+    SoftPwm pwm(pin, clock, &sleeper);
+    pwm.setPeriodUs(4000);
+    pwm.setDuty(25);
+
+    pwm.runBurst(40000);
+    EXPECT_NEAR(measuredDuty(pin.edges), 25.0, 6.0);
 }
 
 TEST(SoftPwm, ZeroIsHeldOffRatherThanPulsed)

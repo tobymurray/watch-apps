@@ -9,6 +9,10 @@
 
 #include <cstring>
 
+#include <cstdio>
+#include <memory>
+
+#include "SDK/Interfaces/IFileSystem.hpp"
 #include "SDK/Messages/MessageGuard.hpp"
 
 #include "BacklightRequest.hpp"
@@ -36,14 +40,27 @@ void sleepThunk(uint32_t ms)
     }
 }
 
+/// Hands ISystem::delay to the PWM engine so it can sleep through off phases
+/// rather than spinning them.
+class KernelSleeper : public Pwm::ISleeper
+{
+public:
+    void sleepMs(uint32_t ms) override { sleepThunk(ms); }
+};
+
+KernelSleeper gSleeper;
+
 /// How long to wait for the kernel to acknowledge a backlight request. Bounded
 /// so a kernel that does not answer costs a blink rather than a stall.
 constexpr uint32_t kSendTimeoutMs = 250;
+
+/// Breadcrumb, rewritten at every rung. See Service::writeBreadcrumb.
+constexpr char kProgressPath[] = "progress.txt";
 } // namespace
 
 Service::Service(SDK::Kernel& kernel)
     : mKernel(kernel)
-    , mPwm(mPin, mClock)
+    , mPwm(mPin, mClock, &gSleeper)
 {
     gKernelForMillis = &kernel;
     mPwm.setPeriodUs(Pwm::kPeriodUs);
@@ -100,12 +117,22 @@ void Service::run()
 
 uint32_t Service::nextWaitMs() const
 {
-    // Zero is documented as NON-blocking, so returning it while driving made this
-    // loop a pure spin: burst, poll an empty queue, burst, forever, never once
-    // handing the CPU back. The GUI thread then never ran, the screen never left
-    // READY, and the watch rebooted. The yield in poll() is what gives time back
-    // now; this stays non-blocking so the burst cadence is not set by a sleep.
-    return (mState == CustomMessage::PwmState::Running) ? 0u : kIdleWaitMs;
+    if (mState != CustomMessage::PwmState::Running) {
+        return kIdleWaitMs;
+    }
+
+    // A held rung has nothing to modulate, so block here instead of returning
+    // straight back into a burst that will do nothing. Short enough that the pin
+    // is still re-asserted about fifty times a second, which is what overrides
+    // the kernel if it writes the pin during a held rung.
+    if (mLastBurstHeld) {
+        return kHeldWaitMs;
+    }
+
+    // Modulating. Zero is documented as NON-blocking, which is what made the
+    // first version a pure spin; what gives time back now is the sleep inside the
+    // off phase and the yield below it, not this.
+    return 0u;
 }
 
 void Service::poll()
@@ -132,7 +159,8 @@ void Service::poll()
         }
 
         const Pwm::BurstStats stats = mPwm.runBurst(Pwm::kBurstUs);
-        mRungOnUs += stats.onUs;
+        mRungOnUs      += stats.onUs;
+        mLastBurstHeld  = stats.held;
 
         // Hand the CPU back, every burst, without exception. This is the line
         // whose absence rebooted the watch: a burst is tens of milliseconds of
@@ -144,11 +172,17 @@ void Service::poll()
         // time spent inside bursts, so the gaps between bursts are counted. They
         // are real off-time and the light is genuinely dimmer for them; a figure
         // that ignored them would flatter the technique.
-        const uint32_t rungMs = nowMs - mRungStartedMs;
-        if (rungMs > 0u) {
-            // onUs / (rungMs * 1000) as a percentage, i.e. onUs / (rungMs * 10).
-            const uint32_t pct = mRungOnUs / (rungMs * 10u);
-            mAchievedDuty = static_cast<uint8_t>(pct > 100u ? 100u : pct);
+        if (stats.held) {
+            // Nothing was modulated, so there is no measured duty to report and
+            // the requested one is exactly what the pin is doing.
+            mAchievedDuty = mPwm.duty();
+        } else {
+            const uint32_t rungMs = nowMs - mRungStartedMs;
+            if (rungMs > 0u) {
+                // onUs / (rungMs * 1000) as a percentage, i.e. onUs / (rungMs * 10).
+                const uint32_t pct = mRungOnUs / (rungMs * 10u);
+                mAchievedDuty = static_cast<uint8_t>(pct > 100u ? 100u : pct);
+            }
         }
     }
 
@@ -175,12 +209,43 @@ void Service::poll()
     }
 }
 
+void Service::writeBreadcrumb(size_t index)
+{
+    const Pwm::Rung& rung = Pwm::ladder()[index];
+
+    char line[160];
+    const int n = std::snprintf(line, sizeof(line),
+                                "rung=%u/%u duty=%u label=%s uptime_ms=%lu cycles_per_us=%lu\n"
+                                "If this is the last line, the watch died here.\n",
+                                static_cast<unsigned>(index + 1u),
+                                static_cast<unsigned>(Pwm::ladderSize()),
+                                static_cast<unsigned>(rung.duty), rung.label,
+                                static_cast<unsigned long>(mKernel.sys.getTimeMs()),
+                                static_cast<unsigned long>(mClock.cyclesPerUs()));
+    if (n <= 0) {
+        return;
+    }
+
+    // Truncating rewrite rather than an append: only the last rung matters, and a
+    // single short write is far less likely to be caught half-done by a reboot
+    // than a growing file would be.
+    std::unique_ptr<SDK::Interface::IFile> f = mKernel.fs.file(kProgressPath);
+    if (!f || !f->open(true, true)) {
+        return;
+    }
+    size_t bw = 0;
+    f->write(line, static_cast<size_t>(n), bw);
+    f->flush();
+    f->close();
+}
+
 void Service::beginRung(size_t index)
 {
     mRung          = index;
     mRungStartedMs = mKernel.sys.getTimeMs();
     mAchievedDuty  = 0;
     mRungOnUs      = 0;
+    mLastBurstHeld = false;
 
     const Pwm::Rung& rung = Pwm::ladder()[index];
     mPwm.setDuty(rung.duty);
@@ -189,6 +254,7 @@ void Service::beginRung(size_t index)
              static_cast<unsigned>(Pwm::ladderSize()), static_cast<unsigned>(rung.duty),
              static_cast<unsigned long>(rung.holdMs), rung.label);
 
+    writeBreadcrumb(index);
     publish();
 }
 
