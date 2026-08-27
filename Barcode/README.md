@@ -287,10 +287,22 @@ bezel, so the clipping is invisible there and reached the watch twice before it
 was caught. Mask the simulator's screenshots with a 120px-radius disc first:
 
 ```sh
-convert -size 240x240 xc:black -fill white -draw "circle 119.5,119.5 119.5,-0.5" disc.png
-convert shot.png disc.png -negate -compose Multiply -composite outside.png
-convert outside.png -format "%[fx:int(mean*w*h)]" info:   # ink the bezel eats; 0 is the goal
+# The lit area, as BarcodeLayout::pixelIsLit models it: a pixel counts as lit
+# only if its centre is within 119.5 dot pitches of the centre. Half a pitch
+# inside the datasheet's active area, deliberately -- see Tests/README.md.
+python3 - <<'PY' > disc.pgm
+import sys
+rows = [bytes(255 if (2*x-239)**2 + (2*y-239)**2 <= 239**2 else 0 for x in range(240))
+        for y in range(240)]
+sys.stdout.buffer.write(b"P5\n240 240\n255\n" + b"".join(rows))
+PY
+convert disc.pgm -negate outside.png
+convert shot.png outside.png -compose Multiply -composite -format "%[fx:int(mean*w*h)]" info:
+# ^ ink the bezel eats. 0 is the goal.
 ```
+
+Do not draw the disc with ImageMagick's `-fx`: a malformed expression yields a
+uniform image, every measurement then reads 0, and it looks like a pass.
 
 Three tiers, and the id is measured with `Font::getStringWidth` rather than
 counted, because the font is proportional — `WWWWWWWWWWWW` is twelve characters
@@ -331,6 +343,57 @@ bottom row, so the analytic bound is too pessimistic:
 186 is the widest string *measured* to sit wholly inside the circle, not an
 interpolation between it and the 197 that fails. `GYMWORLD12345678` is the reason
 the third tier exists: an entirely plausible id that overflows even 18pt by 6px.
+
+### The panel, and the limit none of this can move
+
+All of the above is about fitting text on the glass. Whether the *barcode* can be
+read is a separate question with a harder answer, and it is settled by the
+hardware rather than by the layout.
+
+The panel is a Sharp **LS012B7DD06** — the `UNAview_LS012` board in
+[UNAWatch/una-hardware](https://github.com/UNAWatch/una-hardware). Table 3-1 of
+its technical literature (spec LD-29652B):
+
+| | |
+| --- | --- |
+| Screen size | 1.19 inch |
+| Active area | ⌀30.24 mm |
+| Dot configuration | 240 (H) × 240 (V) |
+| Dot pitch | **0.126 × 0.126 mm** |
+| Display mode | Normally Black, reflective with slight transmission |
+| Colours | 64 — "1 pixel has RGB each 2bit" |
+
+That last row is where the four grey levels come from, and it is a fact about the
+glass rather than about `LCD8bpp_ABGR2222`.
+
+The dot pitch is the one that hurts. A Code 128 symbol for an id of *n*
+characters is `11n + 35` modules, drawn across 200 px, so the X-dimension is
+`200 × 126 / (11n + 35)` microns:
+
+| chars | modules | X-dimension | |
+| --- | --- | --- | --- |
+| 7 | 112 | 225 µm | |
+| 8 | 123 | **204 µm** | the parkrun-shaped case, and the last one that clears the floor |
+| 9 | 134 | 188 µm | below |
+| 12 | 167 | 150 µm | below |
+| 16 | 211 | 119 µm | below |
+
+ISO/IEC 15417 puts the general minimum X-dimension at 0.19 mm (0.25 mm for
+retail scanning). **So an id of nine characters or more is already outside the
+standard, today, at any font size and whatever the anti-aliasing does.** Sixteen
+characters would need 268 px of bars and the panel is 240 px wide, so no
+rendering change reaches it — the `XDimension` tests in `Tests/` state this as a
+characterisation rather than leaving it folklore.
+
+The lever that does exist is **Code 128 Subset C**, which packs two digits per
+symbol: a 16-digit id is 123 modules rather than 211, which is 204 µm — the same
+as an eight-character id, and above the floor. The encoder is Subset B only, but
+the 107-row table in `Code128.hpp` already carries `START_C` and `CODE_C`, so it
+is encoder logic and not new data. Not implemented.
+
+Being reflective rather than emissive cuts both ways for scanning: contrast in
+daylight is paper-like, which is ideal, and in a dim room without the front light
+there is nothing to read at all.
 
 ## Buttons
 
@@ -399,6 +462,29 @@ writing it over USB. Take the root from the `Path to files created by app` line
 the app logs at startup and do not guess at it: the mock filesystem's root is a
 fixed number of `..` above the GUI directory, chosen for an app sitting inside
 the SDK tree, so out of tree it lands somewhere unrelated to this app.
+
+## Tests
+
+Host tests live in [`Tests`](Tests), covering the Code 128 encoder and its spec
+table, the geometry the barcode is drawn with, and the real `Service` driven by
+a scripted message queue:
+
+```sh
+export UNA_SDK=/path/to/una-sdk
+cd Barcode/Tests
+cmake -B build . && cmake --build build && (cd build && ctest --output-on-failure)
+```
+
+Two things worth knowing before trusting a green run, both set out in
+[the tests' own README](Tests/README.md). The barcode gets a quiet zone of ten
+*pixels* where ISO/IEC 15417 asks for ten *modules*, which is short at every id
+length anyone would use; and an id of nine characters or more is below the
+standard's minimum X-dimension, which is a property of the dot pitch and not of
+the drawing. Both are recorded as characterisation tests rather than fixed.
+
+Nothing here has seen a panel. The geometry tests can say a rectangle's corners
+are lit and what a module works out to in microns; they cannot say a scanner
+reads it.
 
 ## Status
 

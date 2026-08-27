@@ -1,0 +1,203 @@
+# Host tests
+
+Two executables, and the split between them is about what each one is *evidence*
+about rather than about what it covers.
+
+```sh
+export UNA_SDK=/path/to/una-sdk
+cd Barcode/Tests
+cmake -B build . && cmake --build build && (cd build && ctest --output-on-failure)
+```
+
+| Executable | Needs | What a pass means |
+| --- | --- | --- |
+| `barcode-pure-tests` | GoogleTest | The Code 128 encoder and its 107-row spec table are self-consistent and match the published constants, and the geometry the barcode is drawn with is honest about a round, four-level panel. No SDK, no kernel, no filesystem. |
+| `barcode-service-tests` | + kernel doubles, coreJSON, `SDK::AppConfig` | A file somebody else wrote becomes the id the GUI draws, or a stated reason it does not — and the state actually leaves the service. |
+
+## The table is the load-bearing part
+
+Before this suite, the whole of "this barcode is the right barcode" was a
+comment in `Code128.hpp` saying the 107-row pattern table had been
+*cross-checked against the published reference table on 2026-07-25* — once, by
+eye, by one person. A transposed row there is invisible: the app starts, bars
+fill the screen, they scan, and they decode to somebody else's athlete number.
+That is the exact harm [the README](../README.md) says this app must never do.
+
+There is no oracle to diff against — no second Code 128 implementation in the
+tree — so the table is held to the symbology's own structure instead:
+
+| Claim | What it catches |
+| --- | --- |
+| 107 rows, six elements each, every element 1–4 | Truncation, a stray digit |
+| Every row sums to 11 modules | Most single-element slips |
+| **Bars sum even, spaces sum odd, every row** | Code 128's self-checking property. Catches most slips that still sum to 11 — the ones the row-sum test lets through |
+| All 107 rows distinct | A duplicate is an ambiguous decode |
+| Start A/B/C and Stop match their published patterns | The table being shifted or misaligned anywhere |
+
+Plus a golden vector for `"A1"` written out width by width, and the checksum
+arithmetic for a parkrun-shaped `"A1234567"` worked by hand in the test.
+
+This is not proof the table is correct. It is a great deal more than a comment.
+
+## What the geometry tests are accountable to
+
+Two facts about the panel decide whether this app works, and the app does not
+get a vote on either. Both are now in `BarcodeLayout.hpp` where a test can
+reach them, rather than as literals in a TouchGFX view constructor.
+
+**It is round.** 240×240 is addressable; only the inscribed circle is lit. Two
+consequences the tests pin:
+
+- The widest row the model treats as lit is **238 px, not 240**, and column 0 is
+  dark everywhere. That is a conservative choice rather than a measurement: the
+  boundary sits at 119.5 dot pitches, half a pitch inside the datasheet's
+  ⌀30.24 mm active area, which is exactly 240 pitches. A pixel counts as lit
+  only if its centre is inside; the outermost pixel of the centre row has its
+  centre inside the circle but part of its area outside, and nothing available
+  here says whether it appears lit. The bezel overlaps the glass besides. So
+  "240 wide" is still the wrong number to lay anything out against — but 238 is
+  a safety margin, not a hardware fact. Nothing depends on the difference: the
+  bars, the id and the marks put zero ink outside a 119.5- *or* a 120-pitch
+  mask.
+- The white backing **fits whole**, corners included, and did not always. At
+  220×110 its four corners sat outside the lit area and the display cut the tips
+  off; 0.3.1 shrank the height to 94 — `2*sqrt(r² - halfWidth²)` at 220 wide —
+  without shrinking the quiet zone with it. `NoBackingRowIsCut` and
+  `TheWhiteBackingFitsEntirelyInsideTheLitCircle` hold it there, and
+  `EveryBarRowHasTheFullBackingWidthLit` is the one that would matter again if
+  the backing ever grew back.
+- The **id beneath the bars** is the same problem one row down, and it was got
+  wrong twice — a 15-character id put 20 pixels of ink outside the lit circle
+  and a 16-character one 64 — because the simulator draws the full square and
+  only the watch has a bezel. `IdRow` and `PagerMarks` cover what can be
+  asserted without knowing font metrics; the note in `Layout_test.cpp` says
+  what deliberately is not.
+
+**It has four levels a channel.** 8bpp ABGR2222 through `LCD8bpp_ABGR2222`,
+software rendered. Anti-aliasing a bar edge has four greys to work with, so a
+boundary landing mid-pixel steps rather than blends. This is a fact about the
+glass and not only about the framebuffer: the panel is a Sharp **LS012B7DD06**
+(the `UNAview_LS012` board in [UNAWatch/una-hardware](https://github.com/UNAWatch/una-hardware)),
+whose technical literature — spec LD-29652B — states "1 pixel has RGB each 2bit,
+the pixel can display 64 colors".
+
+**And it is physically small.** Table 3-1 of that same document gives a **0.126 mm
+dot pitch** and a **⌀30.24 mm active area** for 240×240 dots. That is the number
+that decides whether a barcode can be read at all, and the one the pixel
+arithmetic cannot see: a module 1.6 *pixels* wide sounds ample and is 0.20 *mm*
+wide, which is at the edge of what ISO/IEC 15417 contemplates. The `XDimension`
+tests are where that now lives.
+
+Tests are labelled by what a failure means:
+
+- **Invariants** — true now, must stay true. A failure is a regression.
+- **Characterisations** — true now and *should not be*. Named `CurrentlyX`,
+  carrying the standard they fall short of. A failure means somebody improved
+  it, and the test should be tightened.
+
+### What the characterisations currently say
+
+| Length | Modules | Module | Quiet zone | |
+| --- | --- | --- | --- | --- |
+| 4 | 79 | 2.53 px | 3.95 modules | short |
+| 8 (parkrun) | 123 | 1.62 px | 6.15 modules | short |
+| 12 | 167 | 1.19 px | 8.35 modules | short |
+| 15 | 200 | 1.00 px | 10 modules | whole pixels, one px wide |
+| 16 | 211 | 0.94 px | 10.55 modules | sub-pixel module |
+
+ISO/IEC 15417 wants ten modules of quiet zone. The layout gives a fixed **10
+pixels**, which is short at every length anyone would use. It only "passes" at
+15 and 16 characters, and not because the margin grew — because the module
+shrank to a pixel or less. Measured in pixels the margin looks generous; that
+is how it came to be one.
+
+The 15-character row is the tension in a single line: it is the only length
+where every module is a whole pixel and nothing is anti-aliased, and it is also
+the narrowest a bar can be. The one length that renders cleanly is the one a
+scanner has least chance of reading.
+
+## The defect these tests found, and what became of it
+
+**`"id": null` produced a scannable barcode reading `null`.** The old
+`InputConfig::getString()` never checked the JSON *type* of a value, so a
+non-string was accepted and its raw text became the id. A number was benign —
+`"id": 1234567` gave the digits the user meant — but a null gave four letters
+that scan. That is precisely the "plausible value that scans" the app's
+[README](../README.md) says must never happen.
+
+**It is fixed, by the migration rather than by a patch.** `InputConfig` was
+deleted in `5aa310c` and `SDK::AppConfig` refuses a non-string outright, so
+`null`, a number, a bool, an array and an object all now end as `NoValue` with
+no code adopted. `ANonStringIdIsRefusedRatherThanCoerced` pins all five, because
+the harm was specific and the promise is now the SDK's rather than this app's.
+
+The one cost is that an unquoted number is refused where it once worked: writing
+`1234567` without quotes gets "no codes yet" instead of a barcode. That is the
+right way round, and it is in the test so it is a decision rather than a
+surprise.
+
+The other defect this suite recorded — that the first `refresh()` on a missing
+file returned `false` without reading — went with the same deletion.
+`SDK::AppConfig` reads its file once, in its constructor, and `Service::load()`
+builds a fresh one to re-read.
+
+## What these tests are not evidence about
+
+**Not that anything renders.** Nothing here has seen a panel. The geometry
+tests can say a rectangle's corners are lit, that no bar row is cut, and what a
+module works out to in pixels — they cannot say a scanner reads it. The
+scannability numbers above are derived from geometry and the framebuffer
+format, not from putting a scanner in front of a watch. `RustGuiPoc` dumps its
+framebuffer to `fb_dump.bin` on a long press; the same trick here would give a
+real capture to point a scanner at, and that is the missing evidence.
+
+**Not that a same-size rewrite is picked up.** `refresh()` compares
+`(size, mtime)`, and the SDK's in-memory filesystem reports `utc = 0` for every
+file — so a rewrite keeping the byte count identical is invisible to these
+tests. That is not a corner case: athlete ids are fixed-width, so swapping
+`A1234567` for `A7654321` *is* a same-size rewrite, and on the watch it rests
+entirely on mtime. `SameSizeRewriteIsInvisibleToTheseTestsNotToTheWatch` pins
+the blind spot so a passing suite is not mistaken for coverage of it. Closing
+it needs a settable mtime in `Tests/Host/support/FakeFileSystem`.
+
+**Not that the table is right.** See above — the structural claims are strong
+and they are not an oracle.
+
+**Not that the encoder is a full Code 128 implementation.** It is Subset B
+only, by design. There are no Code Set A or C tests because there is no Code
+Set A or C. Adding either — worth about one extra character of headroom for a
+numeric id — would need its own vectors.
+
+## The service harness
+
+[`ServiceHarness.hpp`](ServiceHarness.hpp) is the file worth reading before
+changing `Service.cpp`. `SDK::TestSupport::StubAppComm` is virtual with a
+`getMessage()` that returns nothing and a `sendMessage()` that drops what it is
+handed; overriding both lets the test be the kernel. `Service` runs unmodified
+and does not know the harness exists.
+
+It exists for the reason SunGlance's does: a *correct* id that never reaches
+the GUI looks exactly like having no file at all, and no unit test sees the
+difference. SleepLab's glance sent nothing for weeks with every part of it
+passing its own tests.
+
+`queueAction()` is the part that earns it. Without a way to change the file
+*between* two messages, a test could only set things up before the run and
+would be asserting on a situation that never arises — the GUI resuming after
+somebody rewrote `input.json` is the whole reason `BARCODE_REQUEST` exists. The
+four tests that use it are the ones that matter:
+`PicksUpANewIdOnRequestWithoutRestarting`,
+`AFileArrivingWhileRunningIsPickedUpOnRequest`,
+`AFileGoingBadWhileRunningStopsShowingTheOldBarcode` and
+`TheFileBeingDeletedWhileRunningIsNoticed`. The third is the harmful direction:
+if the file goes bad, the app must stop drawing the id it used to have, because
+a stale barcode still scans as the wrong person.
+
+`NoPublishedStateEverPairsAProblemWithAnId` states that as a property over
+every way the file can be wrong, rather than case by case.
+
+One thing to know before editing the harness: on the watch these messages come
+from a fixed pool, so `SDK::MessageBase` deletes `operator new` and keeps its
+destructor protected — an app cannot heap-allocate one. `ScriptedMessage`
+restores both for itself, because the harness is standing in for the kernel side
+of that pool rather than for an app.

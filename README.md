@@ -71,7 +71,10 @@ kira build-app --app GpsLab --sdk /path/to/una-sdk --version 1.0.0 --out GpsLab.
 [`MapManager/Tests`](MapManager/Tests), `SleepLab` carries its sleep engine and
 storage under [`SleepLab/Tests`](SleepLab/Tests), `SunGlance` carries its solar
 core, its wording and its glance wiring under
-[`SunGlance/Tests`](SunGlance/Tests), and the three map apps share one suite
+[`SunGlance/Tests`](SunGlance/Tests), `Barcode` carries its Code 128 encoder,
+the round-panel geometry that encoder is drawn into, and the service that turns
+`input.json` into a barcode, under [`Barcode/Tests`](Barcode/Tests), and the
+three map apps share one suite
 under [`MapKit/Tests`](MapKit/Tests). `RustGuiPoc`'s tests live inside its own
 crate rather than in a `Tests/` directory — see
 [its README](RustGuiPoc/README.md#tests).

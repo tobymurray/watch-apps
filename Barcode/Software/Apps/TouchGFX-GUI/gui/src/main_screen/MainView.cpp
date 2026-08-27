@@ -4,6 +4,8 @@
 
 #include <texts/TextKeysAndLanguages.hpp>
 
+#include "BarcodeLayout.hpp"
+
 namespace
 {
 
@@ -111,20 +113,26 @@ MainView::MainView()
     , captionBuffer{}
     , promptBuffer{}
 {
-    // Sized so its corners stay inside the round panel. The screen is a 240px
-    // circle, so a rectangle centred on it may only be as tall as
-    // 2*sqrt(120^2 - halfWidth^2): at 220 wide that is 95, and the 110 this
-    // used to be put all four corners 3px into the bezel, where the display
-    // cut the tips off. 94 leaves the furthest corner at radius 119.6.
+    // Geometry lives in BarcodeLayout.hpp rather than here, because these
+    // numbers answer to the panel -- round, and four levels a channel -- and
+    // that is an argument the host tests need to be able to hold them to.
+    //
+    // The backing's height is the constrained number, not its width: the panel
+    // is a circle, so a rectangle centred on it may only be as tall as
+    // 2*sqrt(r^2 - halfWidth^2). At 220 wide that is 95, and the 110 this used
+    // to be put all four corners 3px into the bezel, where the display cut the
+    // tips off.
     //
     // Height rather than width, because the white either side of the bars is
     // the barcode's quiet zone and a scanner needs it; the white above and
     // below is decoration. Code 128 has no vertical quiet zone requirement.
-    barcodeBackground.setPosition(10, 73, 220, 94);
+    barcodeBackground.setPosition(BarcodeLayout::kBackingX, BarcodeLayout::kBackingY,
+                                  BarcodeLayout::kBackingW, BarcodeLayout::kBackingH);
     barcodeBackground.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
     add(barcodeBackground);
 
-    barcode.setPosition(20, 75, 200, 90);
+    barcode.setPosition(BarcodeLayout::kBarsX, BarcodeLayout::kBarsY,
+                        BarcodeLayout::kBarsW, BarcodeLayout::kBarsH);
     add(barcode);
 
     // Re-placed from the generated 203px-wide box: see kIdX above. The widget
