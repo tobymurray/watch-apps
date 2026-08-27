@@ -66,14 +66,15 @@ void Pf3Pin::lightOff()
     ++mEdges;
 }
 
-bool CycleClock::calibrate(uint32_t (*millis)())
+bool CycleClock::calibrate(uint32_t (*millis)(), void (*sleepMs)(uint32_t))
 {
 #if defined(SIMULATOR) || !defined(__ARM_ARCH)
     (void)millis;
+    (void)sleepMs;
     LOG_INFO("no cycle counter on this build\n");
     return false;
 #else
-    if (millis == nullptr) {
+    if (millis == nullptr || sleepMs == nullptr) {
         return false;
     }
 
@@ -87,15 +88,14 @@ bool CycleClock::calibrate(uint32_t (*millis)())
         mTouched = true;
     }
 
-    // Measure across whole millisecond ticks rather than from an arbitrary
-    // instant, so the tick's own granularity does not land inside the interval
-    // being measured.
-    const uint32_t t0 = millis();
-    while (millis() == t0) { }
+    // Sleep, do not spin. Both loops here used to be busy waits on getTimeMs()
+    // and the watch rebooted before the screen could even repaint. A quantisation
+    // error of one tick over 100 ms is under a percent, which is far better than
+    // this measurement needs and infinitely better than not yielding.
     const uint32_t startMs = millis();
     const uint32_t startCy = rd(kDwtCycnt);
 
-    while ((millis() - startMs) < kCalibrateMs) { }
+    sleepMs(kCalibrateMs);
 
     const uint32_t elapsedMs = millis() - startMs;
     const uint32_t elapsedCy = rd(kDwtCycnt) - startCy;

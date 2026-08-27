@@ -17,6 +17,20 @@
  * It is still a different category of thing from `BacklightProbe`, which only
  * ever sent a message. This one takes a pin the kernel also owns.
  *
+ * ## It must yield, and the first version did not
+ *
+ * A burst is tens of milliseconds of busy waiting. Between bursts this service
+ * calls `ISystem::yield()`, every time, without exception. The first version
+ * left that out and relied on a zero-timeout `getMessage` to hand time back;
+ * zero is documented as *non-blocking*, so nothing was ever handed back. The
+ * service thread spun, the GUI thread never ran, the screen never left READY,
+ * and the watch rebooted.
+ *
+ * Calibration has the same shape and had the same bug: it busy-waited on
+ * `getTimeMs()` rather than calling `ISystem::delay()`. Both are fixed, and both
+ * are worth remembering as one rule: an app thread that does not yield takes the
+ * whole system down with it.
+ *
  * ## What it does about that
  *
  * It asks first, in the only sense available: before touching the pin it sends a
@@ -74,8 +88,9 @@ public:
     /// burst, plus whatever bookkeeping has come due.
     void poll();
 
-    /// Message-wait period run() would use next. Zero while driving, because the
-    /// next burst should start as soon as the queue has been checked.
+    /// Message-wait period run() would use next. Non-blocking while driving, so
+    /// the burst cadence is not set by a sleep. What hands the CPU back is the
+    /// explicit yield in poll(), not this.
     uint32_t nextWaitMs() const;
 
     void publish();
@@ -86,6 +101,12 @@ private:
 
     /// How often to publish while the ladder runs.
     static constexpr uint32_t kPublishPeriodMs = 200;
+
+    /// Hard ceiling on how long this app may hold the pin, independent of the
+    /// ladder's own arithmetic. Comfortably longer than the ladder; nothing
+    /// should ever reach it. It exists so that a timing bug ends with the light
+    /// handed back rather than with the light left on.
+    static constexpr uint32_t kMaxDriveMs = 120000;
 
     SDK::Kernel& mKernel;
 
@@ -102,8 +123,14 @@ private:
     uint32_t mRungStartedMs = 0;
     uint32_t mLastPublishAtMs = 0;
 
-    /// Last burst's achieved duty, for the screen.
-    uint8_t mAchievedDuty = 0;
+    /// Achieved duty for the current rung, for the screen. Measured against the
+    /// rung's wall clock so the gaps between bursts count as the off-time they
+    /// really are.
+    uint8_t  mAchievedDuty = 0;
+    uint32_t mRungOnUs     = 0;
+
+    /// When driving began, for the cap above.
+    uint32_t mDriveStartedMs = 0;
 
     /// Whether calibration succeeded and the pin is ours to write. False means
     /// the app runs, shows why it declined, and touches nothing.

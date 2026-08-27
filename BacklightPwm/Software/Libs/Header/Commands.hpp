@@ -38,10 +38,15 @@ constexpr SDK::MessageType::Type PWM_COMMAND = 0x00000002;
 constexpr size_t kLabelMax = 24;
 
 enum class PwmState : uint8_t {
-    Idle     = 0, ///< Waiting to be told to start.
-    Running  = 1, ///< Climbing the ladder.
-    Done     = 2, ///< Finished, pin handed back.
-    Refused  = 3, ///< Will not run: no registers, or the cycle counter is dead.
+    Idle        = 0, ///< Waiting to be told to start.
+    Running     = 1, ///< Climbing the ladder.
+    Done        = 2, ///< Finished, pin handed back.
+    Refused     = 3, ///< Will not run: no registers, or the cycle counter is dead.
+
+    /// Measuring the core clock. Its own state because it blocks for a tenth of
+    /// a second, and the first version of this app sat on READY through that
+    /// with no way to tell whether the button had been seen at all.
+    Calibrating = 4,
 };
 
 enum class Command : uint8_t {

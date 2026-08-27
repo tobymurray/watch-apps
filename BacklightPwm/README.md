@@ -63,18 +63,39 @@ Two ways to do that, and this app takes the simpler one:
 The second is what a vendor should ship. The first is what proves it is worth
 shipping, and it is a great deal less machinery for a first answer.
 
-### The bursts, and why the loop returns
+### The bursts, the yield, and the reboot that taught us
 
 The obvious implementation is `while (running) { on; wait; off; wait; }`, and it
-would reboot the watch: the kernel watches app threads for liveness, and a long
-synchronous loop that never returns to the message queue is what tripped that
-watchdog when Map Manager verified a large pack.
+reboots the watch. The first version of this app did something subtler and
+rebooted it anyway, which is worth writing down because the mistake is easy to
+repeat.
 
-So `SoftPwm::runBurst()` does a bounded amount of PWM (40 ms, ten periods at
-250 Hz) and returns. The service calls it again from its own poll, with a
-zero-length message wait, so the gap between bursts is one pass through an empty
-queue and far shorter than a PWM period. If the watch ever does reboot mid-run,
-`kBurstUs` in `PwmPlan.hpp` is the number to reach for.
+`SoftPwm::runBurst()` does a bounded amount of PWM and returns, and the service
+calls it again from its own poll. That much was right. What was wrong was
+assuming the message-queue poll between bursts handed time back: the service
+asked for a **zero** message timeout, and `IAppComm::getMessage` documents zero
+as *non-blocking*. So nothing was ever handed back. The service thread spun at
+100 percent, the GUI thread never ran, the screen sat on `READY` as though the
+button had not been seen, and the liveness watchdog rebooted the watch.
+
+The fix is one line, `ISystem::yield()` after every burst, and the same lesson
+applied twice more:
+
+- **Calibration used to busy-wait** on `getTimeMs()` for 100 ms. It now calls
+  `ISystem::delay()`, which is how an app is supposed to wait.
+- **The burst is 8 ms**, not 40. That was not what caused the reboot (with no
+  yield at all, no burst length would have helped), but shorter bursts give
+  everything else a turn sooner.
+- **`CALIBRATING` is now its own screen**, because a tenth of a second of
+  blocking with no feedback is indistinguishable from a hang.
+
+One rule behind all three: an app thread that does not yield takes the whole
+system down with it. If the watch ever reboots during a run again, `kBurstUs` in
+`PwmPlan.hpp` is the first number to reduce.
+
+There is also a hard ceiling, `kMaxDriveMs`, on how long the app may hold the pin
+at all. Nothing should reach it; it exists so a timing bug ends with the light
+handed back rather than left on.
 
 ### The clock calibrates rather than assuming
 
@@ -134,8 +155,9 @@ that happen is part of the point.
 3. **Get a camera on it**, ideally with fixed exposure, or a light meter at a
    fixed distance. Take the shots the same way you took Backlight Probe's, or the
    comparison is not a comparison.
-4. **Launch BL PWM and press play (R1).** About 40 seconds. Each rung shows the
-   requested duty large, and the achieved duty next to it.
+4. **Launch BL PWM and press play (R1).** It shows `CLOCK` for a moment while it
+   measures the core frequency, then climbs. About 40 seconds. Each rung shows
+   the requested duty large, and the achieved duty next to it.
 5. **R1 again** at any point hands the pin straight back.
 
 The screen goes white while driving, for the same reason Backlight Probe's does:
@@ -152,11 +174,12 @@ that `brightness` describes something the board can already do and the firmware
 does not, and the vendor ask is one sentence long: honour the field at whatever
 granularity is convenient. No board change, no ABI change, no new message.
 
-Watch the **achieved** duty as well as the requested one. It is computed from
-microseconds actually spent with the light on, not from the request, so the gap
-between the two is the honest cost of a busy-wait PWM sharing a thread with a
-message loop. A large gap is an argument for the DMA approach rather than against
-dimming.
+Watch the **achieved** duty as well as the requested one. It is microseconds
+actually spent with the light on, divided by the rung's wall clock, so the gaps
+between bursts count as the off-time they really are. Expect it to read lower
+than the request: that difference is the honest cost of a busy-wait PWM that has
+to yield to the rest of the system, and it is an argument for the DMA approach
+rather than against dimming.
 
 ## Tests
 

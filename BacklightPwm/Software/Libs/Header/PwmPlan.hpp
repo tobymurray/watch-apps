@@ -40,12 +40,18 @@ size_t      ladderSize();
 /// a busy wait places its edges accurately.
 constexpr uint32_t kPeriodUs = 4000;
 
-/// How much PWM one service poll performs before returning to the message queue.
+/// How much PWM one service poll performs before yielding.
 ///
-/// This is the watchdog safety margin, and it is the number to reach for if the
-/// watch ever reboots during a run. Ten periods at 250 Hz. `FwDump` budgets its
-/// slices at roughly 50 ms of work for the same reason.
-constexpr uint32_t kBurstUs = 40000;
+/// The watchdog safety margin, and the number to reach for if the watch reboots
+/// during a run. Two periods at 250 Hz.
+///
+/// It was 40 ms, and the watch rebooted. That was not this value's fault (the
+/// service was not yielding at all, so no burst length would have saved it), but
+/// 8 ms is a better place to start now that it does: the shorter the burst, the
+/// sooner everything else on the system gets a turn, at the cost of a slightly
+/// larger share of each rung spent in the gaps between bursts. That cost shows
+/// up honestly in the achieved duty on screen.
+constexpr uint32_t kBurstUs = 8000;
 
 /// Auto-off asked of the kernel before the ladder starts.
 ///

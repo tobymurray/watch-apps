@@ -127,9 +127,18 @@ private:
 class CycleClock : public IClock
 {
 public:
-    /// Enables the counter if needed and measures its rate. False if the counter
-    /// will not run, in which case nothing should be driven.
-    bool calibrate(uint32_t (*millis)());
+    /**
+     * @brief Enable the counter if needed and measure its rate.
+     * @return False if the counter will not run, in which case drive nothing.
+     *
+     * Takes `sleepMs` rather than spinning on `millis`. The first version of this
+     * busy-waited on `getTimeMs()` and the watch rebooted: an app thread that
+     * never yields starves everything else, including whatever would have
+     * repainted the screen to show it was working. `ISystem::delay` hands the
+     * time back to the kernel and comes back when the interval has passed, which
+     * is what an app is supposed to do to wait.
+     */
+    bool calibrate(uint32_t (*millis)(), void (*sleepMs)(uint32_t));
 
     /// Restores DEMCR and DWT_CTRL to whatever they were before calibrate().
     void release();

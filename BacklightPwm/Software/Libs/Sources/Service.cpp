@@ -29,6 +29,13 @@ uint32_t millisThunk()
     return gKernelForMillis ? gKernelForMillis->sys.getTimeMs() : 0u;
 }
 
+void sleepThunk(uint32_t ms)
+{
+    if (gKernelForMillis) {
+        gKernelForMillis->sys.delay(ms);
+    }
+}
+
 /// How long to wait for the kernel to acknowledge a backlight request. Bounded
 /// so a kernel that does not answer costs a blink rather than a stall.
 constexpr uint32_t kSendTimeoutMs = 250;
@@ -93,9 +100,11 @@ void Service::run()
 
 uint32_t Service::nextWaitMs() const
 {
-    // Zero while driving: the queue is checked and the next burst starts at once,
-    // so the gap between bursts is a queue poll rather than a sleep. Any longer
-    // and the seams between bursts would be visible in the light.
+    // Zero is documented as NON-blocking, so returning it while driving made this
+    // loop a pure spin: burst, poll an empty queue, burst, forever, never once
+    // handing the CPU back. The GUI thread then never ran, the screen never left
+    // READY, and the watch rebooted. The yield in poll() is what gives time back
+    // now; this stays non-blocking so the burst cadence is not set by a sleep.
     return (mState == CustomMessage::PwmState::Running) ? 0u : kIdleWaitMs;
 }
 
@@ -109,9 +118,37 @@ void Service::poll()
     const Pwm::Rung& rung = Pwm::ladder()[mRung];
 
     if (mDriving) {
+        // A hard ceiling on how long this app may hold the pin, independent of
+        // the ladder's own arithmetic. Nothing should reach it; if anything ever
+        // does, the light goes back to the kernel rather than staying on because
+        // a rung's timing went wrong.
+        if ((nowMs - mDriveStartedMs) > kMaxDriveMs) {
+            LOG_INFO("drive cap of %lu ms reached, handing the pin back\n",
+                     static_cast<unsigned long>(kMaxDriveMs));
+            handOverPin();
+            mState = CustomMessage::PwmState::Done;
+            publish();
+            return;
+        }
+
         const Pwm::BurstStats stats = mPwm.runBurst(Pwm::kBurstUs);
-        if (stats.totalUs > 0u) {
-            mAchievedDuty = stats.achievedPercent();
+        mRungOnUs += stats.onUs;
+
+        // Hand the CPU back, every burst, without exception. This is the line
+        // whose absence rebooted the watch: a burst is tens of milliseconds of
+        // busy waiting, and without a yield between them nothing else on the
+        // system ever runs.
+        mKernel.sys.yield();
+
+        // Duty measured against the rung's wall clock rather than against the
+        // time spent inside bursts, so the gaps between bursts are counted. They
+        // are real off-time and the light is genuinely dimmer for them; a figure
+        // that ignored them would flatter the technique.
+        const uint32_t rungMs = nowMs - mRungStartedMs;
+        if (rungMs > 0u) {
+            // onUs / (rungMs * 1000) as a percentage, i.e. onUs / (rungMs * 10).
+            const uint32_t pct = mRungOnUs / (rungMs * 10u);
+            mAchievedDuty = static_cast<uint8_t>(pct > 100u ? 100u : pct);
         }
     }
 
@@ -143,6 +180,7 @@ void Service::beginRung(size_t index)
     mRung          = index;
     mRungStartedMs = mKernel.sys.getTimeMs();
     mAchievedDuty  = 0;
+    mRungOnUs      = 0;
 
     const Pwm::Rung& rung = Pwm::ladder()[index];
     mPwm.setDuty(rung.duty);
@@ -177,10 +215,16 @@ void Service::handleStart()
         return;
     }
 
+    // Say so on screen before blocking for a tenth of a second. When this froze
+    // on READY there was no way to tell from the watch whether the button had
+    // even been seen.
+    mState = CustomMessage::PwmState::Calibrating;
+    publish();
+
     // Calibrate before anything is driven. A PWM timed off a counter that is not
     // running would produce a waveform nobody could vouch for, and it would look
     // like a result rather than like a failure.
-    if (!mClock.calibrate(&millisThunk)) {
+    if (!mClock.calibrate(&millisThunk, &sleepThunk)) {
         LOG_INFO("start refused: cycle counter would not calibrate\n");
         mState   = CustomMessage::PwmState::Refused;
         mDriving = false;
@@ -192,8 +236,9 @@ void Service::handleStart()
     // turn the light off underneath us for the whole run.
     askKernelToHoldLight();
 
-    mDriving = true;
-    mState   = CustomMessage::PwmState::Running;
+    mDriving        = true;
+    mDriveStartedMs = mKernel.sys.getTimeMs();
+    mState          = CustomMessage::PwmState::Running;
     beginRung(0);
 }
 

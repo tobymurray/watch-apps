@@ -250,6 +250,19 @@ void MainView::refresh()
             setLine(mHint2, mHint2Buf, "relaunch to run again");
             break;
 
+        case CustomMessage::PwmState::Calibrating:
+            // Brief, but it has to exist: this state is a tenth of a second of
+            // blocking, and without it the screen sat on READY looking as though
+            // the button had not been seen.
+            setLine(mTitle, mTitleBuf, "BACKLIGHT PWM");
+            setLine(mHeadline, mHeadlineBuf, "CLOCK");
+            setBar(false, 0, 0);
+            setLine(mDetail, mDetailBuf, "measuring core clock");
+            setLine(mDetail2, mDetail2Buf, " ");
+            setLine(mHint, mHintBuf, "one moment");
+            setLine(mHint2, mHint2Buf, " ");
+            break;
+
         case CustomMessage::PwmState::Refused:
             // Never looks like a run. This is the state a host or simulator
             // build sits in permanently, and the state a device build reaches
