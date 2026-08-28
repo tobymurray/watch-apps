@@ -113,16 +113,25 @@ inline size_t digitRun(const char *text, size_t at, size_t length)
  * fewer symbols is a *wider* module and a wider module is the one thing that
  * decides whether this app's barcode can be read at all. `BarcodeLayout.hpp`
  * has the arithmetic: at 8 characters of subset B the module comes out at
- * 0.205 mm, which is above ISO/IEC 15417's 0.19 mm general minimum and well
- * below the 0.25 mm retail floor. Every symbol saved is about 8% back.
+ * 0.205 mm. Every symbol saved is about 8% back.
+ *
+ * **There is nothing in ISO/IEC 15417 to compare that against.** An earlier
+ * version of this comment said 0.205 mm was "above ISO/IEC 15417's 0.19 mm
+ * general minimum and well below the 0.25 mm retail floor", and named the
+ * retail floor again below. Both figures were wrong and f92e1ce retracted them
+ * from the README and BarcodeLayout.hpp -- the standard leaves X-dimension
+ * among "the parameters to be defined by applications" and sets no floor. This
+ * comment was missed by that retraction. What survives is scanner capability:
+ * 127 um (5 mil) as the low end of scanner-selection guidance for a
+ * mid-density symbology, and 76 um (3 mil) from Zebra's LS2208 spec sheet.
  *
  * Subset C halves the symbols a digit run costs. Two examples, both real:
  *
  *   - `12345678`, a membership number: 123 modules in B, 79 in C. The module
- *     goes 0.205 mm -> 0.319 mm, clearing the retail floor outright.
+ *     goes 0.205 mm -> 0.319 mm, comfortably past the 5 mil line.
  *   - `A1234567`, a parkrun athlete id: 123 modules -> 101, because the `A`
  *     and the odd leading digit stay in B and the remaining six pair up.
- *     0.205 mm -> 0.249 mm, which is a 19% wider bar and *just* misses retail.
+ *     0.205 mm -> 0.249 mm, a 19% wider bar.
  *
  * ## Why this is not a compatibility risk
  *
