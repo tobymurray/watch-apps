@@ -14,6 +14,7 @@ than living inside it.
 | [`Chrono`](Chrono) | The SDK's Stopwatch example backported to SDK 1.3, which upstream never had a build of — so it launches on a watch whose kernel is still on interface version 2. |
 | [`GpsLab`](GpsLab) | The Running activity plus GNSS instrumentation — per-sample error estimate, fix and dead-reckoning state, recorded alongside the activity. |
 | [`HikeMap`](HikeMap) | The stock Hiking activity with the same live map. |
+| [`MagProbe`](MagProbe) | Can this watch be a compass? A `Utility` app that asks `MAGNETIC_FIELD` whether anything is behind it, discovers what its frames contain since it ships no parser, decides whether the numbers could be a magnetic field, and computes a tilt-compensated heading. The part itself is the least confirmed thing in the hardware inventory. |
 | [`MapManager`](MapManager) | A background, autostart `Utility` app that discovers and CRC-verifies offline map packs dropped into the shared `SharedData/maps/` directory, so map-consuming apps read from one already-verified location instead of each running their own copy of this pipeline. |
 | [`RunMap`](RunMap) | The stock Running activity with the same live map. |
 | [`RustGuiPoc`](RustGuiPoc) | A proof of concept: a watch app whose GUI is drawn by Rust and `embedded-graphics` through the SDK's CustomGUI entry point, instead of TouchGFX. It shows a live accelerometer reading, which a GUI process cannot read on its own, so the Service half feeds it over the message bus. |
