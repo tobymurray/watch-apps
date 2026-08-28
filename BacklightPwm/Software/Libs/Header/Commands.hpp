@@ -70,6 +70,16 @@ struct PwmStatus : public SDK::MessageBase {
     uint32_t periods;        ///< Complete PWM periods emitted so far.
     uint32_t cyclesPerUs;    ///< Measured core clock. 0 if calibration failed.
 
+    /// Milliseconds since the run began. Drawn on screen so a video of the watch
+    /// can be lined up against the results file without guessing where the run
+    /// started; both are in the same kernel uptime.
+    uint32_t runElapsedMs;
+
+    /// Bursts where GPIOF ODR disagreed with what the app last wrote, i.e. where
+    /// the kernel wrote the pin. Shown live because on the contest rungs it is
+    /// the thing worth watching.
+    uint32_t kernelWrites;
+
     uint16_t rungIndex;
     uint16_t rungCount;
 
@@ -90,6 +100,8 @@ struct PwmStatus : public SDK::MessageBase {
         , edges(0)
         , periods(0)
         , cyclesPerUs(0)
+        , runElapsedMs(0)
+        , kernelWrites(0)
         , rungIndex(0)
         , rungCount(0)
         , requestedDuty(0)

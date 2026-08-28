@@ -140,12 +140,55 @@ part of the sleeping experiment worth keeping.
 If it reboots again, `kBurstUs` in `PwmPlan.hpp` is the first number to reduce,
 and shortening the rung holds is the second.
 
-### Finding out where it died
+## What a run leaves behind
 
-`Apps/BacklightPwm/progress.txt` is rewritten and flushed at every rung, naming
-the rung about to start. A reboot takes the log with it unless a dev tool happened
-to be capturing UART; the file survives, so plug in afterwards and read it. If the
-last line names a rung, that is where the watch died.
+Two files in `Apps/BacklightPwm/`, both written as the run happens rather than at
+the end, because the failure mode being chased is a reboot and an unflushed tail
+is the part of the experiment nobody has.
+
+**`backlight_pwm.txt`** is the record: per rung, what duty was requested, what was
+achieved, how many periods and edges, how long it took, and how many times the
+kernel wrote the pin. It also carries the **measured core clock**, which is worth
+more than this app: the 2026-07-29 investigation captured RCC three times and
+never decoded MSIRANGE or the PLL, so the clock tree was left open in its ledger.
+This app has to measure the core frequency to place its edges, so it writes the
+answer down.
+
+**`progress.txt`** is one line, rewritten per rung, naming the rung about to
+start. If the watch dies, that is where.
+
+The screen carries a **run clock** (`t12.3`) alongside the rung and the measured
+MHz. Both it and the results file count the same kernel uptime, so a video can be
+lined up against the file afterwards without guessing where the run began.
+
+## The contest: what happens when both own the pin
+
+The brief gated this whole phase on a question no amount of quiet running answers:
+what does the kernel do when an app is driving a pin the kernel also owns.
+
+Every burst, the app reads `GPIOF ODR` back and compares it with what it last
+wrote. `BSRR` is write only, but `ODR` reflects whatever was last written **by
+anyone**, so a disagreement sampled at a moment the app knows its own last write
+means something else wrote it, and the only other writer is the kernel. Those are
+counted per rung, with the timestamp of the first, and shown live on screen as
+`krn`.
+
+Two rungs at the end provoke it deliberately, and they are last so that a death
+there still leaves the ladder filmed and written down:
+
+- **`contest_autooff`** asks the kernel for full brightness with a **two second**
+  auto-off, then keeps modulating at 50 percent for ten. Two seconds in, the
+  kernel's own timer fires and writes the pin off. Does the next burst overwrite
+  it, or does the light stay dark?
+- **`contest_off`** is blunter: the kernel is told the backlight should be off
+  while the app carries on driving it. If the light stays visible, an app can hold
+  this pin against the kernel's stated intent. If it goes dark and stays dark, it
+  cannot, and that is the honest ceiling on the technique.
+
+Either answer is a result. `kernel_writes = 0` on those rungs would mean the app
+held the pin unopposed; a non-zero count with a still-visible light means both are
+writing and the app wins on frequency; a non-zero count with a dark light means
+the kernel wins.
 
 There is also a hard ceiling, `kMaxDriveMs`, on how long the app may hold the pin
 at all. Nothing should reach it; it exists so a timing bug ends with the light

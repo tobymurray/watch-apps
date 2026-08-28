@@ -99,8 +99,28 @@ public:
     /// produced no light can be told apart from one that never wrote anything.
     uint32_t edges() const { return mEdges; }
 
+    /**
+     * @brief What `GPIOF ODR` bit 3 currently says, as a light state.
+     *
+     * The pin is active low, so this returns true when the bit is clear.
+     *
+     * The only read in the app, and it exists to catch the kernel. `BSRR` is
+     * write only, but `ODR` reflects whatever was last written to the pin **by
+     * anyone**. Sampled at a moment when this app knows what it last wrote, a
+     * disagreement means something else wrote it, and the only other writer is
+     * the kernel's own backlight logic.
+     *
+     * That makes it the detector for the question this whole phase was gated on:
+     * what actually happens when an app and the kernel both own a pin.
+     */
+    bool lightOnPerOdr() const;
+
+    /// What this app last commanded, to compare against the above.
+    bool lastCommandedOn() const { return mLastCommandedOn; }
+
 private:
     uint32_t mEdges = 0;
+    bool     mLastCommandedOn = false;
 };
 
 /**

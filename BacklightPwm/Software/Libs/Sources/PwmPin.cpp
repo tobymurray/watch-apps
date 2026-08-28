@@ -19,8 +19,10 @@ constexpr bool kHasRegisters = false;
 #else
 constexpr bool kHasRegisters = true;
 
-/// GPIOF base 0x42021400, confirmed by the 2026-08-27 sweep; BSRR at offset 0x18.
+/// GPIOF base 0x42021400, confirmed by the 2026-08-27 sweep. BSRR at offset
+/// 0x18, ODR at 0x14.
 constexpr uint32_t kGpiofBsrr = 0x42021418u;
+constexpr uint32_t kGpiofOdr  = 0x42021414u;
 
 /// PF3. BR (bit reset, upper half) drives the pin low, which lights the LED
 /// because the FET it gates is P-channel. BS (bit set) releases it.
@@ -69,6 +71,7 @@ void Pf3Pin::lightOn()
 #if !defined(SIMULATOR) && defined(__ARM_ARCH)
     wr(kGpiofBsrr, kBr3);
 #endif
+    mLastCommandedOn = true;
     ++mEdges;
 }
 
@@ -77,7 +80,19 @@ void Pf3Pin::lightOff()
 #if !defined(SIMULATOR) && defined(__ARM_ARCH)
     wr(kGpiofBsrr, kBs3);
 #endif
+    mLastCommandedOn = false;
     ++mEdges;
+}
+
+bool Pf3Pin::lightOnPerOdr() const
+{
+#if defined(SIMULATOR) || !defined(__ARM_ARCH)
+    // No register to read. Returning the commanded state means the detector
+    // reports no disagreement rather than a fabricated one.
+    return mLastCommandedOn;
+#else
+    return (rd(kGpiofOdr) & kBs3) == 0u; // Active low.
+#endif
 }
 
 bool CycleClock::calibrate(uint32_t (*millis)(), void (*sleepMs)(uint32_t))

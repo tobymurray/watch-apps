@@ -49,7 +49,9 @@ public:
         uint32_t holdMs      = 0;
         uint32_t edges       = 0;
         uint32_t periods     = 0;
-        uint32_t cyclesPerUs = 0;
+        uint32_t cyclesPerUs  = 0;
+        uint32_t runElapsedMs = 0;
+        uint32_t kernelWrites = 0;
 
         uint16_t rungIndex = 0;
         uint16_t rungCount = 0;

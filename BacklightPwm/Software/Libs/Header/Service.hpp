@@ -67,10 +67,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+
+#include "SDK/Interfaces/IFileSystem.hpp"
 
 #include "SDK/Kernel/Kernel.hpp"
 
 #include "Commands.hpp"
+#include "PwmLog.hpp"
 #include "PwmPin.hpp"
 #include "PwmPlan.hpp"
 #include "SoftPwm.hpp"
@@ -140,6 +144,25 @@ private:
     /// Whether the last burst simply held a level. Decides whether the loop
     /// blocks on the message queue or comes straight back for more modulation.
     bool mLastBurstHeld = false;
+
+    /// Held open for the whole run and flushed per line, so an app stopped
+    /// mid-experiment still leaves everything up to that point on disk.
+    std::unique_ptr<SDK::Interface::IFile> mResultsFile;
+    std::unique_ptr<Pwm::PwmLog>           mLog;
+
+    /// Gathered as the current rung runs, written out when it ends.
+    Pwm::RungResult mResult;
+
+    uint32_t mTotalKernelWrites = 0;
+
+    void openResults();
+
+    /// Sample GPIOF ODR and compare with what this app last wrote. A
+    /// disagreement means the kernel wrote the pin. Called once per burst.
+    void checkForKernelWrite(uint32_t nowMs);
+
+    /// Perform whatever this rung asks of the kernel as it begins.
+    void applyKernelAsk(Pwm::KernelAsk ask);
 
     /// Whether calibration succeeded and the pin is ours to write. False means
     /// the app runs, shows why it declined, and touches nothing.

@@ -47,6 +47,9 @@ constexpr uint32_t kSendTimeoutMs = 250;
 
 /// Breadcrumb, rewritten at every rung. See Service::writeBreadcrumb.
 constexpr char kProgressPath[] = "progress.txt";
+
+/// The full record. See PwmLog.hpp.
+constexpr char kResultsPath[] = "backlight_pwm.txt";
 } // namespace
 
 Service::Service(SDK::Kernel& kernel)
@@ -57,9 +60,24 @@ Service::Service(SDK::Kernel& kernel)
     mPwm.setPeriodUs(Pwm::kPeriodUs);
 }
 
+void Service::openResults()
+{
+    mResultsFile = mKernel.fs.file(kResultsPath);
+    if (!mResultsFile || !mResultsFile->open(true, true)) {
+        // Not fatal: the run still happens and still logs. A run whose record
+        // only reached a UART capture is worth more than no run.
+        LOG_INFO("could not open %s\n", kResultsPath);
+        mResultsFile.reset();
+        return;
+    }
+    mLog = std::make_unique<Pwm::PwmLog>(*mResultsFile);
+}
+
 void Service::run()
 {
     LOG_INFO("started\n");
+
+    openResults();
 
     if (!Pwm::available()) {
         // The host and simulator builds have no GPIOF and no cycle counter. The
@@ -153,6 +171,10 @@ void Service::poll()
         mRungOnUs      += stats.onUs;
         mLastBurstHeld  = stats.held;
 
+        // Read the pin back before yielding, while what this app last wrote is
+        // still the most recent thing anyone wrote. See checkForKernelWrite.
+        checkForKernelWrite(nowMs);
+
         // Hand the CPU back, every burst, without exception. This is the line
         // whose absence rebooted the watch: a burst is tens of milliseconds of
         // busy waiting, and without a yield between them nothing else on the
@@ -178,6 +200,14 @@ void Service::poll()
     }
 
     if ((nowMs - mRungStartedMs) >= rung.holdMs) {
+        mResult.achieved  = mAchievedDuty;
+        mResult.periods   = mPwm.totals().periods;
+        mResult.edges     = mPin.edges();
+        mResult.elapsedMs = nowMs - mRungStartedMs;
+        if (mLog) {
+            mLog->rungDone(mResult, rung);
+        }
+
         if ((mRung + 1u) < Pwm::ladderSize()) {
             beginRung(mRung + 1u);
         } else {
@@ -185,6 +215,10 @@ void Service::poll()
                      static_cast<unsigned long>(mPwm.totals().periods),
                      static_cast<unsigned long>(mPwm.totals().edges));
             handOverPin();
+            if (mLog) {
+                mLog->footer(mKernel.sys.getTimeMs(), mPwm.totals().periods, mPin.edges(),
+                             mTotalKernelWrites);
+            }
             mState = CustomMessage::PwmState::Done;
             publish();
             return;
@@ -241,12 +275,73 @@ void Service::beginRung(size_t index)
     const Pwm::Rung& rung = Pwm::ladder()[index];
     mPwm.setDuty(rung.duty);
 
+    mResult             = Pwm::RungResult{};
+    mResult.index       = index;
+    mResult.requested   = rung.duty;
+    mResult.startedAtMs = mRungStartedMs;
+
+    // Whatever this rung wants the kernel to believe, said before the first
+    // burst so the contest starts from a known state.
+    applyKernelAsk(rung.ask);
+
+    if (mLog) {
+        mLog->rungBegan(index, rung, mRungStartedMs);
+    }
+
     LOG_INFO("rung %u/%u duty=%u%% for %lu ms (%s)\n", static_cast<unsigned>(index + 1u),
              static_cast<unsigned>(Pwm::ladderSize()), static_cast<unsigned>(rung.duty),
              static_cast<unsigned long>(rung.holdMs), rung.label);
 
     writeBreadcrumb(index);
     publish();
+}
+
+void Service::applyKernelAsk(Pwm::KernelAsk ask)
+{
+    switch (ask) {
+        case Pwm::KernelAsk::Nothing:
+            return;
+
+        case Pwm::KernelAsk::HoldOn:
+            askKernelToHoldLight();
+            return;
+
+        case Pwm::KernelAsk::ShortAutoOff: {
+            const Backlight::Outcome o =
+                Backlight::request(mKernel, 100, Pwm::kShortAutoOffMs, kSendTimeoutMs);
+            LOG_INFO("contest: kernel asked for on with %lu ms auto-off, result=%s\n",
+                     static_cast<unsigned long>(Pwm::kShortAutoOffMs),
+                     Backlight::resultName(o.result));
+            return;
+        }
+
+        case Pwm::KernelAsk::TurnOff: {
+            const Backlight::Outcome o = Backlight::request(mKernel, 0, 0, kSendTimeoutMs);
+            LOG_INFO("contest: kernel told backlight off, result=%s\n",
+                     Backlight::resultName(o.result));
+            return;
+        }
+    }
+}
+
+void Service::checkForKernelWrite(uint32_t nowMs)
+{
+    ++mResult.samples;
+
+    // Sampled at a burst boundary, where this app knows exactly what it last
+    // wrote. Any disagreement is somebody else's write, and the only other
+    // writer is the kernel.
+    if (mPin.lightOnPerOdr() == mPin.lastCommandedOn()) {
+        return;
+    }
+
+    ++mResult.kernelWrites;
+    ++mTotalKernelWrites;
+    if (mResult.firstKernelWriteMs == 0u) {
+        mResult.firstKernelWriteMs = nowMs;
+        LOG_INFO("kernel wrote PF3 at %lu ms (we had it %s)\n",
+                 static_cast<unsigned long>(nowMs), mPin.lastCommandedOn() ? "on" : "off");
+    }
 }
 
 void Service::askKernelToHoldLight()
@@ -267,6 +362,9 @@ void Service::handleStart()
 
     if (!Pwm::available()) {
         LOG_INFO("start refused: no registers on this build\n");
+        if (mLog) {
+            mLog->refused("no peripheral registers on this build");
+        }
         mState = CustomMessage::PwmState::Refused;
         publish();
         return;
@@ -283,10 +381,18 @@ void Service::handleStart()
     // like a result rather than like a failure.
     if (!mClock.calibrate(&millisThunk, &sleepThunk)) {
         LOG_INFO("start refused: cycle counter would not calibrate\n");
+        if (mLog) {
+            mLog->refused("cycle counter would not calibrate to a plausible clock");
+        }
         mState   = CustomMessage::PwmState::Refused;
         mDriving = false;
         publish();
         return;
+    }
+
+    if (mLog) {
+        mLog->header(mKernel.sys.getTimeMs(), true, mClock.cyclesPerUs(), Pwm::kPeriodUs,
+                     Pwm::kBurstUs, Pwm::ladderSize());
     }
 
     // Put the kernel's own state machine into "on" first, so it is not trying to
@@ -332,6 +438,10 @@ void Service::handleCommand(SDK::MessageBase* msg)
         case CustomMessage::Command::Stop:
             LOG_INFO("stop requested\n");
             handOverPin();
+            if (mLog) {
+                mLog->footer(mKernel.sys.getTimeMs(), mPwm.totals().periods, mPin.edges(),
+                             mTotalKernelWrites);
+            }
             mState = CustomMessage::PwmState::Done;
             publish();
             break;
@@ -362,7 +472,9 @@ void Service::publish()
     guard->holdMs      = rung.holdMs;
     guard->edges       = mPwm.totals().edges;
     guard->periods     = mPwm.totals().periods;
-    guard->cyclesPerUs = mClock.cyclesPerUs();
+    guard->cyclesPerUs  = mClock.cyclesPerUs();
+    guard->runElapsedMs = (mDriveStartedMs != 0u) ? (mKernel.sys.getTimeMs() - mDriveStartedMs) : 0u;
+    guard->kernelWrites = mTotalKernelWrites;
 
     guard->rungIndex = static_cast<uint16_t>(mRung);
     guard->rungCount = static_cast<uint16_t>(Pwm::ladderSize());

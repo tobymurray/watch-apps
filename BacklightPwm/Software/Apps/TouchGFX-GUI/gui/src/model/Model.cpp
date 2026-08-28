@@ -145,6 +145,8 @@ bool Model::customMessageHandler(SDK::MessageBase* msg)
     mStatus.edges         = status->edges;
     mStatus.periods       = status->periods;
     mStatus.cyclesPerUs   = status->cyclesPerUs;
+    mStatus.runElapsedMs  = status->runElapsedMs;
+    mStatus.kernelWrites  = status->kernelWrites;
     mStatus.rungIndex     = status->rungIndex;
     mStatus.rungCount     = status->rungCount;
     mStatus.requestedDuty = status->requestedDuty;

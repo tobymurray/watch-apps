@@ -26,10 +26,24 @@
 namespace Pwm
 {
 
+/// What to tell the kernel as a rung begins.
+///
+/// The ladder itself wants the kernel quiet and out of the way. The contest
+/// rungs at the end deliberately provoke it, because "what happens when the app
+/// and the kernel both own this pin" is the question Phase E existed to answer
+/// and no amount of quiet running answers it.
+enum class KernelAsk : uint8_t {
+    Nothing      = 0, ///< Leave the kernel's backlight state as it is.
+    HoldOn       = 1, ///< Ask for full brightness with a ten minute auto-off.
+    ShortAutoOff = 2, ///< Ask for full brightness with a two second auto-off.
+    TurnOff      = 3, ///< Tell the kernel the backlight should be off.
+};
+
 struct Rung {
     uint8_t     duty;   ///< Percent on, matching RequestBacklightSet::brightness.
     uint32_t    holdMs; ///< How long to sit here, for the camera or the meter.
     const char* label;
+    KernelAsk   ask;    ///< Sent to the kernel as the rung begins.
 };
 
 const Rung* ladder();
@@ -52,6 +66,10 @@ constexpr uint32_t kPeriodUs = 4000;
 /// larger share of each rung spent in the gaps between bursts. That cost shows
 /// up honestly in the achieved duty on screen.
 constexpr uint32_t kBurstUs = 8000;
+
+/// The short auto-off used by the contest rung. Two seconds into a ten second
+/// rung, so the expiry lands in the middle of it with plenty of run either side.
+constexpr uint32_t kShortAutoOffMs = 2000;
 
 /// Auto-off asked of the kernel before the ladder starts.
 ///

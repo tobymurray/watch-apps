@@ -214,10 +214,15 @@ void MainView::refresh()
             break;
 
         case CustomMessage::PwmState::Running: {
-            setLine(mTitle, mTitleBuf, "%02u/%02u  %lu MHz",
+            // Rung, measured core clock, and seconds since the run began. The
+            // last of those is what lets a video be lined up against the results
+            // file afterwards: both count the same kernel uptime.
+            setLine(mTitle, mTitleBuf, "%02u/%02u %luMHz t%lu.%lu",
                     static_cast<unsigned>(status.rungIndex + 1),
                     static_cast<unsigned>(status.rungCount),
-                    static_cast<unsigned long>(status.cyclesPerUs));
+                    static_cast<unsigned long>(status.cyclesPerUs),
+                    static_cast<unsigned long>(status.runElapsedMs / 1000u),
+                    static_cast<unsigned long>((status.runElapsedMs % 1000u) / 100u));
 
             // The requested duty, big. This is the number to photograph next to
             // the light.
@@ -228,9 +233,9 @@ void MainView::refresh()
             // Achieved next to requested, never instead of it. The gap is the
             // measure of what a busy-wait PWM sharing a thread with a message
             // loop actually delivers.
-            setLine(mDetail, mDetailBuf, "got %u%%  %lu periods",
+            setLine(mDetail, mDetailBuf, "got %u%%  krn %lu",
                     static_cast<unsigned>(status.achievedDuty),
-                    static_cast<unsigned long>(status.periods));
+                    static_cast<unsigned long>(status.kernelWrites));
             setLine(mDetail2, mDetail2Buf, "%s", status.label);
 
             setLine(mHint, mHintBuf, "meter or photograph");
