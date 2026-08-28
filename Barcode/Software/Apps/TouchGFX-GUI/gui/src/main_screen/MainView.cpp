@@ -243,7 +243,7 @@ void MainView::showBarcode()
 {
     const Barcode::Code &code = mState.codes[mIndex];
 
-    barcode.setCode(code.id);
+    barcode.setCode(code.format, code.id);
 
     // layOutId fills idBuffer -- with the whole id, or with its first half when
     // it has to split -- so nothing else may write that buffer.

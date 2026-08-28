@@ -99,10 +99,12 @@ Tests are labelled by what a failure means:
 
 ### What the characterisations currently say
 
+Alphabetic ids, which subset C cannot help — one symbol per character:
+
 | Length | Modules | Module | Quiet zone | |
 | --- | --- | --- | --- | --- |
 | 4 | 79 | 2.53 px | 3.95 modules | short |
-| 8 (parkrun) | 123 | 1.62 px | 6.15 modules | short |
+| 8 | 123 | 1.62 px | 6.15 modules | short |
 | 12 | 167 | 1.19 px | 8.35 modules | short |
 | 15 | 200 | 1.00 px | 10 modules | whole pixels, one px wide |
 | 16 | 211 | 0.94 px | 10.55 modules | sub-pixel module |
@@ -117,6 +119,42 @@ The 15-character row is the tension in a single line: it is the only length
 where every module is a whole pixel and nothing is anti-aliased, and it is also
 the narrowest a bar can be. The one length that renders cleanly is the one a
 scanner has least chance of reading.
+
+### Subset C, and the parity nobody expects
+
+Numeric ids go through subset C, which packs a digit pair into one symbol — the
+5,5-modules-per-numeric-character figure the standard gives, against 11 for a
+Subset B character. Against the 127 µm (5 mil) mid-density line:
+
+| Digits | Modules | X-dim | | Digits | Modules | X-dim |
+| --- | --- | --- | --- | --- | --- | --- |
+| 8 | 79 | 318 µm | | 9 | 101 | 249 µm |
+| 10 | 90 | 280 µm | | 11 | 112 | 225 µm |
+| 12 | 101 | 249 µm | | 13 | 123 | 204 µm |
+| 14 | 112 | 225 µm | | 15 | 134 | **188 µm** |
+| 16 | 123 | 204 µm | | | | |
+
+**Every numeric length clears 5 mil**, including fifteen and sixteen digits —
+the two lengths that fall just under it when they are letters. That is the
+whole of what subset C bought, and `EveryNumericIdLengthClearsMidDensity` is
+where it is claimed.
+
+Read down the odd column, though, and something is wrong with the intuition:
+**adding a digit to an odd-length numeric id makes the barcode narrower.** Nine
+digits are 101 modules and ten are 90. Fifteen are 134 and sixteen are 123.
+
+An odd count strands a digit that cannot be paired, and carrying it costs a
+symbol of its own *plus* a switch back into subset B — two symbols to say what
+a pair says in one. There is no encoding that avoids it; it is a property of
+pairing, not an optimisation the encoder is missing. So fifteen digits is the
+worst case in the whole numeric range, and sixteen digits are comfortably
+better than fifteen.
+
+A parkrun id — a letter and seven digits — is the shape subset C helps least,
+since the letter and the odd leading digit both stay in subset B. 123 modules
+become 101: 204 µm to 249 µm, about 8.0 mil to 9.8 mil. Worth a test of its
+own because `AParkrunIdIsComfortablyAboveMidDensity` measures eight *letters*,
+which is the pessimistic stand-in rather than the id people actually carry.
 
 ## The defect these tests found, and what became of it
 
@@ -165,10 +203,16 @@ it needs a settable mtime in `Tests/Host/support/FakeFileSystem`.
 **Not that the table is right.** See above — the structural claims are strong
 and they are not an oracle.
 
-**Not that the encoder is a full Code 128 implementation.** It is Subset B
-only, by design. There are no Code Set A or C tests because there is no Code
-Set A or C. Adding either — worth about one extra character of headroom for a
-numeric id — would need its own vectors.
+**Not that the encoder is a full Code 128 implementation.** Subsets B and C
+only — there is no Code Set A, so there are no Code Set A tests, and nothing
+here is evidence about FNC characters, Shift, or the extended-ASCII escapes.
+None of those has a use in an id.
+
+This paragraph used to say Subset C was worth "about one extra character of
+headroom for a numeric id", which was the wrong way to value it. Headroom was
+never the constraint; the module width was. On a 16-digit id Subset C is worth
+0.085 mm of X-dimension — 119 µm to 204 µm, which is the difference between
+falling under the 5 mil line and clearing it comfortably.
 
 ## The service harness
 

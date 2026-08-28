@@ -1,5 +1,7 @@
 #include <gui/containers/BarcodeWidget.hpp>
 
+#include "Symbology.hpp"
+
 BarcodeWidget::BarcodeWidget()
     : encoded{}
 {
@@ -7,10 +9,10 @@ BarcodeWidget::BarcodeWidget()
     setPainter(painter);
 }
 
-bool BarcodeWidget::setCode(const char *text)
+bool BarcodeWidget::setCode(Barcode::Format format, const char *text)
 {
-    Code128::Encoded next{};
-    if (!Code128::encode(text, next)) {
+    Barcode::Encoded next{};
+    if (!Barcode::encode(format, text, next)) {
         return false;
     }
 

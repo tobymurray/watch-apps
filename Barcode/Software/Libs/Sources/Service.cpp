@@ -3,7 +3,7 @@
 #include <cstring>
 
 #include "AppConfigFields.hpp"
-#include "Code128.hpp"
+#include "Symbology.hpp"
 
 #define LOG_MODULE_PRX      "Service"
 #define LOG_MODULE_LEVEL    LOG_LEVEL_INFO
@@ -22,8 +22,8 @@ static_assert(Barcode::kConfigMaxLength > Barcode::kMaxIdLength,
 
 namespace {
 
-/// Everything Code 128 subset B can draw, which is also everything the screen
-/// font has a glyph for. Applied to names, which the encoder never sees.
+/// Everything the screen font has a glyph for. Applied to names, which no
+/// encoder ever sees -- a name is decoration and is not in any barcode.
 bool isPlainAscii(const char *text)
 {
     for (size_t i = 0; text[i] != '\0'; i++) {
@@ -144,18 +144,24 @@ bool Service::adoptCode(size_t index, Barcode::Code &out) const
         return false;
     }
 
+    // Nothing in the configuration says which symbology to use, so there is
+    // one to choose. When that changes this is where the field is read; the
+    // rest of the function already works in terms of whatever it says.
+    const Barcode::Format format = Barcode::Format::Code128;
+
     // The encoder is the remaining validator, and it is the right one: it
-    // refuses anything outside printable ASCII, which is exactly the set this
-    // app can draw. SDK::AppConfig decodes JSON escapes before this point, so
-    // a `\\` in the file arrives as a real backslash and encodes as one.
-    Code128::Encoded probe {};
-    if (!Code128::encode(raw, probe)) {
-        LOG_WARNING("%s cannot be drawn as Code 128\n",
-                    BarcodeConfig::idField(index));
+    // refuses anything the chosen format cannot carry, which for Code 128 is
+    // anything outside printable ASCII -- exactly the set this app can draw.
+    // SDK::AppConfig decodes JSON escapes before this point, so a `\\` in the
+    // file arrives as a real backslash and encodes as one.
+    Barcode::Encoded probe {};
+    if (!Barcode::encode(format, raw, probe)) {
+        LOG_WARNING("%s cannot be drawn\n", BarcodeConfig::idField(index));
         return false;
     }
 
     std::memcpy(out.id, raw, length + 1);
+    out.format = format;
 
     // The name is decoration: a bad one costs the label, never the code.
     char name[Barcode::kMaxNameLength + 1] {};

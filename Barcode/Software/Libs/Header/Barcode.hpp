@@ -108,11 +108,32 @@ enum class Problem : uint8_t {
     BadValue,  ///< Codes were supplied, but none is drawable.
 };
 
-/// One code, and what to call it on screen.
+/**
+ * @brief Which symbology a code is drawn as.
+ *
+ * One value, and the enum is still worth having: it is what lets the service
+ * and the widget hand a code to Barcode::encode() without either of them
+ * naming an encoder. Docs/SYMBOLOGIES.md has the ranking of what might join it
+ * and what each would cost.
+ *
+ * Code128 is **0 on purpose**. Every Code and State in this app is
+ * value-initialised somewhere -- makeUnsetState(), the message's constructor,
+ * adoptCode()'s local -- so zero has to be a format that draws, not a hole.
+ *
+ * Nothing chooses between subsets here. Code 128's B and C are picked inside
+ * the encoder, per id, because the choice is arithmetic about that id's digits
+ * and not something a wearer or a config file should have an opinion about.
+ */
+enum class Format : uint8_t {
+    Code128 = 0,
+};
+
+/// One code, what to call it on screen, and how to draw it.
 struct Code
 {
-    char id[kMaxIdLength + 1];     ///< NUL-terminated, never empty.
-    char name[kMaxNameLength + 1]; ///< NUL-terminated; empty when unnamed.
+    char   id[kMaxIdLength + 1];     ///< NUL-terminated, never empty.
+    char   name[kMaxNameLength + 1]; ///< NUL-terminated; empty when unnamed.
+    Format format;                   ///< Always accepted this id: see adoptCode().
 };
 
 /**

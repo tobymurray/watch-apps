@@ -137,6 +137,58 @@ starting":
 a deletion rather than a translation: the file on disk is unchanged, and the
 8 KB ceiling is now the SDK's rather than this app's 4 KB one.
 
+## How wide the bars come out
+
+A Code 128 symbol is 11 modules whatever it holds, and the bars get a fixed
+200 px on a panel with a 0.126 mm dot pitch. So the number of symbols is the
+number that decides whether this app's barcode can be read at all, and until
+0.3.6 it was one symbol per character with nothing to be done about it.
+
+**Subset C** changes that: it packs a *pair of digits* into one symbol. The
+encoder now switches into it wherever that shortens the barcode, and back out
+when it stops paying. Nothing about this is visible from outside — the accepted
+ids are exactly what they were, and a scanner decodes the same string either
+way, because subset switching is part of Code 128 rather than an extension to
+it. Only the bars get wider.
+
+| Id | Before | Now | X-dimension | |
+| --- | --- | --- | --- | --- |
+| `A1` | 57 | 57 | 0.442 mm | nothing to pair |
+| `A1234567` (parkrun) | 123 | **101** | 0.205 → **0.249 mm** | |
+| `12345678` | 123 | **79** | 0.205 → **0.318 mm** | |
+| `123456789012` | 167 | **101** | 0.151 → **0.249 mm** | |
+| `1234567890123456` | 211 | **123** | 0.119 → **0.204 mm** | 16 digits now cost what 8 characters did |
+| `WWWWWWWWWWWW` | 167 | 167 | 0.150 mm | no digits, no change |
+
+There is [no ISO minimum](#is-it-scannable) to hold these to, so the line worth
+naming is scanner capability: 5 mil (0.127 mm) is the low end of what
+scanner-selection guidance gives for Code 128. Alphabetic ids of 15 and 16
+characters fall just under it. **Every numeric length now clears it**, the worst
+being fifteen digits at 0.188 mm.
+
+A parkrun id — a letter and seven digits — is the shape this helps least, since
+the `A` and the odd leading digit both stay in subset B and only the remaining
+six pair up. It still goes 0.205 → 0.249 mm, about 8.0 to 9.8 mil.
+
+Which subset to use is not configurable and should not be: it is arithmetic
+about a particular id's digits, and there is no version of that question a
+wearer or a config file has a useful opinion about.
+
+### One surprise worth knowing
+
+**Adding a digit to an odd-length numeric id makes the barcode wider bars, not
+narrower.** Nine digits come to 101 modules and ten to 90; fifteen come to 134
+and sixteen to 123.
+
+An odd count strands a digit that cannot be paired, and carrying it costs a
+symbol of its own plus a switch back into subset B — two symbols to say what a
+pair says in one. No encoding avoids that; it is what pairing means.
+
+In practice: a numeric id with a leading zero to spare renders wider bars with
+it than without. And fifteen digits is the worst case in the entire numeric
+range at 0.188 mm — still half again the 5 mil line, but the one numeric length
+where sixteen digits would do better than fifteen.
+
 ## Concessions
 
 Three things were lost moving onto the platform feature. They are listed here
@@ -192,7 +244,9 @@ Software/
 ├── Libs/
 │   ├── Header/AppConfigFields.hpp # the app's copy of the fields, CI-checked
 │   ├── Header/Barcode.hpp        # kMaxCodes, the codes, and why there is no fallback
-│   ├── Header/Code128.hpp        # header-only Subset B encoder, no SDK dependency
+│   ├── Header/Encoded.hpp        # the widths every symbology produces
+│   ├── Header/Symbology.hpp      # format -> encoder, the one file naming both
+│   ├── Header/Code128.hpp        # header-only subset B/C encoder, no SDK dependency
 │   ├── Header/Commands.hpp       # the two-message contract between the halves
 │   ├── Sources/AppConfigFields.cpp
 │   └── Sources/Service.cpp       # reads the config, publishes the result
@@ -404,12 +458,13 @@ polariser, and the anti-aliased bar edges — none of which these numbers measur
 and all of which are settled by pointing a scanner at the watch rather than by
 arithmetic.
 
-**Code 128 Subset C** remains the lever if a long numeric id ever does prove
-marginal: the standard prices a numeric character at 5,5 modules against 11 for
-a Subset B character, so a 16-digit id is 123 modules rather than 211 — the same
-density as an eight-character id. The encoder is Subset B only, and the 107-row
-table in `Code128.hpp` already carries `START_C` and `CODE_C`, so it is encoder
-logic and not new data. Not implemented, and not urgent.
+The table above is **alphabetic** ids, which is the pessimistic case. **Code 128
+Subset C** is implemented, and it prices a numeric character at 5,5 modules
+against 11 for a Subset B one — so a 16-digit id is 123 modules rather than 211,
+the same density as an eight-character one, and every numeric length clears
+5 mil. See [How wide the bars come out](#how-wide-the-bars-come-out); the
+counter-intuitive part is that an *odd* number of digits does worse than one
+more digit.
 
 Being reflective rather than emissive cuts both ways for scanning: contrast in
 daylight is paper-like, which is ideal, and in a dim room without the front light

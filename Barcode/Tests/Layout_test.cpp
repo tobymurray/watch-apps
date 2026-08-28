@@ -54,8 +54,31 @@ using BarcodeLayout::Scannability;
 uint16_t modulesFor(size_t len)
 {
     const std::string id(len, 'A');
-    Code128::Encoded e{};
+    Barcode::Encoded e{};
     EXPECT_TRUE(Code128::encode(id.c_str(), e)) << "length " << len;
+    return e.totalModules;
+}
+
+/// The same, for an id of @p len digits.
+///
+/// A separate helper because the two diverge: subset C packs a pair of digits
+/// into one symbol, so a numeric id costs close to half the modules of an
+/// alphabetic one of the same length. Which of the two a wearer has is not a
+/// detail -- it is most of the difference in what a scanner sees.
+uint16_t digitModulesFor(size_t len)
+{
+    std::string id;
+    for (size_t i = 0; i < len; i++) id += static_cast<char>('0' + (i % 10));
+    Barcode::Encoded e{};
+    EXPECT_TRUE(Code128::encode(id.c_str(), e)) << "length " << len;
+    return e.totalModules;
+}
+
+/// Module count for a literal id, for the shapes worth naming.
+uint16_t modulesForId(const char *id)
+{
+    Barcode::Encoded e{};
+    EXPECT_TRUE(Code128::encode(id, e)) << id;
     return e.totalModules;
 }
 
@@ -179,12 +202,16 @@ TEST(XDimension, EvenTheLongestIdIsAboveTheAggressiveScannerFigure)
     }
 }
 
-/// CHARACTERISATION, and a mild one: fifteen and sixteen characters fall just
-/// under the 5 mil mid-density line, at 4.96 and 4.7 mil. Worth knowing before
-/// relying on a 16-character id, not worth calling a defect -- and the fix if
-/// it ever matters is Subset C, which the standard itself prices at 5,5 modules
-/// per numeric character against 11 for a Subset B character.
-TEST(XDimension, CurrentlyFifteenAndSixteenFallJustUnderMidDensity)
+/// CHARACTERISATION, and a mild one: fifteen and sixteen *non-numeric*
+/// characters fall just under the 5 mil mid-density line, at 4.96 and 4.7 mil.
+/// Worth knowing before relying on a 16-character id, not worth calling a
+/// defect.
+///
+/// This used to name Subset C as the fix if it ever mattered, priced by the
+/// standard at 5,5 modules per numeric character against 11 for a Subset B
+/// one. It is implemented now, and the tests below say what it reached. What
+/// remains here is what it cannot touch: a letter has nothing to pair with.
+TEST(XDimension, CurrentlyFifteenAndSixteenNonNumericFallJustUnderMidDensity)
 {
     for (size_t len = 15; len <= Code128::kMaxDataLength; len++) {
         EXPECT_FALSE(BarcodeLayout::scannabilityFor(modulesFor(len))
@@ -194,6 +221,83 @@ TEST(XDimension, CurrentlyFifteenAndSixteenFallJustUnderMidDensity)
     EXPECT_TRUE(BarcodeLayout::scannabilityFor(modulesFor(14))
                     .resolvableAt(BarcodeLayout::kMidDensityScannerMicrons))
         << "fourteen characters is the longest that clears 5 mil";
+}
+
+// ---------------------------------------------------------------------------
+// Subset C, and what pairing digits actually bought
+//
+// The encoder packs a pair of digits into one symbol wherever that shortens
+// the barcode -- the 5,5-modules-per-numeric-character figure the standard
+// gives, against 11 for a Subset B character. These tests are what that comes
+// to on this panel.
+// ---------------------------------------------------------------------------
+
+/// INVARIANT. Every numeric id length this app accepts clears the 5 mil
+/// mid-density line -- including fifteen and sixteen digits, which are the two
+/// lengths the characterisation above records as falling under it when they
+/// are letters.
+///
+/// That is the whole of what Subset C bought, stated as one claim: a long id
+/// made of digits is no longer the awkward case. The worst numeric length is
+/// fifteen digits at 0.188 mm, which is still half again the 5 mil line.
+TEST(XDimension, EveryNumericIdLengthClearsMidDensity)
+{
+    for (size_t len = 1; len <= Code128::kMaxDataLength; len++) {
+        const Scannability s = BarcodeLayout::scannabilityFor(digitModulesFor(len));
+        EXPECT_TRUE(s.resolvableAt(BarcodeLayout::kMidDensityScannerMicrons))
+            << "length " << len << " is " << s.xDimensionMicrons() << " um";
+    }
+    EXPECT_EQ(BarcodeLayout::scannabilityFor(digitModulesFor(15)).xDimensionMicrons(), 188);
+    EXPECT_EQ(BarcodeLayout::scannabilityFor(digitModulesFor(16)).xDimensionMicrons(), 204);
+}
+
+/// INVARIANT. Sixteen digits cost exactly what eight letters cost -- 123
+/// modules -- which is the 5,5-against-11 pricing showing up end to end.
+TEST(XDimension, SixteenDigitsCostWhatEightLettersCost)
+{
+    EXPECT_EQ(digitModulesFor(16), 123);
+    EXPECT_EQ(modulesFor(8), 123);
+}
+
+/// INVARIANT, and the least obvious thing in this file: **adding a digit to an
+/// odd-length numeric id makes the barcode narrower.**
+///
+/// Subset C pairs digits, so an odd count strands one of them. That last digit
+/// costs a symbol of its own *and* a switch back into subset B to carry it --
+/// two symbols to say what a pair says in one. Nine digits are 101 modules and
+/// ten are 90; fifteen are 134 and sixteen are 123.
+///
+/// It is not an optimisation the encoder is missing and there is no encoding
+/// that avoids it: an odd number of digits cannot be paired. It is worth
+/// pinning because it inverts the intuition every other length rule on this
+/// screen follows, and because it is actionable -- a numeric id with a leading
+/// zero to spare renders wider bars with it than without.
+TEST(XDimension, AnOddNumberOfDigitsIsWiderThanOneMoreDigit)
+{
+    for (size_t len = 3; len < Code128::kMaxDataLength; len += 2) {
+        EXPECT_GT(digitModulesFor(len), digitModulesFor(len + 1))
+            << len << " digits should cost more than " << (len + 1);
+    }
+}
+
+/// INVARIANT. A real parkrun id -- a letter and seven digits -- is the shape
+/// Subset C helps least, since the letter and the odd leading digit both stay
+/// in subset B and only the remaining six pair up. It still goes from 123
+/// modules to 101: 0.204 mm to 0.249 mm, about 8.0 mil to 9.8 mil.
+///
+/// The test above this one measures eight *letters*, which is the pessimistic
+/// stand-in. This is the actual id, and it is a fifth wider than that test
+/// implies.
+TEST(XDimension, ARealParkrunIdIsWiderThanItsLengthSuggests)
+{
+    const Scannability s = BarcodeLayout::scannabilityFor(modulesForId("A1234567"));
+    EXPECT_EQ(s.totalModules, 101);
+    EXPECT_EQ(s.xDimensionMicrons(), 249);
+    EXPECT_TRUE(s.resolvableAt(BarcodeLayout::kMidDensityScannerMicrons));
+
+    // Comfortably wider than the same length in letters.
+    EXPECT_GT(s.xDimensionMicrons(),
+              BarcodeLayout::scannabilityFor(modulesFor(8)).xDimensionMicrons());
 }
 
 /// Reporting, so a reader gets the whole picture in one place.
