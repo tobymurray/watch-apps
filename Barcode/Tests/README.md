@@ -23,8 +23,7 @@ eye, by one person. A transposed row there is invisible: the app starts, bars
 fill the screen, they scan, and they decode to somebody else's athlete number.
 That is the exact harm [the README](../README.md) says this app must never do.
 
-There is no oracle to diff against — no second Code 128 implementation in the
-tree — so the table is held to the symbology's own structure instead:
+The table is held to the symbology's own structure:
 
 | Claim | What it catches |
 | --- | --- |
@@ -37,7 +36,49 @@ tree — so the table is held to the symbology's own structure instead:
 Plus a golden vector for `"A1"` written out width by width, and the checksum
 arithmetic for a parkrun-shaped `"A1234567"` worked by hand in the test.
 
-This is not proof the table is correct. It is a great deal more than a comment.
+Structure alone is the table checking itself, though, and so is the round trip
+below — it shares the table it is testing. A self-consistently wrong table
+survives both. So there is also an oracle.
+
+**An independent implementation.** [`oracle/generate.cpp`](oracle/generate.cpp)
+records what [zint](https://zint.org.uk) — separate implementation, separate
+table, separate subset selection — produces for a corpus of ids, and
+`oracle/zint_vectors.hpp` commits the module patterns as data so the tests need
+no zint at runtime. `ZintOracle` asserts that **every vector matches, module for
+module**: not the same length, the same bars. The corpus is chosen for the things
+that decide a Code 128 encoding — the ends of the printable range, digit runs of
+every parity at the start, middle and end, and the ids this app exists for.
+
+That is what makes it evidence about the subset switching in particular. The
+switching was added after these vectors were recorded, and `A1234567` — a letter
+then an odd run of seven digits, where an encoder has to decide whether to pair
+from the first digit or the second — comes out identical to zint's 101 modules.
+So do `1234AB5678`, `AB123456CD` and `999999999999`.
+
+Regenerate when the corpus changes:
+
+```sh
+apt-get install -y libzint-dev
+cd oracle && g++ -std=c++17 -o generate generate.cpp -lzint && ./generate > zint_vectors.hpp
+```
+
+The version is recorded in the generated file, because a change in zint's subset
+policy would otherwise look like a change in ours.
+
+**A round trip.** `Code128RoundTrip` decodes the encoder's output back to text
+the way a scanner has to — following the start character and the switch symbols,
+recomputing the check from the stream — and asserts it equals the id. It shares
+the table, so it cannot prove the table right; what it catches is the encoder's
+bookkeeping, which is where subset switching goes wrong. Every id in its corpus,
+every vector in the oracle's, and every one of the 95 printable characters on its
+own, so a single wrong row cannot hide behind a corpus.
+
+Agreeing with zint and decoding to the id are separate claims — two
+implementations could in principle share a misreading — which is why both are
+asserted over the same corpus.
+
+None of this is proof the table is correct. It is a great deal more than a
+comment.
 
 ## What the geometry tests are accountable to
 

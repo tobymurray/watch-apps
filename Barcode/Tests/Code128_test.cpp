@@ -43,6 +43,7 @@
 #include <vector>
 
 #include "Code128.hpp"
+#include "oracle/zint_vectors.hpp"
 
 namespace {
 
@@ -606,3 +607,86 @@ TEST(Code128RoundTrip, NinesInSubsetCAreDigitsAndNotSwitches)
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// Diffed against an independent implementation
+//
+// Everything above is, in the end, this table and this encoder checking each
+// other: the structural tests hold kPatterns to the symbology's rules, and the
+// round trip shares the table it is testing -- as its own comment says, it
+// cannot prove the table right. A self-consistently wrong table survives all
+// of it.
+//
+// oracle/generate.cpp records what zint produces for a corpus of ids --
+// separate implementation, separate table, separate subset selection -- and
+// commits the module patterns as data, so nothing here needs zint at runtime.
+// A pattern zint agrees with is one two implementations reached independently.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::string ourWidthString(const char *id)
+{
+    Barcode::Encoded e{};
+    if (!Code128::encode(id, e)) {
+        return "";
+    }
+    std::string out;
+    for (uint8_t i = 0; i < e.count; i++) {
+        out += static_cast<char>('0' + e.widths[i]);
+    }
+    return out;
+}
+
+uint16_t ourModules(const char *id)
+{
+    Barcode::Encoded e{};
+    return Code128::encode(id, e) ? e.totalModules : 0;
+}
+
+} // namespace
+
+/// INVARIANT, and the strongest claim in this file: for every id in the corpus
+/// this encoder produces the same bars, module for module, as an independent
+/// implementation. Not "the same length" -- the same bars.
+TEST(ZintOracle, EveryVectorMatchesZintExactly)
+{
+    for (int i = 0; i < ZintVectors::kVectorCount; i++) {
+        const ZintVectors::Vector &v = ZintVectors::kVectors[i];
+        ASSERT_NE(ourModules(v.id), 0) << "we refuse an id zint encoded: " << v.id;
+        EXPECT_EQ(ourModules(v.id), v.totalModules)
+            << v.id << ": module count differs from " << ZintVectors::kZintVersion;
+        EXPECT_EQ(ourWidthString(v.id), std::string(v.widths))
+            << v.id << ": bars differ from " << ZintVectors::kZintVersion;
+    }
+}
+
+/// The same corpus, read back through the decoder above. Agreeing with zint and
+/// decoding to the id are different claims -- two implementations could share a
+/// misreading of the standard -- and this is the one that says what a scanner
+/// will report.
+TEST(ZintOracle, EveryVectorAlsoDecodesToItself)
+{
+    for (int i = 0; i < ZintVectors::kVectorCount; i++) {
+        const ZintVectors::Vector &v = ZintVectors::kVectors[i];
+        Barcode::Encoded e{};
+        ASSERT_TRUE(Code128::encode(v.id, e)) << v.id;
+        std::string err;
+        EXPECT_EQ(decodeText(e, err), std::string(v.id)) << v.id << ": " << err;
+    }
+}
+
+/// Every printable character, on its own, through the round trip -- so a single
+/// wrong row cannot hide behind a corpus. The range test above proves the
+/// encoder accepts them; this proves each one comes back.
+TEST(Code128RoundTrip, EveryPrintableCharacterReadsBackAlone)
+{
+    for (char c = 32; c < 127; c++) {
+        const char id[2] = { c, '\0' };
+        Barcode::Encoded e{};
+        ASSERT_TRUE(Code128::encode(id, e)) << "char " << static_cast<int>(c);
+        std::string err;
+        EXPECT_EQ(decodeText(e, err), std::string(id))
+            << "char " << static_cast<int>(c) << ": " << err;
+    }
+}
