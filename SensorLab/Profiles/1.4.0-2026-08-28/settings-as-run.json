@@ -1,0 +1,22 @@
+{
+  "_comment": [
+    "FALLBACK ONLY. Used when the kernel does not answer RequestSystemInfo.",
+    "The 2026-08-21 session got no answer at all and the profile was written as",
+    "profile-unknown.json, which cannot be diffed against another firmware --",
+    "see Docs/FINDINGS.md #17 and Docs/LEDGER.md I2. The app now allows 250 ms",
+    "and retries at each run open, so this should not be needed; it is here so",
+    "that a second silent kernel still produces a named, diffable profile.",
+    "",
+    "This value is DECLARED, not read. The manifest records",
+    "firmware_read_from_kernel: false and the report says so, because putting",
+    "somebody's memory into the field every comparison keys on would be worse",
+    "than having no key at all.",
+    "",
+    "Everything else is left at its documented default -- see",
+    "SensorLab/settings.example.json for what those are and why."
+  ],
+  "schema": 1,
+  "values": {
+    "firmware": "1.4.0"
+  }
+}

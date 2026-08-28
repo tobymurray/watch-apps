@@ -39,7 +39,7 @@ answered the existence layer for all 37 sensor types. What it found is below.
 | **Tier 0** — the evidence core: catalogue, claim store, verdict rules, completeness, statistics, report writer | built, 68 host tests |
 | **Tier 1** — layers 1–3: existence, frame structure, liveness, and the roster screen | built, 58 pipeline tests |
 | **Raw capture** — every sample verbatim, plus the full histograms behind every quantile | built, decoder and round-trip test |
-| **Tier 2** — layers 4–5: timing and value domain over long runs | built, and fed real samples on the device: `runs/` and `raw/` on the watch hold data from runs before 13. **None of those verdicts has been read back into this document**, so treat the timing and value-domain rows as unreviewed rather than as absent |
+| **Tier 2** — layers 4–5: timing and value domain over long runs | built and answered: timing 43 %, value 60 %, off fifteen runs including two multi-hour soaks |
 | **Tier 3** — layers 6 and 8: period/latency sweeps, cross-sensor consistency | **not built.** Claims exist, UNVERIFIED, each naming its method |
 | **Tier 4** — layer 7: the guided physical protocols | **not built.** Same |
 | **Tier 5** — direct register reads | **not built, and may never be.** See below |
@@ -53,11 +53,27 @@ Tier 1 profile reading as a finished one, and the great majority of
 [`Docs/LEDGER.md`](Docs/LEDGER.md) §2 is still inherited from SleepLab or
 UNVERIFIED.
 
-**The profile that run produced is not in this repository.** It lives on the
-watch at `Apps/SensorLab/profile-1.4.0.json`, and the numbers quoted below were
-read off the device rather than from a committed artifact. Getting it into
-`Profiles/` is the next step, because a result nobody else can open is not yet
-a published one.
+The profile is committed, at
+[`Profiles/1.4.0-2026-08-28`](Profiles/1.4.0-2026-08-28), with the rendering that
+was actually read alongside it and every run manifest and interval log. `raw/` is
+not: 172 MB of verbatim samples stays on the device.
+
+**It is 54 % complete**, 764 of 1395 applicable claims answered, and the layers
+are not evenly covered:
+
+| Layer | Applicable | Answered | |
+| --- | --- | --- | --- |
+| existence | 142 | 142 | 100 % |
+| frame | 124 | 113 | 91 % |
+| liveness | 190 | 132 | 69 % |
+| value | 492 | 297 | 60 % |
+| timing | 180 | 79 | 43 % |
+| consistency | 34 | 1 | 2 % |
+| control | 186 | 0 | 0 % |
+| physical | 47 | 0 | 0 % |
+
+763 confirmed, 1 likely, **0 refuted**. A further 620 claims cannot apply to this
+device and are excluded from the denominator rather than counted as gaps.
 
 What *has* come out of building it is eleven entries in
 [`Docs/FINDINGS.md`](Docs/FINDINGS.md), two of them measured defects in the SDK's
@@ -95,6 +111,38 @@ aspirational and there is no fused heading either.
 This is the result [MagProbe](../MagProbe) was built to establish independently,
 and it is why that app will only ever draw `NO COMPASS`. Re-check after any
 firmware bump: a producer appearing is exactly what `profile_diff.py` is for.
+
+### The kernel names its own drivers, and that settles a hardware question
+
+`RequestGetDesc` is one of the two messages nothing else in the SDK ever calls
+(`Docs/FINDINGS.md` section 5). Asked, it answers with a driver string per type,
+and two of those strings are worth more than the rest of the layer:
+
+> `MS5837 pressure` (0x80) and `MS5837 temperature` (0x70)
+
+The hardware investigation had the barometer as **part CONFIRMED from driver
+strings, bus and address UNKNOWN**: its fixed I²C address never ACKed on any of
+the six buses that were swept. `Docs/EXPECTED.md` calls that the standing puzzle
+and predicts that plausible pressure values would be evidence the part is there
+on a bus the sweep missed. It resolves, connects, delivers two fields and is
+60 % characterised, so **that is now the answer.** The part is present and
+reachable; the sweep, not the part, was wrong.
+
+Nothing names the optical part: 0x41 is just `Heart Rate sensor`, so the
+PAH8316LS is still string-only, and `PPG` (0xf0) has no producer to ask.
+
+Two descriptors are mislabelled, which matters because a descriptor is the
+kernel's own account of what a handle is:
+
+| Type | Descriptor | Should be |
+| --- | --- | --- |
+| `0x20` `GYROSCOPE` | `BMI270 accelerometer` | a gyroscope |
+| `0x131` `FUSION_RAW` | `BMI270 accelerometer raw` | fused raw |
+
+Both are the neighbouring type's string, and both types deliver their own correct
+frames, so this is a labelling defect rather than a wiring one. `0x21`
+`GYROSCOPE_RAW` gets it right, which is what makes the other two look like a
+copy-paste rather than a convention.
 
 ---
 
@@ -412,14 +460,16 @@ six streams with known answers, plus a synthetic uptime wrap.
 
 ## Known rough edges
 
-- **The profile is not committed.** The largest one now. Run 13's result lives on
-  the watch and nowhere else, so the table above cites a file no reader of this
-  repository can open, and `profile_diff.py` has no committed baseline to compare
-  the next firmware against.
-- **Only the existence layer has been read back.** The run wrote timing and
-  value-domain rows and nobody has looked at them, so most of
-  `Docs/LEDGER.md` §2 is still inherited or UNVERIFIED for want of reading
-  rather than for want of data.
+- **`Docs/LEDGER.md` §2 has not been reconciled against the profile.** The
+  profile is committed and 54 % answered, and the ledger still reads as though it
+  were not: rows inherited from SleepLab now have a measured counterpart sitting
+  next to them and nobody has walked the two lists against each other. That is
+  the largest one now, and it is reading rather than measurement.
+- **`raw/` is not committed**, so the profile's statistics can be recomputed only
+  by someone holding the watch. 172 MB across 347 chunks is the reason, and the
+  three levels argument above is the cost of that decision.
+- **Two layers are at zero.** `control` (186 claims) and `physical` (47) are
+  Tiers 3 and 4, unbuilt. `consistency` has one answer out of 34.
 - **The firmware version has never been read from the kernel.** Four attempts,
   all rejected. Every profile is keyed on a string that came from a fallback.
 - **Tiers 3, 4 and 5 are not built.** Their claims are in the catalogue so the
@@ -428,8 +478,11 @@ six streams with known answers, plus a synthetic uptime wrap.
   no user at all beyond one run across local midnight; do it before layer 7,
   because half of what it finds changes what layer 7's protocols should measure.
 - **Five datasheets unsourced.** BMM350, MS5837, PAH8316LS, MAX17262, AG3335M.
-  `Docs/EXPECTED.md` says what each would settle; the MS5837 and the MAX17262 cost
-  the most by their absence.
+  `Docs/EXPECTED.md` says what each would settle. Two of those entries have moved:
+  the BMM350's `CHIP_ID` no longer decides anything, because the type resolves no
+  driver whatever the part turns out to be, and the MS5837's I²C address is no
+  longer the open question either. What is left for both is resolution and range,
+  which is layer 5's business rather than the inventory's.
 - **The 10 KB service stack is an argument, not a measurement.** Nothing recurses
   and the sample path allocates nothing. That is a good argument and it is not a
   high-water mark.

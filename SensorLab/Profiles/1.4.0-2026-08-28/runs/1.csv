@@ -1,0 +1,46 @@
+H,schema,1,kinds,R;E;S;V;X
+H,R,kind,uptime_ms,wall_utc,run_id,firmware,hardware,fw_read,app_version,catalogue_version,type_table_version,kernel_iface
+H,E,kind,uptime_ms,run_id,type,resolved,handle,driver_count,connected,descriptor
+H,S,kind,uptime_ms,wall_utc,type,interval_ms,samples,batches,field_count,field_count_alt,ts_span_ms,longest_gap_ms,dt_min_m,dt_min_e,dt_p05_m,dt_p05_e,dt_p50_m,dt_p50_e,dt_p95_m,dt_p95_e,dt_max_m,dt_max_e,dt_bin_width_m,dt_bin_width_e,dt_over,batch_p50_m,batch_p50_e,batch_dt_p50_m,batch_dt_p50_e,us_over_999,non_monotonic,skew_ppm_m,skew_ppm_e,first_offset_ms,last_offset_ms,cadence,first_sample_ms
+H,V,kind,uptime_ms,type,field,n,nonfinite,denormal,min_m,min_e,max_m,max_e,mean_m,mean_e,lsb_m,lsb_e,stuck_max_run,ever_changed,distinct,distinct_over
+H,B,kind,uptime_ms,type,series,bins,width_m,width_e,origin_m,origin_e,count,under,over,min_m,min_e,max_m,max_e,+idx:count per non-empty bin
+H,X,kind,uptime_ms,wall_utc,run_id,end,rows,failures,bytes
+R,312648,1787344828,1,unknown,unknown,0,0.1.0,1,1,3
+E,312648,1,0x10,1,0xb,1,1,BMI270 accelerometer
+E,312648,1,0x11,1,0xc,1,1,BMI270 accelerometer raw
+E,312648,1,0x20,1,0xd,1,1,BMI270 accelerometer
+E,312648,1,0x21,1,0xe,1,1,BMI270 gyroscope raw
+E,312648,1,0x30,0,0x0,0,0,
+E,312648,1,0x40,0,0x0,0,0,
+E,312648,1,0x41,1,0x19,1,1,Heart Rate sensor
+E,312648,1,0x42,1,0x1c,1,1,Heart rate metrics
+E,312648,1,0x43,1,0x1a,1,1,Heart Rate (multi-source) sensor
+E,312648,1,0x50,1,0x12,1,1,BMI270 step detector
+E,312648,1,0x51,1,0x11,1,1,BMI270 step counter
+E,312648,1,0x52,1,0x1d,1,1,Daily step counter
+E,312648,1,0x53,1,0x17,1,1,Running cadence
+E,312648,1,0x60,1,0x16,1,1,Virtual floor counter
+E,312648,1,0x61,1,0x1e,1,1,Daily floor counter
+E,312648,1,0x70,1,0x1,1,1,MS5837 temperature
+E,312648,1,0x80,1,0x2,1,1,MS5837 pressure
+E,312648,1,0x90,1,0x3,2,1,Virtual altimeter
+E,312648,1,0xa0,1,0x15,1,1,BMI270 wrist motion
+E,312648,1,0xb0,1,0x13,1,1,BMI270 motion detection
+E,312648,1,0xc0,1,0x14,1,1,BMI270 activity recognition
+E,312648,1,0xd0,0,0x0,0,0,
+E,312648,1,0xe0,1,0x1f,1,1,Activity time since boot
+E,312648,1,0xe1,1,0x20,1,1,Daily activity time
+E,312648,1,0xf0,0,0x0,0,0,
+E,312648,1,0xf1,0,0x0,0,0,
+E,312648,1,0x100,0,0x0,0,0,
+E,312648,1,0x110,1,0x4,1,1,Gps location
+E,312648,1,0x111,1,0x5,1,1,Gps speed
+E,312648,1,0x112,1,0x6,1,1,Gps distance
+E,312648,1,0x120,1,0x8,1,1,Battery level
+E,312648,1,0x121,1,0x9,1,1,Battery charging
+E,312648,1,0x122,1,0xa,1,1,Battery metrics
+E,312648,1,0x130,1,0xf,1,1,BMI270 Fusion
+E,312648,1,0x131,1,0x10,1,1,BMI270 accelerometer raw
+E,312648,1,0x140,1,0x1b,1,1,Touch detect sensor
+E,312648,1,0x150,1,0x18,1,1,Terrain grade
+X,313242,1787344828,1,completed,39,0,2631

@@ -13,9 +13,14 @@ Profiles/
     REPORT.md              profile_report.py's rendering, committed alongside
 ```
 
-**This directory is empty.** SensorLab has never been run on the watch, so no
-profile exists. The first hardware run is the whole of the next step — see the
-README's "How to run it".
+[`1.4.0-2026-08-28`](1.4.0-2026-08-28) is the first collection: firmware 1.4.0,
+fifteen runs, 54 % of the applicable claims answered. `raw/` is deliberately not
+in it, at 172 MB on the device.
+
+Its directory name says `1.4.0` because `settings.json` declared that, **not
+because the device did**: the kernel rejected `RequestSystemInfo` on every
+attempt. By the rule below that is not quite an `unknown-` directory, but it is
+closer to one than the name suggests, and the report's first finding says so.
 
 ## Why these are committed
 
