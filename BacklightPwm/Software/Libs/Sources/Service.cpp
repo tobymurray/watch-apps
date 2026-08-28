@@ -40,15 +40,6 @@ void sleepThunk(uint32_t ms)
     }
 }
 
-/// Hands ISystem::delay to the PWM engine so it can sleep through the off phase
-/// of each period rather than spinning it.
-class KernelSleeper : public Pwm::ISleeper
-{
-public:
-    void sleepMs(uint32_t ms) override { sleepThunk(ms); }
-};
-
-KernelSleeper gSleeper;
 
 
 /// How long to wait for the kernel to acknowledge a backlight request. Bounded
@@ -64,7 +55,7 @@ constexpr char kResultsPath[] = "backlight_pwm.txt";
 
 Service::Service(SDK::Kernel& kernel)
     : mKernel(kernel)
-    , mPwm(mPin, mClock, &gSleeper)
+    , mPwm(mPin, mClock)
 {
     gKernelForMillis = &kernel;
     mPwm.setPeriodUs(Pwm::kPeriodUs);
@@ -234,11 +225,11 @@ void Service::poll()
         }
     }
 
+    // Published on a state change and at every rung boundary (see beginRung),
+    // and at no other time while the plan runs. See kIdlePublishPeriodMs: a
+    // periodic publish here is a periodic GUI wake-up, and a GUI wake-up in the
+    // middle of a pulse is a visible flash.
     if (mState != mLastPublishedState) {
-        publish();
-        return;
-    }
-    if (mGuiStarted && (nowMs - mLastPublishAtMs) >= kPublishPeriodMs) {
         publish();
     }
 }

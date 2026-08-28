@@ -49,19 +49,6 @@ private:
     mutable uint32_t mNow;
 };
 
-/// Advances the fake clock, as a real sleep advances real time, and counts what
-/// was given back.
-class FakeSleeper : public ISleeper
-{
-public:
-    explicit FakeSleeper(FakeClock& clock) : mClock(clock) {}
-    void sleepMs(uint32_t ms) override { sleptMs += ms; ++calls; mClock.advance(ms * 1000u); }
-    uint32_t sleptMs = 0;
-    uint32_t calls   = 0;
-private:
-    FakeClock& mClock;
-};
-
 /// Records every edge with the clock reading at the moment it was issued.
 class RecordingPin : public IPin
 {
@@ -200,40 +187,17 @@ TEST(SoftPwm, ZeroIsHeldOffRatherThanPulsed)
 
 TEST(SoftPwm, RunsExactlyTheRequestedNumberOfPeriods)
 {
-    // Counted in periods rather than time because a period may sleep, and the
-    // cycle counter stops while it does. A time budget measured against that
-    // clock would run long by however much was slept, which is precisely the
-    // watchdog margin being relied on.
+    // Counted in periods rather than time. Nothing sleeps inside a period any
+    // more, but the count is still the honest unit: it is what the caller wants
+    // to bound and it cannot be thrown off by a clock that stops.
     FakeClock clock(1);
     RecordingPin pin(clock);
-    FakeSleeper sleeper(clock);
-    SoftPwm pwm(pin, clock, &sleeper);
+    SoftPwm pwm(pin, clock);
     pwm.setPeriodUs(4000);
     pwm.setDuty(25);
 
     const BurstStats stats = pwm.runBurst(3);
-    EXPECT_EQ(stats.periods, 3u) << "sleeping changed how many periods a burst ran";
-}
-
-TEST(SoftPwm, SleepsInsideEveryOffPhaseIncludingTheShortestRung)
-{
-    // The off phase is where the CPU goes back, and it has to happen on every
-    // modulated rung. 75 percent has the shortest off phase of the ladder, one
-    // millisecond, and it is the rung that would otherwise spin flat out for six
-    // seconds; starving the GUI for six seconds is how this app rebooted the
-    // watch twice.
-    for (uint8_t duty : {uint8_t{75}, uint8_t{50}, uint8_t{25}, uint8_t{10}, uint8_t{1}}) {
-        FakeClock clock(1);
-        RecordingPin pin(clock);
-        FakeSleeper sleeper(clock);
-        SoftPwm pwm(pin, clock, &sleeper);
-        pwm.setPeriodUs(4000);
-        pwm.setDuty(duty);
-
-        const BurstStats stats = pwm.runBurst(4);
-        EXPECT_EQ(sleeper.calls, stats.periods)
-            << "duty " << static_cast<unsigned>(duty) << " spun an off phase instead of sleeping";
-    }
+    EXPECT_EQ(stats.periods, 3u) << "a burst ran the wrong number of periods";
 }
 
 TEST(SoftPwm, TheWaveformHasNoGapBetweenPeriods)
@@ -247,8 +211,7 @@ TEST(SoftPwm, TheWaveformHasNoGapBetweenPeriods)
     // darkness wedged in between.
     FakeClock clock(1);
     RecordingPin pin(clock);
-    FakeSleeper sleeper(clock);
-    SoftPwm pwm(pin, clock, &sleeper);
+    SoftPwm pwm(pin, clock);
     pwm.setPeriodUs(4000);
     pwm.setDuty(25);
 

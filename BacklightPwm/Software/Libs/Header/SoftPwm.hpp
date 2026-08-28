@@ -50,27 +50,26 @@
  * An **endpoint** duty (0 or 100) is the one case that costs nothing: the pin is
  * set and the call returns, because holding a level needs no CPU whatsoever.
  *
- * ## Where the sleeping goes, which took three tries to get right
+ * ## A modulated period spins, and cannot do otherwise
  *
- * The off phase of a period does not need the CPU, and giving it back is what
- * keeps the GUI thread alive. Two earlier attempts got the placement wrong:
+ * Three placements of a sleep were tried inside this engine and all three failed,
+ * for two reasons that between them rule the idea out on this kernel:
  *
- *   - **Sleeping through the off phase without re-basing** lost the period's own
- *     clock, because `DWT_CYCCNT` stops when the core sleeps. The spin afterwards
- *     still believed almost the whole period remained, and on hardware the bottom
- *     three rungs collapsed to about 0.3 percent duty and photographed as off.
- *   - **Sleeping between bursts instead** kept the timing honest and put a 100 Hz
- *     full-depth envelope on top of the PWM: eight milliseconds of modulation
- *     then two of darkness. It flashed, visibly, on every modulated rung.
+ *   - **`ISystem::delay` has roughly millisecond granularity**, which is a
+ *     quarter of the whole period. There is no way to place a 4 ms period's edges
+ *     with a tool that coarse. Measured on hardware: `delay(1)` often returned
+ *     almost immediately while `delay(2)` slept about 2 ms, so the same code gave
+ *     75 percent duty at one rung and 18 percent at another.
+ *   - **`DWT_CYCCNT` stops while the core sleeps**, so a spin after a sleep
+ *     cannot tell how much of the period is left and spins the whole off phase
+ *     again on top of it.
  *
- * The placement that works is inside the off phase, **re-basing at the start of
- * every period**. The waveform is unchanged, because the light is already off for
- * that stretch and nothing can tell whether the CPU spun or slept through it. And
- * a sleep that overshoots makes its own period slightly longer rather than
- * corrupting every period after it.
+ * So the on phase and the off phase are both spun, and a modulated rung costs a
+ * full thread for its duration. The CPU is given back **between** rungs instead,
+ * where a gap is invisible because the light is off anyway. See PwmPlan.hpp.
  *
- * The last stretch of a long off phase is still spun, so the sleep never has to
- * land the period boundary accurately.
+ * The real answer remains the timer-driven DMA waveform, which needs neither the
+ * CPU nor an accurate sleep.
  *
  ******************************************************************************
  */
@@ -112,7 +111,7 @@ struct BurstStats {
 class SoftPwm
 {
 public:
-    SoftPwm(IPin& pin, const IClock& clock, ISleeper* sleeper = nullptr);
+    SoftPwm(IPin& pin, const IClock& clock);
 
     /// 0 to 100. Values above 100 are clamped; the plan never sends one, but a
     /// silent overflow into a tiny on-time would look like a hardware fault.
@@ -154,7 +153,6 @@ public:
 private:
     IPin&         mPin;
     const IClock& mClock;
-    ISleeper*     mSleeper; ///< Optional. Without one the off phase is spun.
 
     uint8_t  mDuty     = 0;
     uint32_t mPeriodUs = 4000; ///< 250 Hz.

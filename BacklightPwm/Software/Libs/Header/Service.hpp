@@ -108,8 +108,20 @@ private:
     /// what overrides the kernel if it writes the pin while a level is held.
     static constexpr uint32_t kHeldWaitMs = 20;
 
-    /// How often to publish while the ladder runs.
-    static constexpr uint32_t kPublishPeriodMs = 200;
+    /// How often to publish when the plan is NOT running.
+    ///
+    /// Deliberately not used during a rung. Publishing at 5 Hz while modulating
+    /// put a 5 Hz flash on the light: each publish wakes the GUI thread, the GUI
+    /// preempts the service, and if that lands during a pulse's on phase the pin
+    /// stays on for the whole preemption. One frame in six came out about ten
+    /// percent brighter, and it was plainly visible.
+    ///
+    /// So the screen now holds still for the length of a rung and is repainted
+    /// only when the rung changes. That is what metering wants anyway, and it is
+    /// the same argument BacklightProbe's quiet steps are built on: a repaint is
+    /// not free, and a screen that updates during a measurement is part of the
+    /// measurement.
+    static constexpr uint32_t kIdlePublishPeriodMs = 500;
 
     /// Hard ceiling on how long this app may hold the pin, independent of the
     /// ladder's own arithmetic. Comfortably longer than the ladder; nothing

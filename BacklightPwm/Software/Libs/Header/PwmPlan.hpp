@@ -64,10 +64,26 @@ constexpr uint32_t kPeriodUs = 4000;
 /// used. It is still the number to reach for if the watch ever reboots mid-run.
 constexpr uint32_t kPeriodsPerBurst = 2;
 
-// There is deliberately no post-burst sleep any more. Sleeping between bursts
-// gave the GUI its time back and put a 100 Hz full-depth envelope on the light,
-// which flashed visibly on every modulated rung. The sleeping now happens inside
-// each period's own off phase, where it is invisible. See SoftPwm.hpp.
+/// How long a modulated rung runs before the ladder hands the CPU back.
+///
+/// A modulated rung spins flat out, because nothing else places its edges
+/// accurately (see SoftPwm.hpp). That starves the GUI thread, and thirty
+/// consecutive seconds of it rebooted the watch. So no rung runs for long, and
+/// every one is followed by a breather.
+///
+/// Four seconds is still long enough to photograph and meter comfortably.
+constexpr uint32_t kMeterMs = 4000;
+
+/// A dark, idle gap after every modulated rung.
+///
+/// This is where the CPU goes back. The light is off, the service holds the pin
+/// and blocks on the message queue, and the GUI gets a clear run at repainting
+/// and at whatever the kernel needs of it.
+///
+/// Between rungs rather than inside them, because a gap inside a rung is a flash
+/// and a gap between rungs is just the boundary between two measurements. It also
+/// makes the rungs easier to pick out of a video.
+constexpr uint32_t kBreatherMs = 1500;
 
 /// The short auto-off used by the contest rung. Two seconds into a ten second
 /// rung, so the expiry lands in the middle of it with plenty of run either side.

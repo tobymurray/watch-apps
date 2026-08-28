@@ -20,20 +20,12 @@ constexpr uint32_t kMinPeriodUs = 200;    // 5 kHz
 /// every photograph taken of it worthless.
 constexpr uint32_t kMaxPeriodUs = 20000;  // 50 Hz
 
-/// Sleep through an off phase at least this long, and spin anything shorter.
-///
-/// Deliberately just under a millisecond so that even a 75 percent duty, whose
-/// off phase is a single millisecond at a 4 ms period, gives the CPU back. That
-/// rung is the one that would otherwise spin flat out for six seconds, and
-/// starving the GUI for six seconds is how this app rebooted the watch twice.
-constexpr uint32_t kSleepFloorUs = 900;
 
 } // namespace
 
-SoftPwm::SoftPwm(IPin& pin, const IClock& clock, ISleeper* sleeper)
+SoftPwm::SoftPwm(IPin& pin, const IClock& clock)
     : mPin(pin)
     , mClock(clock)
-    , mSleeper(sleeper)
 {
 }
 
@@ -97,8 +89,7 @@ BurstStats SoftPwm::runBurst(uint32_t maxPeriods)
         return stats;
     }
 
-    const uint32_t onUs  = (mPeriodUs * mDuty) / 100u;
-    const uint32_t offUs = mPeriodUs - onUs;
+    const uint32_t onUs = (mPeriodUs * mDuty) / 100u;
 
     for (uint32_t i = 0; i < maxPeriods; ++i) {
         // Re-based every period. The sleep below stops the cycle counter, so any
@@ -113,17 +104,9 @@ BurstStats SoftPwm::runBurst(uint32_t maxPeriods)
         mPin.lightOff();
         ++stats.edges;
 
-        if (mSleeper != nullptr && offUs >= kSleepFloorUs) {
-            // Inside the off phase, where the light is already off and nothing
-            // can tell the difference. One millisecond short of what fits, so the
-            // spin closes the gap rather than the sleep overshooting it.
-            const uint32_t sleepMs = offUs / 1000u;
-            if (sleepMs > 1u) {
-                mSleeper->sleepMs(sleepMs - 1u);
-            } else {
-                mSleeper->sleepMs(1u);
-            }
-        }
+        // Spun, not slept. See the header: delay() is a quarter of a period
+        // coarse, and the cycle counter stops while it sleeps, so neither the
+        // edges nor the remaining time survive it.
         spinUntil(cycleStart + mPeriodUs);
 
         // Measured from the edges actually issued, not from the requested

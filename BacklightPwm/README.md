@@ -171,7 +171,43 @@ Two things fall out of it for free:
   contest a pin it believes is already doing what it wants. The `contest_*` rungs
   that provoke it deliberately have still never run; that question is open.
 
-### The flicker, which was my fix and not the hardware
+### The 5 Hz flash, which was the screen repainting
+
+Moving the sleep inside the off phase fixed the 100 Hz envelope and the light
+still flashed, at a slower rate. Sampling every frame of a 30 fps video through
+one rung found it exactly: **one frame in six came out about ten percent
+brighter, every 0.200 seconds.** That is `kPublishPeriodMs`, the status publish
+rate. Each publish wakes the GUI thread, the GUI preempts the service, and when
+that lands during a pulse's on phase the pin stays on for the whole preemption.
+
+So the screen now holds still for the length of a rung and repaints only when the
+rung changes. That is what metering wants anyway, and it is the same argument
+BacklightProbe's quiet steps are built on: a repaint is not free, and a screen
+that updates during a measurement is part of the measurement.
+
+### Sleeping inside a period does not work on this kernel
+
+Three placements were tried and the third failed on accuracy rather than
+flicker: `d25` came out at 18 percent and `d10` at 7. Two reasons, and together
+they rule the idea out:
+
+- **`ISystem::delay` is roughly millisecond-granular**, a quarter of the whole
+  4 ms period. Measured on hardware, `delay(1)` often returned almost immediately
+  while `delay(2)` slept about 2 ms, so identical code delivered 73 percent at one
+  rung and 18 at another.
+- **`DWT_CYCCNT` stops while the core sleeps**, so the spin after a sleep cannot
+  tell how much of the period is left and spins the off phase again on top of it.
+
+A modulated period therefore spins, both phases, and a modulated rung costs a
+full thread. The CPU is handed back **between** rungs instead, in a dark breather
+where the service holds the pin and blocks on the message queue. A gap inside a
+rung is a flash; a gap between rungs is just the boundary between two
+measurements, and it makes the rungs easier to pick out of a video.
+
+That is why the modulated rungs are four seconds rather than six, and why every
+one of them is followed by `gapN`.
+
+### The earlier flicker, which was also my fix and not the hardware
 
 Sleeping **between** bursts kept the GUI alive and the run completed, but the
 screen visibly flashed on every modulated rung. It was doing exactly what it was

@@ -62,9 +62,16 @@ TEST(PwmPlan, TheProvokingRungsAreAContiguousSuffix)
     for (size_t i = firstProvoking; i < ladderSize(); ++i) {
         const KernelAsk ask = ladder()[i].ask;
         const bool provokes = (ask == KernelAsk::ShortAutoOff || ask == KernelAsk::TurnOff);
-        EXPECT_TRUE(provokes)
+
+        // A dark breather is allowed through: it measures nothing, so the kernel
+        // being provoked cannot spoil it. Anything that lights the screen after
+        // the contest has begun is a measurement taken while the kernel is
+        // fighting for the pin, which is what must not happen.
+        const bool darkBreather = (ladder()[i].duty == 0);
+
+        EXPECT_TRUE(provokes || darkBreather)
             << "rung " << i << " (" << ladder()[i].label
-            << ") is measured after the kernel was already provoked at rung " << firstProvoking;
+            << ") lights the screen after the kernel was provoked at rung " << firstProvoking;
     }
 
     // And enough of the ladder must survive in front of it to be worth filming.
@@ -86,8 +93,14 @@ TEST(PwmPlan, TheContestRungOutlastsTheAutoOffItProvokes)
     // interesting moment.
     for (size_t i = 0; i < ladderSize(); ++i) {
         if (ladder()[i].ask == KernelAsk::ShortAutoOff) {
-            EXPECT_GT(ladder()[i].holdMs, kShortAutoOffMs * 3u)
-                << "rung " << i << " ends too soon after the auto-off to see the aftermath";
+            // What matters is how long the rung runs *after* the kernel's timer
+            // fires, since that is the window the answer appears in.
+            ASSERT_GT(ladder()[i].holdMs, kShortAutoOffMs);
+            EXPECT_GE(ladder()[i].holdMs - kShortAutoOffMs, 3000u)
+                << "rung " << i << " leaves only "
+                << (ladder()[i].holdMs - kShortAutoOffMs)
+                << " ms after the auto-off fires, which is not long enough to see"
+                   " whether the light survived it";
         }
     }
 }
@@ -97,6 +110,44 @@ TEST(PwmPlan, StartsAndEndsDark)
     ASSERT_GT(ladderSize(), 1u);
     EXPECT_EQ(ladder()[0].duty, 0u) << "no dark baseline to compare the lit rungs against";
     EXPECT_EQ(ladder()[ladderSize() - 1].duty, 0u) << "the run leaves the light on";
+}
+
+TEST(PwmPlan, NoModulatedRungRunsLongEnoughToStarveTheGui)
+{
+    // A modulated rung spins flat out, and thirty consecutive seconds of that
+    // rebooted the watch. Every one must be short, and every one must be
+    // followed by a breather where the service sleeps and the GUI catches up.
+    for (size_t i = 0; i < ladderSize(); ++i) {
+        const uint8_t duty = ladder()[i].duty;
+        if (duty == 0 || duty == 100) {
+            continue; // Held: costs no CPU at all.
+        }
+
+        EXPECT_LE(ladder()[i].holdMs, 6000u)
+            << "rung " << i << " (" << ladder()[i].label << ") spins for "
+            << ladder()[i].holdMs << " ms without letting anything else run";
+
+        ASSERT_LT(i + 1, ladderSize())
+            << "rung " << i << " modulates and nothing follows it";
+        EXPECT_EQ(ladder()[i + 1].duty, 0u)
+            << "rung " << i << " (" << ladder()[i].label
+            << ") is not followed by a dark breather, so the GUI never catches up";
+    }
+}
+
+TEST(PwmPlan, TheBreathersAreLongEnoughToBeWorthHaving)
+{
+    // A breather that is shorter than a couple of GUI frames is not a breather.
+    uint32_t breathers = 0;
+    for (size_t i = 1; i < ladderSize(); ++i) {
+        if (ladder()[i].duty == 0 && ladder()[i - 1].duty != 0
+            && ladder()[i].ask == KernelAsk::Nothing) {
+            ++breathers;
+            EXPECT_GE(ladder()[i].holdMs, 500u)
+                << "breather at rung " << i << " is too short to be one";
+        }
+    }
+    EXPECT_GE(breathers, 5u) << "not enough breathers to break up the modulated run";
 }
 
 TEST(PwmPlan, EveryRungIsHeldLongEnoughToPhotograph)
