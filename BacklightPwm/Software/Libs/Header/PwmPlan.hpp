@@ -67,6 +67,22 @@ constexpr uint32_t kPeriodUs = 4000;
 /// up honestly in the achieved duty on screen.
 constexpr uint32_t kBurstUs = 8000;
 
+/// Slept after every burst, and this is the line that keeps the watch alive.
+///
+/// `ISystem::yield()` was not enough. A run on 2026-08-28 climbed the ladder
+/// correctly, and the light stepped through all six levels, but the **screen
+/// froze** the moment the first modulated rung began and stayed frozen for the
+/// full thirty seconds of modulation. It unfroze the instant the ladder reached a
+/// held rung, painted one frame, and the watch rebooted.
+///
+/// So yielding hands back the rest of a slice and gets scheduled straight back;
+/// only a sleep actually lets another thread run. Two milliseconds after an eight
+/// millisecond burst gives the GUI a fifth of the time and costs a fifth of the
+/// brightness on modulated rungs, uniformly, which the achieved duty reports
+/// honestly and which does not touch the endpoints at all: duty 0 and 100 are
+/// held, never burst, so full brightness is exactly full.
+constexpr uint32_t kPostBurstSleepMs = 2;
+
 /// The short auto-off used by the contest rung. Two seconds into a ten second
 /// rung, so the expiry lands in the middle of it with plenty of run either side.
 constexpr uint32_t kShortAutoOffMs = 2000;

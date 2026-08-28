@@ -175,11 +175,14 @@ void Service::poll()
         // still the most recent thing anyone wrote. See checkForKernelWrite.
         checkForKernelWrite(nowMs);
 
-        // Hand the CPU back, every burst, without exception. This is the line
-        // whose absence rebooted the watch: a burst is tens of milliseconds of
-        // busy waiting, and without a yield between them nothing else on the
-        // system ever runs.
+        // Hand the CPU back, every burst, without exception.
+        //
+        // A yield alone was not enough: it gives up the rest of a slice and gets
+        // scheduled straight back, so the GUI thread was starved for the entire
+        // thirty seconds of modulation, froze on one frame, and the watch
+        // rebooted. A sleep actually lets something else run.
         mKernel.sys.yield();
+        mKernel.sys.delay(Pwm::kPostBurstSleepMs);
 
         // Duty measured against the rung's wall clock rather than against the
         // time spent inside bursts, so the gaps between bursts are counted. They

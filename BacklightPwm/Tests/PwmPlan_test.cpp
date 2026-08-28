@@ -122,6 +122,33 @@ TEST(PwmPlan, LabelsAreUniqueAndPresent)
     }
 }
 
+TEST(PwmPlan, EveryBurstIsFollowedByARealSleep)
+{
+    // The GUI thread has to get time, and a yield does not give it any: a run on
+    // 2026-08-28 froze the screen for the whole thirty seconds of modulation and
+    // then rebooted, while the ladder underneath ran perfectly. Only a sleep
+    // actually lets another thread run.
+    EXPECT_GT(kPostBurstSleepMs, 0u) << "nothing sleeps between bursts; the GUI will starve";
+
+    // And it has to be a meaningful share. A burst of 8 ms followed by 1 ms is
+    // 11 percent; the run that starved the GUI was giving it nothing at all, so
+    // err generous.
+    const uint32_t burstMs = kBurstUs / 1000u;
+    EXPECT_GE(kPostBurstSleepMs * 5u, burstMs)
+        << "sleeping " << kPostBurstSleepMs << " ms per " << burstMs
+        << " ms burst leaves under a fifth of the time for everything else";
+}
+
+TEST(PwmPlan, TheSleepDoesNotSwampTheDutyItIsProtecting)
+{
+    // The other side of it: the post-burst sleep is off-time on every modulated
+    // rung, so it scales them all down uniformly. Too large and the low rungs
+    // vanish into the noise and the ladder stops being readable.
+    const uint32_t burstMs = kBurstUs / 1000u;
+    EXPECT_LE(kPostBurstSleepMs * 2u, burstMs)
+        << "the sleep is more than a third of the cycle; the ladder will compress";
+}
+
 TEST(PwmPlan, TheBurstFitsComfortablyInsideAWatchdogPeriod)
 {
     // This is the number that decides whether the watch reboots mid-run. FwDump

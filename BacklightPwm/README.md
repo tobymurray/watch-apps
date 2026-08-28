@@ -140,6 +140,54 @@ part of the sleeping experiment worth keeping.
 If it reboots again, `kBurstUs` in `PwmPlan.hpp` is the first number to reduce,
 and shortening the rung holds is the second.
 
+## Result, 2026-08-28: the ladder works
+
+The watch's own record, from a run that climbed the whole ladder before dying at
+the rung after it:
+
+| Rung | Requested | Achieved | Periods | Screen luminance | Share of range |
+| --- | --- | --- | --- | --- | --- |
+| d100 | 100 | 100 | held | 79.0 % | 100 % |
+| d75 | 75 | **74** | 1482 | 76.2 % | 90 % |
+| d50 | 50 | **49** | 2964 | 73.0 % | 79 % |
+| d25 | 25 | **24** | 4445 | 63.6 % | 45 % |
+| d10 | 10 | **9** | 5926 | 56.2 % | 19 % |
+| d1 | 1 | **1** | 7408 | 50.7 % | 0 % |
+
+Achieved duty is within one point of requested at every rung, and the luminance,
+measured frame by frame off a 30 fps video of the screen, steps monotonically
+against an off-level of about 51 percent.
+
+**So the light dims, from an app, on hardware whose SDK says the field is inert.**
+That is the whole question this app was written to answer.
+
+Two things fall out of it for free:
+
+- **The core clock is 162 MHz**, measured rather than decoded. The 2026-07-29
+  investigation captured RCC three times and never got the clock tree out of the
+  bit diagrams, so this closes an item its ledger left open.
+- **`kernel_writes = 0` across 4,700 samples.** With the kernel asked to hold the
+  backlight on, it never once wrote the pin during the ladder. It does not
+  contest a pin it believes is already doing what it wants. The `contest_*` rungs
+  that provoke it deliberately have still never run; that question is open.
+
+### What killed it, which was the screen and not the ladder
+
+The run died at `d100_again`, immediately after the last modulated rung. The video
+says why: **the screen froze at run-clock 8.9 s, the instant the first modulated
+rung began, and stayed frozen for the full thirty seconds of modulation.** It
+unfroze the moment the ladder reached a held rung, painted exactly one frame, and
+the watch rebooted.
+
+`ISystem::yield()` is not enough. It gives up the rest of a slice and gets
+scheduled straight back, so the GUI thread got nothing for thirty seconds. Only a
+sleep actually lets another thread run, which is what `kPostBurstSleepMs` is: two
+milliseconds after every eight millisecond burst.
+
+That costs a fifth of the brightness on modulated rungs, uniformly, which the
+achieved duty reports honestly. It does not touch the endpoints, because duty 0
+and 100 are held rather than burst, so full brightness stays exactly full.
+
 ## What a run leaves behind
 
 Two files in `Apps/BacklightPwm/`, both written as the run happens rather than at
