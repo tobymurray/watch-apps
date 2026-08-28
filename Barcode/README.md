@@ -291,8 +291,21 @@ dashes where the arc should be. That was found and worked around in `6b7de05`
 reintroduced in 0.3.0 by lighting `L1`/`L2` for cycling, which simply moved the
 artifact from the bottom-right corner to the left edge. Fixed again in 0.3.2.
 
-The caption carries the affordance instead: `Gym 4/4` says there are four codes
-without drawing anything the blit path can corrupt.
+The pager marks carry the affordance instead: a row of small marks below the id,
+one per code with the current one lit, says there are four codes without drawing
+anything the blit path can corrupt. They are `touchgfx::Box` fills — a path that
+renders correctly on device, unlike the indicator bitmaps. The unlit ones are
+`170`, not something dimmer, because `LCD8bpp_ABGR2222` has two bits a channel:
+the only greys are 85, 170 and 255, and 85 is the first thing to wash out in
+daylight. A pager whose unlit marks vanish has lost the one thing it says.
+
+The marks replaced a fraction appended to the caption in 0.3.4. `Gym 1/2` read as
+a title with a number in it rather than as the first of two codes, so the caption
+is now only ever the code's name, and position moved out of the label entirely.
+Six marks at 8px on a 15px pitch span 83px of the ~130 the round panel still
+allows at that height — and since `Commands.hpp` caps `kMaxCodes` at seven (98px),
+the row cannot outgrow the screen. An unnamed code now has no caption at all: the
+marks and the id beneath the bars say everything the fraction used to.
 
 Getting real hints back means *drawing* the arcs rather than blitting them —
 [`SleepLab`](../SleepLab) and [`Squash`](../Squash) both replaced this container

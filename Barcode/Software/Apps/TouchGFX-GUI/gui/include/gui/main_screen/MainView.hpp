@@ -41,11 +41,17 @@ private:
     /// pointer, so this has to outlive it.
     touchgfx::Unicode::UnicodeChar idBuffer[Barcode::kMaxIdLength + 1];
 
-    /// The line above the bars: this code's name, and its position when there
-    /// is more than one to move between. Sized for "<name> 6/6".
-    static const uint16_t kCaptionChars = Barcode::kMaxNameLength + 8;
+    /// The line above the bars: this code's name, alone. Position lives in the
+    /// pager marks instead, so nothing is appended here.
+    static const uint16_t kCaptionChars = Barcode::kMaxNameLength + 1;
     touchgfx::TextAreaWithOneWildcard caption;
     touchgfx::Unicode::UnicodeChar    captionBuffer[kCaptionChars];
+
+    /// Which of the codes is on screen, as one small mark each below the id --
+    /// the current one white, the rest dim. Boxes rather than bitmaps: filled
+    /// rectangles go through a path that renders correctly on device, unlike
+    /// the button indicators (see showBarcode()).
+    touchgfx::Box pagerMark[Barcode::kMaxCodes];
 
     /// The prompt is one text area per line rather than one wrapped area: a
     /// newline inside a wildcard is not a line break to TouchGFX, it is where
@@ -55,6 +61,10 @@ private:
     static const uint16_t kPromptChars = 24;
     touchgfx::TextAreaWithOneWildcard promptLine[kPromptLines];
     touchgfx::Unicode::UnicodeChar    promptBuffer[kPromptLines][kPromptChars];
+
+    /// Lay out and colour the pager marks for the current count and index.
+    /// Hidden entirely when there is only one code.
+    void showPager();
 
     /// Bars, with the id in readable text beneath them.
     void showBarcode();

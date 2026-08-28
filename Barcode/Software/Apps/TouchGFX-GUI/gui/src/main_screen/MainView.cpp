@@ -1,7 +1,5 @@
 #include <gui/main_screen/MainView.hpp>
 
-#include <cstdio>
-
 #include <texts/TextKeysAndLanguages.hpp>
 
 namespace
@@ -14,6 +12,13 @@ constexpr int16_t kPromptX = 20, kPromptW = 200, kPromptLineH = 24, kPromptTop =
 /// The caption sits in the band above the bars, inset past the button ticks
 /// the bezel container draws down either side.
 constexpr int16_t kCaptionX = 40, kCaptionY = 48, kCaptionW = 160, kCaptionH = 24;
+
+/// One mark per code, in the band the arc leaves below the id: kMarkW wide on
+/// a kMarkPitch grid, centred on the face. Six of them span 83px of the ~130
+/// the circle still allows at kMarkY, and Commands.hpp caps kMaxCodes at seven
+/// (98px), so this row can never outgrow the screen.
+constexpr int16_t kMarkW = 8, kMarkH = 4, kMarkPitch = 15, kMarkY = 212;
+constexpr int16_t kScreenW = 240;
 
 struct Prompt
 {
@@ -51,25 +56,6 @@ const Prompt &promptFor(Barcode::Problem problem)
     return kNoConfig;
 }
 
-/// "Kids 2/5", or "2/5" unnamed, or just the name when there is only one code.
-void composeCaption(const Barcode::State &state, uint8_t index,
-                    char *out, size_t outSize)
-{
-    const char *name = state.codes[index].name;
-
-    if (state.count <= 1) {
-        snprintf(out, outSize, "%s", name);
-        return;
-    }
-    if (name[0] == '\0') {
-        snprintf(out, outSize, "%u/%u", static_cast<unsigned>(index + 1),
-                 static_cast<unsigned>(state.count));
-        return;
-    }
-    snprintf(out, outSize, "%s %u/%u", name, static_cast<unsigned>(index + 1),
-             static_cast<unsigned>(state.count));
-}
-
 } // namespace
 
 MainView::MainView()
@@ -101,6 +87,14 @@ MainView::MainView()
     caption.setWildcard1(captionBuffer);
     caption.setVisible(false);
     add(caption);
+
+    // Positioned in showPager() rather than here: the row is centred on the
+    // face, so where each mark goes depends on how many there are.
+    for (uint16_t i = 0; i < Barcode::kMaxCodes; i++) {
+        pagerMark[i].setWidthHeight(kMarkW, kMarkH);
+        pagerMark[i].setVisible(false);
+        add(pagerMark[i]);
+    }
 
     for (uint16_t i = 0; i < kPromptLines; i++) {
         promptLine[i].setPosition(kPromptX, kPromptTop + i * kPromptLineH, kPromptW, kPromptLineH);
@@ -187,9 +181,14 @@ void MainView::showBarcode()
     barcode.setCode(code.id);
     touchgfx::Unicode::strncpy(idBuffer, code.id, Barcode::kMaxIdLength + 1);
 
-    char text[kCaptionChars] {};
-    composeCaption(mState, mIndex, text, sizeof(text));
-    touchgfx::Unicode::strncpy(captionBuffer, text, kCaptionChars);
+    // The name and nothing else. It used to read "<name> 2/6", which put the
+    // position inside the label: "Gym 1/2" scans as a title with a fraction
+    // in it rather than as the first of two codes. The pager marks below the
+    // id carry the position now, so the caption is only ever the name -- and
+    // an unnamed code has no caption at all.
+    touchgfx::Unicode::strncpy(captionBuffer, code.name, kCaptionChars);
+
+    showPager();
 
     // NO ON-SCREEN BUTTON HINTS. Not an oversight, and not a style choice:
     // the indicators are 23x35 ABGR2222 bitmaps and they blit corrupt on
@@ -199,8 +198,9 @@ void MainView::showBarcode()
     // 0.3.0 by lighting L1/L2 for cycling, which put the same artifact on the
     // left edge instead of the bottom-right.
     //
-    // The caption carries the affordance instead: "Gym 4/4" says there are
-    // four codes without drawing anything the blit path can corrupt.
+    // The pager marks carry the affordance instead: four marks below the id
+    // say there are four codes, drawn as plain filled boxes rather than
+    // anything the blit path can corrupt.
     //
     // To have real hints back, the arcs have to be *drawn* rather than
     // blitted -- SleepLab and Squash replaced this container with one built
@@ -212,9 +212,40 @@ void MainView::showBarcode()
     barcodeBackground.setVisible(true);
     barcode.setVisible(true);
     textArea1.setVisible(true);
-    caption.setVisible(text[0] != '\0');
+    caption.setVisible(code.name[0] != '\0');
     for (uint16_t i = 0; i < kPromptLines; i++) {
         promptLine[i].setVisible(false);
+    }
+}
+
+void MainView::showPager()
+{
+    for (uint16_t i = 0; i < Barcode::kMaxCodes; i++) {
+        pagerMark[i].setVisible(false);
+    }
+
+    // One code needs no pager: a single mark says nothing the screen does not
+    // already say, and cycle() will not move off it anyway.
+    if (mState.count < 2) {
+        return;
+    }
+
+    const int16_t count = static_cast<int16_t>(mState.count);
+    const int16_t left  = static_cast<int16_t>((kScreenW - ((count - 1) * kMarkPitch + kMarkW)) / 2);
+
+    // 170 rather than something dimmer for the marks that are not current: the
+    // panel is LCD8bpp_ABGR2222, two bits a channel, so the only greys that
+    // exist are 85, 170 and 255. 85 is the dimmest non-black the display can
+    // make and it is the first thing to wash out in daylight -- and a pager
+    // whose unlit marks vanish has lost the one thing it is here to say, which
+    // is how many codes there are. 170 stays legible and is still plainly not
+    // the lit one.
+    for (int16_t i = 0; i < count; i++) {
+        pagerMark[i].setPosition(static_cast<int16_t>(left + i * kMarkPitch), kMarkY, kMarkW, kMarkH);
+        pagerMark[i].setColor(i == static_cast<int16_t>(mIndex)
+                                  ? touchgfx::Color::getColorFromRGB(255, 255, 255)
+                                  : touchgfx::Color::getColorFromRGB(170, 170, 170));
+        pagerMark[i].setVisible(true);
     }
 }
 
@@ -227,6 +258,9 @@ void MainView::showPrompt(Barcode::Problem problem)
     barcode.setVisible(false);
     textArea1.setVisible(false);
     caption.setVisible(false);
+    for (uint16_t i = 0; i < Barcode::kMaxCodes; i++) {
+        pagerMark[i].setVisible(false);
+    }
 
     buttons.setL1(ButtonsSet::NONE);
     buttons.setL2(ButtonsSet::NONE);
