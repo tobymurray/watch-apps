@@ -273,6 +273,65 @@ phone matches a new `.uapp` to the installed one when the file name changes.
 The build prints it, so it can be checked rather than assumed —
 `INFO:root:ID : 409506B8B69EC13E` in the `app_merging.py` output.
 
+## Fitting the id on a round screen
+
+The id under the bars is the human-readable half of the barcode: what someone
+reads out or types in when a scanner will not cooperate. It is also the widest
+thing on the face, and the face is a circle, which the TouchGFX Designer's
+geometry knows nothing about — `textArea1` was 203px wide at x=19, which is 203px
+of a *square*. The id sits low on the panel, so a long one had its first and last
+character shaved off by the bezel.
+
+**The simulator cannot show this.** It draws the full 240×240 square with no
+bezel, so the clipping is invisible there and reached the watch twice before it
+was caught. Mask the simulator's screenshots with a 120px-radius disc first:
+
+```sh
+convert -size 240x240 xc:black -fill white -draw "circle 119.5,119.5 119.5,-0.5" disc.png
+convert shot.png disc.png -negate -compose Multiply -composite outside.png
+convert outside.png -format "%[fx:int(mean*w*h)]" info:   # ink the bezel eats; 0 is the goal
+```
+
+Three tiers, and the id is measured with `Font::getStringWidth` rather than
+counted, because the font is proportional — `WWWWWWWWWWWW` is twelve characters
+and 240px, while sixteen `1`s are 208:
+
+| Width at SemiBold 20 | What is drawn |
+| --- | --- |
+| ≤ 186 | SemiBold 20, one line |
+| > 186, and ≤ 187 at Regular 18 | Regular 18, one line |
+| wider still | Regular 18, split in half over two lines |
+
+Regular 18 is already in flash for the caption and the prompts, so stepping down
+to it costs no font — which matters, because `594bedb` trimmed this app to the two
+faces it actually draws. A third, smaller face would not help anyway: `W` is about
+one em wide, so sixteen of them need an 11pt face to fit on one line, and that is
+not readable.
+
+Splitting rather than truncating, because half an id is no use to someone typing
+it in, and the bars always carry the whole thing. Both halves always fit: the
+widest half possible is eight `W`s at 144px, against the ~170px the lower of the
+two rows allows. It is a second `TextArea`, not a newline — a newline inside a
+wildcard is where TouchGFX *stops*, not a line break, which is the same reason
+the prompt is four widgets.
+
+The numbers all come from measurement, since neither font metrics nor the
+circle's arithmetic predict the result well — a glyph's widest point is not on its
+bottom row, so the analytic bound is too pessimistic:
+
+| id | chars | SemiBold 20 | Regular 18 | ink | outside the circle |
+| --- | --- | --- | --- | --- | --- |
+| `0123456789ABC` | 13 | 172 | 147 | 170 | 0 |
+| `0123456789ABCD` | 14 | 186 | 160 | 185 | 0 |
+| `0123456789ABCDE` | 15 | 197 | 169 | 195 | 20 |
+| `0123456789ABCDEF` | 16 | 208 | 178 | 203 | 64 |
+| `GYMWORLD12345678` | 16 | 222 | 193 | — | 2 |
+| `WWWWWWWWWWWW` | 12 | 240 | 216 | 203 | 29 |
+
+186 is the widest string *measured* to sit wholly inside the circle, not an
+interpolation between it and the 197 that fails. `GYMWORLD12345678` is the reason
+the third tier exists: an entirely plausible id that overflows even 18pt by 6px.
+
 ## Buttons
 
 | Button | Position | Does |

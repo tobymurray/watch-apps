@@ -47,6 +47,12 @@ private:
     touchgfx::TextAreaWithOneWildcard caption;
     touchgfx::Unicode::UnicodeChar    captionBuffer[kCaptionChars];
 
+    /// The id's second line, used only when even the 18pt face cannot fit the id
+    /// on one -- twelve 'W's, say. textArea1 is the first line; see kIdLine1Y in
+    /// MainView.cpp for why a wide id is split rather than cut.
+    touchgfx::TextAreaWithOneWildcard idLine2;
+    touchgfx::Unicode::UnicodeChar    idLine2Buffer[Barcode::kMaxIdLength + 1];
+
     /// Which of the codes is on screen, as one small mark each below the id --
     /// the current one white, the rest dim. Boxes rather than bitmaps: filled
     /// rectangles go through a path that renders correctly on device, unlike
@@ -61,6 +67,10 @@ private:
     static const uint16_t kPromptChars = 24;
     touchgfx::TextAreaWithOneWildcard promptLine[kPromptLines];
     touchgfx::Unicode::UnicodeChar    promptBuffer[kPromptLines][kPromptChars];
+
+    /// Put @p id in textArea1 at the largest face that fits, splitting it over
+    /// idLine2 when even the smallest will not. Returns true if it split.
+    bool layOutId(const char *id);
 
     /// Lay out and colour the pager marks for the current count and index.
     /// Hidden entirely when there is only one code.

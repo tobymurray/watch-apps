@@ -1,5 +1,7 @@
 #include <gui/main_screen/MainView.hpp>
 
+#include <cstring>
+
 #include <texts/TextKeysAndLanguages.hpp>
 
 namespace
@@ -12,6 +14,50 @@ constexpr int16_t kPromptX = 20, kPromptW = 200, kPromptLineH = 24, kPromptTop =
 /// The caption sits in the band above the bars, inset past the button ticks
 /// the bezel container draws down either side.
 constexpr int16_t kCaptionX = 40, kCaptionY = 48, kCaptionW = 160, kCaptionH = 24;
+
+/// The id row, sized to the circle rather than to the screen. The generated
+/// textArea1 is 203px wide at x=19 -- 203px of a *square*. The id sits low on a
+/// round panel, though, so the bezel takes the ends of a long one: masked
+/// renders put 20 pixels of a 15-character id outside the circle and 64 of a
+/// 16-character one.
+///
+/// Both numbers below come from measuring, because neither font metrics nor the
+/// circle's arithmetic predict it well -- a glyph's widest point is not on its
+/// bottom row, so the naive bound is too pessimistic. Advance widths from
+/// Font::getStringWidth, ink from the rendered pixels, "outside" against a
+/// 120px-radius mask:
+///
+///   id                 chars  bold  reg   ink  outside
+///   0123456789ABC        13    172  147   170     0
+///   0123456789ABCD       14    186  160   185     0
+///   0123456789ABCDE      15    197  169   195    20
+///   0123456789ABCDEF     16    208  178   203    64
+///   WWWWWWWWWWWW         12    240  216   203    29
+///
+/// So kIdInkLimit is 186: the widest string *measured* to sit wholly inside the
+/// circle, not an interpolation between 186 and the 197 that fails. Above it the
+/// 18pt face is used instead, which is why 15 and 16 characters now fit at all.
+/// kIdW then clips whatever still will not fit -- twelve 'W's beat even 18pt --
+/// so ink outside the panel is impossible whatever an id says.
+///
+/// The simulator cannot show any of this: it draws the full 240x240 square with
+/// no bezel, so its output has to be masked with a 120px-radius disc before the
+/// clipping appears. That is why this reached the watch before it was caught.
+constexpr int16_t  kIdX = 27, kIdY = 178, kIdW = 187, kIdH = 30;
+constexpr uint16_t kIdInkLimit = 186;
+
+/// Where the id goes when even 18pt will not fit it on one line. Two lines 18px
+/// apart, which puts the first line's ink at 174..186 and the second's at
+/// 192..204: 7px below the bars' white backing and 8px above the pager marks.
+/// Both rows are comfortably inside the arc -- the lower one allows about 170px
+/// and no half can exceed 144, since the widest possible half is eight 'W's.
+///
+/// Splitting rather than cutting, because the id under the bars is what a
+/// person reads out or types in when a scanner will not cooperate, and half an
+/// id is no use for that. The bars always carry the whole thing; this makes the
+/// text match them. `WWWWWWWWWWWW` is 216px at 18pt and lost its last two
+/// characters to kIdW before this existed.
+constexpr int16_t kIdLine1Y = 169, kIdLine2Y = 187, kIdLineH = 18;
 
 /// One mark per code, in the band the arc leaves below the id: kMarkW wide on
 /// a kMarkPitch grid, centred on the face. Six of them span 83px of the ~130
@@ -81,12 +127,23 @@ MainView::MainView()
     barcode.setPosition(20, 75, 200, 90);
     add(barcode);
 
+    // Re-placed from the generated 203px-wide box: see kIdX above. The widget
+    // itself belongs to MainViewBase, which the Designer owns and rewrites.
+    textArea1.setPosition(kIdX, kIdY, kIdW, kIdH);
+
     caption.setPosition(kCaptionX, kCaptionY, kCaptionW, kCaptionH);
     caption.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
     caption.setTypedText(touchgfx::TypedText(T_TMP_REGULAR_18));
     caption.setWildcard1(captionBuffer);
     caption.setVisible(false);
     add(caption);
+
+    // Positioned in layOutId(), which knows whether there are two lines.
+    idLine2.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
+    idLine2.setTypedText(touchgfx::TypedText(T_TMP_REGULAR_18));
+    idLine2.setWildcard1(idLine2Buffer);
+    idLine2.setVisible(false);
+    add(idLine2);
 
     // Positioned in showPager() rather than here: the row is centred on the
     // face, so where each mark goes depends on how many there are.
@@ -179,7 +236,10 @@ void MainView::showBarcode()
     const Barcode::Code &code = mState.codes[mIndex];
 
     barcode.setCode(code.id);
-    touchgfx::Unicode::strncpy(idBuffer, code.id, Barcode::kMaxIdLength + 1);
+
+    // layOutId fills idBuffer -- with the whole id, or with its first half when
+    // it has to split -- so nothing else may write that buffer.
+    const bool splitId = layOutId(code.id);
 
     // The name and nothing else. It used to read "<name> 2/6", which put the
     // position inside the label: "Gym 1/2" scans as a title with a fraction
@@ -212,10 +272,54 @@ void MainView::showBarcode()
     barcodeBackground.setVisible(true);
     barcode.setVisible(true);
     textArea1.setVisible(true);
+    idLine2.setVisible(splitId);
     caption.setVisible(code.name[0] != '\0');
     for (uint16_t i = 0; i < kPromptLines; i++) {
         promptLine[i].setVisible(false);
     }
+}
+
+bool MainView::layOutId(const char *id)
+{
+    // Measured per string rather than by character count, because the font is
+    // proportional: sixteen '1's are narrower than fourteen mixed characters,
+    // so a length rule would shrink narrow ids for nothing and still overflow
+    // on wide ones. Twelve 'W's is only twelve characters and 240px.
+    //
+    // Regular 18 is already in flash for the caption and the prompts, so
+    // stepping down to it costs no font -- which matters, since 594bedb trimmed
+    // this app to the two faces it actually draws.
+    const touchgfx::TypedText large(T_TMP_SEMIBOLD_20);
+    const touchgfx::TypedText small(T_TMP_REGULAR_18);
+
+    touchgfx::Unicode::strncpy(idBuffer, id, Barcode::kMaxIdLength + 1);
+    const uint16_t largeWidth = large.getFont()->getStringWidth(touchgfx::TEXT_DIRECTION_LTR, idBuffer);
+    const uint16_t smallWidth = small.getFont()->getStringWidth(touchgfx::TEXT_DIRECTION_LTR, idBuffer);
+
+    if (smallWidth <= kIdW) {
+        textArea1.setTypedText(largeWidth <= kIdInkLimit ? large : small);
+        textArea1.setPosition(kIdX, kIdY, kIdW, kIdH);
+        idLine2.setVisible(false);
+        return false;
+    }
+
+    // Split by character count, not by width. Both halves fit either way -- the
+    // widest half possible is 144px against the 170 the lower row allows -- and
+    // an even character count is what a person reading the id back expects to
+    // see. The odd character goes on the first line, in reading order.
+    const size_t length = std::strlen(id);
+    const size_t first  = (length + 1) / 2;
+
+    touchgfx::Unicode::strncpy(idBuffer, id, static_cast<uint16_t>(first + 1));
+    idBuffer[first] = 0;
+    touchgfx::Unicode::strncpy(idLine2Buffer, id + first, Barcode::kMaxIdLength + 1);
+
+    textArea1.setTypedText(small);
+    idLine2.setTypedText(small);
+    textArea1.setPosition(kIdX, kIdLine1Y, kIdW, kIdLineH);
+    idLine2.setPosition(kIdX, kIdLine2Y, kIdW, kIdLineH);
+    idLine2.setVisible(true);
+    return true;
 }
 
 void MainView::showPager()
@@ -257,6 +361,7 @@ void MainView::showPrompt(Barcode::Problem problem)
     barcodeBackground.setVisible(false);
     barcode.setVisible(false);
     textArea1.setVisible(false);
+    idLine2.setVisible(false);
     caption.setVisible(false);
     for (uint16_t i = 0; i < Barcode::kMaxCodes; i++) {
         pagerMark[i].setVisible(false);
