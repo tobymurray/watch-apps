@@ -366,30 +366,50 @@ its technical literature (spec LD-29652B):
 That last row is where the four grey levels come from, and it is a fact about the
 glass rather than about `LCD8bpp_ABGR2222`.
 
-The dot pitch is the one that hurts. A Code 128 symbol for an id of *n*
-characters is `11n + 35` modules, drawn across 200 px, so the X-dimension is
-`200 × 126 / (11n + 35)` microns:
+The dot pitch is what turns a module width in pixels into one a scanner cares
+about. A Code 128 symbol for an id of *n* characters is `11n + 35` modules — the
+35 is the standard's own figure for non-data overhead — drawn across 200 px, so
+the X-dimension is `200 × 126 / (11n + 35)` microns:
 
 | chars | modules | X-dimension | |
 | --- | --- | --- | --- |
-| 7 | 112 | 225 µm | |
-| 8 | 123 | **204 µm** | the parkrun-shaped case, and the last one that clears the floor |
-| 9 | 134 | 188 µm | below |
-| 12 | 167 | 150 µm | below |
-| 16 | 211 | 119 µm | below |
+| 7 | 112 | 225 µm | 8.9 mil |
+| 8 | 123 | 204 µm | 8.0 mil — a parkrun id is 7 or 8 characters |
+| 12 | 167 | 150 µm | 5.9 mil |
+| 14 | 189 | 133 µm | 5.2 mil — longest that clears 5 mil |
+| 15 | 200 | 126 µm | 5.0 mil |
+| 16 | 211 | 119 µm | 4.7 mil |
 
-ISO/IEC 15417 puts the general minimum X-dimension at 0.19 mm (0.25 mm for
-retail scanning). **So an id of nine characters or more is already outside the
-standard, today, at any font size and whatever the anti-aliasing does.** Sixteen
-characters would need 268 px of bars and the panel is 240 px wide, so no
-rendering change reaches it — the `XDimension` tests in `Tests/` state this as a
-characterisation rather than leaving it folklore.
+**There is no ISO minimum to compare these against.** ISO/IEC 15417's scope
+specifies "…dimensions, decoding algorithms and *the parameters to be defined by
+applications*", and X-dimension is one of those application parameters. An
+earlier version of this README asserted a 0.19 mm ISO floor and concluded that
+any id over eight characters was "outside the standard". That was wrong — the
+figure is not in the symbology standard, and the conclusion drawn from it was
+wrong too.
 
-The lever that does exist is **Code 128 Subset C**, which packs two digits per
-symbol: a 16-digit id is 123 modules rather than 211, which is 204 µm — the same
-as an eight-character id, and above the floor. The encoder is Subset B only, but
-the 107-row table in `Code128.hpp` already carries `START_C` and `CODE_C`, so it
-is encoder logic and not new data. Not implemented.
+Against scanner capability instead, which is the question that matters:
+
+- Code 128 is a mid-density symbology, and scanner-selection guidance puts it at
+  5–10 mil capability. Everything up to **14 characters** clears 5 mil; 15 and 16
+  fall just under, at 4.96 and 4.7 mil.
+- Zebra's [LS2208 spec sheet](https://www.zebra.com/us/en/products/spec-sheets/scanners/general-purpose-scanners/ls2208.html)
+  — a cheap, very widely deployed laser scanner — quotes a 3.0 mil narrow
+  element. **Every length this app accepts is above that**, sixteen characters
+  included.
+
+So resolution is not the binding constraint anyone thought it was. What is
+likely to decide a scan on this panel is contrast, specular glare off the front
+polariser, and the anti-aliased bar edges — none of which these numbers measure,
+and all of which are settled by pointing a scanner at the watch rather than by
+arithmetic.
+
+**Code 128 Subset C** remains the lever if a long numeric id ever does prove
+marginal: the standard prices a numeric character at 5,5 modules against 11 for
+a Subset B character, so a 16-digit id is 123 modules rather than 211 — the same
+density as an eight-character id. The encoder is Subset B only, and the 107-row
+table in `Code128.hpp` already carries `START_C` and `CODE_C`, so it is encoder
+logic and not new data. Not implemented, and not urgent.
 
 Being reflective rather than emissive cuts both ways for scanning: contrast in
 daylight is paper-like, which is ideal, and in a dim room without the front light
@@ -477,10 +497,11 @@ cmake -B build . && cmake --build build && (cd build && ctest --output-on-failur
 
 Two things worth knowing before trusting a green run, both set out in
 [the tests' own README](Tests/README.md). The barcode gets a quiet zone of ten
-*pixels* where ISO/IEC 15417 asks for ten *modules*, which is short at every id
-length anyone would use; and an id of nine characters or more is below the
-standard's minimum X-dimension, which is a property of the dot pitch and not of
-the drawing. Both are recorded as characterisation tests rather than fixed.
+*pixels* where the symbology asks for ten *modules*, which is short at every id
+length anyone would use; and ids of 15 or 16 characters fall just under the 5 mil
+density that scanner-selection guidance suggests for Code 128, which is a
+property of the dot pitch and not of the drawing. Both are recorded as
+characterisation tests rather than fixed.
 
 Nothing here has seen a panel. The geometry tests can say a rectangle's corners
 are lit and what a module works out to in microns; they cannot say a scanner

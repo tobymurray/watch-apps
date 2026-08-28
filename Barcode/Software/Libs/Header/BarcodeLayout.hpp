@@ -97,11 +97,29 @@ constexpr int32_t kDotPitchMicrons = 126;
 /// cannot drift apart.
 constexpr int32_t kActiveDiameterMicrons = kDotPitchMicrons * kPanelWidth;
 
-/// ISO/IEC 15417 gives 0.19 mm as the smallest X-dimension for general use,
-/// with 0.25 mm the floor for retail scanning. Below the first of these a
-/// symbol is outside the standard whatever the rendering does about it.
-constexpr int32_t kMinXDimensionMicrons    = 190;
-constexpr int32_t kRetailXDimensionMicrons = 250;
+/// What a scanner has to resolve, as reference points -- *not* as a standard.
+///
+/// ISO/IEC 15417 does not set a minimum X-dimension for Code 128. Its scope
+/// says it specifies "...dimensions, decoding algorithms and the parameters to
+/// be defined by applications", and X-dimension is one of those application
+/// parameters. An earlier version of this file claimed a 0.19 mm ISO floor and
+/// was wrong: that figure is not in the symbology standard.
+///
+/// So the honest question is not "does this meet the standard" but "will the
+/// scanner in front of me resolve it". Two sourced reference points:
+///
+///   127 um (5 mil)  Code 128 is a mid-density symbology and scanner-selection
+///                   guidance puts it at 5-10 mil capability, so 5 mil is a
+///                   reasonable "any scanner should manage this" line.
+///    76 um (3 mil)  The narrow-element minimum on the spec sheet for Zebra's
+///                   LS2208 -- a cheap, very widely deployed laser scanner.
+///                   Quoted for Code 39, which is the same narrow element.
+///
+/// Both are resolution figures only. They say nothing about contrast, specular
+/// glare, or whether a given scanner will read a screen at all, and those are
+/// the things most likely to actually decide it on a reflective LCD.
+constexpr int32_t kMidDensityScannerMicrons  = 127;
+constexpr int32_t kAggressiveScannerMicrons  = 76;
 
 // ---------------------------------------------------------------------------
 // Where the barcode sits
@@ -314,19 +332,13 @@ struct Scannability
                          / static_cast<int32_t>(totalModules);
     }
 
-    /// @retval true The X-dimension reaches ISO/IEC 15417's 0.19mm general
-    ///              minimum. False means the symbol is outside the standard --
-    ///              it may still read on a good camera, but nothing in the
-    ///              rendering can be blamed if it does not.
-    constexpr bool meetsMinimumXDimension() const
+    /// @retval true A scanner that resolves @p scannerMicrons can resolve this
+    ///              symbol's narrow element. Parameterised rather than fixed,
+    ///              because there is no standard number to compare against --
+    ///              see the reference points above.
+    constexpr bool resolvableAt(int32_t scannerMicrons) const
     {
-        return xDimensionMicrons() >= kMinXDimensionMicrons;
-    }
-
-    /// @retval true The X-dimension reaches the 0.25mm retail floor.
-    constexpr bool meetsRetailXDimension() const
-    {
-        return xDimensionMicrons() >= kRetailXDimensionMicrons;
+        return xDimensionMicrons() >= scannerMicrons;
     }
 };
 

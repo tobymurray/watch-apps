@@ -137,8 +137,12 @@ TEST(PagerMarks, TheRowIsCentredAndSizedAsDocumented)
 // The X-dimension: the module width as a physical size
 //
 // Table 3-1 of the LS012B7DD06 datasheet gives a 0.126 mm dot pitch, which is
-// the number that decides whether any of this can be read. It is also the
-// number the pixel arithmetic cannot see: 1.6 px sounds ample and is 0.20 mm.
+// what turns "1.6 pixels" into a number a scanner cares about.
+//
+// There is deliberately no test here called "meets the standard", because
+// ISO/IEC 15417 does not set a minimum X-dimension -- its scope leaves it among
+// "the parameters to be defined by applications". The tests compare against
+// scanner *capability* instead, and say where each figure came from.
 // ---------------------------------------------------------------------------
 
 TEST(XDimension, TheDotPitchMatchesTheDatasheet)
@@ -148,46 +152,51 @@ TEST(XDimension, TheDotPitchMatchesTheDatasheet)
     EXPECT_EQ(BarcodeLayout::kActiveDiameterMicrons, 30240);
 }
 
-/// INVARIANT, and the one that matters most in this file: the parkrun-shaped
-/// id this app exists for clears ISO/IEC 15417's general minimum. Eight
-/// characters is 123 modules, 1.62 px, 0.204 mm against a 0.19 mm floor.
-/// If this fails, the app has stopped being able to do its job.
-TEST(XDimension, AnEightCharacterIdClearsTheGeneralMinimum)
+/// INVARIANT. A parkrun id is "A" plus six or seven digits, so seven or eight
+/// characters, and that is what this app exists for. Both come out well clear
+/// of 5 mil -- 0.225 and 0.204 mm, about 8.9 and 8.0 mil. If this fails the app
+/// has stopped being able to do its main job.
+TEST(XDimension, AParkrunIdIsComfortablyAboveMidDensity)
 {
-    const Scannability s = BarcodeLayout::scannabilityFor(modulesFor(8));
-    EXPECT_EQ(s.totalModules, 123);
-    EXPECT_EQ(s.xDimensionMicrons(), 204);
-    EXPECT_TRUE(s.meetsMinimumXDimension());
-}
-
-/// CHARACTERISATION. Nine characters and up are below the 0.19 mm minimum, and
-/// no rendering change fixes that -- 268 px of bars would be needed for sixteen
-/// characters and the panel is 240 px wide. Subset C, which packs two digits
-/// per symbol, is the only lever: it would take a 16-digit id from 211 modules
-/// to 123, the same as eight characters above.
-TEST(XDimension, CurrentlyNothingBeyondEightCharactersMeetsTheMinimum)
-{
-    for (size_t len = 9; len <= Code128::kMaxDataLength; len++) {
+    for (size_t len : {7u, 8u}) {
         const Scannability s = BarcodeLayout::scannabilityFor(modulesFor(len));
-        EXPECT_FALSE(s.meetsMinimumXDimension())
-            << "length " << len << " now reaches " << s.xDimensionMicrons()
-            << " um; if this improved, tighten this test";
+        EXPECT_TRUE(s.resolvableAt(BarcodeLayout::kMidDensityScannerMicrons))
+            << "length " << len << " is " << s.xDimensionMicrons() << " um";
     }
+    EXPECT_EQ(BarcodeLayout::scannabilityFor(modulesFor(8)).xDimensionMicrons(), 204);
 }
 
-/// CHARACTERISATION. The retail floor of 0.25 mm is reached only up to five
-/// characters, which no real id is.
-TEST(XDimension, CurrentlyOnlyVeryShortIdsMeetTheRetailFloor)
+/// INVARIANT. Every id length this app accepts stays above the narrow-element
+/// minimum on the LS2208's spec sheet, which is the most capable of the
+/// reference points and the cheapest scanner. Resolution is not what limits
+/// this app; the worst case, sixteen characters, is 0.119 mm -- about 4.7 mil.
+TEST(XDimension, EvenTheLongestIdIsAboveTheAggressiveScannerFigure)
 {
-    EXPECT_TRUE(BarcodeLayout::scannabilityFor(modulesFor(5)).meetsRetailXDimension());
-    for (size_t len = 6; len <= Code128::kMaxDataLength; len++) {
-        EXPECT_FALSE(BarcodeLayout::scannabilityFor(modulesFor(len)).meetsRetailXDimension())
-            << "length " << len;
+    for (size_t len = 1; len <= Code128::kMaxDataLength; len++) {
+        const Scannability s = BarcodeLayout::scannabilityFor(modulesFor(len));
+        EXPECT_TRUE(s.resolvableAt(BarcodeLayout::kAggressiveScannerMicrons))
+            << "length " << len << " is " << s.xDimensionMicrons() << " um";
     }
 }
 
-/// Reporting, so a reader gets the whole picture in one place rather than
-/// reconstructing it from the tests above.
+/// CHARACTERISATION, and a mild one: fifteen and sixteen characters fall just
+/// under the 5 mil mid-density line, at 4.96 and 4.7 mil. Worth knowing before
+/// relying on a 16-character id, not worth calling a defect -- and the fix if
+/// it ever matters is Subset C, which the standard itself prices at 5,5 modules
+/// per numeric character against 11 for a Subset B character.
+TEST(XDimension, CurrentlyFifteenAndSixteenFallJustUnderMidDensity)
+{
+    for (size_t len = 15; len <= Code128::kMaxDataLength; len++) {
+        EXPECT_FALSE(BarcodeLayout::scannabilityFor(modulesFor(len))
+                         .resolvableAt(BarcodeLayout::kMidDensityScannerMicrons))
+            << "length " << len << " now clears 5 mil; tighten this test";
+    }
+    EXPECT_TRUE(BarcodeLayout::scannabilityFor(modulesFor(14))
+                    .resolvableAt(BarcodeLayout::kMidDensityScannerMicrons))
+        << "fourteen characters is the longest that clears 5 mil";
+}
+
+/// Reporting, so a reader gets the whole picture in one place.
 TEST(XDimension, ReportTheWholeRange)
 {
     for (size_t len = 1; len <= Code128::kMaxDataLength; len++) {
@@ -195,9 +204,9 @@ TEST(XDimension, ReportTheWholeRange)
         std::cout << "  len " << (len < 10 ? " " : "") << len
                   << "  modules " << s.totalModules
                   << "  X " << s.xDimensionMicrons() << " um"
-                  << (s.meetsRetailXDimension() ? "  retail-ok"
-                      : s.meetsMinimumXDimension() ? "  general-ok"
-                                                   : "  BELOW 190 um")
+                  << (s.resolvableAt(BarcodeLayout::kMidDensityScannerMicrons)
+                          ? "  clears 5 mil"
+                          : "  under 5 mil")
                   << "\n";
     }
 }

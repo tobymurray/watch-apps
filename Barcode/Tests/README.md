@@ -82,11 +82,13 @@ whose technical literature — spec LD-29652B — states "1 pixel has RGB each 2
 the pixel can display 64 colors".
 
 **And it is physically small.** Table 3-1 of that same document gives a **0.126 mm
-dot pitch** and a **⌀30.24 mm active area** for 240×240 dots. That is the number
-that decides whether a barcode can be read at all, and the one the pixel
-arithmetic cannot see: a module 1.6 *pixels* wide sounds ample and is 0.20 *mm*
-wide, which is at the edge of what ISO/IEC 15417 contemplates. The `XDimension`
-tests are where that now lives.
+dot pitch** and a **⌀30.24 mm active area** for 240×240 dots, which is what turns
+a module width in pixels into one a scanner cares about. The `XDimension` tests
+are where that lives — and they compare against scanner *capability*, not against
+a standard, because ISO/IEC 15417 does not set a minimum X-dimension: its scope
+leaves it among "the parameters to be defined by applications". Everything up to
+14 characters clears the 5 mil mid-density line; every length the app accepts
+clears the 3 mil on an LS2208's spec sheet.
 
 Tests are labelled by what a failure means:
 
