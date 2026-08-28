@@ -84,13 +84,15 @@ void PwmLog::header(uint32_t uptimeMs, bool driving, uint32_t cyclesPerUs, uint3
     // question that was left open there.
     line("PWM core_clock_measured=%lu MHz (cycles_per_us, from DWT_CYCCNT over a busy wait)",
          static_cast<unsigned long>(cyclesPerUs));
-    line("PWM period_us=%lu burst_us=%lu rungs=%u", static_cast<unsigned long>(periodUs),
+    line("PWM period_us=%lu periods_per_burst=%lu rungs=%u", static_cast<unsigned long>(periodUs),
          static_cast<unsigned long>(burstUs), static_cast<unsigned>(rungCount));
     line("#");
     line("# kernel_writes counts bursts where GPIOF ODR disagreed with what this");
-    line("# app last wrote, i.e. where the kernel wrote the pin in between. The");
-    line("# contest_* rungs provoke that deliberately; a non-zero count anywhere");
-    line("# else means the kernel acted on its own.");
+    line("# app last wrote. It is sampled just after our own write, so it catches");
+    line("# a kernel that is winning the pin, not every kernel write: one landing");
+    line("# between two of ours is overwritten within a millisecond and unseen.");
+    line("# A zero count therefore means our writes dominate. Whether the light");
+    line("# stayed lit through the contest rungs is the answer that counts.");
 }
 
 void PwmLog::refused(const char* why)
@@ -125,7 +127,18 @@ void PwmLog::rungDone(const RungResult& result, const Rung& rung)
     // sentence rather than a number a reader has to interpret.
     if (rung.ask == KernelAsk::ShortAutoOff || rung.ask == KernelAsk::TurnOff) {
         if (result.kernelWrites == 0u) {
-            line("RUNG %02u NOTE  the kernel never wrote the pin: the app held it unopposed",
+            // Carefully worded. The sample is taken immediately after this app's
+            // own write, so a kernel write landing between two of ours is
+            // overwritten within a millisecond and never seen. Zero here means
+            // this app's writes dominate the pin, which is a real finding; it is
+            // NOT evidence that the kernel never wrote it.
+            line("RUNG %02u NOTE  no disagreement seen, so this app's writes dominate the pin.",
+                 static_cast<unsigned>(result.index + 1u));
+            line("RUNG %02u NOTE  Not proof the kernel stayed off it: the sample is taken just",
+                 static_cast<unsigned>(result.index + 1u));
+            line("RUNG %02u NOTE  after our own write, so a kernel write in between is missed.",
+                 static_cast<unsigned>(result.index + 1u));
+            line("RUNG %02u NOTE  Whether the light stayed lit is the answer that counts.",
                  static_cast<unsigned>(result.index + 1u));
         } else {
             line("RUNG %02u NOTE  the kernel wrote the pin %lu times: it contests it, and the",

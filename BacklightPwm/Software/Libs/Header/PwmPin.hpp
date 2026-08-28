@@ -79,6 +79,35 @@ public:
 };
 
 
+/**
+ * @brief Giving time back to the kernel, in whole milliseconds.
+ *
+ * Used *inside* the off phase of a period, never between bursts. The difference
+ * matters and it is why an earlier attempt at this was wrong twice over.
+ *
+ * Sleeping **between** bursts leaves the light fully off for the length of the
+ * sleep, which is an amplitude envelope on top of the PWM: eight milliseconds of
+ * modulation then two of darkness is a 100 Hz square wave at full depth, and it
+ * looked exactly like what it is, a flashing screen.
+ *
+ * Sleeping **within** the off phase changes nothing about the waveform's shape.
+ * The light is already off for that stretch; whether the CPU spins through it or
+ * sleeps through it is invisible.
+ *
+ * The reason that was not done first is real but soluble: `DWT_CYCCNT` stops when
+ * the core sleeps, so a period that sleeps loses its own clock. The answer is to
+ * re-base at the start of every period rather than trying to account for the
+ * missing cycles. Each period is then measured from its own start, and a sleep
+ * that overshoots makes that one period slightly longer instead of corrupting
+ * every period after it.
+ */
+class ISleeper
+{
+public:
+    virtual ~ISleeper() = default;
+    virtual void sleepMs(uint32_t ms) = 0;
+};
+
 /// True on a build with the registers this file needs.
 bool available();
 

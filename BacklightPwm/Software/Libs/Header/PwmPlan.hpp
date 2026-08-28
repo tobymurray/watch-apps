@@ -54,34 +54,20 @@ size_t      ladderSize();
 /// a busy wait places its edges accurately.
 constexpr uint32_t kPeriodUs = 4000;
 
-/// How much PWM one service poll performs before yielding.
+/// Whole PWM periods per service poll.
 ///
-/// The watchdog safety margin, and the number to reach for if the watch reboots
-/// during a run. Two periods at 250 Hz.
+/// Counted in periods rather than microseconds because a period now sleeps
+/// through its own off phase, and the cycle counter stops while it does; a time
+/// budget measured against that clock would overrun by whatever was slept.
 ///
-/// It was 40 ms, and the watch rebooted. That was not this value's fault (the
-/// service was not yielding at all, so no burst length would have saved it), but
-/// 8 ms is a better place to start now that it does: the shorter the burst, the
-/// sooner everything else on the system gets a turn, at the cost of a slightly
-/// larger share of each rung spent in the gaps between bursts. That cost shows
-/// up honestly in the achieved duty on screen.
-constexpr uint32_t kBurstUs = 8000;
+/// Two periods is 8 ms at 250 Hz, which is the same slice the time-based version
+/// used. It is still the number to reach for if the watch ever reboots mid-run.
+constexpr uint32_t kPeriodsPerBurst = 2;
 
-/// Slept after every burst, and this is the line that keeps the watch alive.
-///
-/// `ISystem::yield()` was not enough. A run on 2026-08-28 climbed the ladder
-/// correctly, and the light stepped through all six levels, but the **screen
-/// froze** the moment the first modulated rung began and stayed frozen for the
-/// full thirty seconds of modulation. It unfroze the instant the ladder reached a
-/// held rung, painted one frame, and the watch rebooted.
-///
-/// So yielding hands back the rest of a slice and gets scheduled straight back;
-/// only a sleep actually lets another thread run. Two milliseconds after an eight
-/// millisecond burst gives the GUI a fifth of the time and costs a fifth of the
-/// brightness on modulated rungs, uniformly, which the achieved duty reports
-/// honestly and which does not touch the endpoints at all: duty 0 and 100 are
-/// held, never burst, so full brightness is exactly full.
-constexpr uint32_t kPostBurstSleepMs = 2;
+// There is deliberately no post-burst sleep any more. Sleeping between bursts
+// gave the GUI its time back and put a 100 Hz full-depth envelope on the light,
+// which flashed visibly on every modulated rung. The sleeping now happens inside
+// each period's own off phase, where it is invisible. See SoftPwm.hpp.
 
 /// The short auto-off used by the contest rung. Two seconds into a ten second
 /// rung, so the expiry lands in the middle of it with plenty of run either side.

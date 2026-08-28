@@ -50,21 +50,27 @@
  * An **endpoint** duty (0 or 100) is the one case that costs nothing: the pin is
  * set and the call returns, because holding a level needs no CPU whatsoever.
  *
- * ## Why the off phase is not slept through
+ * ## Where the sleeping goes, which took three tries to get right
  *
- * It was, briefly, and it produced a run that looked plausible and was worthless.
+ * The off phase of a period does not need the CPU, and giving it back is what
+ * keeps the GUI thread alive. Two earlier attempts got the placement wrong:
  *
- * `DWT_CYCCNT` counts core clocks and stops when the core sleeps. So a period
- * that sleeps through its off phase loses its own clock while it does: the
- * counter barely advances during the sleep, the spin afterwards still thinks
- * almost the whole period is left, and real time and measured time come apart. On
- * hardware the three lowest rungs of the ladder collapsed to about 0.3 percent
- * duty and photographed as fully off.
+ *   - **Sleeping through the off phase without re-basing** lost the period's own
+ *     clock, because `DWT_CYCCNT` stops when the core sleeps. The spin afterwards
+ *     still believed almost the whole period remained, and on hardware the bottom
+ *     three rungs collapsed to about 0.3 percent duty and photographed as off.
+ *   - **Sleeping between bursts instead** kept the timing honest and put a 100 Hz
+ *     full-depth envelope on top of the PWM: eight milliseconds of modulation
+ *     then two of darkness. It flashed, visibly, on every modulated rung.
  *
- * Sleeping and cycle-counting cannot be mixed. Given the choice, accurate timing
- * wins and the modulated rungs cost a busy thread; the endpoints are free, the
- * service yields between bursts, and the real answer to the CPU cost is the DMA
- * waveform rather than a cleverer sleep.
+ * The placement that works is inside the off phase, **re-basing at the start of
+ * every period**. The waveform is unchanged, because the light is already off for
+ * that stretch and nothing can tell whether the CPU spun or slept through it. And
+ * a sleep that overshoots makes its own period slightly longer rather than
+ * corrupting every period after it.
+ *
+ * The last stretch of a long off phase is still spun, so the sleep never has to
+ * land the period boundary accurately.
  *
  ******************************************************************************
  */
@@ -106,7 +112,7 @@ struct BurstStats {
 class SoftPwm
 {
 public:
-    SoftPwm(IPin& pin, const IClock& clock);
+    SoftPwm(IPin& pin, const IClock& clock, ISleeper* sleeper = nullptr);
 
     /// 0 to 100. Values above 100 are clamped; the plan never sends one, but a
     /// silent overflow into a tiny on-time would look like a hardware fault.
@@ -120,10 +126,15 @@ public:
     uint32_t periodUs() const { return mPeriodUs; }
 
     /**
-     * @brief Modulate for at most `budgetUs`, then return.
+     * @brief Modulate for at most `maxPeriods` whole periods, then return.
      *
-     * Stops at a period boundary when one falls inside the budget, so a burst
-     * does not end mid-pulse and leave the light on for the length of the gap.
+     * Counted in periods rather than microseconds because a period may now sleep
+     * through its off phase, and the cycle counter stops while it does. A time
+     * budget measured against that clock would run long by however much was
+     * slept; a period count cannot.
+     *
+     * Always ends on a period boundary, so a burst never leaves the light on for
+     * the length of the gap that follows it.
      *
      * At duty 0 and 100 it sets the pin and returns **immediately**, with
      * `BurstStats::held` set. There is nothing to modulate at an endpoint, and
@@ -131,7 +142,7 @@ public:
      * once per call is still worth doing: it is what overrides the kernel if the
      * kernel writes the pin during a held rung.
      */
-    BurstStats runBurst(uint32_t budgetUs);
+    BurstStats runBurst(uint32_t maxPeriods);
 
     /// Leaves the light off. Called when the plan finishes and when the app is
     /// asked to stop.
@@ -143,6 +154,7 @@ public:
 private:
     IPin&         mPin;
     const IClock& mClock;
+    ISleeper*     mSleeper; ///< Optional. Without one the off phase is spun.
 
     uint8_t  mDuty     = 0;
     uint32_t mPeriodUs = 4000; ///< 250 Hz.

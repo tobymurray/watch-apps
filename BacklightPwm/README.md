@@ -171,7 +171,33 @@ Two things fall out of it for free:
   contest a pin it believes is already doing what it wants. The `contest_*` rungs
   that provoke it deliberately have still never run; that question is open.
 
-### What killed it, which was the screen and not the ladder
+### The flicker, which was my fix and not the hardware
+
+Sleeping **between** bursts kept the GUI alive and the run completed, but the
+screen visibly flashed on every modulated rung. It was doing exactly what it was
+built to do: eight milliseconds of modulation followed by two of darkness is a
+**100 Hz full-depth envelope** on top of the 250 Hz carrier. The achieved duty
+showed it too, uniformly scaled to about 0.72 of the request (75 became 54, 50
+became 36, 25 became 18).
+
+The placement that works is inside each period's own **off phase**, where the
+light is already off and nothing can tell whether the CPU spun or slept. The
+reason that was not done first is real: `DWT_CYCCNT` stops when the core sleeps,
+so a period that sleeps loses its own clock. The answer is to **re-base at the
+start of every period** rather than carry a timeline across the sleep. A sleep
+that overshoots then lengthens its own period slightly instead of corrupting
+every period after it.
+
+Three placements, three outcomes, worth keeping straight:
+
+| Where the sleep went | Timing | GUI | Light |
+| --- | --- | --- | --- |
+| Nowhere, yield only | correct | starved, watch rebooted | steady |
+| Off phase, no re-basing | collapsed to ~0.3 % duty | fine | dark |
+| Between bursts | correct, scaled 0.72 | fine | **flashed at 100 Hz** |
+| Off phase, re-based | correct | fine | steady |
+
+### The reboot before that, which was the screen and not the ladder
 
 The run died at `d100_again`, immediately after the last modulated rung. The video
 says why: **the screen froze at run-clock 8.9 s, the instant the first modulated

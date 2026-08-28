@@ -40,6 +40,16 @@ void sleepThunk(uint32_t ms)
     }
 }
 
+/// Hands ISystem::delay to the PWM engine so it can sleep through the off phase
+/// of each period rather than spinning it.
+class KernelSleeper : public Pwm::ISleeper
+{
+public:
+    void sleepMs(uint32_t ms) override { sleepThunk(ms); }
+};
+
+KernelSleeper gSleeper;
+
 
 /// How long to wait for the kernel to acknowledge a backlight request. Bounded
 /// so a kernel that does not answer costs a blink rather than a stall.
@@ -54,7 +64,7 @@ constexpr char kResultsPath[] = "backlight_pwm.txt";
 
 Service::Service(SDK::Kernel& kernel)
     : mKernel(kernel)
-    , mPwm(mPin, mClock)
+    , mPwm(mPin, mClock, &gSleeper)
 {
     gKernelForMillis = &kernel;
     mPwm.setPeriodUs(Pwm::kPeriodUs);
@@ -167,7 +177,7 @@ void Service::poll()
             return;
         }
 
-        const Pwm::BurstStats stats = mPwm.runBurst(Pwm::kBurstUs);
+        const Pwm::BurstStats stats = mPwm.runBurst(Pwm::kPeriodsPerBurst);
         mRungOnUs      += stats.onUs;
         mLastBurstHeld  = stats.held;
 
@@ -175,14 +185,10 @@ void Service::poll()
         // still the most recent thing anyone wrote. See checkForKernelWrite.
         checkForKernelWrite(nowMs);
 
-        // Hand the CPU back, every burst, without exception.
-        //
-        // A yield alone was not enough: it gives up the rest of a slice and gets
-        // scheduled straight back, so the GUI thread was starved for the entire
-        // thirty seconds of modulation, froze on one frame, and the watch
-        // rebooted. A sleep actually lets something else run.
+        // A yield on top of the sleeping that already happens inside each
+        // period's off phase. The sleep is what actually gives the GUI thread
+        // time; this just hands back the remainder of the current slice.
         mKernel.sys.yield();
-        mKernel.sys.delay(Pwm::kPostBurstSleepMs);
 
         // Duty measured against the rung's wall clock rather than against the
         // time spent inside bursts, so the gaps between bursts are counted. They
@@ -395,7 +401,7 @@ void Service::handleStart()
 
     if (mLog) {
         mLog->header(mKernel.sys.getTimeMs(), true, mClock.cyclesPerUs(), Pwm::kPeriodUs,
-                     Pwm::kBurstUs, Pwm::ladderSize());
+                     Pwm::kPeriodsPerBurst, Pwm::ladderSize());
     }
 
     // Put the kernel's own state machine into "on" first, so it is not trying to

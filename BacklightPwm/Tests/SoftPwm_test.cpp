@@ -49,6 +49,19 @@ private:
     mutable uint32_t mNow;
 };
 
+/// Advances the fake clock, as a real sleep advances real time, and counts what
+/// was given back.
+class FakeSleeper : public ISleeper
+{
+public:
+    explicit FakeSleeper(FakeClock& clock) : mClock(clock) {}
+    void sleepMs(uint32_t ms) override { sleptMs += ms; ++calls; mClock.advance(ms * 1000u); }
+    uint32_t sleptMs = 0;
+    uint32_t calls   = 0;
+private:
+    FakeClock& mClock;
+};
+
 /// Records every edge with the clock reading at the moment it was issued.
 class RecordingPin : public IPin
 {
@@ -102,7 +115,7 @@ TEST(SoftPwm, EmitsRoughlyTheRequestedDuty)
     pwm.setPeriodUs(4000);
     pwm.setDuty(50);
 
-    const BurstStats stats = pwm.runBurst(40000);
+    const BurstStats stats = pwm.runBurst(10);
 
     EXPECT_GE(stats.periods, 8u) << "a 40 ms budget at 4 ms should fit about ten periods";
     EXPECT_NEAR(measuredDuty(pin.edges), 50.0, 6.0);
@@ -123,7 +136,7 @@ TEST(SoftPwm, DistinguishesEveryRungOfTheLadder)
         SoftPwm pwm(pin, clock);
         pwm.setPeriodUs(4000);
         pwm.setDuty(duty);
-        pwm.runBurst(40000);
+        pwm.runBurst(10);
 
         const double got = (duty == 100) ? 100.0 : measuredDuty(pin.edges);
         EXPECT_LT(got, last) << "duty " << static_cast<unsigned>(duty)
@@ -142,7 +155,7 @@ TEST(SoftPwm, FullBrightnessIsHeldRatherThanToggled)
     SoftPwm pwm(pin, clock);
     pwm.setDuty(100);
 
-    const BurstStats stats = pwm.runBurst(40000);
+    const BurstStats stats = pwm.runBurst(10);
 
     ASSERT_EQ(pin.edges.size(), 1u) << "full brightness emitted more than one edge";
     EXPECT_TRUE(pin.edges[0].on);
@@ -161,7 +174,7 @@ TEST(SoftPwm, AnEndpointReturnsImmediatelyRatherThanSpinning)
         pwm.setDuty(duty);
 
         const uint32_t before = clock.nowUs();
-        const BurstStats stats = pwm.runBurst(40000);
+        const BurstStats stats = pwm.runBurst(10);
         const uint32_t after = clock.nowUs();
 
         EXPECT_TRUE(stats.held) << "duty " << static_cast<unsigned>(duty) << " did not report held";
@@ -177,7 +190,7 @@ TEST(SoftPwm, ZeroIsHeldOffRatherThanPulsed)
     SoftPwm pwm(pin, clock);
     pwm.setDuty(0);
 
-    const BurstStats stats = pwm.runBurst(40000);
+    const BurstStats stats = pwm.runBurst(10);
 
     ASSERT_EQ(pin.edges.size(), 1u);
     EXPECT_FALSE(pin.edges[0].on);
@@ -185,21 +198,75 @@ TEST(SoftPwm, ZeroIsHeldOffRatherThanPulsed)
     EXPECT_EQ(stats.achievedPercent(), 0u);
 }
 
-TEST(SoftPwm, RespectsTheBurstBudget)
+TEST(SoftPwm, RunsExactlyTheRequestedNumberOfPeriods)
 {
-    // The budget is the watchdog margin. A burst that overran it would be the
-    // thing that reboots the watch, and it would do so only on hardware.
+    // Counted in periods rather than time because a period may sleep, and the
+    // cycle counter stops while it does. A time budget measured against that
+    // clock would run long by however much was slept, which is precisely the
+    // watchdog margin being relied on.
     FakeClock clock(1);
     RecordingPin pin(clock);
-    SoftPwm pwm(pin, clock);
+    FakeSleeper sleeper(clock);
+    SoftPwm pwm(pin, clock, &sleeper);
     pwm.setPeriodUs(4000);
-    pwm.setDuty(50);
+    pwm.setDuty(25);
 
-    const BurstStats stats = pwm.runBurst(10000);
+    const BurstStats stats = pwm.runBurst(3);
+    EXPECT_EQ(stats.periods, 3u) << "sleeping changed how many periods a burst ran";
+}
 
-    EXPECT_LE(stats.totalUs, 10000u + 4000u)
-        << "a burst may finish its last period but must not start another";
-    EXPECT_LE(stats.periods, 3u);
+TEST(SoftPwm, SleepsInsideEveryOffPhaseIncludingTheShortestRung)
+{
+    // The off phase is where the CPU goes back, and it has to happen on every
+    // modulated rung. 75 percent has the shortest off phase of the ladder, one
+    // millisecond, and it is the rung that would otherwise spin flat out for six
+    // seconds; starving the GUI for six seconds is how this app rebooted the
+    // watch twice.
+    for (uint8_t duty : {uint8_t{75}, uint8_t{50}, uint8_t{25}, uint8_t{10}, uint8_t{1}}) {
+        FakeClock clock(1);
+        RecordingPin pin(clock);
+        FakeSleeper sleeper(clock);
+        SoftPwm pwm(pin, clock, &sleeper);
+        pwm.setPeriodUs(4000);
+        pwm.setDuty(duty);
+
+        const BurstStats stats = pwm.runBurst(4);
+        EXPECT_EQ(sleeper.calls, stats.periods)
+            << "duty " << static_cast<unsigned>(duty) << " spun an off phase instead of sleeping";
+    }
+}
+
+TEST(SoftPwm, TheWaveformHasNoGapBetweenPeriods)
+{
+    // The flicker regression, pinned. Sleeping *between* bursts left the light
+    // fully off for the length of the sleep, which is a 100 Hz full-depth
+    // envelope on top of the PWM, and it flashed on every modulated rung.
+    //
+    // So: consecutive periods must abut. The off stretch at the end of one period
+    // and the on edge of the next must be one period apart, with no extra
+    // darkness wedged in between.
+    FakeClock clock(1);
+    RecordingPin pin(clock);
+    FakeSleeper sleeper(clock);
+    SoftPwm pwm(pin, clock, &sleeper);
+    pwm.setPeriodUs(4000);
+    pwm.setDuty(25);
+
+    pwm.runBurst(5);
+
+    // Rising edges are every other entry; their spacing is the period.
+    std::vector<uint32_t> rises;
+    for (const auto& e : pin.edges) {
+        if (e.on) {
+            rises.push_back(e.atUs);
+        }
+    }
+    ASSERT_GE(rises.size(), 3u);
+    for (size_t i = 1; i < rises.size(); ++i) {
+        const uint32_t gap = rises[i] - rises[i - 1];
+        EXPECT_NEAR(static_cast<double>(gap), 4000.0, 600.0)
+            << "period " << i << " started " << gap << " us after the last, not one period";
+    }
 }
 
 TEST(SoftPwm, EndsOnAPeriodBoundary)
@@ -213,7 +280,7 @@ TEST(SoftPwm, EndsOnAPeriodBoundary)
     pwm.setPeriodUs(4000);
     pwm.setDuty(75);
 
-    pwm.runBurst(40000);
+    pwm.runBurst(10);
 
     ASSERT_FALSE(pin.edges.empty());
     EXPECT_FALSE(pin.edges.back().on) << "burst ended with the light left on";
@@ -238,7 +305,7 @@ TEST(SoftPwm, EveryRungIsFarFromEveryOther)
         SoftPwm pwm(pin, clock);
         pwm.setPeriodUs(4000);
         pwm.setDuty(duty);
-        pwm.runBurst(40000);
+        pwm.runBurst(10);
 
         const double got = measuredDuty(pin.edges);
         EXPECT_NEAR(got, static_cast<double>(duty), 6.0)
@@ -282,9 +349,9 @@ TEST(SoftPwm, TotalsAccumulateAcrossBursts)
     pwm.setPeriodUs(4000);
     pwm.setDuty(50);
 
-    pwm.runBurst(40000);
+    pwm.runBurst(10);
     const uint32_t afterFirst = pwm.totals().periods;
-    pwm.runBurst(40000);
+    pwm.runBurst(10);
 
     EXPECT_GT(pwm.totals().periods, afterFirst);
     EXPECT_GT(pwm.totals().edges, 0u);
@@ -300,7 +367,7 @@ TEST(SoftPwm, SurvivesAClockWrap)
     pwm.setPeriodUs(4000);
     pwm.setDuty(50);
 
-    const BurstStats stats = pwm.runBurst(40000);
+    const BurstStats stats = pwm.runBurst(10);
 
     EXPECT_GE(stats.periods, 8u) << "the burst gave up at the wrap";
     EXPECT_NEAR(measuredDuty(pin.edges), 50.0, 8.0);
