@@ -30,31 +30,71 @@ beside it, and [`SENSOR-PROFILE.md`](SENSOR-PROFILE.md) rendered from them.
 
 ## Where this actually is
 
-**Tiers 0 and 1 are built. SensorLab has never been run on the watch.**
+**Tiers 0 and 1 are built, and SensorLab has been run on the watch.** The profile
+sitting on the device carries run 13, on 2026-08-26, on firmware 1.4.0, which
+answered the existence layer for all 37 sensor types. What it found is below.
 
 | | Status |
 | --- | --- |
 | **Tier 0** — the evidence core: catalogue, claim store, verdict rules, completeness, statistics, report writer | built, 68 host tests |
 | **Tier 1** — layers 1–3: existence, frame structure, liveness, and the roster screen | built, 58 pipeline tests |
 | **Raw capture** — every sample verbatim, plus the full histograms behind every quantile | built, decoder and round-trip test |
-| **Tier 2** — layers 4–5: timing and value domain over long runs | built; **never fed real samples** |
+| **Tier 2** — layers 4–5: timing and value domain over long runs | built, and fed real samples on the device: `runs/` and `raw/` on the watch hold data from runs before 13. **None of those verdicts has been read back into this document**, so treat the timing and value-domain rows as unreviewed rather than as absent |
 | **Tier 3** — layers 6 and 8: period/latency sweeps, cross-sensor consistency | **not built.** Claims exist, UNVERIFIED, each naming its method |
 | **Tier 4** — layer 7: the guided physical protocols | **not built.** Same |
 | **Tier 5** — direct register reads | **not built, and may never be.** See below |
 | All three builds | green — ARM `.uapp` 235 412 bytes, host tests, TouchGFX simulator |
-| First hardware run | **not done.** This is the whole of the next step |
+| First hardware run | **done.** The profile on the watch carries run 13, 2026-08-26, firmware 1.4.0, with existence answered for all 37 types; `runs/` shows earlier runs behind it |
 
-So the honest summary is: the instrument is finished and calibrated and has not
-been pointed at anything. Everything in [`Docs/LEDGER.md`](Docs/LEDGER.md) §2 is
-inherited from SleepLab or UNVERIFIED, and the app says so on its own screen —
-the completeness fraction is computed over a denominator that was fixed before any
-measurement was taken, which is what stops a Tier 1 profile reading as a finished
-one.
+So the honest summary is: the instrument has been pointed at the device, and the
+existence layer is answered. The completeness fraction is still computed over
+a denominator fixed before any measurement was taken, which is what stops a
+Tier 1 profile reading as a finished one, and the great majority of
+[`Docs/LEDGER.md`](Docs/LEDGER.md) §2 is still inherited from SleepLab or
+UNVERIFIED.
+
+**The profile that run produced is not in this repository.** It lives on the
+watch at `Apps/SensorLab/profile-1.4.0.json`, and the numbers quoted below were
+read off the device rather than from a committed artifact. Getting it into
+`Profiles/` is the next step, because a result nobody else can open is not yet
+a published one.
 
 What *has* come out of building it is eleven entries in
 [`Docs/FINDINGS.md`](Docs/FINDINGS.md), two of them measured defects in the SDK's
 JSON writer, and a datasheet-sourced number that puts the accelerometer's
 delivered rate 33× below what the silicon does.
+
+### What run 13 found
+
+**Six of the 37 types have no producer at all.** `RequestDefault` resolved
+nothing, `RequestList` reported zero drivers, and `connect()` failed, each
+CONFIRMED with its own method:
+
+| Type | | |
+| --- | --- | --- |
+| `0x30` | `MAGNETIC_FIELD` | **no compass on this firmware** |
+| `0x40` | `HEART_BEAT` | as SleepLab row S5 predicted, still nothing on 1.4 |
+| `0xD0` | `GESTURE_RECOGNITION` | |
+| `0xF0` | `PPG` | so no waveform, and nothing HRV-shaped |
+| `0xF1` | `SPO2` | as SleepLab row S4 |
+| `0x100` | `ECG` | |
+
+The other **31 resolved a driver and connected**, which is what makes the six a
+finding rather than a failed run: a sweep where nothing resolved would say
+something about the sweep instead.
+
+`MAGNETIC_FIELD` is the consequential one, because unlike the other five it had
+never been asked. Its descriptor claim reads "RequestDefault resolved no driver,
+so there is nothing to describe", and its frame claims are INAPPLICABLE for the
+same reason. The hardware investigation's open question about the part therefore
+stays open and stops mattering: whatever is at I2C4/0x14, no app can reach it.
+`FUSION` (0x130) does resolve, and its parser carries six fields rather than
+nine, so the "accel+gyro+mag" comment in `SensorTypes.hpp` is stale rather than
+aspirational and there is no fused heading either.
+
+This is the result [MagProbe](../MagProbe) was built to establish independently,
+and it is why that app will only ever draw `NO COMPASS`. Re-check after any
+firmware bump: a producer appearing is exactly what `profile_diff.py` is for.
 
 ---
 
@@ -145,9 +185,18 @@ accident. `R2` leave the screen; **an open soak keeps recording.**
    `RequestList`, `RequestGetDesc`, `RequestConnect`) — and the roster fills in.
 
 That alone produces an existence and structure table for every sensor type on this
-firmware, which is the first thing here worth publishing. It also reads the
-firmware version out of the kernel, which promotes SleepLab's ledger row P1 from
-LIKELY to CONFIRMED with a quoted string.
+firmware, which is the first thing here worth publishing.
+
+It was also supposed to read the firmware version out of the kernel and promote
+SleepLab's ledger row P1 from LIKELY to CONFIRMED with a quoted string. **It did
+not.** Run 15's manifest records `firmware_read: "rejected"` after
+`firmware_read_attempts: 4`, with `firmware_read_from_kernel: false`, so the
+`1.4.0` in `profile-1.4.0.json` came from the configured fallback and not from
+the device. P1 stays LIKELY, and the kernel's answer to
+`RequestSystemInfo` is now a finding of its own rather than a step in this
+procedure. Note what that means for a firmware comparison: two profiles could
+carry the same name while running different firmware, because the name is not
+currently evidence of anything.
 
 ### A soak — layers 2 to 5
 
@@ -363,8 +412,16 @@ six streams with known answers, plus a synthetic uptime wrap.
 
 ## Known rough edges
 
-- **No hardware run.** The largest one. Everything in `Docs/LEDGER.md` §2 is
-  inherited or UNVERIFIED.
+- **The profile is not committed.** The largest one now. Run 13's result lives on
+  the watch and nowhere else, so the table above cites a file no reader of this
+  repository can open, and `profile_diff.py` has no committed baseline to compare
+  the next firmware against.
+- **Only the existence layer has been read back.** The run wrote timing and
+  value-domain rows and nobody has looked at them, so most of
+  `Docs/LEDGER.md` §2 is still inherited or UNVERIFIED for want of reading
+  rather than for want of data.
+- **The firmware version has never been read from the kernel.** Four attempts,
+  all rejected. Every profile is keyed on a string that came from a fallback.
 - **Tiers 3, 4 and 5 are not built.** Their claims are in the catalogue so the
   completeness fraction counts them, which is the honest arrangement, but that is
   ~150 UNVERIFIED rows. Layer 8 is the highest value per unit of effort and needs
@@ -376,10 +433,12 @@ six streams with known answers, plus a synthetic uptime wrap.
 - **The 10 KB service stack is an argument, not a measurement.** Nothing recurses
   and the sample path allocates nothing. That is a good argument and it is not a
   high-water mark.
-- **`Tools/pull_profile.py` has never been run against a watch.** Same as
+- **`Tools/pull_profile.py` has still never been run against a watch.** Same as
   SleepLab's `pull_nights.py` and the same ledger row: the underlying BLE client
   is validated for `.fit` files under `Apps/GpsLab/` with matching CRC-16, and
   nothing in the protocol is path-specific, but neither wrapper has met a device.
+  Run 13's profile was read straight off the USB-MSC volume, which exercises none
+  of that path, and which is also why it is quoted here rather than committed.
 - **The roster's pixels are untested.** Its *content* is asserted through the
   harness; what the view does with a `TextAreaWithOneWildcard` has only ever been
   looked at in the simulator.
