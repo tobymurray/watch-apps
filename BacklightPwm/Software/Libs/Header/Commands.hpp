@@ -84,6 +84,11 @@ struct PwmStatus : public SDK::MessageBase {
     uint16_t rungCount;
 
     uint8_t requestedDuty;
+
+    /// The other half of a discrimination pair, or 0. When set, the screen shows
+    /// both and marks which one is currently being driven, so a video frame is
+    /// self-describing.
+    uint8_t pairDuty;
     uint8_t achievedDuty;    ///< From microseconds actually spent on.
     uint8_t state;           ///< A PwmState.
 
@@ -105,6 +110,7 @@ struct PwmStatus : public SDK::MessageBase {
         , rungIndex(0)
         , rungCount(0)
         , requestedDuty(0)
+        , pairDuty(0)
         , achievedDuty(0)
         , state(static_cast<uint8_t>(PwmState::Idle))
         , driving(false)

@@ -57,6 +57,7 @@ public:
         uint16_t rungCount = 0;
 
         uint8_t requestedDuty = 0;
+        uint8_t pairDuty      = 0;
 
         /// What the waveform actually achieved, from microseconds spent on. Shown
         /// next to the request rather than instead of it: the gap between the two

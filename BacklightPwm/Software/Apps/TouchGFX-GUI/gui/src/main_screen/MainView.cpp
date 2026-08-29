@@ -224,8 +224,9 @@ void MainView::refresh()
                     static_cast<unsigned long>(status.runElapsedMs / 1000u),
                     static_cast<unsigned long>((status.runElapsedMs % 1000u) / 100u));
 
-            // The requested duty, big. This is the number to photograph next to
-            // the light.
+            // The duty currently being driven, big. On a discrimination rung
+            // this alternates with the pair's other half, so the screen itself
+            // says which one a given video frame caught.
             setLine(mHeadline, mHeadlineBuf, "%u%%", static_cast<unsigned>(status.requestedDuty));
 
             setBar(true, status.rungIndex, status.rungCount);
@@ -233,9 +234,19 @@ void MainView::refresh()
             // Achieved next to requested, never instead of it. The gap is the
             // measure of what a busy-wait PWM sharing a thread with a message
             // loop actually delivers.
-            setLine(mDetail, mDetailBuf, "got %u%%  krn %lu",
-                    static_cast<unsigned>(status.achievedDuty),
-                    static_cast<unsigned long>(status.kernelWrites));
+            if (status.pairDuty != 0u) {
+                // Both halves, so the pair under test is legible without having
+                // to catch both frames.
+                const unsigned lo = status.requestedDuty < status.pairDuty
+                                        ? status.requestedDuty : status.pairDuty;
+                const unsigned hi = status.requestedDuty < status.pairDuty
+                                        ? status.pairDuty : status.requestedDuty;
+                setLine(mDetail, mDetailBuf, "%u v %u  can you see it?", lo, hi);
+            } else {
+                setLine(mDetail, mDetailBuf, "got %u%%  krn %lu",
+                        static_cast<unsigned>(status.achievedDuty),
+                        static_cast<unsigned long>(status.kernelWrites));
+            }
             setLine(mDetail2, mDetail2Buf, "%s", status.label);
 
             setLine(mHint, mHintBuf, "meter or photograph");

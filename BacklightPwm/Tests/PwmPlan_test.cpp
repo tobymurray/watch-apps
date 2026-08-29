@@ -207,4 +207,104 @@ TEST(PwmPlan, TheKernelHoldOutlastsTheWholeLadder)
         << "ladder (" << total << " ms)";
 }
 
+// ---------------------------------------------------------------------------
+// The discrimination ladder
+// ---------------------------------------------------------------------------
+
+TEST(FlipLadder, EveryPairIsAdjacentAndAscending)
+{
+    // Each rung compares two duties. They have to be genuinely adjacent: a pair
+    // that skipped a step would answer a question nobody asked, and a pair whose
+    // halves were equal would show nothing and read as "indistinguishable".
+    for (size_t i = 0; i < flipLadderSize(); ++i) {
+        const Rung& r = flipLadder()[i];
+        if (r.dutyB == 0) {
+            continue; // Not a pair.
+        }
+        EXPECT_LT(r.duty, r.dutyB)
+            << "pair " << i << " (" << r.label << ") is not ordered low to high";
+        EXPECT_LE(r.dutyB - r.duty, r.dutyB / 2 + 1)
+            << "pair " << i << " (" << r.label << ") jumps too far to be adjacent";
+    }
+}
+
+TEST(FlipLadder, ThePairsFormAContinuousChain)
+{
+    // The high half of one pair should be the low half of the next, so the
+    // ladder walks a single chain of levels rather than sampling disconnected
+    // pairs. Without that, "the flipping stops being visible here" does not
+    // locate a threshold.
+    uint8_t expectNextLow = 0;
+    bool first = true;
+    for (size_t i = 0; i < flipLadderSize(); ++i) {
+        const Rung& r = flipLadder()[i];
+        if (r.dutyB == 0) {
+            continue;
+        }
+        if (!first) {
+            EXPECT_EQ(r.dutyB, expectNextLow)
+                << "pair " << i << " (" << r.label << ") does not continue the chain";
+        }
+        expectNextLow = r.duty;
+        first = false;
+    }
+}
+
+TEST(FlipLadder, ItStartsAtAnObviousPairAsASanityAnchor)
+{
+    // If the first and widest pair is not visibly flipping, the run is broken
+    // and nothing below it means anything. So it has to be near the top, where
+    // the standard ladder showed the largest separation.
+    size_t firstPair = flipLadderSize();
+    for (size_t i = 0; i < flipLadderSize(); ++i) {
+        if (flipLadder()[i].dutyB != 0) { firstPair = i; break; }
+    }
+    ASSERT_LT(firstPair, flipLadderSize());
+    EXPECT_GE(flipLadder()[firstPair].dutyB, 70u)
+        << "the anchor pair is too dim to be an obvious control";
+}
+
+TEST(FlipLadder, ItReachesTheFloor)
+{
+    // The bottom of the range is the interesting end, so the ladder has to get
+    // there: a pair against zero answers whether the dimmest step is
+    // distinguishable from off at all.
+    bool touchesZero = false;
+    uint8_t lowest = 255;
+    for (size_t i = 0; i < flipLadderSize(); ++i) {
+        const Rung& r = flipLadder()[i];
+        if (r.dutyB == 0) continue;
+        if (r.duty == 0) touchesZero = true;
+        lowest = r.duty < lowest ? r.duty : lowest;
+    }
+    EXPECT_TRUE(touchesZero) << "nothing compares the dimmest level against off";
+    EXPECT_EQ(lowest, 0u);
+}
+
+TEST(FlipLadder, EveryPairIsFollowedByABreather)
+{
+    // A flipping rung modulates, so it spins, so it starves the GUI exactly as
+    // the standard ladder's rungs do.
+    for (size_t i = 0; i < flipLadderSize(); ++i) {
+        if (flipLadder()[i].dutyB == 0) continue;
+        ASSERT_LT(i + 1, flipLadderSize()) << "pair " << i << " ends the ladder";
+        EXPECT_EQ(flipLadder()[i + 1].duty, 0u)
+            << "pair " << i << " (" << flipLadder()[i].label
+            << ") is not followed by a dark breather";
+        EXPECT_EQ(flipLadder()[i + 1].dutyB, 0u);
+    }
+}
+
+TEST(FlipLadder, EachPairShowsSeveralAlternations)
+{
+    // One alternation is a change; three is a pattern. The eye needs the second
+    // to be sure it saw the first.
+    for (size_t i = 0; i < flipLadderSize(); ++i) {
+        const Rung& r = flipLadder()[i];
+        if (r.dutyB == 0) continue;
+        EXPECT_GE(r.holdMs, kFlipMs * 4u)
+            << "pair " << i << " (" << r.label << ") allows fewer than two full alternations";
+    }
+}
+
 } // namespace

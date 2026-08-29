@@ -44,10 +44,27 @@ struct Rung {
     uint32_t    holdMs; ///< How long to sit here, for the camera or the meter.
     const char* label;
     KernelAsk   ask;    ///< Sent to the kernel as the rung begins.
+
+    /// The other duty of a discrimination pair, or 0 for an ordinary rung.
+    ///
+    /// When set, the rung alternates between `duty` and `dutyB` every
+    /// `kFlipMs`. That turns "how bright is this" into "did anything change",
+    /// which is a question an eye answers well and an uncalibrated camera answers
+    /// at all: the comparison is against the frame half a second ago rather than
+    /// against an absolute scale, so auto-exposure, white balance and gamma all
+    /// cancel out.
+    uint8_t dutyB;
 };
 
+/// The standard ladder: six levels, held, for photographing and metering.
 const Rung* ladder();
 size_t      ladderSize();
+
+/// The discrimination ladder: pairs of adjacent levels, alternating, to find
+/// where two duties stop being distinguishable. Selected by a marker file; see
+/// Service.
+const Rung* flipLadder();
+size_t      flipLadderSize();
 
 /// PWM period the ladder runs at. 250 Hz: fast enough that neither the eye nor a
 /// phone camera's rolling shutter turns it into visible banding, slow enough that
@@ -84,6 +101,18 @@ constexpr uint32_t kMeterMs = 4000;
 /// and a gap between rungs is just the boundary between two measurements. It also
 /// makes the rungs easier to pick out of a video.
 constexpr uint32_t kBreatherMs = 1500;
+
+/// How long each half of a discrimination pair is held.
+///
+/// Long enough to read as a step rather than a flicker, short enough that the
+/// two halves are still being compared against each other rather than
+/// remembered. Just under a second.
+constexpr uint32_t kFlipMs = 800;
+
+/// How long a discrimination pair runs: three full alternations, which is enough
+/// to be sure without making the run any longer than it has to be. Still short
+/// enough to sit inside the starvation budget a modulated rung has.
+constexpr uint32_t kFlipHoldMs = kFlipMs * 6;
 
 /// The short auto-off used by the contest rung. Two seconds into a ten second
 /// rung, so the expiry lands in the middle of it with plenty of run either side.

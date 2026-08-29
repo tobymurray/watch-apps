@@ -157,6 +157,14 @@ private:
     /// blocks on the message queue or comes straight back for more modulation.
     bool mLastBurstHeld = false;
 
+    /// True when a marker file selects the discrimination ladder instead of the
+    /// standard one. Read once at start.
+    bool mDiscriminate = false;
+
+    /// Which half of a flip pair is currently commanded, so the screen and the
+    /// record can say.
+    bool mFlipSecondHalf = false;
+
     /// Held open for the whole run and flushed per line, so an app stopped
     /// mid-experiment still leaves everything up to that point on disk.
     std::unique_ptr<SDK::Interface::IFile> mResultsFile;
@@ -191,6 +199,13 @@ private:
     void askKernelToHoldLight();
 
     void beginRung(size_t index);
+
+    /// Whichever ladder this run is walking. Selected once, at start.
+    const Pwm::Rung* ladder() const;
+    size_t           ladderCount() const;
+
+    /// Alternates the duty on a discrimination rung. A no-op elsewhere.
+    void applyFlip(uint32_t nowMs, const Pwm::Rung& rung);
 
     /**
      * @brief Rewrite the breadcrumb file with the rung about to start.

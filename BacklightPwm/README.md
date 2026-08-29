@@ -250,6 +250,52 @@ That costs a fifth of the brightness on modulated rungs, uniformly, which the
 achieved duty reports honestly. It does not touch the endpoints, because duty 0
 and 100 are held rather than burst, so full brightness stays exactly full.
 
+## Two ladders, and which one runs
+
+**The standard ladder** is the default: six levels, each held for four seconds,
+for photographing and metering. It answers "can this dim", and it has.
+
+**The discrimination ladder** runs instead when a file named `flip.enable` is
+present in `Apps/BacklightPwm/`. It answers the question that decides what a
+vendor should expose: **how many levels are worth having.**
+
+Absolute brightness is the wrong measurement for that, and the earlier runs show
+why. The numbers came off an auto-exposing phone camera through an sRGB gamma
+curve, which is good enough for "these six are different" and useless for "how
+far apart are they". So this ladder does not measure brightness at all. Each rung
+alternates between two adjacent duties every 0.8 s, three times, and the only
+question is whether the change is visible. That comparison is against the frame
+half a second ago rather than an absolute scale, so exposure, white balance and
+gamma all cancel out.
+
+The pairs walk a single chain, crowded at the bottom because that is where the
+standard ladder put most of the usable range:
+
+```
+70-100  50-70  35-50  25-35  18-25  12-18  8-12  5-8  3-5  2-3  1-2  0-1
+```
+
+The first pair is the widest and doubles as a sanity anchor: if that one is not
+obviously flipping, the run is broken and nothing below it means anything. The
+answer is the pair at which the flipping stops being visible. Everything below it
+is resolvable; everything above is wasted precision.
+
+About 79 seconds. The screen shows the pair (`12 v 18`) and, in the headline, the
+half currently being driven, so a single video frame says which one it caught.
+
+### Filming it
+
+The flip test is deliberately robust to camera settings, but the same run is also
+worth having as a record, so: **lock exposure, lock white balance, lock focus,
+and turn off HDR and night mode.** Auto white balance is the one that would
+actively fight this: the front-light is blue-rich, so as the light dims the scene
+shifts toward the warm ambient and auto-WB chases it, cancelling part of the
+change it is meant to show. Any locked value works; a warm one helps slightly,
+because it applies more blue gain and the signal is in blue.
+
+For the same reason the frame analysis should measure the **blue channel** rather
+than an RGB mean.
+
 ## What a run leaves behind
 
 Two files in `Apps/BacklightPwm/`, both written as the run happens rather than at

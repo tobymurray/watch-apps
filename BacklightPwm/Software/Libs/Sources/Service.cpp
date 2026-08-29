@@ -51,6 +51,15 @@ constexpr char kProgressPath[] = "progress.txt";
 
 /// The full record. See PwmLog.hpp.
 constexpr char kResultsPath[] = "backlight_pwm.txt";
+
+/// Presence of this file selects the discrimination ladder: pairs of adjacent
+/// duties, alternating, to find where two levels stop being distinguishable.
+/// Absent, the standard six-level ladder runs.
+///
+/// A marker file rather than a button, because the choice has to survive the app
+/// being launched by someone who is not looking at the screen, and because there
+/// is exactly one bit to communicate.
+constexpr char kFlipMarkerPath[] = "flip.enable";
 } // namespace
 
 Service::Service(SDK::Kernel& kernel)
@@ -59,6 +68,33 @@ Service::Service(SDK::Kernel& kernel)
 {
     gKernelForMillis = &kernel;
     mPwm.setPeriodUs(Pwm::kPeriodUs);
+}
+
+const Pwm::Rung* Service::ladder() const
+{
+    return mDiscriminate ? Pwm::flipLadder() : Pwm::ladder();
+}
+
+size_t Service::ladderCount() const
+{
+    return mDiscriminate ? Pwm::flipLadderSize() : Pwm::ladderSize();
+}
+
+void Service::applyFlip(uint32_t nowMs, const Pwm::Rung& rung)
+{
+    if (rung.dutyB == 0u || rung.dutyB == rung.duty) {
+        return; // Not a discrimination pair.
+    }
+
+    // Which half we are in, derived from the rung's own clock rather than a
+    // counter, so a burst that runs long cannot drift the alternation.
+    const bool second = (((nowMs - mRungStartedMs) / Pwm::kFlipMs) % 2u) != 0u;
+    if (second == mFlipSecondHalf) {
+        return;
+    }
+
+    mFlipSecondHalf = second;
+    mPwm.setDuty(second ? rung.dutyB : rung.duty);
 }
 
 void Service::openResults()
@@ -77,6 +113,13 @@ void Service::openResults()
 void Service::run()
 {
     LOG_INFO("started\n");
+
+    // Which ladder this run walks. Read once, before anything else, so the
+    // record and the screen agree with what actually ran.
+    mDiscriminate = mKernel.fs.exist(kFlipMarkerPath);
+    LOG_INFO("ladder: %s (%u rungs)\n",
+             mDiscriminate ? "discrimination pairs" : "standard six levels",
+             static_cast<unsigned>(ladderCount()));
 
     openResults();
 
@@ -152,7 +195,10 @@ void Service::poll()
     }
 
     const uint32_t nowMs = mKernel.sys.getTimeMs();
-    const Pwm::Rung& rung = Pwm::ladder()[mRung];
+    const Pwm::Rung& rung = ladder()[mRung];
+
+    // Before the burst, so the whole burst runs at one duty.
+    applyFlip(nowMs, rung);
 
     if (mDriving) {
         // A hard ceiling on how long this app may hold the pin, independent of
@@ -208,7 +254,7 @@ void Service::poll()
             mLog->rungDone(mResult, rung);
         }
 
-        if ((mRung + 1u) < Pwm::ladderSize()) {
+        if ((mRung + 1u) < ladderCount()) {
             beginRung(mRung + 1u);
         } else {
             LOG_INFO("ladder complete: %lu periods, %lu edges\n",
@@ -236,14 +282,14 @@ void Service::poll()
 
 void Service::writeBreadcrumb(size_t index)
 {
-    const Pwm::Rung& rung = Pwm::ladder()[index];
+    const Pwm::Rung& rung = ladder()[index];
 
     char line[160];
     const int n = std::snprintf(line, sizeof(line),
                                 "rung=%u/%u duty=%u label=%s uptime_ms=%lu cycles_per_us=%lu\n"
                                 "If this is the last line, the watch died here.\n",
                                 static_cast<unsigned>(index + 1u),
-                                static_cast<unsigned>(Pwm::ladderSize()),
+                                static_cast<unsigned>(ladderCount()),
                                 static_cast<unsigned>(rung.duty), rung.label,
                                 static_cast<unsigned long>(mKernel.sys.getTimeMs()),
                                 static_cast<unsigned long>(mClock.cyclesPerUs()));
@@ -269,10 +315,11 @@ void Service::beginRung(size_t index)
     mRung          = index;
     mRungStartedMs = mKernel.sys.getTimeMs();
     mAchievedDuty  = 0;
-    mRungOnUs      = 0;
-    mLastBurstHeld = false;
+    mRungOnUs       = 0;
+    mLastBurstHeld  = false;
+    mFlipSecondHalf = false;
 
-    const Pwm::Rung& rung = Pwm::ladder()[index];
+    const Pwm::Rung& rung = ladder()[index];
     mPwm.setDuty(rung.duty);
 
     mResult             = Pwm::RungResult{};
@@ -289,7 +336,7 @@ void Service::beginRung(size_t index)
     }
 
     LOG_INFO("rung %u/%u duty=%u%% for %lu ms (%s)\n", static_cast<unsigned>(index + 1u),
-             static_cast<unsigned>(Pwm::ladderSize()), static_cast<unsigned>(rung.duty),
+             static_cast<unsigned>(ladderCount()), static_cast<unsigned>(rung.duty),
              static_cast<unsigned long>(rung.holdMs), rung.label);
 
     writeBreadcrumb(index);
@@ -392,7 +439,7 @@ void Service::handleStart()
 
     if (mLog) {
         mLog->header(mKernel.sys.getTimeMs(), true, mClock.cyclesPerUs(), Pwm::kPeriodUs,
-                     Pwm::kPeriodsPerBurst, Pwm::ladderSize());
+                     Pwm::kPeriodsPerBurst, ladderCount());
     }
 
     // Put the kernel's own state machine into "on" first, so it is not trying to
@@ -466,7 +513,7 @@ void Service::publish()
         return;
     }
 
-    const Pwm::Rung& rung = Pwm::ladder()[mRung];
+    const Pwm::Rung& rung = ladder()[mRung];
 
     guard->elapsedMs   = mKernel.sys.getTimeMs() - mRungStartedMs;
     guard->holdMs      = rung.holdMs;
@@ -477,9 +524,10 @@ void Service::publish()
     guard->kernelWrites = mTotalKernelWrites;
 
     guard->rungIndex = static_cast<uint16_t>(mRung);
-    guard->rungCount = static_cast<uint16_t>(Pwm::ladderSize());
+    guard->rungCount = static_cast<uint16_t>(ladderCount());
 
-    guard->requestedDuty = rung.duty;
+    guard->requestedDuty = mFlipSecondHalf && rung.dutyB ? rung.dutyB : rung.duty;
+    guard->pairDuty      = rung.dutyB;
     guard->achievedDuty  = mAchievedDuty;
     guard->state         = static_cast<uint8_t>(mState);
     guard->driving       = mDriving;

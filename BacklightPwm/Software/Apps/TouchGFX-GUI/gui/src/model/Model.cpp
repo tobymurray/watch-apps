@@ -150,6 +150,7 @@ bool Model::customMessageHandler(SDK::MessageBase* msg)
     mStatus.rungIndex     = status->rungIndex;
     mStatus.rungCount     = status->rungCount;
     mStatus.requestedDuty = status->requestedDuty;
+    mStatus.pairDuty      = status->pairDuty;
     mStatus.achievedDuty  = status->achievedDuty;
     mStatus.state         = static_cast<CustomMessage::PwmState>(status->state);
     mStatus.driving       = status->driving;
