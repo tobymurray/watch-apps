@@ -108,8 +108,8 @@ always has. Change it to `QRCode` and that one code is drawn as a QR code
 instead.
 
 Case does not matter — `qrcode`, `QRCode` and `QRCODE` are the same word, and so
-are `code128`/`Code128` and `itf`/`ITF`. There is no enum field type in the SDK, so this is
-a plain text box and you are typing; being fussy about capitals would be a
+are `code128`/`Code128` and `itf`/`ITF`. There is no enum field type in the SDK,
+so this is a plain text box and you are typing; being fussy about capitals would be a
 spelling test rather than a safety check. `qr` on its own is *not* accepted:
 two words for one format is a wart, and the watch tells you what to use.
 
@@ -625,7 +625,7 @@ watch write an ID back to the file — and it still should not.
 ```sh
 export UNA_SDK=/path/to/una-sdk
 cd Barcode/Software/Apps/Barcode-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.4.1 .. && cmake --build build
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.5.0 .. && cmake --build build
 ```
 
 Or the desktop simulator, which is where the provisioning flow is easiest to
