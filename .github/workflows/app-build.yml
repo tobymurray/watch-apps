@@ -41,15 +41,24 @@ permissions:
 env:
   # Pinned by digest, not by tag: a re-pushed tag would silently change the
   # compiler and there would be nothing in the diff to say so. This is the same
-  # image tobymurray/kira builds the SDK's apps with, and building this repo
-  # against it reproduces the artifacts byte for byte -- Barcode 0.5.0 comes out
-  # of it at 118,532 bytes and CRC 0x11CFABAC, which is what the barcode-0.5.0
-  # tag records for the binary that was built on a workstation and installed on
-  # a watch. Two machines, one digest, the same bytes.
+  # image tobymurray/kira builds the SDK's apps with.
+  #
+  # The previous pin (sha256:4d75a70b...) was the image kira-toolchain's own
+  # app-binaries.yml still points at as of this writing -- but kira rebuilt and
+  # repushed the tag on top of it in tobymurray/kira#61 ("an image that could
+  # compile an app but not pack it") without moving that pin, and once nothing
+  # referenced the old digest by tag, the registry was free to garbage-collect
+  # it. A run here on 2026-08-29 pulled it successfully; a run four minutes
+  # later got "manifest unknown" for the identical string. This pin
+  # (sha256:2a74c2bf...) is what kira-toolchain:latest resolves to right now,
+  # found by reading tobymurray/kira's own toolchain-build logs rather than
+  # guessed at -- see the digest's own history before trusting it to outlive
+  # the next rebuild there, since pinning by digest only protects against a
+  # silent *content* change, not against the tag moving off it entirely.
   #
   # It has to be repeated in `container.image` below, because the `env` context
   # is not available where a job declares its container.
-  TOOLCHAIN: ghcr.io/tobymurray/kira-toolchain@sha256:4d75a70b33b4c4fb8799bed5af2ebb03c9b6eb161ffed3049e316ad996461127
+  TOOLCHAIN: ghcr.io/tobymurray/kira-toolchain@sha256:2a74c2bfca30710675f3b9cb28942b379daf87332b22b6383b590230994dd74f
 
   # The SDK is a separate repository and every app in this one builds against it,
   # so it is pinned here rather than floating on a branch: an SDK commit that
@@ -64,7 +73,7 @@ jobs:
     name: ${{ inputs.app }}
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/tobymurray/kira-toolchain@sha256:4d75a70b33b4c4fb8799bed5af2ebb03c9b6eb161ffed3049e316ad996461127
+      image: ghcr.io/tobymurray/kira-toolchain@sha256:2a74c2bfca30710675f3b9cb28942b379daf87332b22b6383b590230994dd74f
       # The package is published from another repository, so this repository's
       # token only reaches it if the image is public or has been granted read
       # access here. Authenticating costs nothing and covers both.
