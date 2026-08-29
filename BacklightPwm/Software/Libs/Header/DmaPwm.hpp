@@ -78,7 +78,26 @@ enum class DmaStatus : uint8_t {
     NoFreeTimer    = 3, ///< Every candidate timer's clock is already on.
     NoFreeChannel  = 4, ///< No GPDMA channel is idle.
     VerifyFailed   = 5, ///< A register did not read back as written. Nothing enabled.
-    NoTimerClock   = 6, ///< The timer would not count, so its rate is unknown.
+    NoTimerClock   = 6, ///< The waveform did not advance, so its rate is unknown.
+};
+
+/**
+ * @brief What the waveform actually did, measured rather than computed.
+ *
+ * Two separate numbers because they answer different questions, and the first
+ * version of this file conflated them into one guess and got a flashing screen.
+ *
+ * `hzAwake` is the rate with the CPU spinning: the honest instantaneous rate of
+ * the hardware. `hzAsleep` is the rate across a kernel sleep of the same
+ * wall-clock length. If the two agree, the waveform is genuinely autonomous and
+ * the CPU can be given away. If `hzAsleep` is the lower, the timer or the DMA is
+ * being gated off while the core sleeps, and no choice of divider fixes that:
+ * the light would blink at whatever rate the kernel sleeps and wakes.
+ */
+struct DmaRates {
+    uint32_t hzAwake  = 0;
+    uint32_t hzAsleep = 0;
+    uint32_t arr      = 0; ///< The divider those rates were measured at.
 };
 
 const char* dmaStatusName(DmaStatus s);
@@ -92,6 +111,36 @@ const char* dmaStatusName(DmaStatus s);
  */
 constexpr size_t kWaveWords = 128;
 
+/// The divider is 16 bits on a basic timer.
+constexpr uint32_t kArrMax = 0xFFFFu;
+
+/**
+ * @brief The new divider that turns a measured rate into the wanted one.
+ *
+ * Rate is inversely proportional to the divider, so this is one multiply. It is
+ * a free function rather than a private method because it is the arithmetic that
+ * has been wrong twice, in two different ways, and it is the only part of this
+ * file that can be tested without the registers.
+ *
+ * Clamped at both ends: below 1 the timer would free-run, above 65535 the value
+ * does not fit. A measurement of zero leaves the divider alone rather than
+ * dividing by it.
+ */
+constexpr uint32_t trimmedArr(uint32_t arr, uint32_t measuredHz, uint32_t targetHz)
+{
+    if (measuredHz == 0u || targetHz == 0u || arr == 0u) {
+        return arr;
+    }
+    const uint64_t scaled = (static_cast<uint64_t>(arr) * measuredHz) / targetHz;
+    if (scaled < 1u) {
+        return 1u;
+    }
+    if (scaled > kArrMax) {
+        return kArrMax;
+    }
+    return static_cast<uint32_t>(scaled);
+}
+
 class DmaPwm
 {
 public:
@@ -99,9 +148,19 @@ public:
      * @brief Claim a timer and a DMA channel, build the waveform, verify, enable.
      * @param dutyPercent 0 to 100.
      * @param periodUs    Length of one full waveform pass.
+     * @param sleepMs     Hands the CPU back, for the asleep-rate comparison.
+     * @param nowMs       Wall clock, for timing the measurement windows.
      * @return Running on success. Anything else means nothing was enabled.
+     *
+     * The divider is trimmed against a measurement of the waveform's own rate
+     * rather than computed from an assumed clock. Two earlier versions computed
+     * it: one assumed the timer ran at the core clock and landed at about 5 Hz,
+     * the other measured the timer's input clock and landed at about 10 Hz. The
+     * output is the only thing worth measuring, and the DMA counts its own
+     * passes in hardware, so it is measurable without a camera.
      */
-    DmaStatus start(uint8_t dutyPercent, uint32_t periodUs, void (*sleepMs)(uint32_t));
+    DmaStatus start(uint8_t dutyPercent, uint32_t periodUs, void (*sleepMs)(uint32_t),
+                    uint32_t (*nowMs)());
 
     /// Change duty with the hardware still running. Rewrites the buffer only;
     /// the DMA is reading it continuously, so the change takes effect within one
@@ -125,14 +184,14 @@ public:
     /// How many times the block-repeat counter has been re-armed.
     uint32_t rearms() const { return mRearms; }
 
-    /// The timer's input clock, measured rather than assumed, in kHz.
-    ///
-    /// The first version took this to be the core clock and was wrong by about
-    /// fifty times: the waveform came out at roughly 5 Hz instead of 250, which
-    /// is a visible flash rather than a brightness. The timer sits on APB1 and
-    /// whatever the kernel has done to that prescaler is not knowable from here,
-    /// so it is measured the same way the core clock is.
-    uint32_t timerKhz() const { return mTimerKhz; }
+    /// The waveform's measured rate after trimming, in Hz. This is the number
+    /// that decides whether the light dims or blinks.
+    uint32_t waveHz() const { return mFinal.hzAwake; }
+
+    /// Rates from the first probe, before the divider was trimmed. Kept because
+    /// the awake-against-asleep comparison is a finding in its own right.
+    const DmaRates& firstProbe() const { return mFirst; }
+    const DmaRates& finalProbe() const { return mFinal; }
 
 private:
     DmaStatus mStatus     = DmaStatus::Idle;
@@ -140,8 +199,10 @@ private:
     uint8_t   mTimerIndex = 0;   ///< 6 or 7.
     uint8_t   mChannel    = 0xFF;
 
-    uint32_t mRearms   = 0;
-    uint32_t mTimerKhz = 0;
+    uint32_t mRearms = 0;
+    uint32_t mArr    = 0;
+    DmaRates mFirst;
+    DmaRates mFinal;
 
     /// Saved before anything is written, restored by stop().
     uint32_t mSavedAhb1Enr  = 0;
@@ -151,9 +212,18 @@ private:
 
     bool pickTimer();
 
-    /// Runs the timer briefly against the kernel's millisecond clock to find its
-    /// input rate. Returns 0 if it does not count.
-    uint32_t measureTimerKhz(void (*sleepMs)(uint32_t));
+    /// Counts completed waveform passes over a wall-clock window, using the
+    /// block-repeat counter the DMA maintains in hardware. `busy` spins for the
+    /// window instead of sleeping through it, which is what separates the
+    /// hardware's own rate from the rate a sleeping CPU leaves it running at.
+    uint32_t measureHz(bool busy, uint32_t windowMs, void (*sleepMs)(uint32_t),
+                       uint32_t (*nowMs)());
+
+    /// Reload the block-repeat counter to full, so a measurement starts from a
+    /// known count and cannot run it out mid-window.
+    void rearm();
+
+    void setArr(uint32_t arr);
     bool pickChannel();
     void buildWave(uint8_t dutyPercent);
 

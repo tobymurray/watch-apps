@@ -214,15 +214,30 @@ void MainView::refresh()
             break;
 
         case CustomMessage::PwmState::Running: {
-            // Rung, measured core clock, and seconds since the run began. The
-            // last of those is what lets a video be lined up against the results
-            // file afterwards: both count the same kernel uptime.
-            setLine(mTitle, mTitleBuf, "%02u/%02u %luMHz t%lu.%lu",
-                    static_cast<unsigned>(status.rungIndex + 1),
-                    static_cast<unsigned>(status.rungCount),
-                    static_cast<unsigned long>(status.cyclesPerUs),
-                    static_cast<unsigned long>(status.runElapsedMs / 1000u),
-                    static_cast<unsigned long>((status.runElapsedMs % 1000u) / 100u));
+            // Rung, waveform rate, and seconds since the run began. The last of
+            // those is what lets a video be lined up against the results file
+            // afterwards: both count the same kernel uptime.
+            //
+            // The rate is here rather than the core clock because it is the
+            // number that decides whether the light is dimmed or blinking, and
+            // two versions of this app went to the watch with no way to read it
+            // off the screen. The core clock is in the results file, which is
+            // where a number that never changes belongs.
+            if (status.waveHz != 0u) {
+                setLine(mTitle, mTitleBuf, "%02u/%02u %luHz t%lu.%lu",
+                        static_cast<unsigned>(status.rungIndex + 1),
+                        static_cast<unsigned>(status.rungCount),
+                        static_cast<unsigned long>(status.waveHz),
+                        static_cast<unsigned long>(status.runElapsedMs / 1000u),
+                        static_cast<unsigned long>((status.runElapsedMs % 1000u) / 100u));
+            } else {
+                setLine(mTitle, mTitleBuf, "%02u/%02u %luMHz t%lu.%lu",
+                        static_cast<unsigned>(status.rungIndex + 1),
+                        static_cast<unsigned>(status.rungCount),
+                        static_cast<unsigned long>(status.cyclesPerUs),
+                        static_cast<unsigned long>(status.runElapsedMs / 1000u),
+                        static_cast<unsigned long>((status.runElapsedMs % 1000u) / 100u));
+            }
 
             // The duty currently being driven, big. On a discrimination rung
             // this alternates with the pair's other half, so the screen itself

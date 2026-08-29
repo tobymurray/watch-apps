@@ -80,6 +80,13 @@ struct PwmStatus : public SDK::MessageBase {
     /// the thing worth watching.
     uint32_t kernelWrites;
 
+    /// The waveform's measured rate, in Hz, when the hardware engine is driving.
+    /// Zero on the software engine, which has no such counter. On screen because
+    /// it is the one number that says whether the light is dimmed or blinking,
+    /// and two versions of this app shipped without anyone able to read it off
+    /// the watch.
+    uint32_t waveHz;
+
     uint16_t rungIndex;
     uint16_t rungCount;
 
@@ -107,6 +114,7 @@ struct PwmStatus : public SDK::MessageBase {
         , cyclesPerUs(0)
         , runElapsedMs(0)
         , kernelWrites(0)
+        , waveHz(0)
         , rungIndex(0)
         , rungCount(0)
         , requestedDuty(0)

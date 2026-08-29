@@ -505,7 +505,7 @@ void Service::handleStart()
     askKernelToHoldLight();
 
     if (mUseDma) {
-        const Pwm::DmaStatus st = mDma.start(ladder()[0].duty, Pwm::kPeriodUs, &sleepThunk);
+        const Pwm::DmaStatus st = mDma.start(ladder()[0].duty, Pwm::kPeriodUs, &sleepThunk, &millisThunk);
         if (st != Pwm::DmaStatus::Running) {
             LOG_INFO("DMA engine refused: %s\n", Pwm::dmaStatusName(st));
             if (mLog) {
@@ -519,7 +519,8 @@ void Service::handleStart()
         // Written after the start, not with the rest of the header: the timer's
         // clock is not known until the start measures it.
         if (mLog) {
-            mLog->dmaHeader(mDma.timerKhz(), mDma.timerIndex(), mDma.channelIndex());
+            mLog->dmaHeader(mDma.timerIndex(), mDma.channelIndex(), mDma.firstProbe(),
+                            mDma.finalProbe());
         }
     }
 
@@ -600,6 +601,7 @@ void Service::publish()
     guard->edges       = mPwm.totals().edges;
     guard->periods     = mPwm.totals().periods;
     guard->cyclesPerUs  = mClock.cyclesPerUs();
+    guard->waveHz       = mUseDma ? mDma.waveHz() : 0u;
     guard->runElapsedMs = (mDriveStartedMs != 0u) ? (mKernel.sys.getTimeMs() - mDriveStartedMs) : 0u;
     guard->kernelWrites = mTotalKernelWrites;
 

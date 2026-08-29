@@ -50,6 +50,7 @@ public:
         uint32_t edges       = 0;
         uint32_t periods     = 0;
         uint32_t cyclesPerUs  = 0;
+        uint32_t waveHz       = 0;
         uint32_t runElapsedMs = 0;
         uint32_t kernelWrites = 0;
 

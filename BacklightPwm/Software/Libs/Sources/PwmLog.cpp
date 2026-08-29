@@ -95,16 +95,35 @@ void PwmLog::header(uint32_t uptimeMs, bool driving, uint32_t cyclesPerUs, uint3
     line("# stayed lit through the contest rungs is the answer that counts.");
 }
 
-void PwmLog::dmaHeader(uint32_t timerKhz, uint8_t timerIndex, uint8_t channel)
+void PwmLog::dmaHeader(uint8_t timerIndex, uint8_t channel, const DmaRates& first,
+                       const DmaRates& final)
 {
-    line("PWM engine=timer+DMA TIM%u GPDMA_ch%u timer_clock=%lu kHz (measured)",
-         static_cast<unsigned>(timerIndex), static_cast<unsigned>(channel),
-         static_cast<unsigned long>(timerKhz));
+    line("PWM engine=timer+DMA TIM%u GPDMA_ch%u", static_cast<unsigned>(timerIndex),
+         static_cast<unsigned>(channel));
+    line("PWM rate first  arr=%lu awake=%lu Hz", static_cast<unsigned long>(first.arr),
+         static_cast<unsigned long>(first.hzAwake));
+    line("PWM rate final  arr=%lu awake=%lu Hz asleep=%lu Hz",
+         static_cast<unsigned long>(final.arr), static_cast<unsigned long>(final.hzAwake),
+         static_cast<unsigned long>(final.hzAsleep));
+    line("#");
+    line("# Those rates are counted passes of the waveform buffer over a half");
+    line("# second of wall clock, read from the block-repeat counter the DMA");
+    line("# keeps in hardware. They are measurements. Two earlier versions of");
+    line("# this engine computed the rate from an assumed clock instead and were");
+    line("# wrong by fifty times and by twenty five times, both of which reach the");
+    line("# eye as a flashing screen rather than a dimmed one.");
+    line("#");
+    line("# awake against asleep is the question that decides whether any of this");
+    line("# is usable. awake spins the core through the window; asleep hands it");
+    line("# back for the same wall-clock time. If they agree, the waveform really");
+    line("# is autonomous and the CPU costs nothing. If asleep is the lower, the");
+    line("# timer or the DMA is gated off while the core sleeps, and no divider");
+    line("# fixes that: the light would blink at the kernel's sleep cadence.");
     line("#");
     line("# On this engine 'achieved' is the duty the hardware was COMMANDED to");
-    line("# produce, not a measurement: the DMA does not report back and nothing");
-    line("# here counts microseconds. The software engine's achieved figure is a");
-    line("# measurement; this one is not, and they should not be compared.");
+    line("# produce, not a measurement: the duty is not counted, only the rate.");
+    line("# The software engine's achieved figure is a measurement; this one is");
+    line("# not, and they should not be compared.");
 }
 
 void PwmLog::refused(const char* why)

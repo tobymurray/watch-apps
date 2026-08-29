@@ -49,14 +49,24 @@ constexpr uint32_t kTimCnt  = 0x24u;
 constexpr uint32_t kTimPsc  = 0x28u;
 constexpr uint32_t kTimArr  = 0x2Cu;
 
-/// Window for measuring the timer's input clock. Long enough for a few hundred
-/// prescaled counts at the slowest plausible rate, short enough not to stall
-/// startup.
-constexpr uint32_t kMeasureMs = 100u;
+/// Window for counting waveform passes. Long enough to resolve the wrong end of
+/// the range, where a waveform stuck at 10 Hz still shows four passes, and short
+/// of the block counter's two thousand at the right end.
+///
+/// It is also the length of a contiguous busy-wait, which is the reason it is
+/// not longer: this app has already rebooted the watch once by not handing the
+/// CPU back, and while the liveness watchdog tolerated tens of seconds then,
+/// there is no reason to spend more of that budget than the measurement needs.
+constexpr uint32_t kWindowMs = 400u;
 
-/// Below this the timer cannot place a 250 Hz waveform's edges and something is
-/// wrong with the measurement rather than with the part.
-constexpr uint32_t kMinTimerKhz = 100u;
+/// A waveform that has not completed one pass in half a second is not running,
+/// whatever the registers say.
+constexpr uint32_t kMinHz = 2u;
+
+/// Starting guess for the divider, only ever a starting point: the trim below
+/// corrects it from measurement, so being wrong here costs an iteration and
+/// nothing else.
+constexpr uint32_t kGuessTimerHz = 160000000u;
 
 constexpr uint32_t kGpdma1Base    = 0x40020000u;
 constexpr uint32_t kChan0Offset   = 0x50u;
@@ -141,7 +151,7 @@ const char* dmaStatusName(DmaStatus s)
         case DmaStatus::NoFreeTimer:   return "no free timer";
         case DmaStatus::NoFreeChannel: return "no free DMA channel";
         case DmaStatus::VerifyFailed:  return "register readback mismatch, nothing enabled";
-        case DmaStatus::NoTimerClock:  return "the timer would not count";
+        case DmaStatus::NoTimerClock:  return "the waveform did not advance";
     }
     return "?";
 }
@@ -178,36 +188,70 @@ bool DmaPwm::pickTimer()
     return false;
 }
 
-uint32_t DmaPwm::measureTimerKhz(void (*sleepMs)(uint32_t))
+void DmaPwm::rearm()
 {
-    if (!kHasRegisters || sleepMs == nullptr) {
+    const uint32_t cb = channelBase(mChannel);
+    wr(cb + kCcr, rd(cb + kCcr) & ~kCcrEn);
+    wr(cb + kCfcr, 0xFFFFu);
+    wr(cb + kCbr1, kBlockBytes | (kBrcMax << kBrcShift) | kBrsdec);
+    wr(cb + kCsar, static_cast<uint32_t>(reinterpret_cast<uintptr_t>(gWave)));
+    wr(cb + kCdar, kGpiofBsrr);
+    wr(cb + kCcr, rd(cb + kCcr) | kCcrEn);
+}
+
+void DmaPwm::setArr(uint32_t arr)
+{
+    if (arr < 1u) {
+        arr = 1u;
+    }
+    if (arr > Pwm::kArrMax) {
+        arr = Pwm::kArrMax;
+    }
+    mArr = arr;
+    // ARPE is clear on a basic timer, so this takes effect without an update
+    // event and without disturbing the DMA request stream.
+    wr(timerBase(mTimerIndex) + kTimArr, arr - 1u);
+}
+
+uint32_t DmaPwm::measureHz(bool busy, uint32_t windowMs, void (*sleepMs)(uint32_t),
+                           uint32_t (*nowMs)())
+{
+    if (!kHasRegisters || nowMs == nullptr) {
         return 0u;
     }
 
-    const uint32_t tb = timerBase(mTimerIndex);
+    const uint32_t cb = channelBase(mChannel);
 
-    // Prescaled by 1000 so the 16-bit counter cannot wrap inside the window at
-    // any plausible APB1 rate: a 3 MHz clock gives about 300 counts over 100 ms
-    // and a 160 MHz one about 16000, and both fit.
-    wr(tb + kTimCr1, 0u);
-    wr(tb + kTimPsc, 999u);
-    wr(tb + kTimArr, 0xFFFFu);
-    wr(tb + kTimEgr, 1u);
-    wr(tb + kTimCnt, 0u);
-    wr(tb + kTimCr1, 1u);
+    // Start from a full block counter so the window cannot run it out, which
+    // would look like a stalled waveform rather than a fast one.
+    rearm();
 
-    sleepMs(kMeasureMs);
+    const uint32_t brcBefore = (rd(cb + kCbr1) >> kBrcShift) & kBrcMax;
+    const uint32_t t0        = nowMs();
 
-    const uint32_t counts = rd(tb + kTimCnt) & 0xFFFFu;
-    wr(tb + kTimCr1, 0u);
-
-    if (counts == 0u) {
+    if (busy) {
+        // Spinning rather than sleeping is the entire point of this variant: it
+        // holds the core awake so the measurement sees the hardware's own rate
+        // and not the rate a sleeping core leaves it running at.
+        while ((nowMs() - t0) < windowMs) {
+        }
+    } else if (sleepMs != nullptr) {
+        sleepMs(windowMs);
+    } else {
         return 0u;
     }
 
-    // counts are (clk / 1000) ticks over kMeasureMs milliseconds, so
-    // clk_kHz = counts * 1000 / kMeasureMs.
-    return (counts * 1000u) / kMeasureMs;
+    const uint32_t elapsed   = nowMs() - t0;
+    const uint32_t brcAfter  = (rd(cb + kCbr1) >> kBrcShift) & kBrcMax;
+
+    if (elapsed == 0u || brcAfter > brcBefore) {
+        // A counter that went up means it was re-armed underneath us, so the
+        // window is uninterpretable. Report nothing rather than a wrong number.
+        return 0u;
+    }
+
+    const uint32_t passes = brcBefore - brcAfter;
+    return (passes * 1000u) / elapsed;
 }
 
 bool DmaPwm::pickChannel()
@@ -265,7 +309,8 @@ bool DmaPwm::verify(uint32_t periodUs) const
     return true;
 }
 
-DmaStatus DmaPwm::start(uint8_t dutyPercent, uint32_t periodUs, void (*sleepMs)(uint32_t))
+DmaStatus DmaPwm::start(uint8_t dutyPercent, uint32_t periodUs, void (*sleepMs)(uint32_t),
+                        uint32_t (*nowMs)())
 {
     if (!kHasRegisters) {
         mStatus = DmaStatus::NoRegisters;
@@ -294,30 +339,26 @@ DmaStatus DmaPwm::start(uint8_t dutyPercent, uint32_t periodUs, void (*sleepMs)(
         return mStatus;
     }
 
-    // Measure the timer's own clock before using it. Assuming it matched the
-    // core clock put the first version's waveform at about 5 Hz instead of 250,
-    // which reads as a flashing screen rather than a dimmed one.
-    mTimerKhz = measureTimerKhz(sleepMs);
-    if (mTimerKhz < kMinTimerKhz) {
-        LOG_INFO("timer clock measured %lu kHz, refusing\n",
-                 static_cast<unsigned long>(mTimerKhz));
-        stop();
-        mStatus = DmaStatus::NoTimerClock;
-        return mStatus;
-    }
-    LOG_INFO("timer clock %lu kHz (measured)\n", static_cast<unsigned long>(mTimerKhz));
-
     buildWave(dutyPercent);
 
     const uint32_t tb = timerBase(mTimerIndex);
     const uint32_t cb = channelBase(mChannel);
 
-    // Timer: one update event per waveform word, at the rate its own clock
-    // actually runs. ticks = kHz * us / 1000, divided across the buffer.
-    const uint32_t ticksPerWord = (mTimerKhz * periodUs) / (1000u * kWaveWords);
+    // Timer: one update event per waveform word. The divider here is only a
+    // starting guess; it is trimmed from measurement once the waveform is
+    // actually running, because computing it from a clock is exactly what went
+    // wrong twice.
+    uint32_t guess = (kGuessTimerHz / 1000000u) * periodUs / kWaveWords;
+    if (guess < 1u) {
+        guess = 1u;
+    }
+    if (guess > kArrMax) {
+        guess = kArrMax;
+    }
+    mArr = guess;
     wr(tb + kTimCr1, 0u);
     wr(tb + kTimPsc, 0u);
-    wr(tb + kTimArr, ticksPerWord ? ticksPerWord - 1u : 1u);
+    wr(tb + kTimArr, mArr - 1u);
     wr(tb + kTimEgr, 1u);                 // UG: latch PSC/ARR
     wr(tb + kTimDier, 1u << 8);           // UDE: update generates a DMA request
 
@@ -342,11 +383,46 @@ DmaStatus DmaPwm::start(uint8_t dutyPercent, uint32_t periodUs, void (*sleepMs)(
     wr(cb + kCcr, rd(cb + kCcr) | kCcrEn);
     wr(tb + kTimCr1, 1u);                 // CEN
 
-    LOG_INFO("running: TIM%u, GPDMA ch%u, %u words, duty %u%%\n",
-             static_cast<unsigned>(mTimerIndex), static_cast<unsigned>(mChannel),
-             static_cast<unsigned>(kWaveWords), static_cast<unsigned>(mDuty));
-
+    // The waveform is now running at whatever rate the guess produced. Measure
+    // it, twice, and let the difference between the two answer a question no
+    // amount of register reading can: whether this keeps running when the core
+    // does not.
     mStatus = DmaStatus::Running;
+
+    mFirst.arr     = mArr;
+    mFirst.hzAwake = measureHz(true, kWindowMs, sleepMs, nowMs);
+
+    if (mFirst.hzAwake < kMinHz) {
+        LOG_INFO("waveform did not advance at arr %lu\n",
+                 static_cast<unsigned long>(mFirst.arr));
+        stop();
+        mStatus = DmaStatus::NoTimerClock;
+        return mStatus;
+    }
+
+    // Rate is inversely proportional to the divider, so one multiply lands on
+    // the target from any starting point. Done twice because the first landing
+    // is only as good as the first measurement's resolution.
+    const uint32_t targetHz = periodUs ? (1000000u / periodUs) : 250u;
+    uint32_t measured = mFirst.hzAwake;
+    for (int pass = 0; pass < 2 && measured >= kMinHz; ++pass) {
+        setArr(trimmedArr(mArr, measured, targetHz));
+        mFinal.arr     = mArr;
+        mFinal.hzAwake = measureHz(true, kWindowMs, sleepMs, nowMs);
+        measured       = mFinal.hzAwake;
+    }
+
+    // The asleep comparison once, at the settled divider. Whether the two agree
+    // is the finding; measuring it at every trim step would only cost time.
+    mFirst.hzAsleep = 0u;
+    mFinal.hzAsleep = measureHz(false, kWindowMs, sleepMs, nowMs);
+
+    LOG_INFO("running: TIM%u ch%u duty %u%% arr %lu, %lu Hz awake, %lu Hz asleep\n",
+             static_cast<unsigned>(mTimerIndex), static_cast<unsigned>(mChannel),
+             static_cast<unsigned>(mDuty), static_cast<unsigned long>(mArr),
+             static_cast<unsigned long>(mFinal.hzAwake),
+             static_cast<unsigned long>(mFinal.hzAsleep));
+
     return mStatus;
 }
 
@@ -373,12 +449,7 @@ void DmaPwm::poll()
         return;
     }
 
-    wr(cb + kCcr, rd(cb + kCcr) & ~kCcrEn);
-    wr(cb + kCfcr, 0xFFFFu);
-    wr(cb + kCbr1, kBlockBytes | (kBrcMax << kBrcShift) | kBrsdec);
-    wr(cb + kCsar, static_cast<uint32_t>(reinterpret_cast<uintptr_t>(gWave)));
-    wr(cb + kCdar, kGpiofBsrr);
-    wr(cb + kCcr, rd(cb + kCcr) | kCcrEn);
+    rearm();
     ++mRearms;
 }
 

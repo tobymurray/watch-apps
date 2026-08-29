@@ -58,6 +58,7 @@ enable_testing()
 add_executable(backlightpwm-tests
     SoftPwm_test.cpp
     PwmPlan_test.cpp
+    DmaPwm_test.cpp
     "${APP_LIBS}/Sources/SoftPwm.cpp"
     "${APP_LIBS}/Sources/PwmPlan.cpp"
     "${UNA_SDK_ROOT}/Libs/Source/UnaLogger/Logger.cpp"
