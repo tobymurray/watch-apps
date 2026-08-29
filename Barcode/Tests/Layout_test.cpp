@@ -44,6 +44,7 @@
 
 #include "BarcodeLayout.hpp"
 #include "Code128.hpp"
+#include "Itf.hpp"
 
 namespace {
 
@@ -707,6 +708,156 @@ TEST(QrPanel, ModulesAreWholePixelsSoNoEdgeIsAntiAliased)
     EXPECT_EQ((BarcodeLayout::kQrInkX - BarcodeLayout::kQrX) % BarcodeLayout::kQrModulePx, 0);
     EXPECT_EQ(BarcodeLayout::kLevelsPerChannel, 4)
         << "the reason whole pixels matter at all";
+}
+
+// ---------------------------------------------------------------------------
+// ITF, which shares the band with Code 128 and is laid out by different rules
+//
+// Two of them, and both come from the panel rather than the symbology: whole
+// pixels, because four levels a channel makes a mid-pixel edge step rather
+// than blend; and bearer bars, because ITF has no check character and a scan
+// that clips the symbol can decode as a valid shorter number.
+// ---------------------------------------------------------------------------
+
+/// The digit counts ITF accepts, which is the even ones.
+std::vector<size_t> itfLengths()
+{
+    std::vector<size_t> out;
+    for (size_t d = 2; d <= Itf::kMaxDataLength; d += 2) out.push_back(d);
+    return out;
+}
+
+/// INVARIANT, and the one that decides whether ITF is drawn correctly at all:
+/// **the quiet zone meets ten narrow elements at every length**.
+///
+/// This is the test that caught the layout being wrong. Sizing the element
+/// from the bars band -- 200 px for the symbol alone -- passes at 2, 8, 12, 14
+/// and 16 digits and fails at 4, 6 and 10, because the symbol grows into the
+/// white the margin needed. The element has to be sized from the *backing*,
+/// with the quiet zone in the budget: kBackingW for units + 2 * 10 elements.
+TEST(ItfPanel, TheQuietZoneMeetsTenElementsAtEveryLength)
+{
+    for (size_t d : itfLengths()) {
+        const uint16_t units = Itf::unitsFor(d);
+        EXPECT_TRUE(BarcodeLayout::itfMeetsQuietZone(units))
+            << d << " digits: " << BarcodeLayout::itfQuietPx(units) << " px of white against "
+            << BarcodeLayout::kItfQuietUnitsRequired * BarcodeLayout::itfUnitPx(units)
+            << " px required";
+    }
+}
+
+/// INVARIANT. The symbol and both quiet zones fit inside the white backing,
+/// which is the only light surface on the screen -- outside it the panel is
+/// black and a quiet zone there is not a quiet zone.
+TEST(ItfPanel, TheSymbolAndItsQuietZonesFitTheBacking)
+{
+    for (size_t d : itfLengths()) {
+        const uint16_t units = Itf::unitsFor(d);
+        const int16_t left  = BarcodeLayout::itfLeftPx(units);
+        const int16_t width = BarcodeLayout::itfWidthPx(units);
+
+        EXPECT_GE(left, BarcodeLayout::kBackingX) << d << " digits start left of the white";
+        EXPECT_LE(left + width, BarcodeLayout::kBackingX + BarcodeLayout::kBackingW)
+            << d << " digits end right of the white";
+    }
+}
+
+/// INVARIANT. Every element is a whole number of pixels, so no bar edge is
+/// ever anti-aliased. That is the whole reason ITF is laid out differently
+/// from Code 128, and the panel's four levels a channel is why it matters.
+TEST(ItfPanel, EveryElementIsAWholeNumberOfPixels)
+{
+    for (size_t d : itfLengths()) {
+        const int16_t unitPx = BarcodeLayout::itfUnitPx(Itf::unitsFor(d));
+        EXPECT_GE(unitPx, 1) << d << " digits";
+        EXPECT_LE(unitPx, BarcodeLayout::kItfMaxUnitPx) << d << " digits";
+    }
+    EXPECT_EQ(BarcodeLayout::kLevelsPerChannel, 4) << "the reason whole pixels matter";
+}
+
+/// INVARIANT. The symbol is centred on the panel, not on the band, to within
+/// the half pixel an even panel allows.
+///
+/// A symbol an odd number of pixels wide cannot sit exactly centred on a
+/// 240px panel -- the centre is 119.5, the same half pixel the lit-circle
+/// model already carries -- so the left margin is the floor and the spare
+/// pixel goes to the right. itfQuietPx() reports the left side for that
+/// reason: it is the smaller of the two, so a quiet-zone claim made from it
+/// holds on both.
+TEST(ItfPanel, TheSymbolIsCentredOnThePanelToWithinAPixel)
+{
+    for (size_t d : itfLengths()) {
+        const uint16_t units = Itf::unitsFor(d);
+        const int16_t left  = BarcodeLayout::itfLeftPx(units);
+        const int16_t width = BarcodeLayout::itfWidthPx(units);
+
+        const int16_t rightMargin = BarcodeLayout::kPanelWidth - (left + width);
+        EXPECT_GE(rightMargin, left) << d << " digits lean right";
+        EXPECT_LE(rightMargin - left, 1) << d << " digits are more than a pixel off centre";
+        EXPECT_EQ(width % 2, 2 * left + width == BarcodeLayout::kPanelWidth ? 0 : 1)
+            << d << " digits: only an odd width may be a pixel off";
+    }
+}
+
+/// INVARIANT. Both bearer bars and the bars between them fit the band, and the
+/// bars keep a usable height. A bearer that ate the symbol would defeat itself.
+TEST(ItfPanel, TheBearerBarsAndTheBarsFitTheBand)
+{
+    for (size_t d : itfLengths()) {
+        const int16_t unitPx = BarcodeLayout::itfUnitPx(Itf::unitsFor(d));
+        const int16_t bearer = BarcodeLayout::itfBearerPx(unitPx);
+        const int16_t bars   = BarcodeLayout::itfBarsHeightPx(unitPx);
+
+        EXPECT_GE(bearer, 2 * unitPx) << d << " digits: the bearer is under two elements";
+        EXPECT_GE(bearer, 4) << d << " digits: the bearer is thinner than the 4px floor";
+        EXPECT_EQ(2 * bearer + bars, BarcodeLayout::kBarsH) << d << " digits";
+        EXPECT_GT(bars, BarcodeLayout::kBarsH / 2)
+            << d << " digits: the bearers have taken more than half the height";
+    }
+}
+
+/// INVARIANT. Every row the ITF symbol occupies is lit across the full backing
+/// width, so nothing the bezel cuts can clip a bar or a bearer. The band is
+/// shared with Code 128, which already holds this, but ITF puts ink on the top
+/// and bottom rows of it and Code 128 does not.
+TEST(ItfPanel, EveryRowOfTheBandIsLitAcrossTheBacking)
+{
+    for (int16_t y = BarcodeLayout::kBarsY; y < BarcodeLayout::kBarsY + BarcodeLayout::kBarsH; y++) {
+        EXPECT_TRUE(BarcodeLayout::rowIsLit(BarcodeLayout::kBackingX, y, BarcodeLayout::kBackingW))
+            << "row " << y << " is cut by the bezel";
+    }
+}
+
+/// CHARACTERISATION. What each length actually comes out at. The element drops
+/// to a single pixel from ten digits up, which is 126 um -- the 5 mil
+/// mid-density reference exactly, and the floor for this symbology on this
+/// panel. There is no encoding trick left: the quiet zone is already the
+/// binding constraint and the backing cannot grow without leaving the circle.
+TEST(ItfPanel, CurrentlyTenDigitsAndUpAreAOnePixelElement)
+{
+    for (size_t d : itfLengths()) {
+        const int16_t unitPx = BarcodeLayout::itfUnitPx(Itf::unitsFor(d));
+        const int16_t expected = d <= 2 ? 4 : d <= 4 ? 3 : d <= 8 ? 2 : 1;
+        EXPECT_EQ(unitPx, expected)
+            << d << " digits; if this improved, tighten this test";
+    }
+}
+
+/// Reporting, so the whole picture is in one place.
+TEST(ItfPanel, ReportTheWholeRange)
+{
+    for (size_t d : itfLengths()) {
+        const uint16_t units  = Itf::unitsFor(d);
+        const int16_t  unitPx = BarcodeLayout::itfUnitPx(units);
+        std::cout << "  " << (d < 10 ? " " : "") << d << " digits"
+                  << "  units " << units
+                  << "  element " << unitPx << " px"
+                  << "  X " << unitPx * BarcodeLayout::kDotPitchMicrons << " um"
+                  << "  width " << BarcodeLayout::itfWidthPx(units) << " px"
+                  << "  quiet " << BarcodeLayout::itfQuietPx(units) << " px"
+                  << "  bearer " << BarcodeLayout::itfBearerPx(unitPx) << " px"
+                  << std::endl;
+    }
 }
 
 } // namespace

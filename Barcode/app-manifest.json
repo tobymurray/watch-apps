@@ -47,11 +47,11 @@
       "id": "fmt1",
       "type": "string",
       "label": "Code 1 format",
-      "description": "Either Code128 or QRCode. Code128 is the ordinary barcode and every scanner reads it.",
+      "description": "Code128, QRCode or ITF. Code128 is the ordinary barcode and every scanner reads it.",
       "default": "Code128",
       "maxLength": 8,
-      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
-      "validationMessage": "Either Code128 or QRCode."
+      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee]|[Ii][Tt][Ff])?",
+      "validationMessage": "Code128, QRCode or ITF."
     },
     {
       "id": "id2",
@@ -77,11 +77,11 @@
       "id": "fmt2",
       "type": "string",
       "label": "Code 2 format",
-      "description": "Either Code128 for a standard barcode or QRCode",
+      "description": "Code128 for a standard barcode, QRCode, or ITF",
       "default": "Code128",
       "maxLength": 8,
-      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
-      "validationMessage": "Either Code128 or QRCode."
+      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee]|[Ii][Tt][Ff])?",
+      "validationMessage": "Code128, QRCode or ITF."
     },
     {
       "id": "id3",
@@ -107,11 +107,11 @@
       "id": "fmt3",
       "type": "string",
       "label": "Code 3 format",
-      "description": "Either Code128 or QRCode. Code128 is the ordinary barcode and every scanner reads it.",
+      "description": "Code128, QRCode or ITF. Code128 is the ordinary barcode and every scanner reads it.",
       "default": "Code128",
       "maxLength": 8,
-      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
-      "validationMessage": "Either Code128 or QRCode."
+      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee]|[Ii][Tt][Ff])?",
+      "validationMessage": "Code128, QRCode or ITF."
     },
     {
       "id": "id4",
@@ -137,11 +137,11 @@
       "id": "fmt4",
       "type": "string",
       "label": "Code 4 format",
-      "description": "Either Code128 or QRCode. Code128 is the ordinary barcode and every scanner reads it.",
+      "description": "Code128, QRCode or ITF. Code128 is the ordinary barcode and every scanner reads it.",
       "default": "Code128",
       "maxLength": 8,
-      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
-      "validationMessage": "Either Code128 or QRCode."
+      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee]|[Ii][Tt][Ff])?",
+      "validationMessage": "Code128, QRCode or ITF."
     },
     {
       "id": "id5",
@@ -167,11 +167,11 @@
       "id": "fmt5",
       "type": "string",
       "label": "Code 5 format",
-      "description": "Either Code128 or QRCode. Code128 is the ordinary barcode and every scanner reads it.",
+      "description": "Code128, QRCode or ITF. Code128 is the ordinary barcode and every scanner reads it.",
       "default": "Code128",
       "maxLength": 8,
-      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
-      "validationMessage": "Either Code128 or QRCode."
+      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee]|[Ii][Tt][Ff])?",
+      "validationMessage": "Code128, QRCode or ITF."
     },
     {
       "id": "id6",
@@ -197,11 +197,11 @@
       "id": "fmt6",
       "type": "string",
       "label": "Code 6 format",
-      "description": "Either Code128 or QRCode. Code128 is the ordinary barcode and every scanner reads it.",
+      "description": "Code128, QRCode or ITF. Code128 is the ordinary barcode and every scanner reads it.",
       "default": "Code128",
       "maxLength": 8,
-      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
-      "validationMessage": "Either Code128 or QRCode."
+      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee]|[Ii][Tt][Ff])?",
+      "validationMessage": "Code128, QRCode or ITF."
     }
   ]
 }

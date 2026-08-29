@@ -155,6 +155,7 @@ enum class Problem : uint8_t {
 enum class Format : uint8_t {
     Code128 = 0,
     Qr      = 1,
+    Itf     = 2,
 };
 
 /// One code, what to call it on screen, and how to draw it.

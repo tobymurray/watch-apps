@@ -148,6 +148,100 @@ constexpr int16_t kQuietPxEachSide = kBarsX - kBackingX;
 constexpr uint16_t kQuietZoneModulesRequired = 10;
 
 // ---------------------------------------------------------------------------
+// ITF, which is drawn in the same band by different rules
+//
+// Two differences from Code 128, both consequences of this panel rather than
+// of the symbology:
+//
+// **Whole pixels.** An ITF element is a whole number of pixels and the symbol
+// is centred in what that leaves, instead of being stretched to fill the band.
+// Four levels a channel means an edge landing mid-pixel steps rather than
+// blends, and a decoder tells a narrow element from a wide one by comparing
+// widths -- so an exact 3:1 with hard edges is worth more here than the ~20%
+// of width that rounding down costs. The remainder is not wasted: it goes to
+// the quiet zone, which was already the tighter constraint.
+//
+// **Bearer bars.** ITF is continuous and has no check character, so a scan
+// that clips the top or bottom of the symbol can decode as a valid *shorter*
+// number -- the "plausible value that scans" failure Barcode.hpp is about. A
+// bar flush above and below the symbol means such a scan crosses solid ink and
+// fails instead. This is a correctness requirement for ITF, not decoration,
+// and it is the reason ITF's bars are shorter than Code 128's.
+// ---------------------------------------------------------------------------
+
+/// ISO/IEC 16390: the clear margin each side of an ITF symbol is at least ten
+/// narrow elements, the same rule Code 128 states in modules.
+constexpr uint16_t kItfQuietUnitsRequired = 10;
+
+/// Widest an ITF element may be drawn. Bounded so the bearer bars and the
+/// symbol always fit the band whatever the id; the shortest id this app
+/// accepts, two digits, would otherwise take a 7px element.
+constexpr int16_t kItfMaxUnitPx = 4;
+
+/// Pixels per narrow element for a symbol of @p units units, rounded **down**
+/// so every element is whole. Never zero: one pixel is the floor, and from ten
+/// digits up it is what the white allows.
+///
+/// Derived from the **backing** and not from the bars band, because the symbol
+/// and its quiet zone have to fit the white together -- outside the backing the
+/// screen is black, and a quiet zone has to be light to be a quiet zone. So the
+/// budget is kBackingW for `units + 2 * kItfQuietUnitsRequired` elements, not
+/// kBarsW for `units`.
+///
+/// Sizing it the other way looks right and is not: it puts a 4-digit symbol at
+/// 3px an element with 20px of white either side where the standard wants 30,
+/// and fails the same way at 6 and 10 digits. itfMeetsQuietZone() is the test
+/// that catches it, and it caught exactly that.
+constexpr int16_t itfUnitPx(uint16_t units)
+{
+    return units == 0 ? 0
+         : (kBackingW / (units + 2 * kItfQuietUnitsRequired)) < 1 ? 1
+         : (kBackingW / (units + 2 * kItfQuietUnitsRequired)) > kItfMaxUnitPx ? kItfMaxUnitPx
+         : static_cast<int16_t>(kBackingW / (units + 2 * kItfQuietUnitsRequired));
+}
+
+/// Drawn width of a symbol of @p units units, and where it starts so that it
+/// is centred on the panel rather than on the band.
+constexpr int16_t itfWidthPx(uint16_t units)
+{
+    return static_cast<int16_t>(units * itfUnitPx(units));
+}
+constexpr int16_t itfLeftPx(uint16_t units)
+{
+    return static_cast<int16_t>((kPanelWidth - itfWidthPx(units)) / 2);
+}
+
+/// Quiet zone the drawn symbol actually gets, in pixels each side, measured to
+/// the edge of the white backing. Wider than Code 128's fixed 10px whenever
+/// the rounding leaves anything over, which is most lengths.
+constexpr int16_t itfQuietPx(uint16_t units)
+{
+    return static_cast<int16_t>(itfLeftPx(units) - kBackingX);
+}
+
+/// @retval true The quiet zone meets the ten narrow elements ISO/IEC 16390
+///              asks for. Compared in elements, not pixels, because that is
+///              the unit the rule is written in.
+constexpr bool itfMeetsQuietZone(uint16_t units)
+{
+    return itfQuietPx(units) >= static_cast<int16_t>(kItfQuietUnitsRequired) * itfUnitPx(units);
+}
+
+/// Bearer bar thickness for a symbol drawn at @p unitPx pixels an element.
+/// Two elements is the usual minimum for a top-and-bottom bearer; the 4px
+/// floor keeps it visible when an element is a single pixel.
+constexpr int16_t itfBearerPx(int16_t unitPx)
+{
+    return unitPx * 2 < 4 ? 4 : static_cast<int16_t>(unitPx * 2);
+}
+
+/// Height left for the bars once both bearers are taken out of the band.
+constexpr int16_t itfBarsHeightPx(int16_t unitPx)
+{
+    return static_cast<int16_t>(kBarsH - 2 * itfBearerPx(unitPx));
+}
+
+// ---------------------------------------------------------------------------
 // The caption, above the bars
 //
 // This code's name, in the band between the button ticks the bezel container

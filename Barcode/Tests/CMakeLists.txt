@@ -57,6 +57,7 @@ enable_testing()
 
 add_executable(barcode-pure-tests
     Code128_test.cpp
+    Itf_test.cpp
     Qr_test.cpp
     Layout_test.cpp
 )

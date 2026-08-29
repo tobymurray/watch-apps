@@ -39,6 +39,7 @@
 #include "Barcode.hpp"
 #include "Code128.hpp"
 #include "Encoded.hpp"
+#include "Itf.hpp"
 #include "Matrix.hpp"
 #include "Qr.hpp"
 
@@ -56,6 +57,7 @@ inline bool isMatrix(Format format)
 {
     switch (format) {
     case Format::Code128:
+    case Format::Itf:
         return false;
     case Format::Qr:
         return true;
@@ -75,6 +77,8 @@ inline bool encode(Format format, const char *text, Encoded &out)
     switch (format) {
     case Format::Code128:
         return Code128::encode(text, out);
+    case Format::Itf:
+        return Itf::encode(text, out);
     case Format::Qr:
         // Asked for the wrong shape. Refusing rather than asserting, because
         // the only way here is a caller that skipped isMatrix(), and a blank
@@ -95,6 +99,7 @@ inline bool encode(Format format, const char *text, Matrix &out)
     case Format::Qr:
         return Qr::encode(text, out);
     case Format::Code128:
+    case Format::Itf:
         return false;
     }
     return false;
@@ -124,6 +129,11 @@ inline bool isDrawable(Format format, const char *text)
         Encoded probe {};
         return Code128::encode(text, probe);
     }
+    case Format::Itf:
+        // Answers without the table, like QR and for a milder version of the
+        // same reason: the rule is "an even number of digits" and encoding a
+        // probe to discover that would be work for no extra certainty.
+        return Itf::accepts(text);
     case Format::Qr:
         return Qr::accepts(text);
     }
@@ -181,7 +191,57 @@ inline bool parseFormat(const char *text, Format &out)
         out = Format::Qr;
         return true;
     }
+    if (equals(text, "itf")) {
+        out = Format::Itf;
+        return true;
+    }
     return false;
+}
+
+/**
+ * @brief How a linear symbol should be laid out on this panel.
+ *
+ * Not a symbology and not a style: it is which of two ways of turning element
+ * widths into pixels a format is drawn with, and the difference is worth a
+ * name because it is the difference between a bar edge that steps and one that
+ * does not.
+ *
+ *   Scaled      The run is stretched to fill the widget, so an element is a
+ *               fractional number of pixels and its edges are anti-aliased.
+ *   WholePixel  An element is a whole number of pixels and the symbol is
+ *               centred in whatever that leaves. No edge lands mid-pixel, so
+ *               nothing is anti-aliased and the wide:narrow ratio is exact.
+ *
+ * WholePixel is better on this panel and it is not free: rounding the element
+ * width down costs up to a fifth of the symbol's width, which is width the
+ * quiet zone then absorbs. Code 128 does not take that trade, because its
+ * modules are already near one pixel at the lengths people use and rounding
+ * down would halve them. ITF at 3:1 has pixels to spare and buys crisp edges
+ * with them. See Docs/ITF.md.
+ *
+ * Lives here rather than in the widget so that the widget still does not know
+ * one symbology from another -- it asks this, the way MainView asks
+ * isMatrix(). A third linear format needs a case here and nothing in the GUI.
+ */
+enum class Render : uint8_t {
+    Scaled,
+    WholePixel,
+};
+
+inline Render renderStyle(Format format)
+{
+    switch (format) {
+    case Format::Code128:
+        return Render::Scaled;
+    case Format::Itf:
+        return Render::WholePixel;
+    case Format::Qr:
+        // Not drawn by the linear widget at all; QrWidget is whole-pixel by
+        // construction. Answered rather than left to fall through so the
+        // switch stays exhaustive.
+        return Render::WholePixel;
+    }
+    return Render::Scaled;
 }
 
 } // namespace Barcode

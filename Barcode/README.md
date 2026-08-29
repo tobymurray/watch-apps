@@ -4,11 +4,13 @@ Displays a parkrun-style **Code 128** barcode, plus the ID underneath it in
 readable text. The IDs are not compiled in: you type them into the UNA phone app
 when you install this one, and the watch reads them at launch.
 
-Each code can be drawn as a **QR code** instead, per code — a `Code128` /
-`QRCode` toggle on the phone form. That defaults to `Code128` and should stay
-there unless you know better: a laser scanner — the kind at a parkrun finish
-funnel — cannot read a QR code at all, while every scanner reads Code 128. An
-*imaging* scanner reads both, and most modern handhelds are imagers. See
+Each code can be drawn as a **QR code** instead, or as **ITF** for a card already
+printed that way — a per-code `Code128` / `QRCode` / `ITF` choice on the phone
+form. That defaults to `Code128` and should stay there unless you know better: a
+laser scanner — the kind at a parkrun finish funnel — cannot read a QR code at
+all, while every scanner reads Code 128. An *imaging* scanner reads both, and
+most modern handhelds are imagers. ITF is narrower still in scope: it is for a
+card that is already ITF, and nothing else. See
 [Which format](#which-format).
 
 It holds **up to six**, so a parent can carry the whole family's parkrun IDs and
@@ -48,7 +50,7 @@ installs — a flat list of eighteen rows, an ID, a name and a format per code:
 > code the watch shows first.
 > **Code 1 name** — Optional label so you can tell your codes apart when cycling
 > through them. It is not part of the barcode, and a QRCode does not show it.
-> **Code 1 format** — Either `Code128` or `QRCode`. See
+> **Code 1 format** — `Code128`, `QRCode` or `ITF`. See
 > [Which format](#which-format).
 > … and so on to Code 6.
 
@@ -85,7 +87,7 @@ written by hand:
    }
    ```
 
-   `fmtN` is `Code128` or `QRCode`, either case. Leave it out entirely and the
+   `fmtN` is `Code128`, `QRCode` or `ITF`, in any case. Leave it out and the
    code is a Code 128 barcode, which is what every file written before this
    existed says.
 
@@ -106,7 +108,7 @@ always has. Change it to `QRCode` and that one code is drawn as a QR code
 instead.
 
 Case does not matter — `qrcode`, `QRCode` and `QRCODE` are the same word, and so
-are `code128` and `Code128`. There is no enum field type in the SDK, so this is
+are `code128`/`Code128` and `itf`/`ITF`. There is no enum field type in the SDK, so this is
 a plain text box and you are typing; being fussy about capitals would be a
 spelling test rather than a safety check. `qr` on its own is *not* accepted:
 two words for one format is a wart, and the watch tells you what to use.
@@ -118,10 +120,11 @@ There are tests for that and for a row that has been emptied by hand.
 Which to pick is a question about whatever is going to scan it, and the split is
 not phone against not-phone — it is **laser against imager**:
 
-| | laser scanner | imaging scanner |
-| --- | --- | --- |
-| Code 128 | reads it | reads it |
-| QR | **cannot** | reads it |
+| | laser scanner | imaging scanner | takes |
+| --- | --- | --- | --- |
+| Code 128 | reads it | reads it | 1–16 printable characters |
+| QR | **cannot** | reads it | 1–16 printable characters |
+| ITF | reads it | reads it | an **even** number of digits, 2–16 |
 
 A laser sweeps a line, so there is no mechanism by which it reads a grid. An
 imaging scanner takes a picture and decodes it, so it reads both — and that is
@@ -137,6 +140,15 @@ device is an Opticon OPN-2001, whose vendor material describes a laser engine �
 that one cannot read QR. The Virtual Volunteer app scans with a phone camera,
 and Apple Wallet parkrun passes are QR and are scanned from watches every week.
 So if you know your event scans with the app, `QRCode` is a real option.
+
+**`ITF` is not a choice about scanners — it is a choice about a card.** Code 128
+and ITF are read by the same hardware, and for the same digits Code 128 draws
+the *wider* bars of the two, so there is nothing to gain by switching a code
+that already works. Pick ITF when the card in your pocket is printed as ITF and
+whatever reads it expects ITF. It takes digits only, and an even number of them:
+an odd count is **refused rather than padded**, because the usual leading zero
+would be read back as part of your number. [Docs/ITF.md](Docs/ITF.md) has the
+reasoning and what it costs.
 
 What QR buys, where it works, is **module size**. A 16-character alphanumeric id
 is Code 128's worst case here: 211 modules across 200 px, a 119 µm X-dimension.
@@ -324,6 +336,7 @@ Software/
 │   ├── Header/Encoded.hpp        # the widths every symbology produces
 │   ├── Header/Symbology.hpp      # format -> encoder, the one file naming both
 │   ├── Header/Code128.hpp        # header-only subset B/C encoder, no SDK dependency
+│   ├── Header/Itf.hpp            # header-only Interleaved 2 of 5, 3:1, even digits only
 │   ├── Header/Commands.hpp       # the two-message contract between the halves
 │   ├── Sources/AppConfigFields.cpp
 │   └── Sources/Service.cpp       # reads the config, publishes the result

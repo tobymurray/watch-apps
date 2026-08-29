@@ -197,6 +197,65 @@ become 101: 204 µm to 249 µm, about 8.0 mil to 9.8 mil. Worth a test of its
 own because `AParkrunIdIsComfortablyAboveMidDensity` measures eight *letters*,
 which is the pessimistic stand-in rather than the id people actually carry.
 
+### ITF, and the two things the panel decided
+
+ITF is the third format and the first that is drawn by different *rules* rather
+than by a different encoder. Two of them, and the tests are what hold each one:
+
+**Whole pixels.** The element is rounded down to a whole number of pixels and
+the symbol centred in what that leaves, instead of being stretched to fill the
+band the way Code 128 is. Four levels a channel is the reason — a mid-pixel
+edge steps rather than blends — and the framebuffer capture below is what turns
+that from an argument into a measurement.
+
+**Bearer bars.** ITF is continuous and has no check character, so a scan that
+clips the symbol can decode as a valid shorter number. A bar above and below
+means such a scan crosses ink and fails instead.
+
+`ItfPanel.TheQuietZoneMeetsTenElementsAtEveryLength` is the test worth knowing
+about, because it caught the layout being wrong. Sizing the element from the
+200 px bars band passes at 2, 8, 12, 14 and 16 digits and **fails at 4, 6 and
+10** — the symbol grows into the white the quiet zone needed. The element has to
+be sized from the 220 px backing with the margin in the budget.
+
+| Digits | Element | X-dim | | Digits | Element | X-dim |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2 | 4 px | 504 µm | | 10 | 1 px | 126 µm |
+| 4 | 3 px | 378 µm | | 12 | 1 px | 126 µm |
+| 6 | 2 px | 252 µm | | 14 | 1 px | 126 µm |
+| 8 | 2 px | 252 µm | | 16 | 1 px | 126 µm |
+
+The encoder is diffed against **zint** width for width over 24 vectors, the
+same standard Code 128 and QR are held to. Even lengths only, and that is a
+stated rule rather than a gap: zint pads an odd id with a leading zero and this
+encoder refuses one, so there is no width to compare. The refusal is tested
+directly instead, and `ZintItfOracle.TheCorpusIsEvenLengthOnlyByRule` stops the
+rule quietly lapsing.
+
+### What the framebuffer says about the two linear formats
+
+Captured headless under `Xvfb` and read back with zbar, the same way QR was:
+
+| | ITF `12345678` | ITF `00012345678905` | Code 128 `A1234567` |
+| --- | --- | --- | --- |
+| decoded from the full 240×240 screen | **exact** | **exact** | no |
+| decoded from the bars band alone | yes | yes | **exact** |
+| grey levels in the band | **0 and 255 only** | **0 and 255 only** | 0, 85, 170, 255 |
+| ink outside the lit circle | **0** | **0** | **0** |
+
+The grey row is the whole-pixel decision measured rather than argued: no pixel
+of either ITF screen is anti-aliased, and the Code 128 screen carries both
+intermediate levels the panel can make.
+
+The first row is **not** "Code 128 is broken" — both decode. ITF decodes from
+the whole screen as captured, black surround and id text included; Code 128
+needs the band cropped first. The likeliest reason is the quiet zone, which
+ITF guarantees at ten elements and Code 128 leaves at a fixed 10 px — about
+five modules at parkrun length, a shortfall
+`QuietZone.CurrentlyShortOfTheStandardAtEveryUsefulLength` has recorded since
+this suite landed. A difference in margin, not a defect, and one more argument
+for the layout rules above.
+
 ## The defect these tests found, and what became of it
 
 **`"id": null` produced a scannable barcode reading `null`.** The old
@@ -232,6 +291,16 @@ geometry and the framebuffer format, not from putting a scanner in front of a
 watch. `RustGuiPoc` dumps its framebuffer to `fb_dump.bin` on a long press; the
 same trick here would give a real capture to point a scanner at, and for the
 bars that is still the missing evidence.
+
+**Not that ITF is a full ITF implementation.** No check digit is computed or
+verified — ITF-14's mod-10 check is part of the *number*, so a card that has one
+carries it in the digits and this draws what it is given. Nothing here knows
+about ITF-6, GS1 application identifiers, or bearer-box conformance as opposed
+to the top-and-bottom bearers it draws.
+
+**Not that ITF has met a scanner either.** zbar reading a framebuffer is not a
+laser reading a reflective LCD through a front polariser. QR got as far as a
+phone camera on the glass; ITF has not.
 
 **For QR, half of it is no longer missing.** A capture of the simulator's
 framebuffer, masked and measured, is recorded in [Docs/QR.md](../Docs/QR.md):
