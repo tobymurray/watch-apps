@@ -5,8 +5,8 @@
   ],
   "name": "Barcode",
   "icon": "icon.png",
-  "binary": "Barcode_0.5.2.uapp",
-  "appVersion": "0.5.2",
+  "binary": "Barcode_0.5.3.uapp",
+  "appVersion": "0.5.3",
   "minKernelVersion": "1.4.0",
   "requiredHardware": [],
   "description": "Shows a barcode for an ID you supply: a parkrun athlete ID, a membership number, a transit pass. Code 128 by default, or a QR code per code where whatever scans it uses a camera. Holds up to six, cycled on the watch. The IDs come from your phone; the watch only draws them.",
@@ -202,6 +202,13 @@
       "maxLength": 8,
       "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee]|[Ii][Tt][Ff])?",
       "validationMessage": "Code128, QRCode or ITF."
+    },
+    {
+      "id": "boostBacklight",
+      "type": "bool",
+      "label": "Boost backlight",
+      "description": "Turn the backlight on for a short while whenever the app has a code to show, so a scanner has light to read it by. One setting for all six codes.",
+      "default": true
     }
   ]
 }
