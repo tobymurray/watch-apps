@@ -215,8 +215,20 @@ void Service::poll()
         }
 
         const Pwm::BurstStats stats = mPwm.runBurst(Pwm::kPeriodsPerBurst);
-        mRungOnUs      += stats.onUs;
-        mLastBurstHeld  = stats.held;
+        mLastBurstHeld = stats.held;
+
+        if (stats.held) {
+            // A held burst sets the pin and returns, so it reports no periods
+            // and no microseconds. Bill its wall-clock time instead, or any
+            // stretch at full brightness counts as zero on-time and drags the
+            // rung's achieved duty down with it.
+            if (mLastPollMs != 0u && mPwm.duty() == 100u) {
+                mRungOnUs += (nowMs - mLastPollMs) * 1000u;
+            }
+        } else {
+            mRungOnUs += stats.onUs;
+        }
+        mLastPollMs = nowMs;
 
         // Read the pin back before yielding, while what this app last wrote is
         // still the most recent thing anyone wrote. See checkForKernelWrite.
@@ -231,17 +243,14 @@ void Service::poll()
         // time spent inside bursts, so the gaps between bursts are counted. They
         // are real off-time and the light is genuinely dimmer for them; a figure
         // that ignored them would flatter the technique.
-        if (stats.held) {
-            // Nothing was modulated, so there is no measured duty to report and
-            // the requested one is exactly what the pin is doing.
-            mAchievedDuty = mPwm.duty();
-        } else {
-            const uint32_t rungMs = nowMs - mRungStartedMs;
-            if (rungMs > 0u) {
-                // onUs / (rungMs * 1000) as a percentage, i.e. onUs / (rungMs * 10).
-                const uint32_t pct = mRungOnUs / (rungMs * 10u);
-                mAchievedDuty = static_cast<uint8_t>(pct > 100u ? 100u : pct);
-            }
+        const uint32_t rungMs = nowMs - mRungStartedMs;
+        if (rungMs > 0u) {
+            // onUs / (rungMs * 1000) as a percentage, i.e. onUs / (rungMs * 10).
+            // Held stretches contribute through mRungOnUs above, so a rung that
+            // alternates between a modulated duty and a held 100 reports the
+            // average of the two rather than half of it.
+            const uint32_t pct = mRungOnUs / (rungMs * 10u);
+            mAchievedDuty = static_cast<uint8_t>(pct > 100u ? 100u : pct);
         }
     }
 
@@ -318,6 +327,7 @@ void Service::beginRung(size_t index)
     mRungOnUs       = 0;
     mLastBurstHeld  = false;
     mFlipSecondHalf = false;
+    mLastPollMs     = 0;
 
     const Pwm::Rung& rung = ladder()[index];
     mPwm.setDuty(rung.duty);

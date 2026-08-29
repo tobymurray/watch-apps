@@ -153,6 +153,12 @@ private:
     /// When driving began, for the cap above.
     uint32_t mDriveStartedMs = 0;
 
+    /// Previous poll, so a held rung can bill its wall-clock time as on-time.
+    /// A held burst emits no periods and reports no microseconds, so without
+    /// this the achieved duty reads 0 for any stretch spent at full brightness:
+    /// the 70-versus-100 pair reported 35 instead of 85.
+    uint32_t mLastPollMs = 0;
+
     /// Whether the last burst simply held a level. Decides whether the loop
     /// blocks on the message queue or comes straight back for more modulation.
     bool mLastBurstHeld = false;
