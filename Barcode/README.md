@@ -42,14 +42,13 @@ a real loss — see [Concessions](#concessions).
 The app declares six numbered slots, so the UNA app asks for them while it
 installs — a flat list of eighteen rows, an ID, a name and a format per code:
 
-> **Code 1 ID** — The number printed under your barcode, copied exactly. Case
-> matters. This is the code the watch shows first.
-> **Code 1 name** — What the watch calls this code, so you know which is which
-> when you cycle through them. Optional.
-> **Code 1 format** — `Code128` or `QRCode`. See
+> **Code 1 ID** — The value encoded in the barcode: a parkrun athlete ID, a
+> membership number, a transit pass. Copy it exactly — case matters. This is the
+> code the watch shows first.
+> **Code 1 name** — Optional label so you can tell your codes apart when cycling
+> through them. It is not part of the barcode, and a QRCode does not show it.
+> **Code 1 format** — Either `Code128` or `QRCode`. See
 > [Which format](#which-format).
-> **Code 2 ID** — A second barcode to carry — a family member's parkrun ID, a
-> membership number. Leave empty if you do not need it.
 > … and so on to Code 6.
 
 Only **Code 1** is required; the rest are left empty unless you want them. The

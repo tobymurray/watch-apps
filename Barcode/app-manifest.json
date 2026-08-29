@@ -26,18 +26,18 @@
       "id": "id1",
       "type": "string",
       "label": "Code 1 ID",
-      "description": "The number printed under your barcode, copied exactly. Case matters. This is the code the watch shows first.",
+      "description": "The value encoded in the barcode: a parkrun athlete ID, a membership number, a transit pass. Copy it exactly -- case matters. This is the code the watch shows first.",
       "default": "",
       "maxLength": 17,
       "pattern": "[ -~]{0,16}",
       "required": true,
-      "validationMessage": "Up to 16 plain characters, exactly as printed."
+      "validationMessage": "Up to 16 plain characters, copied exactly. Case matters."
     },
     {
       "id": "name1",
       "type": "string",
       "label": "Code 1 name",
-      "description": "What the watch calls this code, so you know which is which when you cycle through them. Optional.",
+      "description": "Optional label so you can tell your codes apart when cycling through them. It is not part of the barcode, and a QRCode does not show it.",
       "default": "",
       "maxLength": 12,
       "pattern": "[ -~]{0,12}",
@@ -47,27 +47,27 @@
       "id": "fmt1",
       "type": "string",
       "label": "Code 1 format",
-      "description": "How to draw this code. Code128 is the ordinary barcode and works with every scanner. QRCode only works where a phone camera does the scanning -- a laser scanner cannot read a QR code at all.",
+      "description": "Either Code128 or QRCode. Code128 is the ordinary barcode and every scanner reads it. QRCode needs a phone camera -- a laser scanner cannot read one.",
       "default": "Code128",
       "maxLength": 8,
       "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
-      "validationMessage": "Code128 or QRCode."
+      "validationMessage": "Either Code128 or QRCode."
     },
     {
       "id": "id2",
       "type": "string",
       "label": "Code 2 ID",
-      "description": "A second barcode to carry -- a family member's parkrun ID, a membership number. Leave empty if you do not need it.",
+      "description": "The value encoded in the barcode, copied exactly -- case matters. Leave empty if you do not need this one.",
       "default": "",
       "maxLength": 17,
       "pattern": "[ -~]{0,16}",
-      "validationMessage": "Up to 16 plain characters, exactly as printed."
+      "validationMessage": "Up to 16 plain characters, copied exactly. Case matters."
     },
     {
       "id": "name2",
       "type": "string",
       "label": "Code 2 name",
-      "description": "What the watch calls the second code. Optional.",
+      "description": "Optional label so you can tell your codes apart when cycling through them. It is not part of the barcode, and a QRCode does not show it.",
       "default": "",
       "maxLength": 12,
       "pattern": "[ -~]{0,12}",
@@ -77,27 +77,27 @@
       "id": "fmt2",
       "type": "string",
       "label": "Code 2 format",
-      "description": "How to draw the second code. Code128 is the ordinary barcode; QRCode only works where a phone camera does the scanning.",
+      "description": "Either Code128 or QRCode. Code128 is the ordinary barcode and every scanner reads it. QRCode needs a phone camera -- a laser scanner cannot read one.",
       "default": "Code128",
       "maxLength": 8,
       "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
-      "validationMessage": "Code128 or QRCode."
+      "validationMessage": "Either Code128 or QRCode."
     },
     {
       "id": "id3",
       "type": "string",
       "label": "Code 3 ID",
-      "description": "A third barcode to carry. Leave empty if you do not need it.",
+      "description": "The value encoded in the barcode, copied exactly -- case matters. Leave empty if you do not need this one.",
       "default": "",
       "maxLength": 17,
       "pattern": "[ -~]{0,16}",
-      "validationMessage": "Up to 16 plain characters, exactly as printed."
+      "validationMessage": "Up to 16 plain characters, copied exactly. Case matters."
     },
     {
       "id": "name3",
       "type": "string",
       "label": "Code 3 name",
-      "description": "What the watch calls the third code. Optional.",
+      "description": "Optional label so you can tell your codes apart when cycling through them. It is not part of the barcode, and a QRCode does not show it.",
       "default": "",
       "maxLength": 12,
       "pattern": "[ -~]{0,12}",
@@ -107,27 +107,27 @@
       "id": "fmt3",
       "type": "string",
       "label": "Code 3 format",
-      "description": "How to draw the third code. Code128 is the ordinary barcode; QRCode only works where a phone camera does the scanning.",
+      "description": "Either Code128 or QRCode. Code128 is the ordinary barcode and every scanner reads it. QRCode needs a phone camera -- a laser scanner cannot read one.",
       "default": "Code128",
       "maxLength": 8,
       "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
-      "validationMessage": "Code128 or QRCode."
+      "validationMessage": "Either Code128 or QRCode."
     },
     {
       "id": "id4",
       "type": "string",
       "label": "Code 4 ID",
-      "description": "A fourth barcode to carry. Leave empty if you do not need it.",
+      "description": "The value encoded in the barcode, copied exactly -- case matters. Leave empty if you do not need this one.",
       "default": "",
       "maxLength": 17,
       "pattern": "[ -~]{0,16}",
-      "validationMessage": "Up to 16 plain characters, exactly as printed."
+      "validationMessage": "Up to 16 plain characters, copied exactly. Case matters."
     },
     {
       "id": "name4",
       "type": "string",
       "label": "Code 4 name",
-      "description": "What the watch calls the fourth code. Optional.",
+      "description": "Optional label so you can tell your codes apart when cycling through them. It is not part of the barcode, and a QRCode does not show it.",
       "default": "",
       "maxLength": 12,
       "pattern": "[ -~]{0,12}",
@@ -137,27 +137,27 @@
       "id": "fmt4",
       "type": "string",
       "label": "Code 4 format",
-      "description": "How to draw the fourth code. Code128 is the ordinary barcode; QRCode only works where a phone camera does the scanning.",
+      "description": "Either Code128 or QRCode. Code128 is the ordinary barcode and every scanner reads it. QRCode needs a phone camera -- a laser scanner cannot read one.",
       "default": "Code128",
       "maxLength": 8,
       "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
-      "validationMessage": "Code128 or QRCode."
+      "validationMessage": "Either Code128 or QRCode."
     },
     {
       "id": "id5",
       "type": "string",
       "label": "Code 5 ID",
-      "description": "A fifth barcode to carry. Leave empty if you do not need it.",
+      "description": "The value encoded in the barcode, copied exactly -- case matters. Leave empty if you do not need this one.",
       "default": "",
       "maxLength": 17,
       "pattern": "[ -~]{0,16}",
-      "validationMessage": "Up to 16 plain characters, exactly as printed."
+      "validationMessage": "Up to 16 plain characters, copied exactly. Case matters."
     },
     {
       "id": "name5",
       "type": "string",
       "label": "Code 5 name",
-      "description": "What the watch calls the fifth code. Optional.",
+      "description": "Optional label so you can tell your codes apart when cycling through them. It is not part of the barcode, and a QRCode does not show it.",
       "default": "",
       "maxLength": 12,
       "pattern": "[ -~]{0,12}",
@@ -167,27 +167,27 @@
       "id": "fmt5",
       "type": "string",
       "label": "Code 5 format",
-      "description": "How to draw the fifth code. Code128 is the ordinary barcode; QRCode only works where a phone camera does the scanning.",
+      "description": "Either Code128 or QRCode. Code128 is the ordinary barcode and every scanner reads it. QRCode needs a phone camera -- a laser scanner cannot read one.",
       "default": "Code128",
       "maxLength": 8,
       "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
-      "validationMessage": "Code128 or QRCode."
+      "validationMessage": "Either Code128 or QRCode."
     },
     {
       "id": "id6",
       "type": "string",
       "label": "Code 6 ID",
-      "description": "A sixth barcode to carry. Leave empty if you do not need it.",
+      "description": "The value encoded in the barcode, copied exactly -- case matters. Leave empty if you do not need this one.",
       "default": "",
       "maxLength": 17,
       "pattern": "[ -~]{0,16}",
-      "validationMessage": "Up to 16 plain characters, exactly as printed."
+      "validationMessage": "Up to 16 plain characters, copied exactly. Case matters."
     },
     {
       "id": "name6",
       "type": "string",
       "label": "Code 6 name",
-      "description": "What the watch calls the sixth code. Optional.",
+      "description": "Optional label so you can tell your codes apart when cycling through them. It is not part of the barcode, and a QRCode does not show it.",
       "default": "",
       "maxLength": 12,
       "pattern": "[ -~]{0,12}",
@@ -197,11 +197,11 @@
       "id": "fmt6",
       "type": "string",
       "label": "Code 6 format",
-      "description": "How to draw the sixth code. Code128 is the ordinary barcode; QRCode only works where a phone camera does the scanning.",
+      "description": "Either Code128 or QRCode. Code128 is the ordinary barcode and every scanner reads it. QRCode needs a phone camera -- a laser scanner cannot read one.",
       "default": "Code128",
       "maxLength": 8,
       "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
-      "validationMessage": "Code128 or QRCode."
+      "validationMessage": "Either Code128 or QRCode."
     }
   ]
 }
