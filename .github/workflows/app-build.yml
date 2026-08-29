@@ -68,6 +68,13 @@ jobs:
   build:
     name: ${{ inputs.app }}
     runs-on: ubuntu-latest
+    permissions:
+      # write is for the version-bump commit/tag and the release it publishes,
+      # both gated to real pushes further down -- a pull_request run gets a
+      # read-only token regardless of what this says, same reasoning as
+      # toolchain.yml's identical override.
+      contents: write
+      packages: read
     container:
       image: ghcr.io/tobymurray/watch-apps-toolchain@sha256:f5689e6804e63c0694aa0dbbf0eb27c4552e68d5a6ce8ce312729070ca717a35
       # Published by this repository's own toolchain.yml, so the default
@@ -85,6 +92,12 @@ jobs:
         with:
           persist-credentials: false
           path: apps
+          # Full history and tags, not the default single commit: the version
+          # bump below needs every commit back to this app's last <app>-*
+          # tag, and git describe --tags needs the tags themselves fetched to
+          # find it at all.
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Check out the SDK
         uses: actions/checkout@v7
@@ -113,32 +126,125 @@ jobs:
           tests="$dir/Tests/CMakeLists.txt"
           cmake=$(find "$dir/Software/Apps" -maxdepth 2 -name CMakeLists.txt 2>/dev/null | head -n 1 || true)
 
-          # A version has to come from somewhere it can be reviewed. The manifest
-          # is that place, and an explicit input overrides it for a one-off build.
-          version="${{ inputs.version }}"
-          if [ -z "$version" ] && [ -f "$manifest" ]; then
-            version=$(jq -r '.appVersion // empty' "$manifest")
-          fi
-
           {
             echo "manifest=$([ -f "$manifest" ] && echo "$manifest" || echo '')"
             echo "tests=$([ -f "$tests" ] && dirname "$tests" || echo '')"
             echo "cmake=$([ -n "$cmake" ] && dirname "$cmake" || echo '')"
-            echo "version=$version"
           } >> "$GITHUB_OUTPUT"
 
           echo "app       $app"
           echo "manifest  ${manifest#apps/}$([ -f "$manifest" ] || echo ' (none)')"
           echo "tests     $([ -f "$tests" ] && echo yes || echo no)"
           echo "buildable $([ -n "$cmake" ] && echo yes || echo no)"
-          echo "version   ${version:-unset}"
 
           if [ ! -f "$manifest" ] && [ ! -f "$tests" ] && [ -z "$cmake" ]; then
             echo "::error::$app has no manifest, no tests and nothing to build"
             exit 1
           fi
-          if [ -n "$cmake" ] && [ -z "$version" ]; then
-            echo "::error::$app is buildable but has no version -- add appVersion to its manifest, or pass one in"
+
+      # A version has to come from somewhere it can be reviewed. The manifest
+      # is that place, and an explicit input overrides it for a one-off build
+      # -- in which case this step just passes that version through unchanged
+      # and bumps nothing, same as a pull_request run does.
+      #
+      # On a real push with no override, this is also where the actual
+      # release trio -- bump, commit, tag -- happens now, instead of being a
+      # person's job every time. Strict semver, taken from the commit type
+      # this repository's history already prefixes every commit with: feat
+      # resets patch and bumps minor, fix bumps only patch, a `!` before the
+      # colon bumps major and resets both. The highest level found among
+      # every qualifying commit since this app's last <app>-*.*.* tag wins,
+      # and a push with none of the three -- only chore/docs/ci/test/refactor
+      # -- bumps nothing and builds whatever version is already on disk,
+      # exactly as if this step were not here.
+      - name: Bump the version, if this push earns one
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="${{ steps.app.outputs.manifest }}"
+          version="${{ inputs.version }}"
+          current=""
+          tag=""
+          notes=""
+
+          # No manifest at all -- a buildable app with none, the one case
+          # discovery still lets through -- means nothing here to bump or
+          # read a version from; inputs.version (or nothing, which the check
+          # below catches) is all there is.
+          if [ -n "$manifest" ]; then
+            manifest_rel="${manifest#apps/}"
+            current="$(jq -r '.appVersion // empty' "$manifest")"
+            [ -z "$version" ] && version="$current"
+          fi
+
+          rank() { case "$1" in major) echo 3 ;; minor) echo 2 ;; patch) echo 1 ;; *) echo 0 ;; esac; }
+
+          if [ "${{ github.event_name }}" = "push" ] && [ -z "${{ inputs.version }}" ] && [ -n "$current" ]; then
+            tag_prefix="$(echo "${{ inputs.app }}" | tr '[:upper:]' '[:lower:]')-"
+            last_tag="$(git -C apps describe --tags --match "${tag_prefix}*" --abbrev=0 2>/dev/null || true)"
+            range="${last_tag:+$last_tag..}HEAD"
+            echo "scanning $range for ${{ inputs.app }} (last tag: ${last_tag:-none})"
+
+            bump=none
+            while IFS= read -r subject; do
+              [ -z "$subject" ] && continue
+              level=""
+              if echo "$subject" | grep -qP '^\w+(\([^)]*\))?!:'; then
+                level=major
+              elif echo "$subject" | grep -qP '^feat(\([^)]*\))?:'; then
+                level=minor
+              elif echo "$subject" | grep -qP '^fix(\([^)]*\))?:'; then
+                level=patch
+              fi
+              [ -z "$level" ] && continue
+              echo "  $level: $subject"
+              notes="${notes}- ${subject}"$'\n'
+              if [ "$(rank "$level")" -gt "$(rank "$bump")" ]; then
+                bump="$level"
+              fi
+            done < <(git -C apps log --format=%s "$range" -- "${{ inputs.app }}")
+
+            echo "bump: $bump"
+
+            if [ "$bump" != none ]; then
+              IFS=. read -r major minor patch <<< "$current"
+              case "$bump" in
+                major) major=$((major + 1)); minor=0; patch=0 ;;
+                minor) minor=$((minor + 1)); patch=0 ;;
+                patch) patch=$((patch + 1)) ;;
+              esac
+              version="$major.$minor.$patch"
+              tag="${tag_prefix}${version}"
+
+              jq --arg v "$version" '
+                .appVersion = $v
+                | .binary = (.binary | sub("_[0-9]+\\.[0-9]+\\.[0-9]+\\.uapp$"; "_" + $v + ".uapp"))
+              ' "$manifest" > "${manifest}.tmp"
+              mv "${manifest}.tmp" "$manifest"
+
+              git -C apps config user.name "github-actions[bot]"
+              git -C apps config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git -C apps add "$manifest_rel"
+              commit_msg=$(printf 'chore(%s): version %s\n\nAutomatic %s bump, from the commit(s) since %s:\n\n%s' \
+                "$(echo "${{ inputs.app }}" | tr '[:upper:]' '[:lower:]')" "$version" "$bump" \
+                "${last_tag:-the beginning}" "$notes")
+              git -C apps commit --quiet -m "$commit_msg"
+              git -C apps tag "$tag"
+              git -C apps push --quiet "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:main "$tag"
+            fi
+          fi
+
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "notes<<BUMPNOTES_EOF"
+            echo "$notes"
+            echo "BUMPNOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ -n "${{ steps.app.outputs.cmake }}" ] && [ -z "$version" ]; then
+            echo "::error::${{ inputs.app }} is buildable but has no version -- add appVersion to its manifest, or pass one in"
             exit 1
           fi
 
@@ -174,7 +280,7 @@ jobs:
           UNA_SDK: ${{ github.workspace }}/sdk
         run: |
           set -euo pipefail
-          version="${{ steps.app.outputs.version }}"
+          version="${{ steps.bump.outputs.version }}"
           pushd "${{ steps.app.outputs.cmake }}" > /dev/null
           cmake -B build -G 'Unix Makefiles' -DBUILD_VERSION="$version" .
           # 2>&1 before the pipe, not after: app_packer.py logs through Python's
@@ -217,7 +323,7 @@ jobs:
         shell: bash
         run: |
           {
-            echo "### ${{ inputs.app }} ${{ steps.app.outputs.version }}"
+            echo "### ${{ inputs.app }} ${{ steps.bump.outputs.version }}"
             echo
             echo "| | |"
             echo "| --- | --- |"
@@ -234,6 +340,63 @@ jobs:
         if: steps.uapp.outputs.uapp != ''
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.app }}-${{ steps.app.outputs.version }}
+          name: ${{ inputs.app }}-${{ steps.bump.outputs.version }}
           path: ${{ steps.uapp.outputs.stage }}
           if-no-files-found: error
+
+      # Only when this run actually cut a new version: rebuilding an
+      # already-tagged version, or a manifest-less app with no uapp to
+      # release, produces the ordinary CI artifact above and stops there.
+      #
+      # NOTES is passed through env rather than interpolated with ${{ }}
+      # directly into the script below, on purpose: it is built from commit
+      # subject lines, which this repository's only committer controls today
+      # but which are still arbitrary text, and ${{ }} substitutes into the
+      # *script source* before bash ever sees it -- a subject containing a
+      # `"` or a `$(...)` would otherwise be executed rather than quoted.
+      # VERSION and TAG do not need the same treatment; both come only from
+      # this job's own semver arithmetic and are never free text.
+      - name: Publish the release
+        if: steps.uapp.outputs.uapp != '' && steps.bump.outputs.tag != ''
+        shell: bash
+        env:
+          NOTES: ${{ steps.bump.outputs.notes }}
+          VERSION: ${{ steps.bump.outputs.version }}
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          set -euo pipefail
+          stage="${{ steps.uapp.outputs.stage }}"
+
+          # The icon is a store-submission concern this workflow otherwise
+          # knows nothing about, so it is discovered rather than declared, the
+          # same way everything else here is: present, it travels with the
+          # release as icon.png; absent, the release is just the manifest and
+          # the binary, same as the CI artifact above always has been.
+          icon="apps/${{ inputs.app }}/Resources/icon_store.png"
+          [ -f "$icon" ] && cp "$icon" "$stage/icon.png"
+
+          zip_path="$RUNNER_TEMP/${{ inputs.app }}_${VERSION}.zip"
+          (cd "$stage" && python3 -m zipfile -c "$zip_path" *)
+
+          body="${NOTES:-No fix: or feat: commits since the last release.}"
+          release_json=$(curl -sS -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/releases" \
+            -d "$(jq -n --arg tag "$TAG" --arg name "${{ inputs.app }} $VERSION" --arg body "$body" \
+                  '{tag_name: $tag, name: $name, body: $body}')")
+
+          release_id=$(echo "$release_json" | jq -r '.id // empty')
+          if [ -z "$release_id" ]; then
+            echo "::error::release creation failed: $(echo "$release_json" | jq -r '.message // "unknown error"')"
+            exit 1
+          fi
+
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/zip" \
+            --data-binary "@$zip_path" \
+            "https://uploads.github.com/repos/${{ github.repository }}/releases/${release_id}/assets?name=$(basename "$zip_path")" \
+            | jq -r '"uploaded: " + (.name // .message // "unknown")'
+
+          echo "Released [$TAG](https://github.com/${{ github.repository }}/releases/tag/$TAG)" >> "$GITHUB_STEP_SUMMARY"

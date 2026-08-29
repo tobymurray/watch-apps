@@ -41,5 +41,9 @@ jobs:
       app: Barcode
       version: ${{ inputs.version || '' }}
     permissions:
-      contents: read
+      # write, not read: a caller's grant caps what the called workflow can
+      # use regardless of what app-build.yml asks for itself, and its version
+      # bump now needs to commit, tag and push. Both write actions stay gated
+      # to real pushes inside app-build.yml itself.
+      contents: write
       packages: read
