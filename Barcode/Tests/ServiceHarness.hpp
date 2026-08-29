@@ -238,6 +238,19 @@ struct Harness
     uint8_t publishedCount(size_t n) const { return comm.published.at(n).count; }
 
     Barcode::Problem publishedProblem(size_t n) const { return comm.published.at(n).problem; }
+
+    /// The symbology of each published code, in order. A separate accessor
+    /// rather than folded into publishedIds(), because the interesting claim
+    /// is almost always that the *ids* are unchanged and only the formats moved.
+    std::vector<Barcode::Format> publishedFormats(size_t n) const
+    {
+        const Barcode::State &state = comm.published.at(n);
+        std::vector<Barcode::Format> out;
+        for (uint8_t i = 0; i < state.count; i++) {
+            out.push_back(state.codes[i].format);
+        }
+        return out;
+    }
 };
 
 /// The document the README tells a user to write. The field is "id1" and not
@@ -263,6 +276,41 @@ inline std::string documentWithCodes(const std::vector<std::string> &ids,
         out += "    \"id" + std::to_string(i + 1) + "\": \"" + ids[i] + "\"";
         if (i < names.size()) {
             out += ",\n    \"name" + std::to_string(i + 1) + "\": \"" + names[i] + "\"";
+        }
+        out += (i + 1 < ids.size()) ? ",\n" : "\n";
+    }
+    return out + "  }\n}\n";
+}
+
+/// A value as JSON writes it. The older helpers above interpolate raw, which
+/// is fine for the ids they carry -- but this app accepts every printable
+/// character, and a test that wants to prove that has to write a `"` into a
+/// JSON string properly rather than tearing the document in half. SDK::AppConfig
+/// decodes the escape before the service ever sees it.
+inline std::string jsonEscape(const std::string &value)
+{
+    std::string out;
+    for (char c : value) {
+        if (c == '"' || c == '\\') {
+            out += '\\';
+        }
+        out += c;
+    }
+    return out;
+}
+
+/// Slots with a declared format, for the compatibility claim and its converse.
+/// An entry of "" writes no fmtN key at all -- which is what an input.json
+/// written before the field existed looks like, and is not the same document
+/// as one carrying an empty fmtN.
+inline std::string documentWithFormats(const std::vector<std::string> &ids,
+                                       const std::vector<std::string> &formats)
+{
+    std::string out = "{\n  \"schema\": 1,\n  \"values\": {\n";
+    for (size_t i = 0; i < ids.size(); i++) {
+        out += "    \"id" + std::to_string(i + 1) + "\": \"" + jsonEscape(ids[i]) + "\"";
+        if (i < formats.size() && !formats[i].empty()) {
+            out += ",\n    \"fmt" + std::to_string(i + 1) + "\": \"" + formats[i] + "\"";
         }
         out += (i + 1 < ids.size()) ? ",\n" : "\n";
     }

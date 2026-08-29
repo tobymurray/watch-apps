@@ -4,6 +4,7 @@
 #include <gui_generated/main_screen/MainViewBase.hpp>
 #include <gui/main_screen/MainPresenter.hpp>
 #include <gui/containers/BarcodeWidget.hpp>
+#include <gui/containers/QrWidget.hpp>
 #include <touchgfx/widgets/Box.hpp>
 #include <touchgfx/widgets/TextAreaWithWildcard.hpp>
 
@@ -30,6 +31,11 @@ private:
     /// barcode is printed on -- needed since the screen background is black.
     touchgfx::Box barcodeBackground;
     BarcodeWidget barcode;
+
+    /// The matrix half. Exactly one of this and `barcode` is ever visible, and
+    /// which one is the code's format -- see showBarcode(). It carries its own
+    /// quiet zone, so it needs no backing box of its own.
+    QrWidget qr;
 
     /// Every usable code, and which one is on screen. Held rather than
     /// re-requested because cycling must not wait on the service: the codes
@@ -76,7 +82,7 @@ private:
     /// Hidden entirely when there is only one code.
     void showPager();
 
-    /// Bars, with the id in readable text beneath them.
+    /// Bars or a module grid, with the id in readable text beneath them.
     void showBarcode();
 
     /// What to do instead. There is no keyboard, so the screen has to name

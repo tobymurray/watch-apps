@@ -568,4 +568,145 @@ TEST(QuietZone, ReportTheWholeRange)
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// The square symbol, and the panel that is a bad fit for it
+//
+// A linear symbology spends width, which this panel has. A matrix one spends
+// area in both directions, and a circle is the worst possible container for a
+// square. Every number in this section is arithmetic over pixelIsLit's model,
+// so it can be argued about at a desk -- which is the point, because the
+// simulator draws the full 240x240 square and cannot show any of it.
+// ---------------------------------------------------------------------------
+
+/// The largest square of lit pixels anywhere on the panel. Docs/SYMBOLOGIES.md
+/// says "about 169 px" and it is 168; the difference does not change any
+/// decision, but this file is where the number is measured rather than guessed.
+int largestLitSquare(int bottomLimit = BarcodeLayout::kPanelHeight - 1)
+{
+    for (int side = BarcodeLayout::kPanelHeight; side > 0; side--) {
+        for (int top = 0; top + side - 1 <= bottomLimit; top++) {
+            const int left = (BarcodeLayout::kPanelWidth - side) / 2;
+            if (BarcodeLayout::fitsInPanel(left, top, side, side)) {
+                return side;
+            }
+        }
+    }
+    return 0;
+}
+
+TEST(QrPanel, TheLargestSquareOnTheWholePanelIs168px)
+{
+    EXPECT_EQ(largestLitSquare(), 168);
+}
+
+/// THE NUMBER THAT DECIDES THE VERSION. The panel's largest square is not what
+/// a QR symbol may use, because the human-readable id sits below it and a
+/// barcode without its id underneath is half a barcode. What is available is
+/// the largest square ending above kIdLine1Y, and that is 144.
+TEST(QrPanel, AboveTheIdRowOnly144pxIsAvailable)
+{
+    EXPECT_EQ(largestLitSquare(BarcodeLayout::kIdLine1Y - 1), 144);
+}
+
+/// CHARACTERISATION, and the one worth knowing. A 5 px module misses fitting by
+/// a single pixel row: version 1 with its mandatory quiet zone is 29 modules,
+/// and 29 * 5 = 145 against the 144 available. Recorded rather than rounded
+/// away, because reclaiming those pixels means re-opening a layout measured
+/// from rendered ink -- see the tables in README.md -- which has clipped on
+/// device twice.
+TEST(QrPanel, AFivePixelModuleMissesByOnePixelRow)
+{
+    const int available = largestLitSquare(BarcodeLayout::kIdLine1Y - 1);
+    const int version1AtFive = (21 + 2 * BarcodeLayout::kQrQuietModules) * 5;
+
+    EXPECT_EQ(version1AtFive, 145);
+    EXPECT_EQ(version1AtFive - available, 1) << "if this is ever 0, a 5 px module fits";
+    EXPECT_EQ(BarcodeLayout::kQrModulePx, 4);
+}
+
+TEST(QrPanel, TheNextVersionUpWouldNotFit)
+{
+    // Version 3 is 29 modules, 37 with the quiet zone, 148 px at 4 px a module.
+    const int version3 = (29 + 2 * BarcodeLayout::kQrQuietModules) * BarcodeLayout::kQrModulePx;
+    EXPECT_GT(version3, largestLitSquare(BarcodeLayout::kIdLine1Y - 1));
+}
+
+TEST(QrPanel, TheSymbolIsTheVersionPlusItsQuietZone)
+{
+    EXPECT_EQ(BarcodeLayout::kQrModules, 25) << "version 2 is 17 + 4 * 2";
+    EXPECT_EQ(BarcodeLayout::kQrQuietModules, 4) << "ISO/IEC 18004 requires four modules";
+    EXPECT_EQ(BarcodeLayout::kQrSide, 132);
+    EXPECT_EQ(BarcodeLayout::kQrSide,
+              (BarcodeLayout::kQrModules + 2 * BarcodeLayout::kQrQuietModules)
+                  * BarcodeLayout::kQrModulePx);
+
+    // The dark modules are inset by the quiet zone, and take the middle 100 px.
+    EXPECT_EQ(BarcodeLayout::kQrInkX - BarcodeLayout::kQrX, 16);
+    EXPECT_EQ(BarcodeLayout::kQrModules * BarcodeLayout::kQrModulePx, 100);
+}
+
+/// INVARIANT, and the strongest form of it: not the four corners but every
+/// pixel. A corner test is enough for a rectangle whose meaning is carried by
+/// whole rows; a QR symbol's meaning is carried by individual modules, so a
+/// clipped one is not a shorter symbol, it is an unreadable one.
+TEST(QrPanel, EveryPixelOfTheSymbolIsLit)
+{
+    for (int16_t y = BarcodeLayout::kQrY; y < BarcodeLayout::kQrY + BarcodeLayout::kQrSide; y++) {
+        for (int16_t x = BarcodeLayout::kQrX; x < BarcodeLayout::kQrX + BarcodeLayout::kQrSide; x++) {
+            EXPECT_TRUE(BarcodeLayout::pixelIsLit(x, y)) << x << "," << y;
+        }
+    }
+}
+
+TEST(QrPanel, TheSymbolIsCentredAndEndsAboveTheIdRow)
+{
+    EXPECT_EQ(BarcodeLayout::kQrX,
+              (BarcodeLayout::kPanelWidth - BarcodeLayout::kQrSide) / 2);
+    EXPECT_LT(BarcodeLayout::kQrY + BarcodeLayout::kQrSide, BarcodeLayout::kIdLine1Y)
+        << "the symbol must not overlap the human-readable id";
+}
+
+/// WHY A QR CODE SHOWS NO NAME. Not a preference and not an oversight: the
+/// symbol overlaps the caption band, and every size that would clear it is
+/// smaller. MainView::showBarcode() hides the caption for a matrix format, and
+/// this is the arithmetic that forces it.
+TEST(QrPanel, TheSymbolOverlapsTheCaptionBandSoTheNameCannotBeShown)
+{
+    const int captionBottom = BarcodeLayout::kCaptionY + BarcodeLayout::kCaptionH - 1;
+    EXPECT_LT(BarcodeLayout::kQrY, captionBottom) << "if this ever fails, the caption could stay";
+
+    // And clearing it is not affordable: below the caption there are only
+    // kIdLine1Y - captionBottom - 1 rows, which is less than the symbol needs.
+    const int belowTheCaption = BarcodeLayout::kIdLine1Y - captionBottom - 1;
+    EXPECT_LT(belowTheCaption, BarcodeLayout::kQrSide);
+}
+
+TEST(QrPanel, TheModuleIsHalfAMillimetre)
+{
+    const BarcodeLayout::QrScannability s{};
+
+    EXPECT_EQ(s.moduleMicrons(), 504) << "4 px at a 126 um dot pitch";
+    EXPECT_EQ(s.symbolMicrons(), 132 * 126);
+
+    // Four times the X-dimension of this app's worst-case Code 128 id, which is
+    // the whole density argument for the format. Not a claim that it scans --
+    // that needs a camera, and Tests/README.md says so.
+    const Scannability worstCase = BarcodeLayout::scannabilityFor(modulesFor(16));
+    EXPECT_GT(s.moduleMicrons(), worstCase.xDimensionMicrons() * 4);
+    RecordProperty("qr_module_um", s.moduleMicrons());
+    RecordProperty("code128_16char_xdim_um", worstCase.xDimensionMicrons());
+}
+
+TEST(QrPanel, ModulesAreWholePixelsSoNoEdgeIsAntiAliased)
+{
+    // The same question modulesAreWholePixels() asks of the bars, and for a
+    // matrix symbology it is answered by construction rather than by luck:
+    // the module size is declared in pixels, so every edge lands on one.
+    EXPECT_EQ(BarcodeLayout::kQrSide % BarcodeLayout::kQrModulePx, 0);
+    EXPECT_EQ((BarcodeLayout::kQrInkX - BarcodeLayout::kQrX) % BarcodeLayout::kQrModulePx, 0);
+    EXPECT_EQ(BarcodeLayout::kLevelsPerChannel, 4)
+        << "the reason whole pixels matter at all";
+}
+
 } // namespace

@@ -4,9 +4,11 @@ An investigation into one question — *what is the best avenue toward a second
 symbology?* — and the answer turns out to be less about the encoder than about
 the 200 pixels the bars are drawn in.
 
-**Steps 0 and 1 at the bottom are built.** The seam exists (`Encoded.hpp`,
-`Symbology.hpp`, `Barcode::Format`) and Code 128 now switches into subset C
-wherever that shortens a barcode. The rest is still a ranking, not a plan.
+**Steps 0 and 1 at the bottom are built**, and so is QR, which is not on this
+list at all — see [QR.md](QR.md) and the section below. The seam exists
+(`Encoded.hpp`, `Symbology.hpp`, `Barcode::Format`) and Code 128 now switches
+into subset C wherever that shortens a barcode. The linear rest is still a
+ranking, not a plan.
 
 Everything below is derived arithmetic against `BarcodeLayout.hpp` and the
 symbology definitions. **Nothing here has been put in front of a scanner.**
@@ -229,47 +231,58 @@ Between the two candidates worth building:
   they have to come out of a quiet zone that `Layout_test` already characterises
   as short at every useful length.
 
-## QR codes are a different project
+## QR codes are a different project — and it got built
 
-Worth stating plainly, because "another format" invites the question and the
-answer is not a matter of degree: **none of the work above helps.**
+**This section is superseded by [QR.md](QR.md)**, which answers the product
+question this one left open, disagrees with three of the estimates below, and
+records what was built. Kept here because the framing was right even where the
+numbers were not.
 
-Everything on this page is a *linear* symbology. The seam that makes ITF or
-EAN-13 cheap is `Barcode::Encoded` — a run of alternating bar and space widths —
-and that is a complete description of what a linear symbology produces and a
-useless one for a matrix symbology. QR produces a square grid of light and dark
-modules with no left-to-right run structure at all. `Encoded` cannot carry it,
-and `BarcodeWidget::drawCanvasWidget()`, which walks widths and draws
-full-height bars, cannot draw it.
+What this section got right, and it is the important half: **none of the work
+above helps.** Everything on this page is a *linear* symbology. The seam that
+makes ITF or EAN-13 cheap is `Barcode::Encoded` — a run of alternating bar and
+space widths — and that is a complete description of what a linear symbology
+produces and a useless one for a matrix symbology. QR produces a square grid of
+light and dark modules with no left-to-right run structure at all. `Encoded`
+cannot carry it, and `BarcodeWidget::drawCanvasWidget()`, which walks widths and
+draws full-height bars, cannot draw it.
 
-What QR would actually need:
+That is exactly how it was built: `Barcode::Matrix` is a second intermediate
+form and `QrWidget` is a second renderer, and **`Encoded` was not touched**.
+Making it a variant would have put a discriminant and a branch on the path that
+draws every parkrun barcode, to serve a format that path cannot draw.
 
-- **A second intermediate form**, a module bitmap. Version 1 is 21×21, version
-  4 is 33×33. `Encoded` would become a variant, or QR gets its own path
-  end to end.
-- **A second renderer.** Squares on a grid, not bars scaled to a width.
-- **Reed–Solomon error correction over GF(256)**, plus data masking, format and
-  version information, and the interleaving rules. This is the real cost: it is
-  a few kilobytes of code and tables against Code 128's 642-byte array, and
-  unlike a linear symbology it cannot be checked by eye against a published
-  table. It is the one part of this app that would need a genuine third-party
-  implementation or a very well-tested one of our own.
+Three things this section got wrong:
 
-The screen is *not* the blocker, which is worth knowing. The largest square
-inside a 240 px circle is about 169 px. A version 1 QR with its mandatory
-4-module quiet zone is 29 modules across, giving 5.8 px — about 0.73 mm — per
-module, comfortably above what a phone camera needs, and version 1 holds 25
-alphanumeric characters at error-correction level L. A version 2 code (33
-modules with quiet zone, 0.64 mm) holds 47. So a QR of anything this app
-currently stores would fit and would very likely scan.
+- **"A few kilobytes of code and tables ... would need a genuine third-party
+  implementation or a very well-tested one of our own."** The second half
+  stands. The first is high, because fixing the version and the error-correction
+  level deletes most of QR: no version selection, no interleaving, no block
+  structure table, no alignment-position table, no version-information BCH
+  (needed from version 7), no mode selection. Measured at **+3,680 bytes on the
+  package**, of which the encoder is 2,856.
+- **"The screen is *not* the blocker."** True in principle and incomplete in
+  practice. The largest square inside the circle is 168 px, not "about 169", and
+  that is not the binding number: a symbol must end above the id row, which
+  leaves 144 px. So the 5.8 px module quoted below is not available — a 5 px
+  module misses fitting by **one pixel row** — and the module is 4 px, 0.504 mm.
+  Every size that fits also overlaps the caption band, so a QR code shows no
+  name. The *layout* was more of a blocker than the screen.
+- **"There is still no oracle in the tree."** There is, since `a119f9c`, and
+  extending it to QR is the single thing that made this feature defensible.
+  `generate_qr.cpp` commits 144 zint grids — eighteen payloads by eight forced
+  masks — and the encoder matches every one, module for module.
 
-The question is whether it is wanted, and that is a product question rather than
-a technical one. QR and Code 128 are not substitutes: a parkrun funnel scanner
-reads Code 128 and will not read QR, and an event ticket or a vaccine pass is QR
-and is not expressible as Code 128 at all. Supporting both would make this two
-apps sharing a config file more than one app with a second format — which may
-well be the right answer, but it should be decided as that and not slipped in
-as "one more entry in the enum".
+What this section got right about the product, and what changed: QR and Code 128
+are indeed not substitutes, and the asymmetry runs one way. A laser funnel
+scanner reads Code 128 and cannot read QR at all; a camera reads both. So QR is
+opt-in per code, `Format::Code128` stays 0 and stays the default, and the
+"two apps sharing a config file" worry does not apply — because the thing built
+is a second way to draw *the same sixteen-character id*, not a way to carry a
+new kind of value. Raising `kMaxIdLength` for URLs and tickets is the change
+that would make it two apps, and QR.md argues against it: six 63-character ids
+do not fit the 256-byte message, and a URL has no readable rendering under the
+symbol.
 
 ## What the tests will and will not give you
 
@@ -277,9 +290,11 @@ as "one more entry in the enum".
 so every quiet-zone and X-dimension claim generalises to a new symbology for
 free. Only `modulesFor()` in `Layout_test.cpp` is Code 128 arithmetic.
 
-The encoder side does not generalise for free. There is still no oracle in the
-tree, so each symbology needs its own structural claims in the spirit of the
-five that hold the Code 128 table together — element counts, module sums, the
+The encoder side does not generalise for free. There is an oracle now — zint,
+since `a119f9c`, and `generate_qr.cpp` for the matrix side — and it is the right
+first reach for any new symbology. Beyond it, each one still needs its own
+structural claims in the spirit of the five that hold the Code 128 table
+together — element counts, module sums, the
 parity property where one exists, distinctness — plus hand-worked golden
 vectors. A symbology added with only "it renders" as evidence would reintroduce
 exactly the risk the Code 128 table tests were written to close.

@@ -5,6 +5,7 @@
 #include <texts/TextKeysAndLanguages.hpp>
 
 #include "BarcodeLayout.hpp"
+#include "Symbology.hpp"
 
 namespace
 {
@@ -14,8 +15,13 @@ namespace
 constexpr int16_t kPromptX = 20, kPromptW = 200, kPromptLineH = 24, kPromptTop = 72;
 
 /// The caption sits in the band above the bars, inset past the button ticks
-/// the bezel container draws down either side.
-constexpr int16_t kCaptionX = 40, kCaptionY = 48, kCaptionW = 160, kCaptionH = 24;
+/// the bezel container draws down either side. The numbers moved to
+/// BarcodeLayout.hpp when QR arrived: a square symbol has to be laid out
+/// against this band, and it turns out there is no room for both.
+using BarcodeLayout::kCaptionX;
+using BarcodeLayout::kCaptionY;
+using BarcodeLayout::kCaptionW;
+using BarcodeLayout::kCaptionH;
 
 /// The id row, sized to the circle rather than to the screen. The generated
 /// textArea1 is 203px wide at x=19 -- 203px of a *square*. The id sits low on a
@@ -92,11 +98,16 @@ const Prompt &promptFor(Barcode::Problem problem)
     static const Prompt kNoValue  = {{ "input.json has", "no usable code", "", "" }};
     static const Prompt kNotSet   = {{ "No codes set yet", "Open the UNA app", "and enter your ID", "" }};
     static const Prompt kBadValue = {{ "That ID cannot", "be drawn: 1-16", "plain characters", "" }};
+    // Only reachable from a hand-edited input.json: the phone's pattern offers
+    // nothing else. It still gets its own words, because "that ID cannot be
+    // drawn" would send the wearer to look at an id that is perfectly fine.
+    static const Prompt kBadFormat = {{ "Unknown format.", "Set it to Code128", "or QRCode", "" }};
 
     switch (problem) {
     case Barcode::Problem::NoValue:  return kNoValue;
     case Barcode::Problem::NotSet:   return kNotSet;
     case Barcode::Problem::BadValue: return kBadValue;
+    case Barcode::Problem::BadFormat: return kBadFormat;
     case Barcode::Problem::NoConfig:
     case Barcode::Problem::None:
         break;
@@ -134,6 +145,16 @@ MainView::MainView()
     barcode.setPosition(BarcodeLayout::kBarsX, BarcodeLayout::kBarsY,
                         BarcodeLayout::kBarsW, BarcodeLayout::kBarsH);
     add(barcode);
+
+    // Square, and much higher on the face than the bars: it has to end above
+    // the id row, and the largest square that does is 144px against this one's
+    // 132. BarcodeLayout::kQrY has the arithmetic and why 5px a module misses
+    // by a single pixel row. No backing box -- the widget's own rect is the
+    // quiet zone.
+    qr.setPosition(BarcodeLayout::kQrX, BarcodeLayout::kQrY,
+                   BarcodeLayout::kQrSide, BarcodeLayout::kQrSide);
+    qr.setVisible(false);
+    add(qr);
 
     // Re-placed from the generated 203px-wide box: see kIdX above. The widget
     // itself belongs to MainViewBase, which the Designer owns and rewrites.
@@ -243,7 +264,15 @@ void MainView::showBarcode()
 {
     const Barcode::Code &code = mState.codes[mIndex];
 
-    barcode.setCode(code.format, code.id);
+    // Which of the two widgets draws this one. Asked of the symbology rather
+    // than of the format directly, so a second linear format would need no
+    // change here and a second matrix one would need only its encoder.
+    const bool matrix = Barcode::isMatrix(code.format);
+    if (matrix) {
+        qr.setCode(code.format, code.id);
+    } else {
+        barcode.setCode(code.format, code.id);
+    }
 
     // layOutId fills idBuffer -- with the whole id, or with its first half when
     // it has to split -- so nothing else may write that buffer.
@@ -277,11 +306,24 @@ void MainView::showBarcode()
     buttons.setL1(ButtonsSet::NONE);
     buttons.setL2(ButtonsSet::NONE);
 
-    barcodeBackground.setVisible(true);
-    barcode.setVisible(true);
+    // Exactly one of the two, and the other explicitly hidden rather than
+    // merely not shown: cycling from a QR code to a Code 128 one must not
+    // leave the previous symbol on the glass, because a stale symbol still
+    // scans.
+    barcodeBackground.setVisible(!matrix);
+    barcode.setVisible(!matrix);
+    qr.setVisible(matrix);
+
     textArea1.setVisible(true);
     idLine2.setVisible(splitId);
-    caption.setVisible(code.name[0] != '\0');
+
+    // **A QR code shows no name.** Not a preference: every QR size that fits
+    // above the id row overlaps the caption band, and keeping the caption
+    // would mean version 1 at a 3px module -- a third off the module size and
+    // two thirds off the error correction. See BarcodeLayout::kQrY and
+    // Docs/QR.md. The id text and the pager marks still say which code this is.
+    caption.setVisible(!matrix && code.name[0] != '\0');
+
     for (uint16_t i = 0; i < kPromptLines; i++) {
         promptLine[i].setVisible(false);
     }
@@ -368,6 +410,7 @@ void MainView::showPrompt(Barcode::Problem problem)
     // screen could do -- it would still scan.
     barcodeBackground.setVisible(false);
     barcode.setVisible(false);
+    qr.setVisible(false);
     textArea1.setVisible(false);
     idLine2.setVisible(false);
     caption.setVisible(false);

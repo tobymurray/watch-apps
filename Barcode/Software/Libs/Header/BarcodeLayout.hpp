@@ -148,6 +148,93 @@ constexpr int16_t kQuietPxEachSide = kBarsX - kBackingX;
 constexpr uint16_t kQuietZoneModulesRequired = 10;
 
 // ---------------------------------------------------------------------------
+// The caption, above the bars
+//
+// This code's name, in the band between the button ticks the bezel container
+// draws down either side. It lives here rather than in MainView.cpp because a
+// QR symbol has to be laid out against it -- see below, where it turns out
+// there is no room for both.
+// ---------------------------------------------------------------------------
+
+constexpr int16_t kCaptionX = 40, kCaptionY = 48, kCaptionW = 160, kCaptionH = 24;
+
+// ---------------------------------------------------------------------------
+// Where a QR symbol sits
+//
+// Square, so it is a much worse fit for this panel than the bars are, and the
+// arithmetic below is the whole reason Docs/QR.md fixes the version at 2.
+//
+// The largest square of lit pixels anywhere on the panel is 168 px. That is
+// not the number that binds: the id row starts at kIdLine1Y, so a symbol that
+// leaves the human-readable id alone must end above it, and the largest
+// centred square that does is **144 px**. A QR module has to be a whole number
+// of pixels for the same four-grey-levels reason modulesAreWholePixels() asks
+// of the bars, so the achievable sizes are the version's module count plus its
+// mandatory 4-module quiet zone each side, times a whole number of pixels:
+//
+//   version 1, 21 + 8 = 29 modules   4 px -> 116 px      5 px -> 145 px
+//   version 2, 25 + 8 = 33 modules   4 px -> 132 px      5 px -> 165 px
+//   version 3, 29 + 8 = 37 modules   4 px -> 148 px
+//
+// **A 5 px module misses by one pixel row.** 145 px needs its bottom edge at
+// y = 169 and 169 is where the id starts. That is worth stating rather than
+// rounding away: reclaiming those three pixels means re-opening a layout whose
+// numbers came from measuring rendered ink, not from arithmetic, and which has
+// clipped on device twice. So the module is 4 px, and version 3 does not fit.
+//
+// Every size that does fit overlaps the caption band, so **a QR code shows no
+// name**. The id text and the pager marks stay.
+//
+// The 4-module quiet zone is inside the square: the white backing *is* the
+// quiet zone, exactly as it is for the bars, so 16 px of the 132 is margin on
+// each side and the dark modules occupy the middle 100 px.
+// ---------------------------------------------------------------------------
+
+/// ISO/IEC 18004 requires four modules of light on every side of a QR symbol.
+constexpr uint8_t kQrQuietModules = 4;
+
+/// Whole pixels per module. See the table above for why it is not 5.
+constexpr int16_t kQrModulePx = 4;
+
+/// Modules a side for the version this app draws, excluding the quiet zone.
+constexpr int16_t kQrModules = 25;
+
+constexpr int16_t kQrSide = (kQrModules + 2 * kQrQuietModules) * kQrModulePx;
+constexpr int16_t kQrX    = (kPanelWidth - kQrSide) / 2;
+constexpr int16_t kQrY    = 33;
+
+/// Where the dark modules start, inset by the quiet zone.
+constexpr int16_t kQrInkX = kQrX + kQrQuietModules * kQrModulePx;
+constexpr int16_t kQrInkY = kQrY + kQrQuietModules * kQrModulePx;
+
+/**
+ * @brief What a QR module comes out as on this screen.
+ *
+ * Deliberately not Scannability: that struct answers questions about a linear
+ * symbology -- quiet zones in modules, whether a module boundary lands on a
+ * pixel -- and for a matrix symbology at a whole-pixel module most of them are
+ * either constant or meaningless. What is left is the one number that decides
+ * whether a camera can read it.
+ */
+struct QrScannability
+{
+    int16_t modulePx = kQrModulePx;
+
+    /// The module as a physical size. The only figure here that a camera cares
+    /// about, and the one no amount of rendering work changes.
+    constexpr int32_t moduleMicrons() const
+    {
+        return static_cast<int32_t>(modulePx) * kDotPitchMicrons;
+    }
+
+    /// The whole symbol, quiet zone included, in microns.
+    constexpr int32_t symbolMicrons() const
+    {
+        return static_cast<int32_t>(kQrModules + 2 * kQrQuietModules) * moduleMicrons();
+    }
+};
+
+// ---------------------------------------------------------------------------
 // The id, beneath the bars
 //
 // The human-readable half of the barcode, and the widest text on the face. Its

@@ -23,10 +23,10 @@
  * generated from Barcode::kMaxCodes with a loop or a macro, and why raising
  * the number of codes means adding literal entries by hand.
  *
- * THE TABLE IS ORDERED, AND THE ORDER IS THE CONTRACT: two entries per code,
- * id first and name second, so code `i` is `kFields[2 * i]` and
- * `kFields[2 * i + 1]`. Nothing else needs to know the field names, which is
- * why there is no second list of them to drift out of step.
+ * THE TABLE IS ORDERED, AND THE ORDER IS THE CONTRACT: three entries per
+ * code -- id, then name, then format -- so code `i` starts at
+ * `kFields[kFieldsPerCode * i]`. Nothing else needs to know the field names,
+ * which is why there is no second list of them to drift out of step.
  *
  ******************************************************************************
  */
@@ -49,8 +49,8 @@ namespace BarcodeConfig
 /// invented and the one SDK::AppConfig reads are the same document.
 constexpr char kConfigFile[] = "input.json";
 
-/// Two fields per code: see the ordering note above.
-constexpr size_t kFieldsPerCode = 2;
+/// Three fields per code: see the ordering note above.
+constexpr size_t kFieldsPerCode = 3;
 
 extern const SDK::AppConfig::Field kFields[];
 extern const size_t kFieldCount;
@@ -65,6 +65,13 @@ inline const char *idField(size_t index)
 inline const char *nameField(size_t index)
 {
     return kFields[index * kFieldsPerCode + 1].id;
+}
+
+/// Field id for code @p index's symbology, e.g. "fmt3". Empty means Code 128,
+/// which is what an input.json written before this field existed says.
+inline const char *formatField(size_t index)
+{
+    return kFields[index * kFieldsPerCode + 2].id;
 }
 
 } // namespace BarcodeConfig

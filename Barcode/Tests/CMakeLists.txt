@@ -49,14 +49,15 @@ enable_testing()
 # ---------------------------------------------------------------------------
 # The encoder and the geometry
 #
-# Code128.hpp and BarcodeLayout.hpp are both header-only and depend on nothing,
-# which is the property that makes this target worth having: if it ever needs
-# the SDK to build, something has leaked into the two files that decide whether
-# a barcode is right and whether it can be read.
+# Code128.hpp, Qr.hpp and BarcodeLayout.hpp are all header-only and depend on
+# nothing, which is the property that makes this target worth having: if it
+# ever needs the SDK to build, something has leaked into the files that decide
+# whether a barcode is right and whether it can be read.
 # ---------------------------------------------------------------------------
 
 add_executable(barcode-pure-tests
     Code128_test.cpp
+    Qr_test.cpp
     Layout_test.cpp
 )
 target_include_directories(barcode-pure-tests PRIVATE "${APP_LIBS}/Header")

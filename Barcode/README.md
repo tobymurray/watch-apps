@@ -1,8 +1,14 @@
-# Barcode — Code 128 barcodes for values you supply
+# Barcode — Code 128 and QR barcodes for values you supply
 
 Displays a parkrun-style **Code 128** barcode, plus the ID underneath it in
 readable text. The IDs are not compiled in: you type them into the UNA phone app
 when you install this one, and the watch reads them at launch.
+
+Each code can be drawn as a **QR code** instead, per code — a `Code128` /
+`QRCode` toggle on the phone form. That defaults to `Code128` and should stay
+there unless you know better: a laser scanner — the kind at a parkrun finish
+funnel — cannot read a QR code at all, while every scanner reads Code 128. See
+[Which format](#which-format).
 
 It holds **up to six**, so a parent can carry the whole family's parkrun IDs and
 step between them at the finish funnel with `L2`. That is what every comparable
@@ -34,12 +40,14 @@ a real loss — see [Concessions](#concessions).
 ### From the phone
 
 The app declares six numbered slots, so the UNA app asks for them while it
-installs — a flat list of twelve rows, an ID and a name per code:
+installs — a flat list of eighteen rows, an ID, a name and a format per code:
 
 > **Code 1 ID** — The number printed under your barcode, copied exactly. Case
 > matters. This is the code the watch shows first.
 > **Code 1 name** — What the watch calls this code, so you know which is which
 > when you cycle through them. Optional.
+> **Code 1 format** — `Code128` or `QRCode`. See
+> [Which format](#which-format).
 > **Code 2 ID** — A second barcode to carry — a family member's parkrun ID, a
 > membership number. Leave empty if you do not need it.
 > … and so on to Code 6.
@@ -69,10 +77,17 @@ written by hand:
        "id1": "A1234567",
        "name1": "Me",
        "id2": "A7654321",
-       "name2": "Sam"
+       "name2": "Sam",
+       "id3": "GYMWORLD12345678",
+       "name3": "Gym",
+       "fmt3": "QRCode"
      }
    }
    ```
+
+   `fmtN` is `Code128` or `QRCode`, either case. Leave it out entirely and the
+   code is a Code 128 barcode, which is what every file written before this
+   existed says.
 
    [`input.example.json`](input.example.json) is that file, ready to copy.
    Leave out any slot you do not want.
@@ -82,6 +97,61 @@ Until an id arrives by one route or the other, the app says so on screen and
 draws no barcode. There is deliberately no usable id to fall back on: a barcode
 is an identity claim, and a plausible placeholder that scans is worse than a
 blank screen — at a parkrun finish it credits somebody else's run.
+
+### Which format
+
+Each code has a **format** row on the phone form, next to its ID and name. It is
+pre-filled with `Code128`, which draws the ordinary barcode exactly as the app
+always has. Change it to `QRCode` and that one code is drawn as a QR code
+instead.
+
+Case does not matter — `qrcode`, `QRCode` and `QRCODE` are the same word, and so
+are `code128` and `Code128`. There is no enum field type in the SDK, so this is
+a plain text box and you are typing; being fussy about capitals would be a
+spelling test rather than a safety check. `qr` on its own is *not* accepted:
+two words for one format is a wart, and the watch tells you what to use.
+
+**A file with no format row at all still means Code 128**, so an `input.json`
+written before this existed keeps working and keeps meaning what it meant.
+There are tests for that and for a row that has been emptied by hand.
+
+Which to pick is a question about whatever is going to scan it, and the answer
+is asymmetric:
+
+| | laser scanner | phone camera |
+| --- | --- | --- |
+| Code 128 | reads it | reads it |
+| QR | **cannot** | yes |
+
+So Code 128 is the safe default and QR is for a code you know is scanned by a
+camera. parkrun's funnel device is an Opticon OPN-2001, whose vendor material
+describes a laser engine; a laser sweeps a line and there is no mechanism by
+which it reads a grid. parkrun's camera-based Virtual Volunteer app is a
+different matter — Apple Wallet parkrun passes are QR and are scanned from
+watches every week — so if you know your event scans with a phone, `QRCode` is a
+real option. If you do not know, leave it on `Code128`.
+
+What QR buys, where it works, is **module size**. A 16-character alphanumeric id
+is Code 128's worst case here: 211 modules across 200 px, a 119 µm X-dimension.
+The same id as a QR symbol is a **504 µm** module, four times as coarse, because
+a matrix symbology spends area in two directions and this panel has area the
+bars do not use. See [The panel](#the-panel-and-the-limit-none-of-this-can-move).
+
+Two things a QR code costs, both deliberate:
+
+- **It shows no name.** The symbol has to end above the id row and be a whole
+  number of pixels per module, which puts it over the band the caption uses.
+  Every size that would clear the caption is smaller, and module size is the
+  number that decides whether a camera can read it. The id text and the pager
+  marks still say which code you are looking at.
+- **The id limit does not change.** Still 1 to 16 characters. QR could hold a
+  URL; six of those would not fit in the message the service sends the screen,
+  and a URL has no readable rendering under the symbol on a 30 mm panel.
+  [`Docs/QR.md`](Docs/QR.md) costs that out in full.
+
+An unrecognised format — only reachable by hand-editing `input.json`, since the
+phone's pattern accepts nothing else — refuses that code and says so on screen,
+rather than quietly drawing it as Code 128.
 
 ### What the id may contain
 
@@ -458,6 +528,19 @@ polariser, and the anti-aliased bar edges — none of which these numbers measur
 and all of which are settled by pointing a scanner at the watch rather than by
 arithmetic.
 
+**A QR code sidesteps the whole table.** Its module is four *whole pixels*,
+504 µm, whatever the id says — because a matrix symbology spends area in two
+directions rather than width in one, and the version is fixed at 2, which holds
+26 characters against the 16 an id may be. That is four times the X-dimension of
+the worst row above. The cost is that the symbol has to be square: the largest
+square of lit pixels on this panel is 168 px, and only 144 px is available once
+the id row below it is left alone, which is what fixes the version at 2 and the
+module at 4 px. A 5 px module misses fitting by a single pixel row.
+[`Docs/QR.md`](Docs/QR.md) has that arithmetic and what it rules out.
+
+None of which says a camera reads it off this glass — see below, and
+[the tests' README](Tests/README.md).
+
 The table above is **alphabetic** ids, which is the pessimistic case. **Code 128
 Subset C** is implemented, and it prices a numeric character at 5,5 modules
 against 11 for a Subset B one — so a 16-digit id is 123 modules rather than 211,
@@ -520,7 +603,7 @@ watch write an ID back to the file — and it still should not.
 ```sh
 export UNA_SDK=/path/to/una-sdk
 cd Barcode/Software/Apps/Barcode-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.3.6 .. && cmake --build build
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.4.0 .. && cmake --build build
 ```
 
 Or the desktop simulator, which is where the provisioning flow is easiest to
@@ -541,8 +624,9 @@ the SDK tree, so out of tree it lands somewhere unrelated to this app.
 ## Tests
 
 Host tests live in [`Tests`](Tests), covering the Code 128 encoder and its spec
-table, the geometry the barcode is drawn with, and the real `Service` driven by
-a scripted message queue:
+table, the QR encoder and the zint oracle underneath it, the geometry the
+barcodes are drawn with, and the real `Service` driven by a scripted message
+queue:
 
 ```sh
 export UNA_SDK=/path/to/una-sdk
@@ -561,6 +645,13 @@ characterisation tests rather than fixed.
 Nothing here has seen a panel. The geometry tests can say a rectangle's corners
 are lit and what a module works out to in microns; they cannot say a scanner
 reads it.
+
+The QR side goes one step further than that and it is worth knowing exactly how
+far. A capture of the simulator's framebuffer decodes to the right id with zbar,
+an independent decoder, at the real 4 px module — so the pixels the renderer
+puts down are a correct, readable symbol end to end. That is still a
+pixel-perfect capture and not a camera photographing a reflective LCD through a
+polariser, which is the thing most likely to actually decide it.
 
 ## Status
 

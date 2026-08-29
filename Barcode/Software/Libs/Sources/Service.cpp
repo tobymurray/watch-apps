@@ -16,6 +16,12 @@ static constexpr uint32_t kWaitForever = 0xFFFFFFFF;
 // encoder has accepted the value.
 static_assert(Barcode::kMaxIdLength == Code128::kMaxDataLength,
               "the id buffer and the encoder must agree on the longest id");
+// Not equality, because QR's capacity is a property of the version this app
+// fixed rather than of the id limit. What matters is that it is not smaller:
+// it is what makes adding QR add no new way for a code to be refused, and it
+// is why Problem::BadValue's prompt is still true as written.
+static_assert(Qr::kMaxDataLength >= Barcode::kMaxIdLength,
+              "the QR version must carry the longest id this app accepts");
 static_assert(Barcode::kConfigMaxLength > Barcode::kMaxIdLength,
               "the declared field must be longer than an id, so over-length "
               "values arrive detectable rather than truncated into valid ones");
@@ -121,7 +127,7 @@ void Service::load()
         BarcodeConfig::kFields, BarcodeConfig::kFieldCount));
 }
 
-bool Service::adoptCode(size_t index, Barcode::Code &out) const
+Service::Adopted Service::adoptCode(size_t index, Barcode::Code &out) const
 {
     // One byte longer than an id, so a value too long to be one arrives
     // detectably over-length instead of quietly shortened. See Barcode.hpp.
@@ -132,7 +138,7 @@ bool Service::adoptCode(size_t index, Barcode::Code &out) const
     if (length == 0) {
         // An empty id is how a slot says it is unused. Every field defaults to
         // the empty string, so this is also what an untouched slot reads as.
-        return false;
+        return Adopted::Empty;
     }
 
     // Checked before the encoder rather than left to it: the encoder would
@@ -141,23 +147,36 @@ bool Service::adoptCode(size_t index, Barcode::Code &out) const
     if (length > Barcode::kMaxIdLength) {
         LOG_WARNING("%s is %u bytes, too long for an id\n",
                     BarcodeConfig::idField(index), static_cast<unsigned>(length));
-        return false;
+        return Adopted::BadValue;
     }
 
-    // Nothing in the configuration says which symbology to use, so there is
-    // one to choose. When that changes this is where the field is read; the
-    // rest of the function already works in terms of whatever it says.
-    const Barcode::Format format = Barcode::Format::Code128;
+    // Which symbology to draw it as: "Code128" or "QRCode", either case. The
+    // declared default is the literal "Code128", so a key missing from the file
+    // reads as that and an input.json written before this field existed keeps
+    // meaning what it meant -- see Barcode::parseFormat().
+    char formatText[Barcode::kConfigFormatMaxLength + 1] {};
+    mConfig->getString(BarcodeConfig::formatField(index), formatText, sizeof(formatText));
+
+    Barcode::Format format = Barcode::Format::Code128;
+    if (!Barcode::parseFormat(formatText, format)) {
+        // Refused rather than quietly drawn as Code 128. The value would still
+        // be the wearer's own id, so this is not the harm Barcode.hpp is about
+        // -- but "drew something other than what you asked for, silently" is
+        // not a thing this app does, and the phone's pattern means only a
+        // hand-edited file can get here.
+        LOG_WARNING("%s is not a format this app draws\n",
+                    BarcodeConfig::formatField(index));
+        return Adopted::BadFormat;
+    }
 
     // The encoder is the remaining validator, and it is the right one: it
     // refuses anything the chosen format cannot carry, which for Code 128 is
     // anything outside printable ASCII -- exactly the set this app can draw.
     // SDK::AppConfig decodes JSON escapes before this point, so a `\\` in the
     // file arrives as a real backslash and encodes as one.
-    Barcode::Encoded probe {};
-    if (!Barcode::encode(format, raw, probe)) {
+    if (!Barcode::isDrawable(format, raw)) {
         LOG_WARNING("%s cannot be drawn\n", BarcodeConfig::idField(index));
-        return false;
+        return Adopted::BadValue;
     }
 
     std::memcpy(out.id, raw, length + 1);
@@ -171,7 +190,7 @@ bool Service::adoptCode(size_t index, Barcode::Code &out) const
         std::memcpy(out.name, name, nameLength + 1);
     }
 
-    return true;
+    return Adopted::Yes;
 }
 
 void Service::adopt()
@@ -188,7 +207,8 @@ void Service::adopt()
     next.problem = Barcode::Problem::None;
 
     bool anyKeyPresent = false;  // a slot carried a value, even an empty one
-    bool anyRefused    = false;  // a slot carried something undrawable
+    bool anyBadValue   = false;  // a slot carried an id that cannot be drawn
+    bool anyBadFormat  = false;  // a slot named a format this app does not draw
 
     for (size_t i = 0; i < Barcode::kMaxCodes; i++) {
         if (mConfig->has(BarcodeConfig::idField(i))) {
@@ -196,18 +216,19 @@ void Service::adopt()
         }
 
         Barcode::Code code {};
-        if (adoptCode(i, code)) {
+        switch (adoptCode(i, code)) {
+        case Adopted::Yes:
             next.codes[next.count] = code;
             next.count++;
-        } else if (mConfig->has(BarcodeConfig::idField(i))) {
-            // Present, non-empty and still not drawable is the only case
-            // adoptCode rejects that the wearer needs telling about. An empty
-            // slot is normal, so distinguish the two by asking the reader
-            // whether anything was stored at all.
-            char raw[Barcode::kConfigMaxLength + 1] {};
-            if (mConfig->getString(BarcodeConfig::idField(i), raw, sizeof(raw)) > 0) {
-                anyRefused = true;
-            }
+            break;
+        case Adopted::BadValue:
+            anyBadValue = true;
+            break;
+        case Adopted::BadFormat:
+            anyBadFormat = true;
+            break;
+        case Adopted::Empty:
+            break;
         }
     }
 
@@ -221,8 +242,13 @@ void Service::adopt()
         return;
     }
 
-    if (anyRefused) {
+    if (anyBadValue) {
+        // Reported ahead of a bad format when both are present: an id that
+        // cannot be drawn is the fault the wearer is more likely to have made
+        // and the one the prompt can actually be specific about.
         mState = Barcode::makeUnsetState(Barcode::Problem::BadValue);
+    } else if (anyBadFormat) {
+        mState = Barcode::makeUnsetState(Barcode::Problem::BadFormat);
     } else if (anyKeyPresent) {
         // The form was filled in and left empty, which is what accepting a
         // required field's pre-filled default looks like from here.

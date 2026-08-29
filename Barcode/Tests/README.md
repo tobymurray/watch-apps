@@ -224,13 +224,27 @@ builds a fresh one to re-read.
 
 ## What these tests are not evidence about
 
-**Not that anything renders.** Nothing here has seen a panel. The geometry
-tests can say a rectangle's corners are lit, that no bar row is cut, and what a
-module works out to in pixels — they cannot say a scanner reads it. The
-scannability numbers above are derived from geometry and the framebuffer
-format, not from putting a scanner in front of a watch. `RustGuiPoc` dumps its
-framebuffer to `fb_dump.bin` on a long press; the same trick here would give a
-real capture to point a scanner at, and that is the missing evidence.
+**Not that anything renders — for the bars.** Nothing in the Code 128 half of
+this suite has seen a panel. The geometry tests can say a rectangle's corners
+are lit, that no bar row is cut, and what a module works out to in pixels — they
+cannot say a scanner reads it. The scannability numbers above are derived from
+geometry and the framebuffer format, not from putting a scanner in front of a
+watch. `RustGuiPoc` dumps its framebuffer to `fb_dump.bin` on a long press; the
+same trick here would give a real capture to point a scanner at, and for the
+bars that is still the missing evidence.
+
+**For QR, half of it is no longer missing.** A capture of the simulator's
+framebuffer, masked and measured, is recorded in [Docs/QR.md](../Docs/QR.md):
+every one of the 625 modules matches the encoder, no pixel is anti-aliased, no
+ink falls outside the lit circle, and **zbar decodes the screen to exactly the
+id that was configured**, at the real 4 px module. That is end to end through
+the real renderer at the real geometry, which is more than this app has ever
+been able to say.
+
+It is still not a camera photographing a reflective LCD through a front
+polariser, and the predicted failure mode on this panel is specular glare, which
+no capture of the framebuffer can show. 0.504 mm modules on this glass have not
+been scanned by a phone.
 
 **Not that a same-size rewrite is picked up.** `refresh()` compares
 `(size, mtime)`, and the SDK's in-memory filesystem reports `utc = 0` for every
@@ -242,9 +256,29 @@ the blind spot so a passing suite is not mistaken for coverage of it. Closing
 it needs a settable mtime in `Tests/Host/support/FakeFileSystem`.
 
 **Not that the table is right.** See above — the structural claims are strong
-and they are not an oracle.
+and they are not an oracle. Since `a119f9c` there *is* an oracle, and it is
+where the confidence in both encoders actually comes from.
 
-**Not that the encoder is a full Code 128 implementation.** Subsets B and C
+**Not that the QR encoder is a general one, or that its mask choice is
+canonical.** Version 2 at level M in byte mode, and nothing else: no version
+selection, no interleaving, no mode selection, so there are no tests for any of
+them. And which of the eight masks gets picked is judgement rather than
+correctness — every mask decodes, because the mask is recorded in the format
+information — which is why `ZintQrOracle` diffs a **forced** mask across all
+eight rather than comparing two penalty scores and calling a legal difference a
+bug. `QrMask.TheChosenMaskScoresNoWorseThanAnyOther` holds the selector to its
+own definition and nothing more.
+
+**Not that every payload is zint-diffed.** This encoder emits a single byte-mode
+segment always; zint optimises across modes and splits `a1234567` into a byte
+`a` and numeric `1234567`. Both are legal QR and they are different grids, so
+the oracle corpus is restricted to payloads where one byte segment is optimal —
+which excludes the parkrun shapes, because they are pure alphanumerics. Those
+are covered instead by rendering this encoder's own output and decoding it back
+with zbar, offline, beside the generator. All 23 payloads in that run decode to
+themselves.
+
+**Not that the Code 128 encoder is a full implementation.** Subsets B and C
 only — there is no Code Set A, so there are no Code Set A tests, and nothing
 here is evidence about FNC characters, Shift, or the extended-ASCII escapes.
 None of those has a use in an id.

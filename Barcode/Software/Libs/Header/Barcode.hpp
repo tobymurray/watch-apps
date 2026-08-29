@@ -59,7 +59,19 @@ namespace Barcode
  */
 constexpr size_t kMaxCodes = 6;
 
-/// Longest id the encoder accepts. Matches Code128::kMaxDataLength.
+/**
+ * @brief Longest id any encoder here accepts. Matches Code128::kMaxDataLength.
+ *
+ * Deliberately unmoved by QR arriving, and Docs/QR.md argues that at length:
+ * QR could carry a URL, but a `State` holding six of those does not fit the
+ * 256-byte message block, and a URL has no readable rendering under the bars
+ * on a 30 mm panel. Sixteen is what Code 128 can draw legibly here and what
+ * the phone form declares.
+ *
+ * The happy consequence is that QR adds no new way for a code to be refused:
+ * Qr::kMaxDataLength is 26, so every id this app accepts fits with ten bytes
+ * to spare, and Problem::BadValue's prompt stays true as written.
+ */
 constexpr size_t kMaxIdLength = 16;
 
 /// Longest name that fits the screen at the label font's size.
@@ -84,6 +96,17 @@ constexpr size_t kMaxNameLength = 12;
 constexpr size_t kConfigMaxLength = 17;
 
 /**
+ * @brief Declared maximum of a format field.
+ *
+ * Long enough for the longest word the field accepts, "code128", and no
+ * longer: unlike an id there is nothing here to truncate into a plausible
+ * wrong answer, because a shortened format word simply fails to parse and the
+ * code is refused. Kept beside kConfigMaxLength so the declared lengths this
+ * app must match in app-manifest.json are all in one place.
+ */
+constexpr size_t kConfigFormatMaxLength = 8;
+
+/**
  * @brief Why the app has no code to draw.
  *
  * Carried through to the GUI rather than collapsed into one "no code" state:
@@ -106,26 +129,32 @@ enum class Problem : uint8_t {
     NoValue,   ///< A config was read, but it carries no usable code.
     NotSet,    ///< Read, and every id field is empty: nobody has set a code yet.
     BadValue,  ///< Codes were supplied, but none is drawable.
+    BadFormat, ///< Codes were supplied, but none names a format this app draws.
 };
 
 /**
  * @brief Which symbology a code is drawn as.
  *
- * One value, and the enum is still worth having: it is what lets the service
- * and the widget hand a code to Barcode::encode() without either of them
- * naming an encoder. Docs/SYMBOLOGIES.md has the ranking of what might join it
- * and what each would cost.
+ * What lets the service and the widget hand a code to Barcode::encode()
+ * without either of them naming an encoder. Docs/SYMBOLOGIES.md ranks the
+ * linear candidates; Docs/QR.md is the decision behind the matrix one.
  *
- * Code128 is **0 on purpose**. Every Code and State in this app is
- * value-initialised somewhere -- makeUnsetState(), the message's constructor,
- * adoptCode()'s local -- so zero has to be a format that draws, not a hole.
+ * Code128 is **0 on purpose**, and it is what an id with no declared format
+ * means. Every Code and State in this app is value-initialised somewhere --
+ * makeUnsetState(), the message's constructor, adoptCode()'s local -- so zero
+ * has to be a format that draws, not a hole. It is also what makes an
+ * input.json written before QR existed keep working unchanged.
  *
- * Nothing chooses between subsets here. Code 128's B and C are picked inside
- * the encoder, per id, because the choice is arithmetic about that id's digits
- * and not something a wearer or a config file should have an opinion about.
+ * Nothing chooses between *variants* here. Code 128's subsets B and C are
+ * picked inside its encoder, per id, and QR's version, error-correction level
+ * and mask are fixed or chosen inside its own -- in every case because the
+ * choice is arithmetic about a particular id, and neither a wearer nor a
+ * config file has a useful opinion about it. A wearer cannot see an
+ * error-correction level and cannot debug one.
  */
 enum class Format : uint8_t {
     Code128 = 0,
+    Qr      = 1,
 };
 
 /// One code, what to call it on screen, and how to draw it.

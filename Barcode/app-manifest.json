@@ -9,7 +9,7 @@
   "appVersion": "0.3.6",
   "minKernelVersion": "1.4.0",
   "requiredHardware": [],
-  "description": "Shows a Code 128 barcode for an ID you supply -- a parkrun athlete ID, a membership number, a transit pass. Holds up to six, cycled on the watch. The IDs come from your phone; the watch only draws them.",
+  "description": "Shows a barcode for an ID you supply -- a parkrun athlete ID, a membership number, a transit pass. Code 128 by default, or a QR code per code where whatever scans it uses a camera. Holds up to six, cycled on the watch. The IDs come from your phone; the watch only draws them.",
   "id": "409506B8B69EC13E",
   "stravaExport": false,
   "supportsLaps": false,
@@ -44,6 +44,16 @@
       "validationMessage": "Up to 12 plain characters."
     },
     {
+      "id": "fmt1",
+      "type": "string",
+      "label": "Code 1 format",
+      "description": "How to draw this code. Code128 is the ordinary barcode and works with every scanner. QRCode only works where a phone camera does the scanning -- a laser scanner cannot read a QR code at all.",
+      "default": "Code128",
+      "maxLength": 8,
+      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
+      "validationMessage": "Code128 or QRCode."
+    },
+    {
       "id": "id2",
       "type": "string",
       "label": "Code 2 ID",
@@ -62,6 +72,16 @@
       "maxLength": 12,
       "pattern": "[ -~]{0,12}",
       "validationMessage": "Up to 12 plain characters."
+    },
+    {
+      "id": "fmt2",
+      "type": "string",
+      "label": "Code 2 format",
+      "description": "How to draw the second code. Code128 is the ordinary barcode; QRCode only works where a phone camera does the scanning.",
+      "default": "Code128",
+      "maxLength": 8,
+      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
+      "validationMessage": "Code128 or QRCode."
     },
     {
       "id": "id3",
@@ -84,6 +104,16 @@
       "validationMessage": "Up to 12 plain characters."
     },
     {
+      "id": "fmt3",
+      "type": "string",
+      "label": "Code 3 format",
+      "description": "How to draw the third code. Code128 is the ordinary barcode; QRCode only works where a phone camera does the scanning.",
+      "default": "Code128",
+      "maxLength": 8,
+      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
+      "validationMessage": "Code128 or QRCode."
+    },
+    {
       "id": "id4",
       "type": "string",
       "label": "Code 4 ID",
@@ -102,6 +132,16 @@
       "maxLength": 12,
       "pattern": "[ -~]{0,12}",
       "validationMessage": "Up to 12 plain characters."
+    },
+    {
+      "id": "fmt4",
+      "type": "string",
+      "label": "Code 4 format",
+      "description": "How to draw the fourth code. Code128 is the ordinary barcode; QRCode only works where a phone camera does the scanning.",
+      "default": "Code128",
+      "maxLength": 8,
+      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
+      "validationMessage": "Code128 or QRCode."
     },
     {
       "id": "id5",
@@ -124,6 +164,16 @@
       "validationMessage": "Up to 12 plain characters."
     },
     {
+      "id": "fmt5",
+      "type": "string",
+      "label": "Code 5 format",
+      "description": "How to draw the fifth code. Code128 is the ordinary barcode; QRCode only works where a phone camera does the scanning.",
+      "default": "Code128",
+      "maxLength": 8,
+      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
+      "validationMessage": "Code128 or QRCode."
+    },
+    {
       "id": "id6",
       "type": "string",
       "label": "Code 6 ID",
@@ -142,6 +192,16 @@
       "maxLength": 12,
       "pattern": "[ -~]{0,12}",
       "validationMessage": "Up to 12 plain characters."
+    },
+    {
+      "id": "fmt6",
+      "type": "string",
+      "label": "Code 6 format",
+      "description": "How to draw the sixth code. Code128 is the ordinary barcode; QRCode only works where a phone camera does the scanning.",
+      "default": "Code128",
+      "maxLength": 8,
+      "pattern": "(?:[Cc][Oo][Dd][Ee]128|[Qq][Rr][Cc][Oo][Dd][Ee])?",
+      "validationMessage": "Code128 or QRCode."
     }
   ]
 }

@@ -65,11 +65,22 @@ private:
     void load();
 
     /**
-     * @brief Read one declared slot into @p out.
-     * @retval true  @p out holds a drawable code; its name may be empty.
-     * @retval false The slot is empty, or holds something that cannot be drawn.
+     * @brief What one declared slot turned out to hold.
+     *
+     * Three ways to fail rather than one, because adopt() has to choose which
+     * Problem to report when nothing is drawable and the wearer needs a
+     * different thing done about each. It replaces a re-read of the raw value
+     * that adopt() used to do to tell an empty slot from a refused one.
      */
-    bool adoptCode(size_t index, Barcode::Code &out) const;
+    enum class Adopted : uint8_t {
+        Yes,       ///< @p out holds a drawable code; its name may be empty.
+        Empty,     ///< Nothing stored, which is what an unused slot looks like.
+        BadValue,  ///< An id the chosen format cannot carry.
+        BadFormat, ///< A format this app does not draw.
+    };
+
+    /// @brief Read one declared slot into @p out.
+    Adopted adoptCode(size_t index, Barcode::Code &out) const;
 
     /// Turn whatever the configuration currently holds into a publishable state.
     void adopt();

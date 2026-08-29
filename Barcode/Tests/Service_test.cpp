@@ -31,6 +31,224 @@ using BarcodeTest::document;
 using BarcodeTest::Harness;
 
 // ---------------------------------------------------------------------------
+// The format field, and the promise that predates it
+//
+// The compatibility claim is the load-bearing one here: an input.json written
+// before fmtN existed must keep working and keep meaning exactly what it meant.
+// Everything else on this page is worth less than that.
+// ---------------------------------------------------------------------------
+
+TEST(Service, AFileWithNoFormatFieldIsStillEveryCodeAsCode128)
+{
+    // The whole compatibility promise, as a test. This is the document
+    // input.example.json holds and the one the README tells a user to write,
+    // and it names no format anywhere.
+    Harness h;
+    h.seed(BarcodeTest::documentWithCodes({"A1234567", "B7654321", "2005812"},
+                                          {"Toby", "Sam", "Kids Card"}));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::None);
+    EXPECT_EQ(h.publishedCount(0), 3);
+    EXPECT_EQ(h.publishedIds(0), (std::vector<std::string>{"A1234567", "B7654321", "2005812"}));
+    EXPECT_EQ(h.publishedFormats(0), (std::vector<Barcode::Format>{
+                                         Barcode::Format::Code128,
+                                         Barcode::Format::Code128,
+                                         Barcode::Format::Code128}));
+}
+
+TEST(Service, AnEmptyFormatFieldMeansTheSameAsNoFormatField)
+{
+    // Not what the phone writes -- it pre-fills "Code128" and its pattern would
+    // accept an empty box, but a saved form carries the word. This is the
+    // hand-edited file that cleared the value, and it has to land in the same
+    // place as one that never had the key.
+    Harness h;
+    h.seed("{\n  \"schema\": 1,\n  \"values\": {\n"
+           "    \"id1\": \"A1234567\",\n"
+           "    \"fmt1\": \"\"\n"
+           "  }\n}\n");
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::None);
+    EXPECT_EQ(h.publishedIds(0), (std::vector<std::string>{"A1234567"}));
+    EXPECT_EQ(h.publishedFormats(0), (std::vector<Barcode::Format>{Barcode::Format::Code128}));
+}
+
+TEST(Service, TheDeclaredDefaultIsWhatAMissingKeyReads)
+{
+    // The mechanism behind the compatibility promise, stated on its own. There
+    // is no fmt1 in this document at all; SDK::AppConfig hands back the
+    // declared default, which AppConfigFields.cpp sets to the literal
+    // "Code128". If that default were ever changed to something parseFormat
+    // refuses, every code in every existing file would stop drawing.
+    Harness h;
+    h.seed(document("A1234567"));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::None);
+    EXPECT_EQ(h.publishedFormats(0), (std::vector<Barcode::Format>{Barcode::Format::Code128}));
+}
+
+TEST(Service, TheFormatWordIsNotCaseSensitive)
+{
+    // The wearer is typing into a plain text box. Both spellings of both words
+    // reach the same two formats.
+    Harness h;
+    h.seed(BarcodeTest::documentWithFormats({"A1111111", "B2222222", "C3333333", "D4444444"},
+                                            {"Code128", "code128", "QRCode", "qrcode"}));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedCount(0), 4);
+    EXPECT_EQ(h.publishedFormats(0), (std::vector<Barcode::Format>{
+                                         Barcode::Format::Code128,
+                                         Barcode::Format::Code128,
+                                         Barcode::Format::Qr,
+                                         Barcode::Format::Qr}));
+}
+
+TEST(Service, BareQrIsNotAFormatWord)
+{
+    // Deliberate: "qr" was the spelling in an earlier draft and two words for
+    // one format is a wart. Refusing costs nothing -- the screen says what to
+    // use, and the phone's pattern means only a hand-edited file gets here.
+    Harness h;
+    h.seed(BarcodeTest::documentWithFormats({"A1234567"}, {"qr"}));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::BadFormat);
+    EXPECT_EQ(h.publishedCount(0), 0);
+}
+
+TEST(Service, AFormatIsPerCodeAndNotGlobal)
+{
+    // The motivating wearer has a parkrun code that must be Code 128 and a gym
+    // card that wants QR, at the same time. If this ever became a single
+    // setting, this test is what would notice.
+    Harness h;
+    h.seed(BarcodeTest::documentWithFormats({"A1234567", "GYMWORLD12345678", "2005812"},
+                                            {"", "QRCode", "Code128"}));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedCount(0), 3);
+    EXPECT_EQ(h.publishedIds(0),
+              (std::vector<std::string>{"A1234567", "GYMWORLD12345678", "2005812"}));
+    EXPECT_EQ(h.publishedFormats(0), (std::vector<Barcode::Format>{
+                                         Barcode::Format::Code128,
+                                         Barcode::Format::Qr,
+                                         Barcode::Format::Code128}));
+}
+
+TEST(Service, ChoosingQrChangesNothingAboutTheId)
+{
+    // The id is the identity claim and the format is only how it is drawn. The
+    // same file with and without "QRCode" must publish the same characters.
+    Harness a, b;
+    a.seed(BarcodeTest::documentWithFormats({"GYMWORLD12345678"}, {""}));
+    a.comm.queueGuiRun();
+    a.comm.queueStop();
+    a.run();
+
+    b.seed(BarcodeTest::documentWithFormats({"GYMWORLD12345678"}, {"QRCode"}));
+    b.comm.queueGuiRun();
+    b.comm.queueStop();
+    b.run();
+
+    EXPECT_EQ(a.publishedIds(0), b.publishedIds(0));
+    EXPECT_NE(a.publishedFormats(0), b.publishedFormats(0));
+}
+
+TEST(Service, AnUnknownFormatRefusesThatCodeRatherThanDrawingItAnyway)
+{
+    // Only reachable from a hand-edited file -- the phone's pattern offers
+    // nothing else. Refused rather than quietly drawn as Code 128: the value
+    // would still be the wearer's own id, so this is not the harm Barcode.hpp
+    // is about, but drawing something other than what was asked for, silently,
+    // is not a thing this app does.
+    Harness h;
+    h.seed(BarcodeTest::documentWithFormats({"A1234567"}, {"code39"}));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::BadFormat);
+    EXPECT_EQ(h.publishedCount(0), 0);
+    EXPECT_EQ(h.publishedId(0), "");
+}
+
+TEST(Service, OneUnknownFormatDoesNotCostTheCodesThatAreFine)
+{
+    // The same trade Service.cpp makes everywhere else: a bad slot alongside
+    // good ones is skipped rather than announced, because hiding the codes
+    // that work would be the wrong thing to do at a finish funnel.
+    Harness h;
+    h.seed(BarcodeTest::documentWithFormats({"A1234567", "B7654321"}, {"nonsense", "QRCode"}));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::None);
+    EXPECT_EQ(h.publishedIds(0), (std::vector<std::string>{"B7654321"}));
+    EXPECT_EQ(h.publishedFormats(0), (std::vector<Barcode::Format>{Barcode::Format::Qr}));
+}
+
+TEST(Service, AnUndrawableIdIsBadValueEvenWhenAFormatIsAlsoWrong)
+{
+    // Two faults, one prompt. BadValue wins because it is the fault a wearer is
+    // more likely to have made and the one the screen can be specific about --
+    // and because a wrong format with a good id is the rarer accident.
+    Harness h;
+    h.seed(BarcodeTest::documentWithFormats({"01234567890123456", "A1234567"},
+                                            {"", "nonsense"}));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::BadValue);
+    EXPECT_EQ(h.publishedCount(0), 0);
+}
+
+TEST(Service, QrAddsNoNewWayForAnIdToBeRefused)
+{
+    // Qr::kMaxDataLength is 26 and an id is at most 16, so every id Code 128
+    // accepts, QR accepts too. It is what keeps Problem::BadValue's prompt --
+    // "1-16 plain characters" -- true as written now that there are two formats.
+    for (const char *id : {"A1234567", "0123456789ABCDEF", "WWWWWWWWWWWWWWWW",
+                           "!\"#$%&'()*+,-./", "x", "9999999999999999"}) {
+        Harness h;
+        h.seed(BarcodeTest::documentWithFormats({id}, {"QRCode"}));
+        h.comm.queueGuiRun();
+        h.comm.queueStop();
+        h.run();
+
+        ASSERT_EQ(h.published().size(), 1u) << id;
+        EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::None) << id;
+        EXPECT_EQ(h.publishedIds(0), (std::vector<std::string>{id})) << id;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The id gets out
 // ---------------------------------------------------------------------------
 

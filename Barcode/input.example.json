@@ -3,7 +3,12 @@
   "values": {
     "id1": "A1234567",
     "name1": "Me",
+    "fmt1": "Code128",
     "id2": "A7654321",
-    "name2": "Sam"
+    "name2": "Sam",
+    "fmt2": "Code128",
+    "id3": "GYMWORLD12345678",
+    "name3": "Gym",
+    "fmt3": "QRCode"
   }
 }
