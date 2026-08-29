@@ -241,10 +241,18 @@ id that was configured**, at the real 4 px module. That is end to end through
 the real renderer at the real geometry, which is more than this app has ever
 been able to say.
 
-It is still not a camera photographing a reflective LCD through a front
-polariser, and the predicted failure mode on this panel is specular glare, which
-no capture of the framebuffer can show. 0.504 mm modules on this glass have not
-been scanned by a phone.
+And the last step is no longer missing either, though it is not something this
+suite can run: **Google Lens reads the symbol clearly off the panel**, from the
+0.4.0 build installed on a watch. Specular glare was the predicted failure mode
+and it did not materialise. That is one reader in one set of conditions rather
+than a characterisation of the scanning envelope, and it is recorded in
+[Docs/QR.md](../Docs/QR.md) as exactly that -- but the question of whether
+0.504 mm modules resolve on this glass is settled, and it is settled the only
+way it could be, by pointing a camera at it rather than by arithmetic.
+
+The bars have had no such confirmation. Nothing in this suite is evidence that a
+*laser* scanner reads a Code 128 symbol off this panel, and that is the app's
+older and larger open question.
 
 **Not that a same-size rewrite is picked up.** `refresh()` compares
 `(size, mtime)`, and the SDK's in-memory filesystem reports `utc = 0` for every

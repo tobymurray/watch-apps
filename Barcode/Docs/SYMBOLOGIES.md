@@ -11,7 +11,10 @@ into subset C wherever that shortens a barcode. The linear rest is still a
 ranking, not a plan.
 
 Everything below is derived arithmetic against `BarcodeLayout.hpp` and the
-symbology definitions. **Nothing here has been put in front of a scanner.**
+symbology definitions. **None of the linear candidates ranked here has been put
+in front of a scanner.** That is still true of Code 128 as this app draws it.
+The one format that *has* been scanned is QR, which is not on this list — see
+[QR.md](QR.md).
 
 ## The short version
 

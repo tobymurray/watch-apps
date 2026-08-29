@@ -538,8 +538,10 @@ the id row below it is left alone, which is what fixes the version at 2 and the
 module at 4 px. A 5 px module misses fitting by a single pixel row.
 [`Docs/QR.md`](Docs/QR.md) has that arithmetic and what it rules out.
 
-None of which says a camera reads it off this glass — see below, and
-[the tests' README](Tests/README.md).
+A camera does read it off this glass: Google Lens decodes the symbol clearly
+from the watch. That is a real scan rather than arithmetic, and it is the claim
+this section could not make until 0.4.0 was on a wrist — see
+[the tests' README](Tests/README.md) for what it does and does not cover.
 
 The table above is **alphabetic** ids, which is the pessimistic case. **Code 128
 Subset C** is implemented, and it prices a numeric character at 5,5 modules
@@ -646,12 +648,16 @@ Nothing here has seen a panel. The geometry tests can say a rectangle's corners
 are lit and what a module works out to in microns; they cannot say a scanner
 reads it.
 
-The QR side goes one step further than that and it is worth knowing exactly how
-far. A capture of the simulator's framebuffer decodes to the right id with zbar,
-an independent decoder, at the real 4 px module — so the pixels the renderer
-puts down are a correct, readable symbol end to end. That is still a
-pixel-perfect capture and not a camera photographing a reflective LCD through a
-polariser, which is the thing most likely to actually decide it.
+The QR side goes two steps further. A capture of the simulator's framebuffer
+decodes to the right id with zbar, an independent decoder, at the real 4 px
+module — so the pixels the renderer puts down are a correct, readable symbol end
+to end. And the symbol has been read off the watch itself: **Google Lens decodes
+it clearly** from the panel, which is the part no capture and no arithmetic could
+settle. One reader in one set of conditions, not a survey of scanning angles and
+lighting, but the question of whether this panel can carry a QR code is closed.
+
+The bars have had no equivalent test. Nothing here says a laser scanner reads a
+Code 128 symbol off this glass.
 
 ## Status
 

@@ -7,10 +7,13 @@ answers the product question, disagrees with three of the technical estimates,
 and records the decisions taken. **Agreed and built** -- see the end of the
 document for what was settled and by whom.
 
-**Nothing here has been put in front of a scanner or a camera.** Everything is
-arithmetic against `BarcodeLayout.hpp`, the QR Code capacity tables, and the
-panel datasheet, plus two things measured with a script in this repository. The
-places where a number is a guess are marked as guesses.
+**The design below was arithmetic; the result has since been scanned.** Every
+number here comes from `BarcodeLayout.hpp`, the QR Code capacity tables and the
+panel datasheet, plus measurements taken with scripts in this repository — and
+the places where a number is a guess are still marked as guesses. What changed
+after the build is the one thing none of that could settle: **Google Lens reads
+the finished symbol clearly off the watch.** §Evidence item 5 records what that
+covers and what it does not.
 
 ## The short version
 
@@ -35,6 +38,9 @@ places where a number is a guess are marked as guesses.
 5. **For parkrun, QR is a regression, and that has to be said out loud.** The
    funnel scanner cannot read it. This is an opt-in format for the codes that
    are scanned by a camera, and `Format::Code128` stays the default and stays 0.
+6. **A phone camera reads it off the glass.** Confirmed after the build, with
+   Google Lens, on the watch -- the one thing none of the arithmetic here could
+   settle. See §Evidence item 5 for what that does and does not cover.
 
 ## Is it wanted, and for what?
 
@@ -143,14 +149,18 @@ re-opening it to buy 25 % of X-dimension would mean re-measuring all of it.
 
 So the module is **4 px = 0.504 mm**, and the choice is version 1 or version 2.
 
-**Whether 0.504 mm scans is the one load-bearing thing I cannot answer.** I have
-not found a citable minimum module size for QR, and I have not checked whether
-ISO/IEC 18004 sets one — I would expect it to leave X-dimension to the
-application the way ISO/IEC 15417 does for Code 128, but I have not read it and
-am not going to assert it. What can be said is that 0.504 mm is four times the
-X-dimension this app already ships for its worst-case Code 128 id, and that the
-failure mode on this panel is far more likely to be specular glare off the front
-polariser than resolution. It needs a camera pointed at it. See §Evidence.
+**Whether 0.504 mm scans was the one load-bearing thing this document could not
+answer. It has since been answered: it does.** Google Lens reads the symbol
+clearly off the panel, on the watch, at this module size — see §Evidence item 5.
+
+The reasoning that got here still stands, because it is why the number was
+chosen rather than guessed: 0.504 mm is four times the X-dimension this app
+already ships for its worst-case Code 128 id, and the failure mode on a
+reflective LCD was always far more likely to be specular glare off the front
+polariser than resolution. No citable minimum module size for QR was found, and
+ISO/IEC 18004 was not read — the expectation was that it leaves X-dimension to
+the application the way ISO/IEC 15417 does for Code 128, but that is an
+expectation and was never asserted as fact.
 
 ### The cost the layout imposes: no name
 
@@ -468,13 +478,30 @@ invisible in it, and that has reached the watch twice. The mask comes from
 which yields a uniform image when the expression is malformed and makes every
 measurement read zero and look like a pass.
 
-**5. What still cannot be said.** None of the above is a camera photographing a
-reflective LCD through a front polariser. A pixel-perfect capture decoded by
-zbar is a much stronger claim than this app has ever made -- it is end to end
-through the real renderer at the real geometry -- and it is still not that. The
-predicted failure mode on this panel is specular glare, which no capture of the
-framebuffer can show. **0.504 mm modules on this glass have not been scanned by
-a phone**, and until they have, that is where this feature's risk lives.
+**5. A phone camera, on the glass. It reads.** Everything above stops at the
+framebuffer, and this app's docs have twice been wrong by trusting arithmetic
+over a measurement, so the honest position through the whole of this work was
+that the feature's risk lived here and nowhere else.
+
+**Google Lens reads the symbol clearly off the panel**, from 0.4.0 installed on
+the watch. That is the claim the arithmetic could not make: 0.504 mm modules on
+a reflective, normally-black LCD behind a front polariser, in ambient light,
+resolve to an ordinary phone camera. Specular glare was the predicted failure
+mode and it did not materialise.
+
+Recorded as exactly what it is and no more. One reader, one set of lighting
+conditions, one of the two QR codes on the watch. It is not a characterisation
+of the scanning envelope -- nobody has swept angle, distance or illumination --
+and it says nothing about any *other* decoder. What it does settle is the
+question this document opened with, which was whether the panel can carry a QR
+symbol at all.
+
+**What is still not verified**, and was never going to be by pointing a camera
+at it: whether parkrun's Virtual Volunteer accepts a QR-encoded athlete id.
+That is a question about payload validation in someone else's app, not about
+whether a symbol decodes -- see §"Is it wanted, and for what?". And a laser
+scanner still cannot read a matrix symbology, which is unchanged and is the
+whole reason `Code128` is the default.
 
 ## What was decided
 
