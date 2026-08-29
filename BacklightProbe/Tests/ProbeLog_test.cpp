@@ -86,16 +86,19 @@ TEST(ProbeLog, HeaderWarnsLoudlyWhenThereAreNoRegisters)
         << "a host-build results file must not be mistakable for a real run";
 }
 
-TEST(ProbeLog, HeaderWarnsWhenTheUnconfirmedTimerBasesAreEnabled)
+TEST(ProbeLog, HeaderRecordsWhetherTheTimerBlocksWereIncluded)
 {
+    // The bases used to be an inference and the header used to warn about them.
+    // They are confirmed against ST's CMSIS device header now, so the line says
+    // what was covered rather than what might fault.
     LogFixture f;
     f.log->header(0, true, 35, /*timersIncluded=*/true);
 
     const std::string out = f.text();
     EXPECT_TRUE(contains(out, "timers=Y"));
-    EXPECT_TRUE(contains(out, "UNCONFIRMED"));
-    // The diagnostic for a fault that cannot be caught in-app.
-    EXPECT_TRUE(contains(out, "last"));
+    EXPECT_TRUE(contains(out, "sweep_blocks=35"));
+    EXPECT_FALSE(contains(out, "UNCONFIRMED"))
+        << "still warning about bases that are no longer in doubt";
 }
 
 TEST(ProbeLog, ARequestRecordsBothWhatWentOutAndWhatCameBack)

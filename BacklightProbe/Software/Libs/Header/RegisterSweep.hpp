@@ -31,10 +31,15 @@
  * ## The timer blocks are opt-in, and that is not timidity
  *
  * Every base in the default set was read successfully on this unit by the prior
- * investigation. The timer bases have **not** been. They are inferred from the
- * classic STM32 APB1/APB2 layout, which is consistent with the I2C and SPI bases
- * already in the set but is not the same thing as having been confirmed against
- * RM0456 for this device group.
+ * investigation.
+ *
+ * The timer bases were originally inferred from the classic STM32 APB1/APB2
+ * layout and carried as unconfirmed. They are **confirmed** now, from ST's own
+ * CMSIS device header for this part
+ * (`STMicroelectronics/cmsis_device_u5`, `Include/stm32u5a5xx.h`), which gives
+ * `PERIPH_BASE_NS = 0x40000000` and `APB1PERIPH_BASE_NS = PERIPH_BASE_NS`, so
+ * `TIM3` is `0x40000400` and `TIM6` is `0x40001000`, exactly as guessed. The same
+ * header puts `GPIOF` at `0x42021400`, which is where this app measured it.
  *
  * That matters more here than it would elsewhere, because internal flash and
  * peripheral space are memory-mapped: a "read" is a pointer dereference, there
@@ -78,8 +83,9 @@ bool available();
  * @param label        Short, filename-safe. Becomes part of the path, so the
  *                     caller is responsible for it being sane; the plan's
  *                     labels are all lowercase and underscored.
- * @param includeTimers Read the unconfirmed timer bases as well. See the file
- *                     comment before setting this.
+ * @param includeTimers Read the timer blocks as well. Off by default only
+ *                     because they are not needed for the backlight question,
+ *                     not because the addresses are in doubt.
  * @return Whether the file was written whole. False on a host build, where
  *         there is nothing to sweep and pretending otherwise would put zeros on
  *         record as if they were measurements.

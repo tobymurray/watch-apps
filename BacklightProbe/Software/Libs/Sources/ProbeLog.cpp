@@ -90,9 +90,8 @@ void ProbeLog::header(uint32_t uptimeMs, bool registersAvailable, size_t sweepBl
         line("PRB WARNING nothing here says anything about real hardware.");
     }
     if (timersIncluded) {
-        line("PRB WARNING timer bases are UNCONFIRMED for this part. A base that");
-        line("PRB WARNING does not decode faults and takes the app down; the last");
-        line("PRB WARNING block named in a sweep file is then the one to blame.");
+        line("PRB timer blocks included. Their bases are confirmed against ST's");
+        line("PRB CMSIS device header, so this is coverage rather than a gamble.");
     }
 }
 

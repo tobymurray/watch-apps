@@ -95,13 +95,13 @@ constexpr SweepBlock kConfirmed[] = {
 };
 
 /**
- * The timer set. UNCONFIRMED: see RegisterSweep.hpp before enabling it.
+ * The timer set. Confirmed against ST's CMSIS device header for this part; see
+ * RegisterSweep.hpp.
  *
- * These are the classic STM32 APB1/APB2 timer bases. They are consistent with
- * the I2C1/SPI1/USART3 bases above, which are the same classic addresses and
- * are confirmed on this part, so the inference is reasonable. It is still an
- * inference, and on this MCU a base that does not decode is a HardFault rather
- * than an error return.
+ * Left out of the default sweep because the backlight question does not need
+ * them, not because the addresses are doubtful. They were carried as an
+ * inference from the classic STM32 APB1/APB2 layout until
+ * `cmsis_device_u5/Include/stm32u5a5xx.h` confirmed every one of them.
  *
  * Twenty words covers CR1(0), CR2(1), SMCR(2), DIER(3), SR(4), EGR(5),
  * CCMR1(6), CCMR2(7), CCER(8), CNT(9), PSC(10), ARR(11), RCR(12), CCR1(13),
@@ -230,7 +230,7 @@ bool write(const SDK::Kernel& kernel, const char* label, bool includeTimers)
     char header[96];
     const int hn = std::snprintf(header, sizeof(header), "# sweep %s blocks=%u%s\n", label,
                                  static_cast<unsigned>(kConfirmedCount + (includeTimers ? kTimerCount : 0)),
-                                 includeTimers ? " (incl. UNCONFIRMED timer bases)" : "");
+                                 includeTimers ? " (incl. timer blocks)" : "");
     size_t bw = 0;
     if (hn > 0) {
         f->write(header, static_cast<size_t>(hn), bw);

@@ -137,24 +137,22 @@ That last point is the boundary. If the sweep ends up showing a timer channel
 behind the light, driving it directly is a different category of thing and does
 not belong in this app.
 
-## The timer bases are opt-in, and that is not timidity
+## The timer bases are opt-in, but they are not a gamble
 
 Every base in the default sweep was read successfully on this unit by the
-2026-07-29 investigation. The **timer** bases have not been. They are inferred
-from the classic STM32 APB1/APB2 layout: consistent with the I2C and SPI bases
-already in the set, which are the same classic addresses and are confirmed here,
-but an inference is not a confirmation for this device group.
+2026-07-29 investigation. The **timer** bases were originally carried as an
+inference from the classic STM32 APB1/APB2 layout, and are now **confirmed**
+against ST's own CMSIS device header for this part
+([`cmsis_device_u5`](https://github.com/STMicroelectronics/cmsis_device_u5),
+`Include/stm32u5a5xx.h`): `PERIPH_BASE_NS` is `0x40000000` and
+`APB1PERIPH_BASE_NS` equals it, so `TIM3` is `0x40000400` and `TIM6` is
+`0x40001000`, exactly as guessed. The same header puts `GPIOF` at `0x42021400`,
+which is where this app measured it.
 
-That matters more than usual because peripheral space is memory-mapped: a read is
-a pointer dereference, there is no call that can fail, and an address that does
-not decode raises a BusFault which escalates to a HardFault and takes the app
-down. It cannot be caught.
-
-So the default run sweeps only the confirmed set, and that is enough for the
-question that matters: the GPIO diff already says whether the pin is a plain
-output or an alternate function, which is the coarse form of "can this hardware
-dim at all". Timer registers only refine it, by giving the `CCRx`/`ARR` pair once
-a timer is identified.
+They stay out of the default sweep because the backlight question does not need
+them, not because the addresses are doubtful: the GPIO diff already says whether
+the pin is a plain output or an alternate function, which is the coarse form of
+"can this hardware dim at all".
 
 To enable them for a second run, drop an empty file named `sweep_timers.enable`
 into `Apps/BacklightProbe/` over USB. A marker file rather than a parsed config:
@@ -165,8 +163,6 @@ Blocks are written and flushed in order, so a run that does fault has committed
 everything up to the block that killed it, and the last block named in the file
 is then the one to blame. That is the only diagnostic available for a fault
 nothing can catch.
-
-**Check the bases against RM0456 before enabling this.**
 
 ## Running it
 
