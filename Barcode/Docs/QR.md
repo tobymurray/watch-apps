@@ -37,7 +37,8 @@ covers and what it does not.
    name.
 5. **For parkrun, QR is a regression, and that has to be said out loud.** The
    funnel scanner cannot read it. This is an opt-in format for the codes that
-   are scanned by a camera, and `Format::Code128` stays the default and stays 0.
+   are read by an imaging scanner, and `Format::Code128` stays the default and
+   stays 0 because it is the one that reads either way.
 6. **A phone camera reads it off the glass.** Confirmed after the build, with
    Google Lens, on the watch -- the one thing none of the arithmetic here could
    settle. See §Evidence item 5 for what that does and does not cover.
@@ -67,11 +68,19 @@ use on Apple Watch at finish funnels; and
 [the5krunner](https://the5krunner.com/2022/04/22/a-parkrun-barcode-on-your-garmin-or-apple-watch-parkrun-phone-apps/)
 states flatly that "the parkrun scanning machines will also correctly scan a QR
 code". That last claim cannot be true of the Opticon, which is the tell: what is
-really being reported is that the *camera* route works.
+really being reported is that the *imaging* route works.
+
+**The split is laser against imager, not phone against not-phone.** An earlier
+draft of this document kept saying "QR needs a camera", which is loose enough to
+be wrong: a laser sweeps a line and cannot read a grid, but any imaging
+scanner takes a picture and decodes both symbologies, and most modern handhelds
+are imagers rather than lasers. Phones are one kind of imager and not a special
+one. What makes parkrun's funnel device the awkward case is specifically that
+the OPN-2001 is a *laser* engine, not that it is not a phone.
 
 So the parkrun answer is settled without needing the unverified bit:
 
-| | laser funnel scanner | Virtual Volunteer camera |
+| | laser funnel scanner | Virtual Volunteer (an imager) |
 | --- | --- | --- |
 | Code 128 | reads it | reads it |
 | QR | **cannot** | probably, unconfirmed |
@@ -87,9 +96,9 @@ people are scanned from them at funnels every week. Whatever the Opticon can do,
 the camera route is in routine use and it is what a watch gets scanned by.
 
 So both are true, and the conclusion is the same either way: **QR is opt-in, per
-code, and Code 128 stays the default.** A wearer who knows their event scans by
-phone can pick QR; a wearer who does not, or who does not care, keeps the format
-that both devices read.
+code, and Code 128 stays the default.** A wearer who knows their event scans
+with an imager can pick QR; a wearer who does not, or who does not care, keeps
+the format that reads either way.
 
 ### Then what is QR for?
 
@@ -309,7 +318,7 @@ Why these values:
   smaller symbol that we would not draw. So there is **no mode selection at all**,
   which is a whole decision tree that does not get written or tested.
 - **Version 2, not 1.** Both fit at a 4 px module (132 px vs 116 px), so the
-  module size — the only number that decides whether a camera resolves it — is
+  module size — the only number that decides whether a scanner resolves it — is
   identical. Version 2 buys level M instead of level L.
 - **Level M, not L.** At version 1 the choice is forced: V1-M holds 14 bytes in
   byte mode, which cannot carry a 16-character id, so version 1 means level L.

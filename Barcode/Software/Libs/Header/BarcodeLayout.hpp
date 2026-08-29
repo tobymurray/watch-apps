@@ -214,13 +214,13 @@ constexpr int16_t kQrInkY = kQrY + kQrQuietModules * kQrModulePx;
  * symbology -- quiet zones in modules, whether a module boundary lands on a
  * pixel -- and for a matrix symbology at a whole-pixel module most of them are
  * either constant or meaningless. What is left is the one number that decides
- * whether a camera can read it.
+ * whether a scanner can resolve it.
  */
 struct QrScannability
 {
     int16_t modulePx = kQrModulePx;
 
-    /// The module as a physical size. The only figure here that a camera cares
+    /// The module as a physical size. The only figure here that a scanner cares
     /// about, and the one no amount of rendering work changes.
     constexpr int32_t moduleMicrons() const
     {

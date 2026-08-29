@@ -278,7 +278,8 @@ Three things this section got wrong:
 
 What this section got right about the product, and what changed: QR and Code 128
 are indeed not substitutes, and the asymmetry runs one way. A laser funnel
-scanner reads Code 128 and cannot read QR at all; a camera reads both. So QR is
+scanner reads Code 128 and cannot read QR at all; an *imaging* scanner reads
+both, and most modern handhelds are imagers rather than lasers. So QR is
 opt-in per code, `Format::Code128` stays 0 and stays the default, and the
 "two apps sharing a config file" worry does not apply — because the thing built
 is a second way to draw *the same sixteen-character id*, not a way to carry a

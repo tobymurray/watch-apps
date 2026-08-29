@@ -7,7 +7,8 @@ when you install this one, and the watch reads them at launch.
 Each code can be drawn as a **QR code** instead, per code — a `Code128` /
 `QRCode` toggle on the phone form. That defaults to `Code128` and should stay
 there unless you know better: a laser scanner — the kind at a parkrun finish
-funnel — cannot read a QR code at all, while every scanner reads Code 128. See
+funnel — cannot read a QR code at all, while every scanner reads Code 128. An
+*imaging* scanner reads both, and most modern handhelds are imagers. See
 [Which format](#which-format).
 
 It holds **up to six**, so a parent can carry the whole family's parkrun IDs and
@@ -114,21 +115,28 @@ two words for one format is a wart, and the watch tells you what to use.
 written before this existed keeps working and keeps meaning what it meant.
 There are tests for that and for a row that has been emptied by hand.
 
-Which to pick is a question about whatever is going to scan it, and the answer
-is asymmetric:
+Which to pick is a question about whatever is going to scan it, and the split is
+not phone against not-phone — it is **laser against imager**:
 
-| | laser scanner | phone camera |
+| | laser scanner | imaging scanner |
 | --- | --- | --- |
 | Code 128 | reads it | reads it |
-| QR | **cannot** | yes |
+| QR | **cannot** | reads it |
 
-So Code 128 is the safe default and QR is for a code you know is scanned by a
-camera. parkrun's funnel device is an Opticon OPN-2001, whose vendor material
-describes a laser engine; a laser sweeps a line and there is no mechanism by
-which it reads a grid. parkrun's camera-based Virtual Volunteer app is a
-different matter — Apple Wallet parkrun passes are QR and are scanned from
-watches every week — so if you know your event scans with a phone, `QRCode` is a
-real option. If you do not know, leave it on `Code128`.
+A laser sweeps a line, so there is no mechanism by which it reads a grid. An
+imaging scanner takes a picture and decodes it, so it reads both — and that is
+not exclusive to phones. Most modern handheld scanners are 2D imagers, as are
+self-checkout and ticket-gate readers, and they handle QR perfectly well.
+
+So Code 128 is the safe default because it works either way, and `QRCode` is for
+a code you know is read by an imager. If you do not know, leave it on
+`Code128`; you lose nothing but module size.
+
+parkrun is the case this app was built for and it has one of each. The funnel
+device is an Opticon OPN-2001, whose vendor material describes a laser engine —
+that one cannot read QR. The Virtual Volunteer app scans with a phone camera,
+and Apple Wallet parkrun passes are QR and are scanned from watches every week.
+So if you know your event scans with the app, `QRCode` is a real option.
 
 What QR buys, where it works, is **module size**. A 16-character alphanumeric id
 is Code 128's worst case here: 211 modules across 200 px, a 119 µm X-dimension.
@@ -141,7 +149,7 @@ Two things a QR code costs, both deliberate:
 - **It shows no name.** The symbol has to end above the id row and be a whole
   number of pixels per module, which puts it over the band the caption uses.
   Every size that would clear the caption is smaller, and module size is the
-  number that decides whether a camera can read it. The id text and the pager
+  number that decides whether a scanner can resolve it. The id text and the pager
   marks still say which code you are looking at.
 - **The id limit does not change.** Still 1 to 16 characters. QR could hold a
   URL; six of those would not fit in the message the service sends the screen,
