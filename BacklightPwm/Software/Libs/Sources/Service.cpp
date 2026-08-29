@@ -498,9 +498,6 @@ void Service::handleStart()
     if (mLog) {
         mLog->header(mKernel.sys.getTimeMs(), true, mClock.cyclesPerUs(), Pwm::kPeriodUs,
                      Pwm::kPeriodsPerBurst, ladderCount());
-        if (mUseDma) {
-            mLog->dmaHeader(mDma.timerKhz(), mDma.timerIndex(), mDma.channelIndex());
-        }
     }
 
     // Put the kernel's own state machine into "on" first, so it is not trying to
@@ -518,6 +515,11 @@ void Service::handleStart()
             mDriving = false;
             publish();
             return;
+        }
+        // Written after the start, not with the rest of the header: the timer's
+        // clock is not known until the start measures it.
+        if (mLog) {
+            mLog->dmaHeader(mDma.timerKhz(), mDma.timerIndex(), mDma.channelIndex());
         }
     }
 
