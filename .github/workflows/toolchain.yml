@@ -31,9 +31,10 @@ jobs:
     name: Build the image
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      # Effective only for same-repository events; a fork pull request gets a
-      # read-only token whatever this says. The push step is gated separately.
+      # write is for the pin-update commit below, effective only for
+      # same-repository events; a fork pull request gets a read-only token
+      # whatever this says. Both write steps are gated separately regardless.
+      contents: write
       packages: write
     steps:
       - uses: actions/checkout@v7
@@ -87,15 +88,54 @@ jobs:
           echo "rust targets:"
           docker run --rm --entrypoint rustup "$image" target list --installed
 
-      - name: Say what to pin
+      # This is the fix for the failure mode that cost a whole investigation to
+      # diagnose: this repository depended on kira-toolchain's pin, kira moved
+      # its own tag without moving its own pin, and nothing caught the two
+      # falling out of sync until a build broke. The lesson taken from that
+      # was not "remember to update the pin" -- a human remembering is exactly
+      # what already failed once -- it is that app-build.yml's pin should
+      # never be a second copy of this digest for a human to keep in step at
+      # all. This step is what keeps that true: app-build.yml is patched and
+      # pushed here, in the same run that published the image the digest
+      # describes, so the two cannot disagree for longer than one commit.
+      - name: Keep app-build.yml's pin in sync
         if: github.event_name != 'pull_request'
         run: |
+          set -euo pipefail
+          digest="${{ steps.build.outputs.digest }}"
+          image="${{ env.IMAGE }}@${digest}"
+          file=".github/workflows/app-build.yml"
+
+          if grep -qF "$image" "$file"; then
+            echo "### Toolchain image published" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            echo "\`$image\` -- \`$file\` already pins it, nothing to update." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # -E, not -e: the digest is 64 hex characters, always literal, never
+          # a regex metacharacter -- but the replacement text is one Docker
+          # never chose to keep short, and matching only *some* image
+          # references and not others because of an unescaped dot would be a
+          # worse bug than the one this step exists to prevent.
+          sed -i -E "s#watch-apps-toolchain@sha256:[0-9a-f]{64}#watch-apps-toolchain@${digest}#g" "$file"
+
+          if git diff --quiet -- "$file"; then
+            echo "::error::sed matched nothing in $file -- has its image reference changed shape?"
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$file"
+          commit_msg=$(printf 'ci: repin app-build.yml to the toolchain image just published\n\n%s\n\nWritten by toolchain.yml, not by hand: the failure this replaces was two\ncopies of a digest that only a human kept in step, and the human missed\none. There is still only one copy after this commit; this is just the\nstep that copies it, promptly and every time.' "$image")
+          git commit -m "$commit_msg"
+          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:main
+
           {
             echo "### Toolchain image published"
             echo
-            echo '```'
-            echo "${{ env.IMAGE }}@${{ steps.build.outputs.digest }}"
-            echo '```'
+            echo "\`$image\`"
             echo
-            echo "Set \`TOOLCHAIN\` in \`app-build.yml\` to this."
+            echo "Pinned in \`$file\` by this run: $(git rev-parse HEAD)"
           } >> "$GITHUB_STEP_SUMMARY"

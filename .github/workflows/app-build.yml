@@ -94,11 +94,11 @@ jobs:
           persist-credentials: false
           path: sdk
 
-      # The image carries cmake, make, git, python3 and the ARM toolchain
-      # already, and the digest pin means that cannot drift. Only the packer's
-      # own dependencies are missing.
-      - name: Install the packer's requirements
-        run: python3 -m pip install --break-system-packages -q -r sdk/Utilities/Scripts/app_packer/requirements.txt
+      # No separate "install the packer's requirements" step: toolchain/Dockerfile
+      # installs pyelftools and Pillow via apt, so the image already satisfies
+      # sdk/Utilities/Scripts/app_packer/requirements.txt. A pip step doing that
+      # again was left over from depending on kira's image, which does the same
+      # thing kira's own app-binaries.yml still does redundantly.
 
       - name: Work out what this app has
         id: app
