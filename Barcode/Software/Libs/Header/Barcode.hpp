@@ -135,6 +135,7 @@ enum class Problem : uint8_t {
     BadFormat,     ///< Codes were supplied, but none names a format this app draws.
     BadDigitCount, ///< A digit-only format's id was empty, odd, or over-length.
     BadCharacters, ///< A digit-only format's id held a character other than 0-9.
+    BadWhitespace, ///< An id began or ended with a space.
 };
 
 /**

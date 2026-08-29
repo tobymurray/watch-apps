@@ -169,6 +169,11 @@ const Prompt &promptFor(Barcode::Problem problem)
     // fix it, and this says which.
     static const Prompt kBadDigitCount = {{ "ITF needs an", "even count of", "digits, 2 to 16", "" }};
     static const Prompt kBadCharacters = {{ "ITF only draws", "digits 0-9", "", "" }};
+    // Every format accepts a space -- it is ordinary printable ASCII -- so
+    // this is not "that ID cannot be drawn" and does not share its words: a
+    // wearer who sees "1-16 plain characters" would have no reason to
+    // suspect a space they cannot even see on the phone form.
+    static const Prompt kBadWhitespace = {{ "That ID starts", "or ends with a", "space, remove it", "" }};
 
     switch (problem) {
     case Barcode::Problem::NoValue:  return kNoValue;
@@ -176,6 +181,7 @@ const Prompt &promptFor(Barcode::Problem problem)
     case Barcode::Problem::BadValue: return kBadValue;
     case Barcode::Problem::BadDigitCount: return kBadDigitCount;
     case Barcode::Problem::BadCharacters: return kBadCharacters;
+    case Barcode::Problem::BadWhitespace: return kBadWhitespace;
     case Barcode::Problem::BadFormat: {
         // Only reachable from a hand-edited input.json: the phone's pattern
         // offers nothing else. It still gets its own words, because "that ID

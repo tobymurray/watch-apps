@@ -181,6 +181,14 @@ scans as someone else's number is the one genuinely harmful thing this app could
 do. Keeping that true through the migration took a deliberate trick; see
 [Concessions](#concessions).
 
+**A leading or trailing space is refused too**, even though a space is itself
+one of those 1-16 printable ASCII characters. It is invisible on the phone
+form and easy to leave behind when an id is copied out of a spreadsheet cell
+or a PDF, and every symbology here draws it as a real character rather than
+ignoring it — so a trailing space is not a smaller mistake than a wrong digit,
+it is a barcode that scans as a *different* id with nothing on screen to show
+why. A space in the middle of an id is unaffected.
+
 ### Changing it later
 
 Edit it on the phone, or overwrite `input.json` and relaunch. The app re-reads

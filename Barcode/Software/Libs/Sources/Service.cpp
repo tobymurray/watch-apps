@@ -150,6 +150,21 @@ Service::Adopted Service::adoptCode(size_t index, Barcode::Code &out) const
         return Adopted::BadValue;
     }
 
+    // Checked ahead of the format, and ahead of the encoder, because it is not
+    // a rule about what any symbology can carry -- a space is ordinary
+    // printable ASCII, and Code128::encode() and Qr::encode() both draw one
+    // without complaint. It is a rule about what a *typed* id looks like: a
+    // leading or trailing space is copy-paste residue from a spreadsheet cell
+    // or a PDF, never a character somebody meant to be part of their id, and
+    // an encoder that draws it anyway produces a barcode that scans as a
+    // different id than the one on screen -- the exact harm Barcode.hpp is
+    // about, and the one case in this app where a *valid* character still
+    // needed refusing.
+    if (raw[0] == ' ' || raw[length - 1] == ' ') {
+        LOG_WARNING("%s starts or ends with a space\n", BarcodeConfig::idField(index));
+        return Adopted::BadWhitespace;
+    }
+
     // Which symbology to draw it as: "Code128" or "QRCode", either case. The
     // declared default is the literal "Code128", so a key missing from the file
     // reads as that and an input.json written before this field existed keeps
@@ -221,6 +236,7 @@ void Service::adopt()
     bool anyBadFormat     = false;  // a slot named a format this app does not draw
     bool anyBadDigitCount = false;  // a digit-only format's id was the wrong length
     bool anyBadCharacters = false;  // a digit-only format's id held a non-digit
+    bool anyBadWhitespace = false;  // a slot's id began or ended with a space
 
     for (size_t i = 0; i < Barcode::kMaxCodes; i++) {
         if (mConfig->has(BarcodeConfig::idField(i))) {
@@ -245,6 +261,9 @@ void Service::adopt()
         case Adopted::BadCharacters:
             anyBadCharacters = true;
             break;
+        case Adopted::BadWhitespace:
+            anyBadWhitespace = true;
+            break;
         case Adopted::Empty:
             break;
         }
@@ -267,6 +286,14 @@ void Service::adopt()
         mState = Barcode::makeUnsetState(Barcode::Problem::BadCharacters);
     } else if (anyBadDigitCount) {
         mState = Barcode::makeUnsetState(Barcode::Problem::BadDigitCount);
+    } else if (anyBadWhitespace) {
+        // Just as specific as the two above -- adoptCode() catches it before
+        // it ever reaches a format -- but ranked after them because a stray
+        // letter or a wrong digit count is evidence of a typo in the id
+        // itself, where a leading or trailing space is almost always residue
+        // from wherever the id was copied from rather than a mistake in the
+        // id as typed.
+        mState = Barcode::makeUnsetState(Barcode::Problem::BadWhitespace);
     } else if (anyBadValue) {
         // Reported ahead of a bad format when both are present: an id that
         // cannot be drawn is the fault the wearer is more likely to have made

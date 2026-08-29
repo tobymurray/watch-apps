@@ -274,6 +274,64 @@ TEST(Service, BadCharactersOutranksBadDigitCountAcrossSlots)
     EXPECT_EQ(h.publishedCount(0), 0);
 }
 
+TEST(Service, ALeadingSpacePublishesBadWhitespace)
+{
+    // A space is ordinary printable ASCII and Code128::encode() draws it
+    // without complaint, so this is not something isDrawable() catches --
+    // it has to be refused before the encoder ever sees it.
+    Harness h;
+    h.seed(document(" A1234567"));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::BadWhitespace);
+    EXPECT_EQ(h.publishedCount(0), 0);
+}
+
+TEST(Service, ATrailingSpacePublishesBadWhitespaceForQrToo)
+{
+    Harness h;
+    h.seed(BarcodeTest::documentWithFormats({"A1234567 "}, {"QRCode"}));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::BadWhitespace);
+    EXPECT_EQ(h.publishedCount(0), 0);
+}
+
+TEST(Service, ASpaceInTheMiddleOfAnIdIsUnaffected)
+{
+    // The rule is about the edges, not the character: a space folded into the
+    // middle of an id is exactly as much a real character there as anywhere
+    // else Code128 and QR already draw one.
+    Harness h;
+    h.seed(document("A123 4567"));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::None);
+    EXPECT_EQ(h.publishedId(0), "A123 4567");
+}
+
+TEST(Service, BadWhitespaceOutranksTheGenericBadValue)
+{
+    Harness h;
+    h.seed(BarcodeTest::documentWithFormats({"01234567890123456", " A1234567"}, {"", ""}));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::BadWhitespace);
+    EXPECT_EQ(h.publishedCount(0), 0);
+}
+
 TEST(Service, QrAddsNoNewWayForAnIdToBeRefused)
 {
     // Qr::kMaxDataLength is 26 and an id is at most 16, so every id Code 128
