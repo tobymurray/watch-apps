@@ -1,0 +1,101 @@
+name: Toolchain image
+
+# Builds and publishes the container every app in this repository is compiled
+# in, to this repository's own package -- so app-build.yml's pull needs no
+# grant on anyone else's package, only on this repository's own, which a
+# same-repository workflow always has.
+#
+# Copied from tobymurray/kira's toolchain.yml, publishing to this repository's
+# own image instead of depending on kira's.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "toolchain/Dockerfile"
+      - ".github/workflows/toolchain.yml"
+  pull_request:
+    paths:
+      - "toolchain/Dockerfile"
+      - ".github/workflows/toolchain.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/watch-apps-toolchain
+
+jobs:
+  build:
+    name: Build the image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Effective only for same-repository events; a fork pull request gets a
+      # read-only token whatever this says. The push step is gated separately.
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: toolchain
+          push: ${{ github.event_name != 'pull_request' }}
+          # Loaded locally either way, so the checks below run against the image
+          # that was just built rather than against whatever the tag resolves to.
+          load: true
+          tags: ${{ env.IMAGE }}:latest
+          # Off deliberately: attaching a provenance manifest changes the image
+          # index digest, and app-build.yml pins that digest -- turning this on
+          # would move it out from under every recipe that names it, for a
+          # provenance claim about the image rather than about a built .uapp.
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check the tools are all there
+        run: |
+          # No pipefail: some of these are wrapper scripts that write to stderr
+          # and do not like having their stdout closed early by head.
+          set -eu
+          image="${{ env.IMAGE }}:latest"
+          missing=0
+          for tool in arm-none-eabi-gcc arm-none-eabi-g++ make cmake cargo rustc git python3 jq; do
+            printf '%-20s ' "$tool"
+            if out=$(docker run --rm --entrypoint "$tool" "$image" --version 2>&1); then
+              echo "$out" | grep -v "environment-setup" | head -1
+            else
+              echo "MISSING"
+              missing=$((missing + 1))
+            fi
+          done
+          [ "$missing" -eq 0 ]
+          echo "rust targets:"
+          docker run --rm --entrypoint rustup "$image" target list --installed
+
+      - name: Say what to pin
+        if: github.event_name != 'pull_request'
+        run: |
+          {
+            echo "### Toolchain image published"
+            echo
+            echo '```'
+            echo "${{ env.IMAGE }}@${{ steps.build.outputs.digest }}"
+            echo '```'
+            echo
+            echo "Set \`TOOLCHAIN\` in \`app-build.yml\` to this."
+          } >> "$GITHUB_STEP_SUMMARY"
