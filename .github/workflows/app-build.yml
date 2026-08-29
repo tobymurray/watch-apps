@@ -173,8 +173,22 @@ jobs:
           cmake --build build -j"$(nproc)" | tee /tmp/build.log
           popd > /dev/null
 
-          uapp=$(find "apps/${{ inputs.app }}" -name "*_${version}.uapp" | head -n 1)
+          # The packer writes the image twice, into the build directory and into
+          # the app's Output/. Output/ is the one the repository treats as the
+          # artifact, so prefer it rather than letting find's order decide.
+          app_dir="apps/${{ inputs.app }}"
+          uapp=$(find "$app_dir/Output" -name "*_${version}.uapp" 2>/dev/null | head -n 1)
+          [ -n "$uapp" ] || uapp=$(find "$app_dir" -name "*_${version}.uapp" | head -n 1)
           [ -n "$uapp" ] || { echo "::error::the build produced no .uapp for $version"; exit 1; }
+
+          # Staged into one flat directory so the download is the two files
+          # somebody actually wants, rather than them buried four levels down a
+          # build tree that only means something inside this job.
+          stage="$GITHUB_WORKSPACE/artifact"
+          mkdir -p "$stage"
+          cp "$uapp" "$stage/"
+          manifest="${{ steps.app.outputs.manifest }}"
+          [ -n "$manifest" ] && cp "$manifest" "$stage/"
 
           # The packer prints these and the repository's release tags record them,
           # so a run is a place to look them up rather than a reason to rebuild.
@@ -183,7 +197,9 @@ jobs:
             echo "uapp=$uapp"
             echo "crc=$crc"
             echo "bytes=$(stat -c %s "$uapp")"
+            echo "stage=artifact"
           } >> "$GITHUB_OUTPUT"
+          echo "staged: $(ls "$stage")"
 
       - name: Summary
         if: always() && steps.uapp.outputs.uapp != ''
@@ -208,7 +224,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.app }}-${{ steps.app.outputs.version }}
-          path: |
-            ${{ steps.uapp.outputs.uapp }}
-            ${{ steps.app.outputs.manifest }}
+          path: ${{ steps.uapp.outputs.stage }}
           if-no-files-found: error
