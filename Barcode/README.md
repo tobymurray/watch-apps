@@ -43,7 +43,8 @@ a real loss — see [Concessions](#concessions).
 ### From the phone
 
 The app declares six numbered slots, so the UNA app asks for them while it
-installs — a flat list of eighteen rows, an ID, a name and a format per code:
+installs — a flat list of eighteen rows, an ID, a name and a format per code,
+plus one more that applies to all of them:
 
 > **Code 1 ID** — The value encoded in the barcode: a parkrun athlete ID, a
 > membership number, a transit pass. Copy it exactly — case matters. This is the
@@ -53,6 +54,10 @@ installs — a flat list of eighteen rows, an ID, a name and a format per code:
 > **Code 1 format** — `Code128`, `QRCode` or `ITF`. See
 > [Which format](#which-format).
 > … and so on to Code 6.
+> **Boost backlight** — On by default. Turns the backlight on for a short while
+> whenever the watch has a code to show, so a scanner has light to read it by —
+> see [Boosting the backlight](#boosting-the-backlight). One switch for all six
+> codes, not one per code.
 
 Only **Code 1** is required; the rest are left empty unless you want them. The
 names are what the watch shows above the bars, so `Sam` beats `Code 3` when you
@@ -363,18 +368,22 @@ thing the GUI does alone: it already has every code, so `L1`/`L2` never round-tr
 `Barcode::kMaxCodes` is the single number. The service loop, the message, the
 screen and the cycling are all written against it, so **no logic changes** — but
 the *declaration* is per-field by construction, so raising it means adding an
-`idN`/`nameN` pair in two places: `configFields` in `app-manifest.json`, and
-`kFields` in `AppConfigFields.cpp`. (The SDK's `--check-bounds` reads that table
-as text and rejects named constants, so it cannot be generated from a loop.)
+`idN`/`nameN`/`fmtN` triple in two places: `configFields` in `app-manifest.json`,
+and `kFields` in `AppConfigFields.cpp`. (The SDK's `--check-bounds` reads that
+table as text and rejects named constants, so it cannot be generated from a
+loop.)
 
 Two `static_assert`s make a mismatch a build error rather than a silent bug:
 
-- `AppConfigFields.cpp` fails if the table is not `kMaxCodes * 2` entries
+- `AppConfigFields.cpp` fails if the table is not `kMaxCodes * kFieldsPerCode + 1`
+  entries — three per code, plus the one `boostBacklight` setting every code
+  shares
 - `Commands.hpp` fails if a full state no longer fits a 256-byte message block
 
 **Seven is the ceiling**, and it is that second assert that sets it — not the
-SDK's 32-field limit, which would allow sixteen. A `Code` is 30 bytes and a
-`State` is 182 at six; eight would overrun the pool block.
+SDK's 32-field limit, which (with `boostBacklight` taking one of the 32) would
+allow ten. A `Code` is 30 bytes and a `State` is 182 at six; eight would
+overrun the pool block.
 
 `app-manifest.json` never reaches the watch, so the binary carries its own copy
 of what it declared. The two must agree, and CI is what makes sure they do:
@@ -582,6 +591,24 @@ more digit.
 Being reflective rather than emissive cuts both ways for scanning: contrast in
 daylight is paper-like, which is ideal, and in a dim room without the front light
 there is nothing to read at all.
+
+## Boosting the backlight
+
+That last sentence is the reason **Boost backlight** exists, and it is on by
+default. Whenever the watch has a code to show — at launch, and every time you
+reopen the app — the app asks the kernel for the backlight at full brightness
+for 30 seconds, through the same `SDK::Message::RequestBacklightSet` request
+[`Squash`](../Squash) uses for its own on-screen cues. That covers raising your
+wrist, being read, and cycling to a second code if you carry more than one; it
+does not relight itself on a bare button press, so cycling past the 30 second
+mark with the app still open goes back to however the watch would otherwise
+have lit the screen.
+
+It is one setting for all six codes, not one per code — there is only one
+panel, and whether it needs help being read does not depend on which code is
+on it. Turn it off if you would rather the watch behaved exactly as it does
+without this app: `boostBacklight` is a plain `bool` field, so unlike the id
+and format fields there is nothing to mistype.
 
 ## Buttons
 

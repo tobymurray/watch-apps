@@ -94,6 +94,14 @@ private:
     /// Turn whatever the configuration currently holds into a publishable state.
     void adopt();
 
+    /// Ask the kernel to light the backlight, if `boostBacklight` is set and
+    /// there is a code to show it for. Called from adopt() rather than from
+    /// the GUI, which never talks to the kernel directly in this app -- every
+    /// path that can put a code on screen (launch, resume, a file that
+    /// changed) already runs through adopt(), so this is the one place that
+    /// needs to ask.
+    void boostBacklight() const;
+
     void publish();
 };
 

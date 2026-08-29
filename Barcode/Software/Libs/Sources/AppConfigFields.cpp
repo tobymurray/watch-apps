@@ -37,6 +37,10 @@ using SDK::AppConfig;
 // TO ADD A CODE: raise Barcode::kMaxCodes, add an "idN"/"nameN"/"fmtN" triple
 // here and the matching triple to app-manifest.json. The static_asserts below
 // and in Commands.hpp fail the build if the three ever disagree.
+//
+// boostBacklight is last and alone: one setting for every code rather than a
+// fourth per-code field, so it is not part of the kMaxCodes * kFieldsPerCode
+// count below and gets its own +1.
 const AppConfig::Field kFields[] = {
     AppConfig::stringField("id1", "", 0, 17),
     AppConfig::stringField("name1", "", 0, 12),
@@ -56,13 +60,15 @@ const AppConfig::Field kFields[] = {
     AppConfig::stringField("id6", "", 0, 17),
     AppConfig::stringField("name6", "", 0, 12),
     AppConfig::stringField("fmt6", "Code128", 0, 8),
+    AppConfig::boolField("boostBacklight", true),
 };
 
 const size_t kFieldCount = sizeof(kFields) / sizeof(kFields[0]);
 
 static_assert(sizeof(kFields) / sizeof(kFields[0])
-                  == Barcode::kMaxCodes * kFieldsPerCode,
+                  == Barcode::kMaxCodes * kFieldsPerCode + 1,
               "the field table must hold one id, one name and one format per "
-              "code -- raise or lower it to match Barcode::kMaxCodes");
+              "code plus the single boostBacklight setting -- raise or lower "
+              "it to match Barcode::kMaxCodes");
 
 } // namespace BarcodeConfig

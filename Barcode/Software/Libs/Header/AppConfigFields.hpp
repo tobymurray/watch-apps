@@ -26,7 +26,11 @@
  * THE TABLE IS ORDERED, AND THE ORDER IS THE CONTRACT: three entries per
  * code -- id, then name, then format -- so code `i` starts at
  * `kFields[kFieldsPerCode * i]`. Nothing else needs to know the field names,
- * which is why there is no second list of them to drift out of step.
+ * which is why there is no second list of them to drift out of step. One
+ * more entry follows the last code's triple: `boostBacklight`, a single
+ * setting for all six codes rather than a per-code one, which is why it is
+ * not part of the `kFieldsPerCode * i` scheme above and sits at a fixed
+ * index instead.
  *
  ******************************************************************************
  */
@@ -72,6 +76,14 @@ inline const char *nameField(size_t index)
 inline const char *formatField(size_t index)
 {
     return kFields[index * kFieldsPerCode + 2].id;
+}
+
+/// Field id for the one setting that applies to every code, not just one --
+/// see the ordering note above for why it is not reached through
+/// kFieldsPerCode like the other three.
+inline const char *boostBacklightField()
+{
+    return kFields[Barcode::kMaxCodes * kFieldsPerCode].id;
 }
 
 } // namespace BarcodeConfig

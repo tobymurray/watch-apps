@@ -5,11 +5,22 @@
 #include "AppConfigFields.hpp"
 #include "Symbology.hpp"
 
+#include "SDK/Messages/CommandMessages.hpp"
+#include "SDK/Messages/MessageGuard.hpp"
+
 #define LOG_MODULE_PRX      "Service"
 #define LOG_MODULE_LEVEL    LOG_LEVEL_INFO
 #include "SDK/UnaLogger/Logger.h"
 
 static constexpr uint32_t kWaitForever = 0xFFFFFFFF;
+
+/// How long the boosted backlight stays on past this publish, in milliseconds.
+/// One deliberate constant rather than a config field: long enough to raise a
+/// wrist, glance at the code, get scanned, and cycle to a second family
+/// member's code without it going dark mid-look, short enough that leaving
+/// the app open in a pocket does not pin the backlight on for the rest of the
+/// activity.
+static constexpr uint32_t kBacklightBoostMs = 30000;
 
 // The encoder's limit and the id buffer's are the same number in two headers,
 // and adopt() relies on that for memory safety: it copies only after the
@@ -275,6 +286,7 @@ void Service::adopt()
         // file, and hiding the codes that work would be the wrong trade.
         LOG_INFO("Using %u code(s) from %s\n",
                  static_cast<unsigned>(next.count), BarcodeConfig::kConfigFile);
+        boostBacklight();
         mState = next;
         return;
     }
@@ -307,6 +319,20 @@ void Service::adopt()
         mState = Barcode::makeUnsetState(Barcode::Problem::NotSet);
     } else {
         mState = Barcode::makeUnsetState(Barcode::Problem::NoValue);
+    }
+}
+
+void Service::boostBacklight() const
+{
+    if (!mConfig->getBool(BarcodeConfig::boostBacklightField())) {
+        return;
+    }
+
+    auto msg = SDK::make_msg<SDK::Message::RequestBacklightSet>(mKernel);
+    if (msg) {
+        msg->brightness       = 100;
+        msg->autoOffTimeoutMs = kBacklightBoostMs;
+        msg.send();
     }
 }
 
