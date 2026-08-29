@@ -40,6 +40,13 @@ void sleepThunk(uint32_t ms)
     }
 }
 
+void yieldThunk()
+{
+    if (gKernelForMillis) {
+        gKernelForMillis->sys.yield();
+    }
+}
+
 
 
 /// How long to wait for the kernel to acknowledge a backlight request. Bounded
@@ -193,11 +200,13 @@ uint32_t Service::nextWaitMs() const
         return kIdleWaitMs;
     }
 
-    // The hardware engine needs nothing from this thread between re-arms, so the
-    // service simply sleeps on the queue. This is the difference the whole
-    // exercise is about: with the software engine the same rung would be spinning.
+    // The hardware engine needs nothing from this thread between re-arms, so it
+    // would sleep on the queue, which is the difference the whole exercise is
+    // about. Whether it can is measured rather than assumed: a long block stops
+    // the waveform on this kernel, and if it does, the thread has to pass the
+    // time some other way and the ladder idles the way the probe says works.
     if (mUseDma) {
-        return kHeldWaitMs;
+        return (mRunIdle == Pwm::Idle::LongSleep) ? kHeldWaitMs : 0u;
     }
 
     // A held rung has nothing to modulate, so block here instead of returning
@@ -245,6 +254,23 @@ void Service::poll()
         // spinning here, so the screen can stay current.
         if (mGuiStarted && (nowMs - mLastPublishAtMs) >= kIdlePublishPeriodMs) {
             publish();
+        }
+
+        // Pass the time the way the probe said keeps the waveform running. On a
+        // kernel where the long block works this never runs, because the wait is
+        // in getMessage instead.
+        switch (mRunIdle) {
+            case Pwm::Idle::ShortNaps:
+                mKernel.sys.delay(1u);
+                break;
+            case Pwm::Idle::Yield:
+            default:
+                // Yield rather than spin even when only spinning keeps up. A
+                // forty second spin is what rebooted this watch once already,
+                // and a flashing ladder that finishes is worth more than a
+                // steady one that does not.
+                mKernel.sys.yield();
+                break;
         }
     }
 
@@ -505,7 +531,8 @@ void Service::handleStart()
     askKernelToHoldLight();
 
     if (mUseDma) {
-        const Pwm::DmaStatus st = mDma.start(ladder()[0].duty, Pwm::kPeriodUs, &sleepThunk, &millisThunk);
+        const Pwm::DmaStatus st = mDma.start(ladder()[0].duty, Pwm::kPeriodUs, &sleepThunk, &millisThunk,
+                                                &yieldThunk);
         if (st != Pwm::DmaStatus::Running) {
             LOG_INFO("DMA engine refused: %s\n", Pwm::dmaStatusName(st));
             if (mLog) {
@@ -516,11 +543,17 @@ void Service::handleStart()
             publish();
             return;
         }
+        // Spinning is never used for the ladder itself, whatever the probe says:
+        // a forty second busy loop is what rebooted this watch once already. If
+        // spinning is the only mode that keeps up, the ladder runs gated and the
+        // log says so rather than the video having to.
+        mRunIdle = (mDma.bestIdle() == Pwm::Idle::Spin) ? Pwm::Idle::Yield : mDma.bestIdle();
+
         // Written after the start, not with the rest of the header: the timer's
         // clock is not known until the start measures it.
         if (mLog) {
             mLog->dmaHeader(mDma.timerIndex(), mDma.channelIndex(), mDma.firstProbe(),
-                            mDma.finalProbe());
+                            mDma.finalProbe(), mDma.bestIdle());
         }
     }
 

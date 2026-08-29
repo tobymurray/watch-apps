@@ -96,29 +96,36 @@ void PwmLog::header(uint32_t uptimeMs, bool driving, uint32_t cyclesPerUs, uint3
 }
 
 void PwmLog::dmaHeader(uint8_t timerIndex, uint8_t channel, const DmaRates& first,
-                       const DmaRates& final)
+                       const DmaRates& final, Idle best)
 {
     line("PWM engine=timer+DMA TIM%u GPDMA_ch%u", static_cast<unsigned>(timerIndex),
          static_cast<unsigned>(channel));
-    line("PWM rate first  arr=%lu awake=%lu Hz", static_cast<unsigned long>(first.arr),
-         static_cast<unsigned long>(first.hzAwake));
-    line("PWM rate final  arr=%lu awake=%lu Hz asleep=%lu Hz",
-         static_cast<unsigned long>(final.arr), static_cast<unsigned long>(final.hzAwake),
-         static_cast<unsigned long>(final.hzAsleep));
+    line("PWM rate first  arr=%lu spin=%lu Hz", static_cast<unsigned long>(first.arr),
+         static_cast<unsigned long>(first.spin()));
+    line("PWM rate final  arr=%lu", static_cast<unsigned long>(final.arr));
+    for (size_t i = 0; i < kIdleModes; ++i) {
+        const Idle mode = static_cast<Idle>(i);
+        line("PWM rate  %-11s %lu Hz%s", idleName(mode),
+             static_cast<unsigned long>(final.hz[i]),
+             keepsUp(final.hz[i], final.spin()) ? "  keeps up" : "");
+    }
+    line("PWM idle chosen=%s", idleName(best));
     line("#");
-    line("# Those rates are counted passes of the waveform buffer over a half");
-    line("# second of wall clock, read from the block-repeat counter the DMA");
-    line("# keeps in hardware. They are measurements. Two earlier versions of");
-    line("# this engine computed the rate from an assumed clock instead and were");
-    line("# wrong by fifty times and by twenty five times, both of which reach the");
-    line("# eye as a flashing screen rather than a dimmed one.");
+    line("# Those rates are counted passes of the waveform buffer over four");
+    line("# tenths of a second of wall clock, read from the block-repeat counter");
+    line("# the DMA keeps in hardware. They are measurements.");
     line("#");
-    line("# awake against asleep is the question that decides whether any of this");
-    line("# is usable. awake spins the core through the window; asleep hands it");
-    line("# back for the same wall-clock time. If they agree, the waveform really");
-    line("# is autonomous and the CPU costs nothing. If asleep is the lower, the");
-    line("# timer or the DMA is gated off while the core sleeps, and no divider");
-    line("# fixes that: the light would blink at the kernel's sleep cadence.");
+    line("# spin never gives the core up, so it is the hardware's own rate with");
+    line("# nothing gated, and every other mode is measured against it. Wherever a");
+    line("# mode falls short, the waveform is stopped for the difference and the");
+    line("# pin sits frozen at whatever the last word wrote. That reaches the eye");
+    line("# as the light stuck full on or full off, not as a dimmer light, which");
+    line("# is why a gated waveform looks worse than a slow one rather than the");
+    line("# same. No choice of divider changes it.");
+    line("#");
+    line("# If only spin keeps up, an app can dim this light only by holding the");
+    line("# core awake, and the DMA has bought nothing over a busy-wait. That is a");
+    line("# finding about the kernel and the part, not about this app.");
     line("#");
     line("# On this engine 'achieved' is the duty the hardware was COMMANDED to");
     line("# produce, not a measurement: the duty is not counted, only the rate.");

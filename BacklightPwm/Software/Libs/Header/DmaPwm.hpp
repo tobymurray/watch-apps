@@ -82,22 +82,42 @@ enum class DmaStatus : uint8_t {
 };
 
 /**
+ * @brief How the thread passes time it is not using.
+ *
+ * This is the whole question. A run at the right divider measured 255 Hz with
+ * the core spinning and 27 Hz across a kernel sleep, so the timer or the DMA is
+ * being gated off with the core, and no divider fixes that: what reaches the eye
+ * is the light frozen at whatever the last word wrote, for as long as the core
+ * stays down.
+ *
+ * The two sleeps are separated because they need not behave alike. A kernel may
+ * take a long wait as licence to stop the clocks and a one-millisecond wait as
+ * something to idle through, and if so the difference between them is the
+ * difference between a dimmed light and a strobing one.
+ */
+enum class Idle : uint8_t {
+    Spin      = 0, ///< Never gives the core up. The hardware's own rate.
+    Yield     = 1, ///< Hands back the slice, repeatedly.
+    ShortNaps = 2, ///< A run of one-millisecond sleeps.
+    LongSleep = 3, ///< One sleep for the whole window.
+};
+
+const char* idleName(Idle i);
+
+constexpr size_t kIdleModes = 4;
+
+/**
  * @brief What the waveform actually did, measured rather than computed.
  *
- * Two separate numbers because they answer different questions, and the first
- * version of this file conflated them into one guess and got a flashing screen.
- *
- * `hzAwake` is the rate with the CPU spinning: the honest instantaneous rate of
- * the hardware. `hzAsleep` is the rate across a kernel sleep of the same
- * wall-clock length. If the two agree, the waveform is genuinely autonomous and
- * the CPU can be given away. If `hzAsleep` is the lower, the timer or the DMA is
- * being gated off while the core sleeps, and no choice of divider fixes that:
- * the light would blink at whatever rate the kernel sleeps and wakes.
+ * One rate per way of being idle. If they all agree, the waveform is genuinely
+ * autonomous and the CPU can be given away. Wherever a mode's rate falls below
+ * the spinning one, that mode stops the waveform for the difference.
  */
 struct DmaRates {
-    uint32_t hzAwake  = 0;
-    uint32_t hzAsleep = 0;
-    uint32_t arr      = 0; ///< The divider those rates were measured at.
+    uint32_t arr = 0; ///< The divider these rates were measured at.
+    uint32_t hz[kIdleModes] = {0, 0, 0, 0};
+
+    uint32_t spin() const { return hz[static_cast<size_t>(Idle::Spin)]; }
 };
 
 const char* dmaStatusName(DmaStatus s);
@@ -141,6 +161,23 @@ constexpr uint32_t trimmedArr(uint32_t arr, uint32_t measuredHz, uint32_t target
     return static_cast<uint32_t>(scaled);
 }
 
+/**
+ * @brief Whether an idle mode's rate is close enough to the spinning one to use.
+ *
+ * Ten percent. The rate is counted passes over a window, so it carries a pass or
+ * two of quantisation, and a mode that is genuinely not gated will sit within
+ * that. A mode that stops the clocks does not come close: the one measurement of
+ * this so far was 27 against 255, which is off by a factor of nine, not by a
+ * counting error.
+ */
+constexpr bool keepsUp(uint32_t modeHz, uint32_t spinHz)
+{
+    if (spinHz == 0u) {
+        return false;
+    }
+    return modeHz >= spinHz - (spinHz / 10u);
+}
+
 class DmaPwm
 {
 public:
@@ -160,7 +197,7 @@ public:
      * passes in hardware, so it is measurable without a camera.
      */
     DmaStatus start(uint8_t dutyPercent, uint32_t periodUs, void (*sleepMs)(uint32_t),
-                    uint32_t (*nowMs)());
+                    uint32_t (*nowMs)(), void (*yieldNow)());
 
     /// Change duty with the hardware still running. Rewrites the buffer only;
     /// the DMA is reading it continuously, so the change takes effect within one
@@ -184,9 +221,13 @@ public:
     /// How many times the block-repeat counter has been re-armed.
     uint32_t rearms() const { return mRearms; }
 
-    /// The waveform's measured rate after trimming, in Hz. This is the number
-    /// that decides whether the light dims or blinks.
-    uint32_t waveHz() const { return mFinal.hzAwake; }
+    /// The waveform's measured rate after trimming, spinning, in Hz. This is the
+    /// number that decides whether the light dims or blinks.
+    uint32_t waveHz() const { return mFinal.spin(); }
+
+    /// The cheapest way of being idle that does not slow the waveform down.
+    /// Spin if nothing else keeps up, which is a finding rather than a fix.
+    Idle bestIdle() const { return mBestIdle; }
 
     /// Rates from the first probe, before the divider was trimmed. Kept because
     /// the awake-against-asleep comparison is a finding in its own right.
@@ -199,8 +240,9 @@ private:
     uint8_t   mTimerIndex = 0;   ///< 6 or 7.
     uint8_t   mChannel    = 0xFF;
 
-    uint32_t mRearms = 0;
-    uint32_t mArr    = 0;
+    uint32_t mRearms   = 0;
+    uint32_t mArr      = 0;
+    Idle     mBestIdle = Idle::Spin;
     DmaRates mFirst;
     DmaRates mFinal;
 
@@ -216,8 +258,8 @@ private:
     /// block-repeat counter the DMA maintains in hardware. `busy` spins for the
     /// window instead of sleeping through it, which is what separates the
     /// hardware's own rate from the rate a sleeping CPU leaves it running at.
-    uint32_t measureHz(bool busy, uint32_t windowMs, void (*sleepMs)(uint32_t),
-                       uint32_t (*nowMs)());
+    uint32_t measureHz(Idle idle, uint32_t windowMs, void (*sleepMs)(uint32_t),
+                       uint32_t (*nowMs)(), void (*yieldNow)());
 
     /// Reload the block-repeat counter to full, so a measurement starts from a
     /// known count and cannot run it out mid-window.

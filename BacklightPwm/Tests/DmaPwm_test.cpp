@@ -65,3 +65,53 @@ TEST(TrimmedArr, AFailedMeasurementLeavesTheDividerWhereItWas)
     // that would replace a working waveform with a guess.
     EXPECT_EQ(trimmedArr(1811u, 0u, 250u), 1811u);
 }
+
+/**
+ * Which idle modes count as keeping up. The consequence of getting this wrong
+ * is not a wrong number on a screen: choose too loosely and the ladder idles in
+ * a mode that stops the waveform, which is the flashing this whole exercise is
+ * trying to remove.
+ */
+
+using Pwm::keepsUp;
+
+TEST(KeepsUp, TheGatedCaseThatWasMeasuredIsNotCloseEnough)
+{
+    // The one real measurement: 27 Hz across a long sleep against 255 spinning.
+    EXPECT_FALSE(keepsUp(27u, 255u));
+}
+
+TEST(KeepsUp, AnExactMatchKeepsUp)
+{
+    EXPECT_TRUE(keepsUp(255u, 255u));
+}
+
+TEST(KeepsUp, CountingNoiseOfAPassOrTwoStillKeepsUp)
+{
+    // The rate is counted passes over a window, so neighbouring values differ by
+    // the quantisation and not by anything real.
+    EXPECT_TRUE(keepsUp(252u, 255u));
+}
+
+TEST(KeepsUp, TenPercentDownIsTheEdgeAndIsAccepted)
+{
+    EXPECT_TRUE(keepsUp(230u, 255u));   // 255 - 25
+}
+
+TEST(KeepsUp, MoreThanTenPercentDownIsRejected)
+{
+    EXPECT_FALSE(keepsUp(228u, 255u));
+}
+
+TEST(KeepsUp, FasterThanSpinningKeepsUp)
+{
+    // Can happen by a pass of quantisation. It is not a reason to reject a mode.
+    EXPECT_TRUE(keepsUp(257u, 255u));
+}
+
+TEST(KeepsUp, NothingKeepsUpWithAWaveformThatWasNotRunning)
+{
+    // A zero spin rate means the measurement failed, and every mode comparing
+    // equal to it would otherwise be declared good.
+    EXPECT_FALSE(keepsUp(0u, 0u));
+}

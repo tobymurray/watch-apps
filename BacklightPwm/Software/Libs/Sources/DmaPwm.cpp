@@ -142,6 +142,17 @@ uint32_t channelBase(uint8_t ch)
 namespace Pwm
 {
 
+const char* idleName(Idle i)
+{
+    switch (i) {
+        case Idle::Spin:      return "spin";
+        case Idle::Yield:     return "yield";
+        case Idle::ShortNaps: return "1ms-naps";
+        case Idle::LongSleep: return "long-sleep";
+    }
+    return "?";
+}
+
 const char* dmaStatusName(DmaStatus s)
 {
     switch (s) {
@@ -213,8 +224,8 @@ void DmaPwm::setArr(uint32_t arr)
     wr(timerBase(mTimerIndex) + kTimArr, arr - 1u);
 }
 
-uint32_t DmaPwm::measureHz(bool busy, uint32_t windowMs, void (*sleepMs)(uint32_t),
-                           uint32_t (*nowMs)())
+uint32_t DmaPwm::measureHz(Idle idle, uint32_t windowMs, void (*sleepMs)(uint32_t),
+                           uint32_t (*nowMs)(), void (*yieldNow)())
 {
     if (!kHasRegisters || nowMs == nullptr) {
         return 0u;
@@ -229,20 +240,45 @@ uint32_t DmaPwm::measureHz(bool busy, uint32_t windowMs, void (*sleepMs)(uint32_
     const uint32_t brcBefore = (rd(cb + kCbr1) >> kBrcShift) & kBrcMax;
     const uint32_t t0        = nowMs();
 
-    if (busy) {
-        // Spinning rather than sleeping is the entire point of this variant: it
-        // holds the core awake so the measurement sees the hardware's own rate
-        // and not the rate a sleeping core leaves it running at.
-        while ((nowMs() - t0) < windowMs) {
-        }
-    } else if (sleepMs != nullptr) {
-        sleepMs(windowMs);
-    } else {
-        return 0u;
+    switch (idle) {
+        case Idle::Spin:
+            // Never gives the core up, so this is the hardware's own rate with
+            // nothing gated. Every other mode is measured against it.
+            while ((nowMs() - t0) < windowMs) {
+            }
+            break;
+
+        case Idle::Yield:
+            if (yieldNow == nullptr) {
+                return 0u;
+            }
+            while ((nowMs() - t0) < windowMs) {
+                yieldNow();
+            }
+            break;
+
+        case Idle::ShortNaps:
+            // A kernel may treat a long wait as licence to stop the clocks and a
+            // one-millisecond wait as something to idle through. If so this is
+            // the mode a dimming app would have to use.
+            if (sleepMs == nullptr) {
+                return 0u;
+            }
+            while ((nowMs() - t0) < windowMs) {
+                sleepMs(1u);
+            }
+            break;
+
+        case Idle::LongSleep:
+            if (sleepMs == nullptr) {
+                return 0u;
+            }
+            sleepMs(windowMs);
+            break;
     }
 
-    const uint32_t elapsed   = nowMs() - t0;
-    const uint32_t brcAfter  = (rd(cb + kCbr1) >> kBrcShift) & kBrcMax;
+    const uint32_t elapsed  = nowMs() - t0;
+    const uint32_t brcAfter = (rd(cb + kCbr1) >> kBrcShift) & kBrcMax;
 
     if (elapsed == 0u || brcAfter > brcBefore) {
         // A counter that went up means it was re-armed underneath us, so the
@@ -310,7 +346,7 @@ bool DmaPwm::verify(uint32_t periodUs) const
 }
 
 DmaStatus DmaPwm::start(uint8_t dutyPercent, uint32_t periodUs, void (*sleepMs)(uint32_t),
-                        uint32_t (*nowMs)())
+                        uint32_t (*nowMs)(), void (*yieldNow)())
 {
     if (!kHasRegisters) {
         mStatus = DmaStatus::NoRegisters;
@@ -389,10 +425,11 @@ DmaStatus DmaPwm::start(uint8_t dutyPercent, uint32_t periodUs, void (*sleepMs)(
     // does not.
     mStatus = DmaStatus::Running;
 
-    mFirst.arr     = mArr;
-    mFirst.hzAwake = measureHz(true, kWindowMs, sleepMs, nowMs);
+    mFirst.arr = mArr;
+    mFirst.hz[static_cast<size_t>(Idle::Spin)] =
+        measureHz(Idle::Spin, kWindowMs, sleepMs, nowMs, yieldNow);
 
-    if (mFirst.hzAwake < kMinHz) {
+    if (mFirst.spin() < kMinHz) {
         LOG_INFO("waveform did not advance at arr %lu\n",
                  static_cast<unsigned long>(mFirst.arr));
         stop();
@@ -404,24 +441,40 @@ DmaStatus DmaPwm::start(uint8_t dutyPercent, uint32_t periodUs, void (*sleepMs)(
     // the target from any starting point. Done twice because the first landing
     // is only as good as the first measurement's resolution.
     const uint32_t targetHz = periodUs ? (1000000u / periodUs) : 250u;
-    uint32_t measured = mFirst.hzAwake;
+    uint32_t measured = mFirst.spin();
     for (int pass = 0; pass < 2 && measured >= kMinHz; ++pass) {
         setArr(trimmedArr(mArr, measured, targetHz));
-        mFinal.arr     = mArr;
-        mFinal.hzAwake = measureHz(true, kWindowMs, sleepMs, nowMs);
-        measured       = mFinal.hzAwake;
+        mFinal.arr = mArr;
+        mFinal.hz[static_cast<size_t>(Idle::Spin)] =
+            measureHz(Idle::Spin, kWindowMs, sleepMs, nowMs, yieldNow);
+        measured = mFinal.spin();
     }
 
-    // The asleep comparison once, at the settled divider. Whether the two agree
-    // is the finding; measuring it at every trim step would only cost time.
-    mFirst.hzAsleep = 0u;
-    mFinal.hzAsleep = measureHz(false, kWindowMs, sleepMs, nowMs);
+    // Every way of being idle, at the settled divider. Measured here rather than
+    // at each trim step because it is a property of the kernel, not of the
+    // divider, and one set of windows is enough to read it off.
+    static const Idle kOthers[] = {Idle::Yield, Idle::ShortNaps, Idle::LongSleep};
+    for (Idle mode : kOthers) {
+        mFinal.hz[static_cast<size_t>(mode)] =
+            measureHz(mode, kWindowMs, sleepMs, nowMs, yieldNow);
+    }
 
-    LOG_INFO("running: TIM%u ch%u duty %u%% arr %lu, %lu Hz awake, %lu Hz asleep\n",
+    // Cheapest mode that keeps up, checked from the cheapest end. Spin is the
+    // fallback, and having to fall back to it is the finding: it would mean the
+    // waveform cannot outlive the core going idle by any means available here.
+    mBestIdle = Idle::Spin;
+    static const Idle kByCost[] = {Idle::LongSleep, Idle::ShortNaps, Idle::Yield};
+    for (Idle mode : kByCost) {
+        if (keepsUp(mFinal.hz[static_cast<size_t>(mode)], mFinal.spin())) {
+            mBestIdle = mode;
+            break;
+        }
+    }
+
+    LOG_INFO("running: TIM%u ch%u duty %u%% arr %lu, %lu Hz spinning, idle mode %s\n",
              static_cast<unsigned>(mTimerIndex), static_cast<unsigned>(mChannel),
              static_cast<unsigned>(mDuty), static_cast<unsigned long>(mArr),
-             static_cast<unsigned long>(mFinal.hzAwake),
-             static_cast<unsigned long>(mFinal.hzAsleep));
+             static_cast<unsigned long>(mFinal.spin()), idleName(mBestIdle));
 
     return mStatus;
 }

@@ -80,7 +80,7 @@ public:
     /// What the hardware engine claimed, when it is the one running. Separate
     /// from header() because the software engine has none of it.
     void dmaHeader(uint8_t timerIndex, uint8_t channel, const DmaRates& first,
-                   const DmaRates& final);
+                   const DmaRates& final, Idle best);
 
     /// Why a run declined to drive anything, when it does.
     void refused(const char* why);
