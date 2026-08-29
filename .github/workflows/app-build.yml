@@ -177,7 +177,11 @@ jobs:
           version="${{ steps.app.outputs.version }}"
           pushd "${{ steps.app.outputs.cmake }}" > /dev/null
           cmake -B build -G 'Unix Makefiles' -DBUILD_VERSION="$version" .
-          cmake --build build -j"$(nproc)" | tee /tmp/build.log
+          # 2>&1 before the pipe, not after: app_packer.py logs through Python's
+          # logging module, which writes to stderr by default. Piping stdout
+          # alone silently dropped every line the CRC/size extraction below
+          # depends on -- the build still succeeded, so nothing caught it.
+          cmake --build build -j"$(nproc)" 2>&1 | tee /tmp/build.log
           popd > /dev/null
 
           # The packer writes the image twice, into the build directory and into
