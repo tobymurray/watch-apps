@@ -232,7 +232,20 @@ void Service::poll()
         // every ten seconds. No burst, no spin, no yield. The waveform continues
         // regardless of what this thread does.
         mDma.poll();
+
+        // The duty the hardware was told to produce. Not a measurement, unlike
+        // the software engine's, because nothing here counts microseconds: the
+        // DMA does not report back. Reported as commanded and labelled as such
+        // rather than dressed up as an achievement.
         mAchievedDuty = mDma.duty();
+
+        // Safe to publish periodically here, which it is not on the software
+        // engine: a publish wakes the GUI, and on the software engine that
+        // preempts a busy loop mid-pulse and shows up as a flash. Nothing is
+        // spinning here, so the screen can stay current.
+        if (mGuiStarted && (nowMs - mLastPublishAtMs) >= kIdlePublishPeriodMs) {
+            publish();
+        }
     }
 
     if (mDriving && !mUseDma) {
@@ -485,6 +498,9 @@ void Service::handleStart()
     if (mLog) {
         mLog->header(mKernel.sys.getTimeMs(), true, mClock.cyclesPerUs(), Pwm::kPeriodUs,
                      Pwm::kPeriodsPerBurst, ladderCount());
+        if (mUseDma) {
+            mLog->dmaHeader(mDma.timerKhz(), mDma.timerIndex(), mDma.channelIndex());
+        }
     }
 
     // Put the kernel's own state machine into "on" first, so it is not trying to
@@ -492,7 +508,7 @@ void Service::handleStart()
     askKernelToHoldLight();
 
     if (mUseDma) {
-        const Pwm::DmaStatus st = mDma.start(ladder()[0].duty, Pwm::kPeriodUs);
+        const Pwm::DmaStatus st = mDma.start(ladder()[0].duty, Pwm::kPeriodUs, &sleepThunk);
         if (st != Pwm::DmaStatus::Running) {
             LOG_INFO("DMA engine refused: %s\n", Pwm::dmaStatusName(st));
             if (mLog) {

@@ -78,6 +78,7 @@ enum class DmaStatus : uint8_t {
     NoFreeTimer    = 3, ///< Every candidate timer's clock is already on.
     NoFreeChannel  = 4, ///< No GPDMA channel is idle.
     VerifyFailed   = 5, ///< A register did not read back as written. Nothing enabled.
+    NoTimerClock   = 6, ///< The timer would not count, so its rate is unknown.
 };
 
 const char* dmaStatusName(DmaStatus s);
@@ -100,7 +101,7 @@ public:
      * @param periodUs    Length of one full waveform pass.
      * @return Running on success. Anything else means nothing was enabled.
      */
-    DmaStatus start(uint8_t dutyPercent, uint32_t periodUs);
+    DmaStatus start(uint8_t dutyPercent, uint32_t periodUs, void (*sleepMs)(uint32_t));
 
     /// Change duty with the hardware still running. Rewrites the buffer only;
     /// the DMA is reading it continuously, so the change takes effect within one
@@ -124,13 +125,23 @@ public:
     /// How many times the block-repeat counter has been re-armed.
     uint32_t rearms() const { return mRearms; }
 
+    /// The timer's input clock, measured rather than assumed, in kHz.
+    ///
+    /// The first version took this to be the core clock and was wrong by about
+    /// fifty times: the waveform came out at roughly 5 Hz instead of 250, which
+    /// is a visible flash rather than a brightness. The timer sits on APB1 and
+    /// whatever the kernel has done to that prescaler is not knowable from here,
+    /// so it is measured the same way the core clock is.
+    uint32_t timerKhz() const { return mTimerKhz; }
+
 private:
     DmaStatus mStatus     = DmaStatus::Idle;
     uint8_t   mDuty       = 0;
     uint8_t   mTimerIndex = 0;   ///< 6 or 7.
     uint8_t   mChannel    = 0xFF;
 
-    uint32_t mRearms = 0;
+    uint32_t mRearms   = 0;
+    uint32_t mTimerKhz = 0;
 
     /// Saved before anything is written, restored by stop().
     uint32_t mSavedAhb1Enr  = 0;
@@ -139,6 +150,10 @@ private:
     bool     mConfigured    = false;
 
     bool pickTimer();
+
+    /// Runs the timer briefly against the kernel's millisecond clock to find its
+    /// input rate. Returns 0 if it does not count.
+    uint32_t measureTimerKhz(void (*sleepMs)(uint32_t));
     bool pickChannel();
     void buildWave(uint8_t dutyPercent);
 

@@ -76,6 +76,10 @@ public:
     void header(uint32_t uptimeMs, bool driving, uint32_t cyclesPerUs, uint32_t periodUs,
                 uint32_t burstUs, size_t rungCount);
 
+    /// What the hardware engine claimed, when it is the one running. Separate
+    /// from header() because the software engine has none of it.
+    void dmaHeader(uint32_t timerKhz, uint8_t timerIndex, uint8_t channel);
+
     /// Why a run declined to drive anything, when it does.
     void refused(const char* why);
 

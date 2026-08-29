@@ -45,8 +45,18 @@ constexpr uint32_t kTim7Base = 0x40001400u;
 constexpr uint32_t kTimCr1  = 0x00u; ///< bit 0 CEN
 constexpr uint32_t kTimDier = 0x0Cu; ///< bit 8 UDE
 constexpr uint32_t kTimEgr  = 0x14u; ///< bit 0 UG
+constexpr uint32_t kTimCnt  = 0x24u;
 constexpr uint32_t kTimPsc  = 0x28u;
 constexpr uint32_t kTimArr  = 0x2Cu;
+
+/// Window for measuring the timer's input clock. Long enough for a few hundred
+/// prescaled counts at the slowest plausible rate, short enough not to stall
+/// startup.
+constexpr uint32_t kMeasureMs = 100u;
+
+/// Below this the timer cannot place a 250 Hz waveform's edges and something is
+/// wrong with the measurement rather than with the part.
+constexpr uint32_t kMinTimerKhz = 100u;
 
 constexpr uint32_t kGpdma1Base    = 0x40020000u;
 constexpr uint32_t kChan0Offset   = 0x50u;
@@ -131,6 +141,7 @@ const char* dmaStatusName(DmaStatus s)
         case DmaStatus::NoFreeTimer:   return "no free timer";
         case DmaStatus::NoFreeChannel: return "no free DMA channel";
         case DmaStatus::VerifyFailed:  return "register readback mismatch, nothing enabled";
+        case DmaStatus::NoTimerClock:  return "the timer would not count";
     }
     return "?";
 }
@@ -165,6 +176,38 @@ bool DmaPwm::pickTimer()
         }
     }
     return false;
+}
+
+uint32_t DmaPwm::measureTimerKhz(void (*sleepMs)(uint32_t))
+{
+    if (!kHasRegisters || sleepMs == nullptr) {
+        return 0u;
+    }
+
+    const uint32_t tb = timerBase(mTimerIndex);
+
+    // Prescaled by 1000 so the 16-bit counter cannot wrap inside the window at
+    // any plausible APB1 rate: a 3 MHz clock gives about 300 counts over 100 ms
+    // and a 160 MHz one about 16000, and both fit.
+    wr(tb + kTimCr1, 0u);
+    wr(tb + kTimPsc, 999u);
+    wr(tb + kTimArr, 0xFFFFu);
+    wr(tb + kTimEgr, 1u);
+    wr(tb + kTimCnt, 0u);
+    wr(tb + kTimCr1, 1u);
+
+    sleepMs(kMeasureMs);
+
+    const uint32_t counts = rd(tb + kTimCnt) & 0xFFFFu;
+    wr(tb + kTimCr1, 0u);
+
+    if (counts == 0u) {
+        return 0u;
+    }
+
+    // counts are (clk / 1000) ticks over kMeasureMs milliseconds, so
+    // clk_kHz = counts * 1000 / kMeasureMs.
+    return (counts * 1000u) / kMeasureMs;
 }
 
 bool DmaPwm::pickChannel()
@@ -222,7 +265,7 @@ bool DmaPwm::verify(uint32_t periodUs) const
     return true;
 }
 
-DmaStatus DmaPwm::start(uint8_t dutyPercent, uint32_t periodUs)
+DmaStatus DmaPwm::start(uint8_t dutyPercent, uint32_t periodUs, void (*sleepMs)(uint32_t))
 {
     if (!kHasRegisters) {
         mStatus = DmaStatus::NoRegisters;
@@ -251,19 +294,27 @@ DmaStatus DmaPwm::start(uint8_t dutyPercent, uint32_t periodUs)
         return mStatus;
     }
 
+    // Measure the timer's own clock before using it. Assuming it matched the
+    // core clock put the first version's waveform at about 5 Hz instead of 250,
+    // which reads as a flashing screen rather than a dimmed one.
+    mTimerKhz = measureTimerKhz(sleepMs);
+    if (mTimerKhz < kMinTimerKhz) {
+        LOG_INFO("timer clock measured %lu kHz, refusing\n",
+                 static_cast<unsigned long>(mTimerKhz));
+        stop();
+        mStatus = DmaStatus::NoTimerClock;
+        return mStatus;
+    }
+    LOG_INFO("timer clock %lu kHz (measured)\n", static_cast<unsigned long>(mTimerKhz));
+
     buildWave(dutyPercent);
 
     const uint32_t tb = timerBase(mTimerIndex);
     const uint32_t cb = channelBase(mChannel);
 
-    // Timer: one update event per waveform word. The timer never reaches a pin.
-    // Its input clock is not known precisely here, so the divider is derived from
-    // the measured core clock by the caller and passed in as periodUs; a basic
-    // timer on APB1 runs at the APB1 timer clock, which on this part tracks the
-    // core clock. The ARR below is therefore approximate, and the waveform's
-    // exact frequency matters far less than its duty: a few percent of frequency
-    // error is invisible, where a few percent of duty error is the measurement.
-    const uint32_t ticksPerWord = (periodUs * 160u) / kWaveWords; // ~160 MHz
+    // Timer: one update event per waveform word, at the rate its own clock
+    // actually runs. ticks = kHz * us / 1000, divided across the buffer.
+    const uint32_t ticksPerWord = (mTimerKhz * periodUs) / (1000u * kWaveWords);
     wr(tb + kTimCr1, 0u);
     wr(tb + kTimPsc, 0u);
     wr(tb + kTimArr, ticksPerWord ? ticksPerWord - 1u : 1u);

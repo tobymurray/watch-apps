@@ -95,6 +95,18 @@ void PwmLog::header(uint32_t uptimeMs, bool driving, uint32_t cyclesPerUs, uint3
     line("# stayed lit through the contest rungs is the answer that counts.");
 }
 
+void PwmLog::dmaHeader(uint32_t timerKhz, uint8_t timerIndex, uint8_t channel)
+{
+    line("PWM engine=timer+DMA TIM%u GPDMA_ch%u timer_clock=%lu kHz (measured)",
+         static_cast<unsigned>(timerIndex), static_cast<unsigned>(channel),
+         static_cast<unsigned long>(timerKhz));
+    line("#");
+    line("# On this engine 'achieved' is the duty the hardware was COMMANDED to");
+    line("# produce, not a measurement: the DMA does not report back and nothing");
+    line("# here counts microseconds. The software engine's achieved figure is a");
+    line("# measurement; this one is not, and they should not be compared.");
+}
+
 void PwmLog::refused(const char* why)
 {
     line("PWM REFUSED %s", why ? why : "");
