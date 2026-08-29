@@ -1,0 +1,228 @@
+name: App build
+
+# The shared half of every app's CI. One app per call, and everything an app
+# might need is discovered rather than declared, so wiring a new one up is a
+# caller file with a directory name in it and nothing else.
+#
+# What it does depends on what the directory holds:
+#
+#   app-manifest.json                   -> validate it against the binary's own
+#                                          copy of the field table
+#   Tests/CMakeLists.txt                -> configure, build and run the host tests
+#   Software/Apps/<name>-CMake/         -> build the .uapp and upload it
+#
+# An app with none of the three is a mistake rather than a no-op, so it fails.
+# MapKit is the case that makes discovery worth having over three booleans: it
+# is a library with host tests and no binary, and it needs no special handling.
+#
+# Ported from tobymurray/kira's app-binaries.yml, which builds the SDK's own
+# example apps. What carried over is the shape -- one pinned container, the SDK
+# checked out beside the source, artifacts named by what produced them. What did
+# not is the content-addressed store and the release walking, which exist to
+# rebuild upstream's history and have nothing to say here.
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        description: 'The app directory, e.g. Barcode'
+        required: true
+        type: string
+      version:
+        description: 'Version to stamp. Defaults to appVersion in the app manifest.'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  # Pinned by digest, not by tag: a re-pushed tag would silently change the
+  # compiler and there would be nothing in the diff to say so. This is the same
+  # image tobymurray/kira builds the SDK's apps with, and building this repo
+  # against it reproduces the artifacts byte for byte -- Barcode 0.5.0 comes out
+  # of it at 118,532 bytes and CRC 0x11CFABAC, which is what the barcode-0.5.0
+  # tag records for the binary that was built on a workstation and installed on
+  # a watch. Two machines, one digest, the same bytes.
+  #
+  # It has to be repeated in `container.image` below, because the `env` context
+  # is not available where a job declares its container.
+  TOOLCHAIN: ghcr.io/tobymurray/kira-toolchain@sha256:4d75a70b33b4c4fb8799bed5af2ebb03c9b6eb161ffed3049e316ad996461127
+
+  # The SDK is a separate repository and every app in this one builds against it,
+  # so it is pinned here rather than floating on a branch: an SDK commit that
+  # breaks an app should break it in a run somebody can point at, not silently on
+  # whatever day main moved. Bumping this is a one-line change that rebuilds
+  # every app, which is the correct blast radius for changing the SDK.
+  SDK_REPO: tobymurray/una-sdk
+  SDK_REF: 8cdb73140a3d97455b80c22d32e5012e26f72291
+
+jobs:
+  build:
+    name: ${{ inputs.app }}
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/tobymurray/kira-toolchain@sha256:4d75a70b33b4c4fb8799bed5af2ebb03c9b6eb161ffed3049e316ad996461127
+      # The package is published from another repository, so this repository's
+      # token only reaches it if the image is public or has been granted read
+      # access here. Authenticating costs nothing and covers both.
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Check out the apps
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          path: apps
+
+      - name: Check out the SDK
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.SDK_REPO }}
+          ref: ${{ env.SDK_REF }}
+          persist-credentials: false
+          path: sdk
+
+      # The image carries cmake, make, git, python3 and the ARM toolchain
+      # already, and the digest pin means that cannot drift. Only the packer's
+      # own dependencies are missing.
+      - name: Install the packer's requirements
+        run: python3 -m pip install --break-system-packages -q -r sdk/Utilities/Scripts/app_packer/requirements.txt
+
+      - name: Work out what this app has
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="${{ inputs.app }}"
+          dir="apps/$app"
+          [ -d "$dir" ] || { echo "::error::no such app directory: $app"; exit 1; }
+
+          manifest="$dir/app-manifest.json"
+          tests="$dir/Tests/CMakeLists.txt"
+          cmake=$(find "$dir/Software/Apps" -maxdepth 2 -name CMakeLists.txt 2>/dev/null | head -n 1 || true)
+
+          # A version has to come from somewhere it can be reviewed. The manifest
+          # is that place, and an explicit input overrides it for a one-off build.
+          version="${{ inputs.version }}"
+          if [ -z "$version" ] && [ -f "$manifest" ]; then
+            version=$(jq -r '.appVersion // empty' "$manifest")
+          fi
+
+          {
+            echo "manifest=$([ -f "$manifest" ] && echo "$manifest" || echo '')"
+            echo "tests=$([ -f "$tests" ] && dirname "$tests" || echo '')"
+            echo "cmake=$([ -n "$cmake" ] && dirname "$cmake" || echo '')"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "app       $app"
+          echo "manifest  ${manifest#apps/}$([ -f "$manifest" ] || echo ' (none)')"
+          echo "tests     $([ -f "$tests" ] && echo yes || echo no)"
+          echo "buildable $([ -n "$cmake" ] && echo yes || echo no)"
+          echo "version   ${version:-unset}"
+
+          if [ ! -f "$manifest" ] && [ ! -f "$tests" ] && [ -z "$cmake" ]; then
+            echo "::error::$app has no manifest, no tests and nothing to build"
+            exit 1
+          fi
+          if [ -n "$cmake" ] && [ -z "$version" ]; then
+            echo "::error::$app is buildable but has no version -- add appVersion to its manifest, or pass one in"
+            exit 1
+          fi
+
+      # The manifest is the contract the phone renders a form from, and the
+      # binary carries its own copy of it. They are two files that must agree and
+      # nothing but this check makes them.
+      - name: Validate the configuration contract
+        if: steps.app.outputs.manifest != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          bounds=$(find "apps/${{ inputs.app }}/Software/Libs/Sources" -name 'AppConfigFields.cpp' | head -n 1)
+          args=(--check "${{ steps.app.outputs.manifest }}")
+          [ -n "$bounds" ] && args+=(--check-bounds "$bounds")
+          python3 sdk/Utilities/Scripts/app_packer/validate_app_config.py "${args[@]}"
+
+      - name: Host tests
+        if: steps.app.outputs.tests != ''
+        shell: bash
+        env:
+          UNA_SDK: ${{ github.workspace }}/sdk
+        run: |
+          set -euo pipefail
+          cmake -B /tmp/host-tests -S "${{ steps.app.outputs.tests }}"
+          cmake --build /tmp/host-tests -j"$(nproc)"
+          ctest --test-dir /tmp/host-tests --output-on-failure
+
+      - name: Build the app
+        if: steps.app.outputs.cmake != ''
+        id: uapp
+        shell: bash
+        env:
+          UNA_SDK: ${{ github.workspace }}/sdk
+        run: |
+          set -euo pipefail
+          version="${{ steps.app.outputs.version }}"
+          pushd "${{ steps.app.outputs.cmake }}" > /dev/null
+          cmake -B build -G 'Unix Makefiles' -DBUILD_VERSION="$version" .
+          cmake --build build -j"$(nproc)" | tee /tmp/build.log
+          popd > /dev/null
+
+          # The packer writes the image twice, into the build directory and into
+          # the app's Output/. Output/ is the one the repository treats as the
+          # artifact, so prefer it rather than letting find's order decide.
+          app_dir="apps/${{ inputs.app }}"
+          uapp=$(find "$app_dir/Output" -name "*_${version}.uapp" 2>/dev/null | head -n 1)
+          [ -n "$uapp" ] || uapp=$(find "$app_dir" -name "*_${version}.uapp" | head -n 1)
+          [ -n "$uapp" ] || { echo "::error::the build produced no .uapp for $version"; exit 1; }
+
+          # Staged into one flat directory so the download is the two files
+          # somebody actually wants, rather than them buried four levels down a
+          # build tree that only means something inside this job.
+          stage="$GITHUB_WORKSPACE/artifact"
+          mkdir -p "$stage"
+          cp "$uapp" "$stage/"
+          manifest="${{ steps.app.outputs.manifest }}"
+          [ -n "$manifest" ] && cp "$manifest" "$stage/"
+
+          # The packer prints these and the repository's release tags record them,
+          # so a run is a place to look them up rather than a reason to rebuild.
+          crc=$(grep -oE 'CRC[[:space:]]*:[[:space:]]*0x[0-9A-Fa-f]+' /tmp/build.log | tail -n 1 | grep -oE '0x[0-9A-Fa-f]+' || echo unknown)
+          {
+            echo "uapp=$uapp"
+            echo "crc=$crc"
+            echo "bytes=$(stat -c %s "$uapp")"
+            echo "stage=artifact"
+          } >> "$GITHUB_OUTPUT"
+          echo "staged: $(ls "$stage")"
+
+      - name: Summary
+        if: always() && steps.uapp.outputs.uapp != ''
+        shell: bash
+        run: |
+          {
+            echo "### ${{ inputs.app }} ${{ steps.app.outputs.version }}"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| bytes | ${{ steps.uapp.outputs.bytes }} |"
+            echo "| CRC | ${{ steps.uapp.outputs.crc }} |"
+            echo "| SDK | \`${SDK_REF}\` |"
+            echo "| toolchain | \`${TOOLCHAIN##*@}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The binary and the manifest travel together, because that is what an
+      # upload to the store is: the manifest never reaches the watch, so a change
+      # to it is invisible in the .uapp and still changes what a wearer sees.
+      - name: Upload the build
+        if: steps.uapp.outputs.uapp != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.app }}-${{ steps.app.outputs.version }}
+          path: ${{ steps.uapp.outputs.stage }}
+          if-no-files-found: error
