@@ -60,6 +60,14 @@ constexpr char kResultsPath[] = "backlight_pwm.txt";
 /// being launched by someone who is not looking at the screen, and because there
 /// is exactly one bit to communicate.
 constexpr char kFlipMarkerPath[] = "flip.enable";
+
+/// Presence of this file drives the light with a timer and a DMA channel instead
+/// of a busy-waiting thread. Same pin, same waveform, no CPU.
+///
+/// Absent by default because it is the only part of this app that writes
+/// configuration rather than just BSRR, and because the software engine is what
+/// the earlier results were measured with.
+constexpr char kDmaMarkerPath[] = "dma.enable";
 } // namespace
 
 Service::Service(SDK::Kernel& kernel)
@@ -80,6 +88,15 @@ size_t Service::ladderCount() const
     return mDiscriminate ? Pwm::flipLadderSize() : Pwm::ladderSize();
 }
 
+void Service::driveDuty(uint8_t duty)
+{
+    if (mUseDma) {
+        mDma.setDuty(duty);
+    } else {
+        mPwm.setDuty(duty);
+    }
+}
+
 void Service::applyFlip(uint32_t nowMs, const Pwm::Rung& rung)
 {
     if (rung.dutyB == 0u || rung.dutyB == rung.duty) {
@@ -94,7 +111,7 @@ void Service::applyFlip(uint32_t nowMs, const Pwm::Rung& rung)
     }
 
     mFlipSecondHalf = second;
-    mPwm.setDuty(second ? rung.dutyB : rung.duty);
+    driveDuty(second ? rung.dutyB : rung.duty);
 }
 
 void Service::openResults()
@@ -117,6 +134,8 @@ void Service::run()
     // Which ladder this run walks. Read once, before anything else, so the
     // record and the screen agree with what actually ran.
     mDiscriminate = mKernel.fs.exist(kFlipMarkerPath);
+    mUseDma       = mKernel.fs.exist(kDmaMarkerPath);
+    LOG_INFO("engine: %s\n", mUseDma ? "timer + DMA (no CPU)" : "software PWM (busy wait)");
     LOG_INFO("ladder: %s (%u rungs)\n",
              mDiscriminate ? "discrimination pairs" : "standard six levels",
              static_cast<unsigned>(ladderCount()));
@@ -174,6 +193,13 @@ uint32_t Service::nextWaitMs() const
         return kIdleWaitMs;
     }
 
+    // The hardware engine needs nothing from this thread between re-arms, so the
+    // service simply sleeps on the queue. This is the difference the whole
+    // exercise is about: with the software engine the same rung would be spinning.
+    if (mUseDma) {
+        return kHeldWaitMs;
+    }
+
     // A held rung has nothing to modulate, so block here instead of returning
     // straight back into a burst that will do nothing. Short enough that the pin
     // is still re-asserted about fifty times a second, which is what overrides
@@ -200,7 +226,16 @@ void Service::poll()
     // Before the burst, so the whole burst runs at one duty.
     applyFlip(nowMs, rung);
 
-    if (mDriving) {
+    if (mDriving && mUseDma) {
+        // The entire cost of running the hardware engine: check whether the
+        // block-repeat counter has run out and re-arm it if so, roughly once
+        // every ten seconds. No burst, no spin, no yield. The waveform continues
+        // regardless of what this thread does.
+        mDma.poll();
+        mAchievedDuty = mDma.duty();
+    }
+
+    if (mDriving && !mUseDma) {
         // A hard ceiling on how long this app may hold the pin, independent of
         // the ladder's own arithmetic. Nothing should reach it; if anything ever
         // does, the light goes back to the kernel rather than staying on because
@@ -330,7 +365,7 @@ void Service::beginRung(size_t index)
     mLastPollMs     = 0;
 
     const Pwm::Rung& rung = ladder()[index];
-    mPwm.setDuty(rung.duty);
+    driveDuty(rung.duty);
 
     mResult             = Pwm::RungResult{};
     mResult.index       = index;
@@ -456,6 +491,20 @@ void Service::handleStart()
     // turn the light off underneath us for the whole run.
     askKernelToHoldLight();
 
+    if (mUseDma) {
+        const Pwm::DmaStatus st = mDma.start(ladder()[0].duty, Pwm::kPeriodUs);
+        if (st != Pwm::DmaStatus::Running) {
+            LOG_INFO("DMA engine refused: %s\n", Pwm::dmaStatusName(st));
+            if (mLog) {
+                mLog->refused(Pwm::dmaStatusName(st));
+            }
+            mState   = CustomMessage::PwmState::Refused;
+            mDriving = false;
+            publish();
+            return;
+        }
+    }
+
     mDriving        = true;
     mDriveStartedMs = mKernel.sys.getTimeMs();
     mState          = CustomMessage::PwmState::Running;
@@ -469,6 +518,9 @@ void Service::handOverPin()
     }
     mDriving = false;
 
+    if (mUseDma) {
+        mDma.stop();
+    }
     mPwm.off();
     mClock.release();
 

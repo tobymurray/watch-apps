@@ -250,6 +250,37 @@ That costs a fifth of the brightness on modulated rungs, uniformly, which the
 achieved duty reports honestly. It does not touch the endpoints, because duty 0
 and 100 are held rather than burst, so full brightness stays exactly full.
 
+## Two engines, and which one runs
+
+**Software PWM** is the default: a busy-waiting thread toggling `GPIOF BSRR`. It
+works, and everything measured so far was measured with it.
+
+**Timer + DMA** runs instead when `dma.enable` is present in
+`Apps/BacklightPwm/`. A basic timer's update event drives a GPDMA channel that
+copies words from a RAM buffer into `BSRR`. Same pin, same waveform, and once
+started **no code runs at all**: no interrupt, no polling, no CPU per edge. The
+service sleeps on the message queue exactly as it does on a held rung.
+
+That is the production shape, and it answers the three objections to the software
+engine at once: no jitter, no GUI starvation, and no CPU cost to cancel out the
+LED saving. It is also why the register plan in [DMA-NOTES.md](DMA-NOTES.md) is
+worth reading before touching it.
+
+It works from an application, rather than needing kernel changes, for one
+reason: **a circular DMA needs no interrupt.** An app cannot install a handler,
+because `VTOR` is the kernel's. It does not have to.
+
+PF3 having no timer output turns out not to matter either. The timer never
+reaches a pin; it only produces an update event, and the DMA does the writing.
+`BSRR` does not care who wrote it.
+
+> **Not yet run on hardware.** The register configuration is taken from ST's own
+> headers rather than inferred, and `start()` reads back every register it wrote
+> and refuses to enable the channel on any mismatch. That gate is there because
+> this is the first code in the investigation whose destination address is under
+> its own control: a wrong `CDAR` would write into memory rather than a
+> peripheral. It should still be treated as unproven until a run says otherwise.
+
 ## Two ladders, and which one runs
 
 **The standard ladder** is the default: six levels, each held for four seconds,
