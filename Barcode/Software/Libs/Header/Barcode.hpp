@@ -70,7 +70,10 @@ constexpr size_t kMaxCodes = 6;
  *
  * The happy consequence is that QR adds no new way for a code to be refused:
  * Qr::kMaxDataLength is 26, so every id this app accepts fits with ten bytes
- * to spare, and Problem::BadValue's prompt stays true as written.
+ * to spare, and Problem::BadValue's prompt stays true as written. ITF broke
+ * that streak on arrival -- a digit-only format under the same ceiling can
+ * fail in ways neither earlier format could, which is what
+ * Problem::BadDigitCount and Problem::BadCharacters are for.
  */
 constexpr size_t kMaxIdLength = 16;
 
@@ -124,12 +127,14 @@ constexpr size_t kConfigFormatMaxLength = 8;
  * codes that are fine would be the wrong trade at a finish funnel.
  */
 enum class Problem : uint8_t {
-    None = 0,  ///< At least one code was accepted; codes[0..count) are valid.
-    NoConfig,  ///< No usable input.json: absent, oversized, malformed, or wrong schema.
-    NoValue,   ///< A config was read, but it carries no usable code.
-    NotSet,    ///< Read, and every id field is empty: nobody has set a code yet.
-    BadValue,  ///< Codes were supplied, but none is drawable.
-    BadFormat, ///< Codes were supplied, but none names a format this app draws.
+    None = 0,      ///< At least one code was accepted; codes[0..count) are valid.
+    NoConfig,      ///< No usable input.json: absent, oversized, malformed, or wrong schema.
+    NoValue,       ///< A config was read, but it carries no usable code.
+    NotSet,        ///< Read, and every id field is empty: nobody has set a code yet.
+    BadValue,      ///< Codes were supplied, but none is drawable.
+    BadFormat,     ///< Codes were supplied, but none names a format this app draws.
+    BadDigitCount, ///< A digit-only format's id was empty, odd, or over-length.
+    BadCharacters, ///< A digit-only format's id held a character other than 0-9.
 };
 
 /**
@@ -157,6 +162,12 @@ enum class Format : uint8_t {
     Qr      = 1,
     Itf     = 2,
 };
+
+/// One more than the last declared Format above. Bumped by hand alongside a
+/// new entry; Symbology.hpp's kFormatNames is sized against it with a
+/// static_assert, so a new Format with no display name fails to build instead
+/// of leaving the on-screen "unknown format" prompt silently out of date.
+constexpr uint8_t kFormatCount = 3;
 
 /// One code, what to call it on screen, and how to draw it.
 struct Code

@@ -120,35 +120,60 @@ static_assert(elementsFor(kMaxDataLength) <= Barcode::Encoded::kMaxWidths,
               "Barcode::Encoded is not sized for this encoder's longest input");
 
 /**
+ * @brief Which way, if any, @p text is not something ITF can carry.
+ *
+ * Split out of accepts() because the two failure shapes need different words
+ * on a screen with no keyboard to ask "what's wrong with my ID": a stray
+ * letter is a typo in an otherwise fine-looking id, while an odd digit count
+ * or an empty or over-long value is a question about how many digits belong
+ * there at all. Code128 and QR only ever fail one way each, which is why they
+ * have no equivalent -- see Barcode::Refusal in Symbology.hpp, which is what
+ * turns this into a screen.
+ */
+enum class Diagnosis : uint8_t {
+    Ok,            ///< Carries as ITF.
+    BadCharacters, ///< Held something other than '0'..'9'.
+    BadCount,      ///< All digits, but empty, odd, or over kMaxDataLength.
+};
+
+inline Diagnosis diagnose(const char *text)
+{
+    if (text == nullptr) {
+        // Absent reads the same as "no digits at all": a count problem, not a
+        // character one -- there is no character to point at.
+        return Diagnosis::BadCount;
+    }
+
+    size_t length = 0;
+    while (text[length] != '\0') {
+        if (text[length] < '0' || text[length] > '9') {
+            return Diagnosis::BadCharacters;
+        }
+        if (++length > kMaxDataLength) {
+            return Diagnosis::BadCount;
+        }
+    }
+
+    // Two is the shortest real symbol: one pair. Odd is refused rather than
+    // padded -- see the header comment.
+    return (length >= 2 && (length % 2) == 0) ? Diagnosis::Ok : Diagnosis::BadCount;
+}
+
+/**
  * @brief Can ITF carry @p text?
  *
  * Separate from encode() for the reason Qr::accepts() is: the service asks
  * this about every code it adopts and never draws anything, so the question
  * has to be answerable without the table. encode() calls it as its own first
  * step, so there is one definition of what ITF accepts rather than two
- * opinions that can drift.
+ * opinions that can drift. Routed through diagnose() for the same reason: one
+ * definition of *why*, not two that could disagree on *whether*.
  *
  * @retval false Empty, too long, an odd number of digits, or not all digits.
  */
 inline bool accepts(const char *text)
 {
-    if (text == nullptr) {
-        return false;
-    }
-
-    size_t length = 0;
-    while (text[length] != '\0') {
-        if (text[length] < '0' || text[length] > '9') {
-            return false;
-        }
-        if (++length > kMaxDataLength) {
-            return false;
-        }
-    }
-
-    // Two is the shortest real symbol: one pair. Odd is refused rather than
-    // padded -- see the header comment.
-    return length >= 2 && (length % 2) == 0;
+    return diagnose(text) == Diagnosis::Ok;
 }
 
 /**

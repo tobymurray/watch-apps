@@ -1,5 +1,6 @@
 #include <gui/main_screen/MainView.hpp>
 
+#include <cstdio>
 #include <cstring>
 
 #include <texts/TextKeysAndLanguages.hpp>
@@ -80,6 +81,71 @@ struct Prompt
 };
 
 /**
+ * @brief "Set it to Code128, QRCode or ITF", word-wrapped to fit.
+ *
+ * Built from Barcode::kFormatNames rather than spelled out here, because that
+ * is exactly what fell out of sync when ITF arrived: an encoder, an accepted
+ * `fmtN` value and a manifest pattern all showed up together, and this prompt
+ * did not, because nothing tied it to the others. Growing kFormatNames is now
+ * the only step -- this reflows around however long the list gets.
+ *
+ * Wrapped by measured width rather than a fixed character count, the same way
+ * MainView::layOutId() sizes the id row: Regular 18 is proportional, so a
+ * character budget would wrap "IIII" and "WWWW" alike when only one of them
+ * is actually too wide for the 200px prompt column.
+ */
+const char *const *badFormatLines()
+{
+    static char lines[3][24];
+    for (auto &line : lines) {
+        line[0] = '\0';
+    }
+
+    char joined[96] = "Set it to ";
+    for (uint8_t i = 0; i < Barcode::kFormatCount; i++) {
+        if (i > 0) {
+            std::strcat(joined, i == Barcode::kFormatCount - 1 ? " or " : ", ");
+        }
+        std::strcat(joined, Barcode::kFormatNames[i]);
+    }
+
+    // getStringWidth() takes UnicodeChar, not char -- the same conversion
+    // MainView::layOutId() does for the id row, via the const char* overload
+    // of Unicode::strncpy().
+    const touchgfx::Font *font = touchgfx::TypedText(T_TMP_REGULAR_18).getFont();
+    // Sized well past the 24-char display lines: this is only the scratch
+    // buffer a candidate line is measured in before being (safely) truncated
+    // into one of those, so it is not itself the thing that has to fit.
+    char attempt[64];
+    touchgfx::Unicode::UnicodeChar measureBuf[64];
+    uint8_t lineIndex = 0;
+    char *word = std::strtok(joined, " ");
+    while (word != nullptr && lineIndex < 3) {
+        if (lines[lineIndex][0] == '\0') {
+            std::strncpy(attempt, word, sizeof(attempt) - 1);
+            attempt[sizeof(attempt) - 1] = '\0';
+        } else {
+            std::snprintf(attempt, sizeof(attempt), "%s %s", lines[lineIndex], word);
+        }
+        touchgfx::Unicode::strncpy(measureBuf, attempt, sizeof(measureBuf) / sizeof(measureBuf[0]));
+
+        if (lines[lineIndex][0] == '\0'
+                || font->getStringWidth(touchgfx::TEXT_DIRECTION_LTR, measureBuf) <= kPromptW) {
+            std::strncpy(lines[lineIndex], attempt, sizeof(lines[lineIndex]) - 1);
+            lines[lineIndex][sizeof(lines[lineIndex]) - 1] = '\0';
+            word = std::strtok(nullptr, " ");
+        } else {
+            // Does not fit after all: leave it for the next line instead of
+            // consuming it, so a long name is never silently dropped.
+            lineIndex++;
+        }
+    }
+
+    static const char *result[3] = { lines[0], lines[1], lines[2] };
+    return result;
+}
+
+/**
  * @brief What to say, for each way there can be no code.
  *
  * Every line has to earn its place on a 240x240 round screen and fit one
@@ -98,16 +164,27 @@ const Prompt &promptFor(Barcode::Problem problem)
     static const Prompt kNoValue  = {{ "input.json has", "no usable code", "", "" }};
     static const Prompt kNotSet   = {{ "No codes set yet", "Open the UNA app", "and enter your ID", "" }};
     static const Prompt kBadValue = {{ "That ID cannot", "be drawn: 1-16", "plain characters", "" }};
-    // Only reachable from a hand-edited input.json: the phone's pattern offers
-    // nothing else. It still gets its own words, because "that ID cannot be
-    // drawn" would send the wearer to look at an id that is perfectly fine.
-    static const Prompt kBadFormat = {{ "Unknown format.", "Set it to Code128", "or QRCode", "" }};
+    // ITF is the only digit-only format, so naming it is more useful than a
+    // generic "this format" would be -- there is exactly one place to go
+    // fix it, and this says which.
+    static const Prompt kBadDigitCount = {{ "ITF needs an", "even count of", "digits, 2 to 16", "" }};
+    static const Prompt kBadCharacters = {{ "ITF only draws", "digits 0-9", "", "" }};
 
     switch (problem) {
     case Barcode::Problem::NoValue:  return kNoValue;
     case Barcode::Problem::NotSet:   return kNotSet;
     case Barcode::Problem::BadValue: return kBadValue;
-    case Barcode::Problem::BadFormat: return kBadFormat;
+    case Barcode::Problem::BadDigitCount: return kBadDigitCount;
+    case Barcode::Problem::BadCharacters: return kBadCharacters;
+    case Barcode::Problem::BadFormat: {
+        // Only reachable from a hand-edited input.json: the phone's pattern
+        // offers nothing else. It still gets its own words, because "that ID
+        // cannot be drawn" would send the wearer to look at an id that is
+        // perfectly fine.
+        const char *const *lines = badFormatLines();
+        static const Prompt kBadFormat = {{ "Unknown format.", lines[0], lines[1], lines[2] }};
+        return kBadFormat;
+    }
     case Barcode::Problem::NoConfig:
     case Barcode::Problem::None:
         break;

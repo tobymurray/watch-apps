@@ -107,10 +107,17 @@ before this still means what it meant.
 The gap this leaves is the one the SDK's field model makes unavoidable:
 **patterns are per-field**, so `id1`'s pattern cannot depend on `fmt1`. The
 phone will happily save `fmt1=ITF` alongside `id1=A1234567` and the watch is
-where that is caught. `Problem::BadValue` already covers it, and its prompt
-says what an id may contain — but it cannot say "ITF wants an even number of
-digits" specifically, because one prompt serves every format. That is a known
-cost of the shape, recorded rather than solved.
+where that is caught.
+
+That used to mean `Problem::BadValue`'s one generic prompt, "1-16 plain
+characters" — true and useless for `A1234567`, which already is 1-16 plain
+characters. `Barcode::Refusal` (see Symbology.hpp) now asks *why* a digit-only
+format refused an id, not just whether it did, and Service.cpp threads the
+answer through as its own `Problem`: `BadCharacters` for a stray letter,
+`BadDigitCount` for an empty, odd, or over-length digit run. Code 128 and QR
+still fail only the one generic way each, so they still get `BadValue` — see
+`Barcode::kMaxIdLength`'s header comment in Barcode.hpp for why QR in
+particular adds no new failure of its own.
 
 ## Evidence
 

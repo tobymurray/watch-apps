@@ -229,6 +229,51 @@ TEST(Service, AnUndrawableIdIsBadValueEvenWhenAFormatIsAlsoWrong)
     EXPECT_EQ(h.publishedCount(0), 0);
 }
 
+TEST(Service, AnItfIdWithANonDigitPublishesBadCharacters)
+{
+    // ITF is the digit-only format, so a stray letter gets its own prompt
+    // rather than the generic "1-16 plain characters" -- that text would be
+    // true and useless, since "A123456" *is* 1-16 plain characters.
+    Harness h;
+    h.seed(BarcodeTest::documentWithFormats({"A123456"}, {"ITF"}));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::BadCharacters);
+    EXPECT_EQ(h.publishedCount(0), 0);
+}
+
+TEST(Service, AnItfIdWithAnOddDigitCountPublishesBadDigitCount)
+{
+    Harness h;
+    h.seed(BarcodeTest::documentWithFormats({"12345"}, {"ITF"}));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::BadDigitCount);
+    EXPECT_EQ(h.publishedCount(0), 0);
+}
+
+TEST(Service, BadCharactersOutranksBadDigitCountAcrossSlots)
+{
+    // Two ITF slots, two different faults, one prompt: the more specific of
+    // the two specific reasons wins, the same way BadValue outranks BadFormat
+    // below when a wearer manages both mistakes at once.
+    Harness h;
+    h.seed(BarcodeTest::documentWithFormats({"12345", "A123456"}, {"ITF", "ITF"}));
+    h.comm.queueGuiRun();
+    h.comm.queueStop();
+    h.run();
+
+    ASSERT_EQ(h.published().size(), 1u);
+    EXPECT_EQ(h.publishedProblem(0), Barcode::Problem::BadCharacters);
+    EXPECT_EQ(h.publishedCount(0), 0);
+}
+
 TEST(Service, QrAddsNoNewWayForAnIdToBeRefused)
 {
     // Qr::kMaxDataLength is 26 and an id is at most 16, so every id Code 128

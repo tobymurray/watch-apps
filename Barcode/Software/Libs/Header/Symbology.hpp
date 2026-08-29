@@ -141,17 +141,58 @@ inline bool isDrawable(Format format, const char *text)
 }
 
 /**
+ * @brief Why isDrawable(format, text) said no, when the screen can be more
+ * specific than Problem::BadValue's generic "1-16 plain characters".
+ *
+ * Code 128 and QR each fail exactly one way -- too long, or a character
+ * their charset excludes, both of which "1-16 plain characters" already
+ * describes -- so they report BadValue and stop there. ITF is a digit-only
+ * format layered under the same 1-16-character ceiling, so it can fail in two
+ * *more* specific ways, and a wearer with no keyboard benefits from being told
+ * which: a stray letter is a typo, a wrong digit count is a different
+ * mistake entirely. Itf::Diagnosis carries that distinction; this is where it
+ * turns into something format-agnostic callers can act on without knowing ITF
+ * exists.
+ */
+enum class Refusal : uint8_t {
+    BadValue,      ///< The generic reason: too long, or not this format's charset.
+    BadDigitCount, ///< A digit-only format's id was empty, odd, or over-length.
+    BadCharacters, ///< A digit-only format's id held a non-digit.
+};
+
+/**
+ * @brief Classify a refusal isDrawable() already returned false for.
+ * @pre !isDrawable(format, text)
+ */
+inline Refusal refusalFor(Format format, const char *text)
+{
+    switch (format) {
+    case Format::Itf:
+        switch (Itf::diagnose(text)) {
+        case Itf::Diagnosis::BadCharacters: return Refusal::BadCharacters;
+        case Itf::Diagnosis::BadCount:      return Refusal::BadDigitCount;
+        case Itf::Diagnosis::Ok:            break; // isDrawable() already said no
+        }
+        return Refusal::BadValue;
+    case Format::Code128:
+    case Format::Qr:
+        return Refusal::BadValue;
+    }
+    return Refusal::BadValue;
+}
+
+/**
  * @brief Read a format out of a configuration value.
  * @param text  The `fmtN` field, as the file carried it.
  * @param out   Set only when this returns true.
  * @retval true  Recognised; @p out is the format.
  * @retval false Not a format this app draws.
  *
- * Two words, `Code128` and `QRCode`, matched **without regard to case**. The
- * phone renders a string field as a plain text box, so the wearer is typing;
- * refusing `qrcode` because it wanted `QRCode` would be a spelling test rather
- * than a safety check, and nothing about which symbology to draw is
- * case-sensitive. The manifest's pattern spells both cases out per letter,
+ * Three words, `Code128`, `QRCode` and `ITF`, matched **without regard to
+ * case**. The phone renders a string field as a plain text box, so the wearer
+ * is typing; refusing `qrcode` because it wanted `QRCode` would be a spelling
+ * test rather than a safety check, and nothing about which symbology to draw
+ * is case-sensitive. The manifest's pattern spells both cases out per letter,
  * since the SDK's pattern dialect has no inline case-insensitive flag -- so the
  * phone accepts exactly what this does.
  *
@@ -197,6 +238,17 @@ inline bool parseFormat(const char *text, Format &out)
     }
     return false;
 }
+
+/// Canonical display name for each format, in enum order -- the one place a
+/// human-readable format name is spelled, so an on-screen "what's accepted"
+/// message (see MainView.cpp's bad-format prompt) is built from this instead
+/// of repeating the list and drifting from it, the way the prompt drifted
+/// when ITF was added here but not there. Display case only; parseFormat()
+/// above accepts any case.
+inline constexpr const char *kFormatNames[] = { "Code128", "QRCode", "ITF" };
+static_assert(sizeof(kFormatNames) / sizeof(kFormatNames[0]) == kFormatCount,
+              "kFormatNames must have exactly one entry per Barcode::Format "
+              "-- add one alongside a new Format and bump kFormatCount");
 
 /**
  * @brief How a linear symbol should be laid out on this panel.

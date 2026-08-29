@@ -137,6 +137,53 @@ TEST(ItfAccepts, RefusesOverlongRatherThanTruncating)
 }
 
 // ---------------------------------------------------------------------------
+// Why it refuses -- the split Barcode::Refusal turns into a specific screen
+// ---------------------------------------------------------------------------
+
+TEST(ItfDiagnose, OkForEverythingAcceptsAccepts)
+{
+    for (const char *id : { "12", "1234", "123456", "1234567890123456" }) {
+        EXPECT_EQ(Itf::diagnose(id), Itf::Diagnosis::Ok) << id;
+    }
+}
+
+/// A stray non-digit is BadCharacters even when the digit count would
+/// otherwise have been fine -- "12A4" is four characters, the right count,
+/// and still not what the wearer meant to type.
+TEST(ItfDiagnose, BadCharactersForAnyNonDigit)
+{
+    for (const char *id : { "A1", "12A4", "12 34", "12-34", "１２" }) {
+        EXPECT_EQ(Itf::diagnose(id), Itf::Diagnosis::BadCharacters) << id;
+    }
+}
+
+/// All-digit, but the wrong shape of digits: empty, odd, or over the limit.
+/// None of these has a character to point at, so BadCount rather than
+/// BadCharacters -- see diagnose()'s null case for the same reasoning.
+TEST(ItfDiagnose, BadCountForEmptyOddOrOverlong)
+{
+    for (const char *id : { "", "1", "123", "12345",
+                            "123456789012345", "123456789012345678" }) {
+        EXPECT_EQ(Itf::diagnose(id), Itf::Diagnosis::BadCount) << id;
+    }
+}
+
+TEST(ItfDiagnose, BadCountForNullptr)
+{
+    EXPECT_EQ(Itf::diagnose(nullptr), Itf::Diagnosis::BadCount);
+}
+
+/// The first bad character wins over a count problem further along, since
+/// diagnose() (like accepts()) reads left to right and stops at the first
+/// thing wrong: "1234A67" is both a stray letter and, if that letter were a
+/// digit, still an odd count -- but the letter is what a wearer needs to
+/// see named first.
+TEST(ItfDiagnose, ACharacterProblemWinsOverACountProblemInTheSameId)
+{
+    EXPECT_EQ(Itf::diagnose("1234A67"), Itf::Diagnosis::BadCharacters);
+}
+
+// ---------------------------------------------------------------------------
 // Structure of the output
 // ---------------------------------------------------------------------------
 

@@ -175,6 +175,16 @@ Service::Adopted Service::adoptCode(size_t index, Barcode::Code &out) const
     // SDK::AppConfig decodes JSON escapes before this point, so a `\\` in the
     // file arrives as a real backslash and encodes as one.
     if (!Barcode::isDrawable(format, raw)) {
+        switch (Barcode::refusalFor(format, raw)) {
+        case Barcode::Refusal::BadDigitCount:
+            LOG_WARNING("%s has the wrong number of digits\n", BarcodeConfig::idField(index));
+            return Adopted::BadDigitCount;
+        case Barcode::Refusal::BadCharacters:
+            LOG_WARNING("%s has a character its format cannot draw\n", BarcodeConfig::idField(index));
+            return Adopted::BadCharacters;
+        case Barcode::Refusal::BadValue:
+            break;
+        }
         LOG_WARNING("%s cannot be drawn\n", BarcodeConfig::idField(index));
         return Adopted::BadValue;
     }
@@ -206,9 +216,11 @@ void Service::adopt()
     Barcode::State next {};
     next.problem = Barcode::Problem::None;
 
-    bool anyKeyPresent = false;  // a slot carried a value, even an empty one
-    bool anyBadValue   = false;  // a slot carried an id that cannot be drawn
-    bool anyBadFormat  = false;  // a slot named a format this app does not draw
+    bool anyKeyPresent    = false;  // a slot carried a value, even an empty one
+    bool anyBadValue      = false;  // a slot carried an id that cannot be drawn
+    bool anyBadFormat     = false;  // a slot named a format this app does not draw
+    bool anyBadDigitCount = false;  // a digit-only format's id was the wrong length
+    bool anyBadCharacters = false;  // a digit-only format's id held a non-digit
 
     for (size_t i = 0; i < Barcode::kMaxCodes; i++) {
         if (mConfig->has(BarcodeConfig::idField(i))) {
@@ -227,6 +239,12 @@ void Service::adopt()
         case Adopted::BadFormat:
             anyBadFormat = true;
             break;
+        case Adopted::BadDigitCount:
+            anyBadDigitCount = true;
+            break;
+        case Adopted::BadCharacters:
+            anyBadCharacters = true;
+            break;
         case Adopted::Empty:
             break;
         }
@@ -242,7 +260,14 @@ void Service::adopt()
         return;
     }
 
-    if (anyBadValue) {
+    if (anyBadCharacters) {
+        // The two most specific reasons outrank the generic one when both are
+        // present, for the same reason BadValue outranks BadFormat below: a
+        // wearer benefits more from the fault the prompt can actually name.
+        mState = Barcode::makeUnsetState(Barcode::Problem::BadCharacters);
+    } else if (anyBadDigitCount) {
+        mState = Barcode::makeUnsetState(Barcode::Problem::BadDigitCount);
+    } else if (anyBadValue) {
         // Reported ahead of a bad format when both are present: an id that
         // cannot be drawn is the fault the wearer is more likely to have made
         // and the one the prompt can actually be specific about.

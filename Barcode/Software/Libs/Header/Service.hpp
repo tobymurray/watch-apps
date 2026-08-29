@@ -67,16 +67,22 @@ private:
     /**
      * @brief What one declared slot turned out to hold.
      *
-     * Three ways to fail rather than one, because adopt() has to choose which
+     * Five ways to fail rather than one, because adopt() has to choose which
      * Problem to report when nothing is drawable and the wearer needs a
      * different thing done about each. It replaces a re-read of the raw value
      * that adopt() used to do to tell an empty slot from a refused one.
+     *
+     * BadDigitCount and BadCharacters split what used to be one BadValue for a
+     * digit-only format: see Barcode::Refusal in Symbology.hpp for why the two
+     * failures need different words on screen.
      */
     enum class Adopted : uint8_t {
-        Yes,       ///< @p out holds a drawable code; its name may be empty.
-        Empty,     ///< Nothing stored, which is what an unused slot looks like.
-        BadValue,  ///< An id the chosen format cannot carry.
-        BadFormat, ///< A format this app does not draw.
+        Yes,           ///< @p out holds a drawable code; its name may be empty.
+        Empty,         ///< Nothing stored, which is what an unused slot looks like.
+        BadValue,      ///< An id the chosen format cannot carry, for the generic reason.
+        BadFormat,     ///< A format this app does not draw.
+        BadDigitCount, ///< A digit-only format's id was empty, odd, or over-length.
+        BadCharacters, ///< A digit-only format's id held a character other than 0-9.
     };
 
     /// @brief Read one declared slot into @p out.
