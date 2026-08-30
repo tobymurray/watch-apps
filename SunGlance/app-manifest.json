@@ -1,0 +1,47 @@
+{
+  "manifest_version": 1,
+  "type": [
+    "glance"
+  ],
+  "name": "Sun",
+  "binary": "Sun_0.3.1.uapp",
+  "appVersion": "0.3.1",
+  "minKernelVersion": "1.4.0",
+  "requiredHardware": [],
+  "description": "The next two things the sun will do, for a position you set once. Sunrise and sunset side by side, nearest first, and how long until it. Nothing on the card is in the past. One glance in the carousel; tapping it opens nothing, because there is nothing more to say.",
+  "id": "CCAC55621745C147",
+  "stravaExport": false,
+  "supportsLaps": false,
+  "supportsDistance": false,
+  "supportsTrack": false,
+  "supportsHeartbeat": false,
+  "supportsElevation": false,
+  "supportsStep": false,
+  "supportsSpeed": "none",
+  "customMeasures": [],
+  "configFile": "input.json",
+  "configFields": [
+    {
+      "id": "lat",
+      "type": "string",
+      "label": "Latitude",
+      "description": "Decimal degrees, north positive. 45.4215 is Ottawa. A position good to 25 km is good to under a minute of sunrise, so the nearest city is close enough.",
+      "default": "",
+      "maxLength": 12,
+      "pattern": "(?:-?\\d{1,2}(?:\\.\\d{1,6})?)?",
+      "required": true,
+      "validationMessage": "Decimal degrees between -90 and 90, e.g. 45.4215. Not 45,4215 and not 45.4215N."
+    },
+    {
+      "id": "lon",
+      "type": "string",
+      "label": "Longitude",
+      "description": "Decimal degrees, east positive. -75.6972 is Ottawa. Take care not to swap it with the latitude: if both are valid latitudes nothing can catch it.",
+      "default": "",
+      "maxLength": 13,
+      "pattern": "(?:-?\\d{1,3}(?:\\.\\d{1,6})?)?",
+      "required": true,
+      "validationMessage": "Decimal degrees between -180 and 180, e.g. -75.6972. Not -75,6972 and not 75.6972W."
+    }
+  ]
+}
