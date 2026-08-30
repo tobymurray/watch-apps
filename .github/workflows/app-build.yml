@@ -307,6 +307,17 @@ jobs:
           manifest="${{ steps.app.outputs.manifest }}"
           [ -n "$manifest" ] && cp "$manifest" "$stage/"
 
+          # The icon is a store-submission concern this workflow otherwise knows
+          # nothing about, so it is discovered rather than declared, the same way
+          # everything else here is: present, it travels with the build as
+          # icon.png; absent, the build is just the manifest and the binary.
+          # Staged here rather than only before the release zip further down, so
+          # the plain CI artifact (what a run page download gives you) carries it
+          # too -- it, not just the release asset, is a manifest referencing
+          # icon.png plus the files that manifest promises.
+          icon="$app_dir/Resources/icon_store.png"
+          [ -f "$icon" ] && cp "$icon" "$stage/icon.png"
+
           # The packer prints these and the repository's release tags record them,
           # so a run is a place to look them up rather than a reason to rebuild.
           crc=$(grep -oE 'CRC[[:space:]]*:[[:space:]]*0x[0-9A-Fa-f]+' /tmp/build.log | tail -n 1 | grep -oE '0x[0-9A-Fa-f]+' || echo unknown)
@@ -367,14 +378,9 @@ jobs:
           set -euo pipefail
           stage="${{ steps.uapp.outputs.stage }}"
 
-          # The icon is a store-submission concern this workflow otherwise
-          # knows nothing about, so it is discovered rather than declared, the
-          # same way everything else here is: present, it travels with the
-          # release as icon.png; absent, the release is just the manifest and
-          # the binary, same as the CI artifact above always has been.
-          icon="apps/${{ inputs.app }}/Resources/icon_store.png"
-          [ -f "$icon" ] && cp "$icon" "$stage/icon.png"
-
+          # icon.png, if the app has one, is already in $stage -- copied in
+          # during "Build the app" so the plain CI artifact carries it too, not
+          # just this release zip.
           zip_path="$RUNNER_TEMP/${{ inputs.app }}_${VERSION}.zip"
           (cd "$stage" && python3 -m zipfile -c "$zip_path" *)
 
