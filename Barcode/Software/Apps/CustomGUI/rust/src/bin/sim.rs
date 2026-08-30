@@ -102,8 +102,33 @@ const ITF_MAXLEN: [u8; 87] = [
 ];
 include!("../gymworld_bits.rs");
 
+// Barcode::Qr::encode("A1234567", ...), same real-encoder-dump provenance as
+// gymworld_bits.rs -- matches Barcode/Resources/capture_qr.png.
+const A1234567_BITS: [u8; 79] = [
+    0x7F, 0x9E, 0xFD, 0x83, 0x2C, 0x08, 0x76, 0x05, 0xD5, 0xED, 0x2A, 0xA8, 0xDB, 0xB5, 0x4F,
+    0x37, 0x28, 0xBD, 0xE0, 0x5F, 0x55, 0x7F, 0x80, 0x52, 0x00, 0x7D, 0xDE, 0x7C, 0x6E, 0x01,
+    0x7B, 0xA5, 0x05, 0xD0, 0x75, 0xF5, 0xFA, 0x5D, 0xEC, 0x50, 0xF4, 0x45, 0xDE, 0x54, 0xDB,
+    0xF9, 0xD6, 0x9A, 0x59, 0xD4, 0x55, 0xD1, 0x5F, 0x01, 0x02, 0x23, 0xFE, 0x79, 0xD6, 0x0E,
+    0x7A, 0x8A, 0xD9, 0xF5, 0xF0, 0xA5, 0xEB, 0x7E, 0x63, 0x57, 0x59, 0xC1, 0x20, 0x18, 0x9A,
+    0x7F, 0xD1, 0xCE, 0x01,
+];
+
+const CODE128_A1234567: [u8; 55] = [
+    2, 1, 1, 2, 1, 4, 1, 1, 1, 3, 2, 3, 1, 2, 3, 2, 2, 1, 1, 1, 3, 1, 4, 1, 3, 1, 2, 1, 3, 1, 1,
+    1, 3, 1, 2, 3, 1, 4, 1, 1, 2, 2, 3, 1, 1, 1, 2, 3, 2, 3, 3, 1, 1, 1, 2,
+];
+const ITF_12345678: [u8; 47] = [
+    1, 1, 1, 1, 3, 1, 1, 3, 1, 1, 1, 1, 3, 3, 3, 1, 3, 1, 1, 3, 1, 1, 1, 3, 3, 1, 1, 3, 3, 3, 1,
+    1, 1, 1, 1, 3, 1, 1, 1, 1, 3, 3, 3, 1, 3, 1, 1,
+];
+
 fn scenes() -> Vec<(&'static str, Frame)> {
     vec![
+        // Match Barcode/Resources/capture_code128.png and capture_itf.png
+        // exactly, for a direct side-by-side against the real TouchGFX capture.
+        ("compare_code128", linear(KIND_CODE128, &CODE128_A1234567, 101, "A1234567", "", 0, 1)),
+        ("compare_itf", linear(KIND_ITF, &ITF_12345678, 81, "12345678", "", 0, 1)),
+        ("compare_qr", qr(&A1234567_BITS, 25, "A1234567")),
         ("code128_short", linear(KIND_CODE128, &CODE128_A1234, 79, "A1234", "Alice", 0, 3)),
         ("code128_max", linear(KIND_CODE128, &CODE128_MAXLEN, 167, "0123456789ABCDEF", "Bob", 1, 3)),
         ("itf_short", linear(KIND_ITF, &ITF_123456, 63, "123456", "", 2, 3)),

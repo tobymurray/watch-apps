@@ -235,8 +235,12 @@ const ID_X: i32 = 27;
 const ID_Y: i32 = 178;
 const ID_W: i32 = 187;
 const ID_LINE1_Y: i32 = 169;
-const ID_LINE2_Y: i32 = 187;
-const ID_LINE_H: i32 = 18;
+// helvR14's own default line height (23px), not the original's 18px pitch --
+// that pitch was tuned to Regular 18's shorter line height and the fonts
+// differ enough here that reusing it collided the two rows (caught by
+// rendering the worst case and looking at it, not by any test).
+const ID_LINE_H: i32 = 23;
+const ID_LINE2_Y: i32 = ID_LINE1_Y + ID_LINE_H;
 
 const MARK_W: i32 = 8;
 const MARK_H: i32 = 4;
@@ -280,9 +284,17 @@ fn fill_rect(fb: &mut FrameBuf, x: i32, y: i32, w: i32, h: i32, color: Abgr2222)
 // and thresholds are chosen empirically against these specific bitmap fonts,
 // not reused from TouchGFX's proprietary font metrics -- see the plan's
 // note on why kIdW/kIdInkLimit do not carry over numerically.
-type Font = fonts::u8g2_font_helvB12_tf;
-type FontSmall = fonts::u8g2_font_helvR10_tf;
-type FontPrompt = fonts::u8g2_font_helvR10_tf;
+// helvB18/helvR14 were chosen over the initial helvB12/helvR10 by measuring
+// against the original TouchGFX fonts' own widths: helvR14's width for the
+// 16-char worst case (177px) lands almost exactly on Regular 18's (178px),
+// so the fit decision below behaves the same even though pixel heights
+// differ between font families. The original used exactly two faces --
+// T_TMP_SEMIBOLD_20 for the preferred large id, T_TMP_REGULAR_18 for
+// everything else (split id lines, caption, every prompt line) -- so
+// FontSmall does all three jobs here too, rather than a third face.
+type Font = fonts::u8g2_font_helvB18_tf;
+type FontSmall = fonts::u8g2_font_helvR14_tf;
+type FontPrompt = fonts::u8g2_font_helvR14_tf;
 
 fn measure_width(renderer: &FontRenderer, s: &str) -> u32 {
     renderer
@@ -293,6 +305,24 @@ fn measure_width(renderer: &FontRenderer, s: &str) -> u32 {
         )
         .map(|d| d.bounding_box.map(|b| b.size.width).unwrap_or(0))
         .unwrap_or(0)
+}
+
+/// Every text element this app draws is CENTER-aligned in the TouchGFX build
+/// being replaced -- both `T_TMP_REGULAR_18` and `T_TMP_SEMIBOLD_20` are
+/// `touchgfx::CENTER` in the generated `TypedTextDatabase.cpp` -- so centering
+/// within the box is the default here too, not an option to opt into.
+fn draw_text_centered(
+    fb: &mut FrameBuf,
+    renderer: &FontRenderer,
+    s: &str,
+    box_x: i32,
+    box_w: i32,
+    y: i32,
+    color: Abgr2222,
+) {
+    let width = measure_width(renderer, s) as i32;
+    let x = box_x + (box_w - width) / 2;
+    draw_text(fb, renderer, s, x, y, color);
 }
 
 fn draw_text(
@@ -379,7 +409,7 @@ fn draw_prompt(fb: &mut FrameBuf, frame: &Frame) {
     let font = FontRenderer::new::<FontPrompt>();
     let lines = word_wrap(&font, frame.message_str(), PROMPT_W as u32);
     for (i, line) in lines.iter().enumerate() {
-        draw_text(fb, &font, line, PROMPT_X, PROMPT_TOP + i as i32 * PROMPT_LINE_H, WHITE);
+        draw_text_centered(fb, &font, line, PROMPT_X, PROMPT_W, PROMPT_TOP + i as i32 * PROMPT_LINE_H, WHITE);
     }
 }
 
@@ -400,8 +430,7 @@ fn draw_caption(fb: &mut FrameBuf, name: &str) {
         return;
     }
     let font = FontRenderer::new::<FontSmall>();
-    draw_text(fb, &font, name, CAPTION_X, CAPTION_Y, WHITE);
-    let _ = CAPTION_W;
+    draw_text_centered(fb, &font, name, CAPTION_X, CAPTION_W, CAPTION_Y, WHITE);
     let _ = CAPTION_H;
 }
 
@@ -418,9 +447,9 @@ fn draw_id(fb: &mut FrameBuf, id: &str) {
     if small_width <= ID_W as u32 {
         let large_width = measure_width(&large, id);
         if large_width <= ID_W as u32 {
-            draw_text(fb, &large, id, ID_X, ID_Y, WHITE);
+            draw_text_centered(fb, &large, id, ID_X, ID_W, ID_Y, WHITE);
         } else {
-            draw_text(fb, &small, id, ID_X, ID_Y, WHITE);
+            draw_text_centered(fb, &small, id, ID_X, ID_W, ID_Y, WHITE);
         }
         return;
     }
@@ -435,8 +464,11 @@ fn draw_id(fb: &mut FrameBuf, id: &str) {
         split -= 1;
     }
     let (line1, line2) = id.split_at(split);
-    draw_text(fb, &small, line1, ID_X, ID_LINE1_Y, WHITE);
-    draw_text(fb, &small, line2, ID_X, ID_LINE2_Y, WHITE);
+    // Each line is centered in its own box independently, the same way two
+    // TouchGFX TextAreas each center their own content rather than the pair
+    // being centered as a block.
+    draw_text_centered(fb, &small, line1, ID_X, ID_W, ID_LINE1_Y, WHITE);
+    draw_text_centered(fb, &small, line2, ID_X, ID_W, ID_LINE2_Y, WHITE);
     let _ = ID_LINE_H;
 }
 
@@ -810,5 +842,6 @@ mod tests {
         assert_eq!(a, b);
     }
 }
+
 
 

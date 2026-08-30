@@ -387,10 +387,10 @@ framework size and the framebuffer share one budget):
 
 | | Rust/CustomGUI | TouchGFX (removed) |
 | --- | --- | --- |
-| `.text` | 41,888 | 84,712 |
+| `.text` | 44,600 | 84,712 |
 | `.bss` | 68,592 | 65,560 |
-| RAM total | 110,680 — 18.0% | 152,648 — 24.8% |
-| packaged `.uapp` | 70,760 bytes | 120,444 bytes |
+| RAM total | 113,392 — 18.5% | 152,648 — 24.8% |
+| packaged `.uapp` | 73,472 bytes | 120,444 bytes |
 
 `.bss` is close either way — it is almost entirely the 57,600-byte
 framebuffer on both sides. The gap is `.text`: the TouchGFX framework and its
