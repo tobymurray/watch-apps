@@ -1,0 +1,49 @@
+name: SunGlance
+
+# The second caller, and the test of the claim barcode.yml makes: that adding an
+# app is this file with the names changed and nothing else. It is -- but it is
+# also the first app to exercise two paths app-build.yml has never taken.
+#
+#   No AppConfigFields.cpp. SunGlance reads its config through its own
+#   InputConfig rather than SDK::AppConfig, so `--check-bounds` finds nothing and
+#   is skipped. The manifest is still validated; only the comparison against the
+#   binary's own field table is absent.
+#
+#   A binary named after APP_USER_NAME. The packer writes `Sun_<version>.uapp`,
+#   not `SunGlance_<version>.uapp`, which the `*_${version}.uapp` glob handles
+#   but has never had to.
+#
+# See barcode.yml for why the paths filter names the shared files as well.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'SunGlance/**'
+      - '.github/workflows/sunglance.yml'
+      - '.github/workflows/app-build.yml'
+  pull_request:
+    paths:
+      - 'SunGlance/**'
+      - '.github/workflows/sunglance.yml'
+      - '.github/workflows/app-build.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to stamp, overriding the manifest'
+        required: false
+        type: string
+
+concurrency:
+  group: sunglance-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    uses: ./.github/workflows/app-build.yml
+    with:
+      app: SunGlance
+      version: ${{ inputs.version || '' }}
+    permissions:
+      contents: read
+      packages: read
