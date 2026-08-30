@@ -387,13 +387,13 @@ framework size and the framebuffer share one budget):
 
 | | Rust/CustomGUI | TouchGFX (removed) |
 | --- | --- | --- |
-| `.text` | 49,768 | 84,712 |
+| `.text` | 42,488 | 84,712 |
 | `.bss` | 83,952 | 65,560 |
-| RAM total | 133,920 — 21.8% | 152,648 — 24.8% |
-| packaged `.uapp` | 78,696 bytes | 120,444 bytes |
+| RAM total | 126,640 — 20.6% | 152,648 — 24.8% |
+| packaged `.uapp` | 71,416 bytes | 120,444 bytes |
 
-Two optimizations found by asking "is there more size to find" after the
-anti-aliasing work above landed, both real and both verified not to cost
+Three optimizations found by asking "is there more size to find" after the
+anti-aliasing work above landed, each real and each verified not to cost
 accuracy before being kept:
 
 - **One font pair, not two.** The original anti-aliasing design kept helvB18/
@@ -417,6 +417,18 @@ accuracy before being kept:
   avoiding. Saved another ~800 bytes, with no visual difference at all: it
   draws the identical set of pixels, just without embedded-graphics's
   dispatch in between.
+- **The reduced glyph-coverage font variant, not the full one.** `u8g2-fonts`
+  ships each face in several glyph-coverage tiers (`_tf` full Unicode
+  coverage, `_tr` reduced, `_tn` numeric-only, `_te` extended); every string
+  this app ever draws is printable ASCII — ids and names are validated by the
+  encoders themselves, and every prompt message is a fixed English literal —
+  so the wide Unicode ranges `_tf` carries were dead weight from the start.
+  Switched `Font`/`FontSmall` to `helvB24_tr`/`helvR24_tr`. Saved ~7.3 KB of
+  `.text`, and unlike the font-pair change above, this one is not an
+  approximation: every glyph this app ever renders is still in the reduced
+  set, confirmed by re-rendering and diffing every screen against the real
+  captures again — the pixel differences were identical to the row above,
+  not worse, because nothing actually drawn changed.
 
 Checked and not worth pursuing further: dropping the now-unused
 `embedded_graphics_textstyle` feature from the `u8g2-fonts` dependency (the
