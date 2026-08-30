@@ -203,6 +203,7 @@ const Prompt &promptFor(Barcode::Problem problem)
 MainView::MainView()
     : mState(Barcode::makeUnsetState(Barcode::Problem::NoConfig))
     , mIndex(0)
+    , mIndexLoaded(false)
     , idBuffer{}
     , captionBuffer{}
     , promptBuffer{}
@@ -319,6 +320,7 @@ void MainView::cycle(int delta)
 
     const int count = static_cast<int>(mState.count);
     mIndex = static_cast<uint8_t>(((static_cast<int>(mIndex) + delta) % count + count) % count);
+    presenter->rememberIndex(mIndex);
 
     showBarcode();
     invalidate();
@@ -327,6 +329,27 @@ void MainView::cycle(int delta)
 void MainView::onBarcodeChanged(const Barcode::State &state)
 {
     mState = state;
+
+    // Only the first snapshot with an actual code in it loads the saved
+    // index -- not merely the first call. Model's own mState starts out
+    // Problem::NoConfig with count 0, and MainView::setupScreen() reads that
+    // placeholder through presenter->barcode() before the service's real
+    // publish() has necessarily arrived, so an unconditional "first call"
+    // check spends the one-time load on a state with nothing to show and
+    // then clamps straight back to 0 -- and every later call, the one
+    // carrying the real codes included, finds mIndexLoaded already true and
+    // never tries again. count > 0 is what makes a snapshot real, and it is
+    // also exactly the condition the clamp below needs to not immediately
+    // undo the load anyway.
+    //
+    // Once loaded, never again: the service re-publishes on every resume as
+    // well as at launch, and by the second real snapshot mIndex already
+    // reflects whatever the wearer has since cycled to in this session,
+    // which is what a resume must not overwrite.
+    if (!mIndexLoaded && mState.count > 0) {
+        mIndex = presenter->lastIndex();
+        mIndexLoaded = true;
+    }
 
     // A re-read can leave fewer codes than before, so never trust the old
     // position: an index past the end would draw somebody else's code.

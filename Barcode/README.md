@@ -621,6 +621,15 @@ and format fields there is nothing to mistype.
 `L1` and `L2` wrap. Cycling is handled entirely in the GUI, which already holds
 every code, so pressing `L2` never waits on the service.
 
+The GUI also remembers which code was on screen, in a small file of its own
+(`last_code.txt`, alongside `input.json` in the app's folder — the phone never
+reads or writes it) — so reopening the app goes straight back to it instead of
+back to Code 1. A family member who is always Code 3 does not re-cycle past 1
+and 2 every time. Written on every cycle and read back once, at the first
+snapshot of real codes the GUI sees after launch; a resume that happens while
+the app is already open leaves mid-session cycling alone rather than
+re-reading it.
+
 **There are deliberately no on-screen button hints.** The bezel indicators are
 23×35 ABGR2222 bitmaps and they blit corrupt on device — a smear of horizontal
 dashes where the arc should be. That was found and worked around in `6b7de05`

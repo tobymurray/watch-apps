@@ -49,6 +49,27 @@ public:
      */
     const Barcode::State &barcode() const { return mState; }
 
+    /**
+     * @brief Which code was on screen when the app last cycled, if any.
+     *
+     * Read from a small file this app writes itself, never one the phone
+     * touches -- unlike input.json, there is nothing here for SDK::AppConfig
+     * to own, so this goes through the kernel's raw filesystem interface
+     * directly. @retval 0 if nothing was ever saved, or the file could not be
+     * read; the caller still has to clamp against the current code count,
+     * since fewer codes may exist now than when this was written.
+     */
+    uint8_t lastIndex() const;
+
+    /**
+     * @brief Remember which code is on screen, so the app reopens on it.
+     *
+     * Failure is silent and left unretried: this is a convenience, not a
+     * value a wearer entered, so the worst a lost write costs is reopening on
+     * the first code instead of the last one shown -- today's behaviour.
+     */
+    void rememberIndex(uint8_t index);
+
 protected:
     ModelListener* modelListener;           ///< Pointer to model listener
 

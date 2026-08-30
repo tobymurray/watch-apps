@@ -2,6 +2,9 @@
 #include <gui/model/ModelListener.hpp>
 #include <gui/common/FrontendApplication.hpp>
 
+#include <cstdio>
+#include <cstdlib>
+
 #include "SDK/Kernel/KernelProviderGUI.hpp"
 #include "SDK/Port/TouchGFX/TouchGFXCommandProcessor.hpp"
 
@@ -58,6 +61,53 @@ Model::Model()
 FrontendApplication& Model::application()
 {
     return *static_cast<FrontendApplication*>(touchgfx::Application::getInstance());
+}
+
+namespace
+{
+// Not input.json and not settings.json: the phone never writes here and
+// never reads it either, so there is no schema to keep and no risk of
+// squatting on a name the companion app is watching. Just this app,
+// remembering one small thing about itself.
+constexpr char kLastIndexPath[] = "/last_code.txt";
+} // namespace
+
+uint8_t Model::lastIndex() const
+{
+    std::unique_ptr<SDK::Interface::IFile> file = mKernel.fs.file(kLastIndexPath);
+    if (!file || !file->open()) {
+        return 0;
+    }
+
+    char buf[4] = {};
+    size_t read = 0;
+    const bool ok = file->read(buf, sizeof(buf) - 1, read);
+    file->close();
+    if (!ok || read == 0) {
+        return 0;
+    }
+    buf[read] = '\0';
+
+    const long value = std::strtol(buf, nullptr, 10);
+    return (value >= 0 && value < static_cast<long>(Barcode::kMaxCodes))
+               ? static_cast<uint8_t>(value)
+               : 0;
+}
+
+void Model::rememberIndex(uint8_t index)
+{
+    std::unique_ptr<SDK::Interface::IFile> file = mKernel.fs.file(kLastIndexPath);
+    if (!file || !file->open(true, true)) {
+        return;
+    }
+
+    char buf[4];
+    const int len = std::snprintf(buf, sizeof(buf), "%u", index);
+    if (len > 0) {
+        size_t written = 0;
+        file->write(buf, static_cast<size_t>(len), written);
+    }
+    file->close();
 }
 
 void Model::tick()

@@ -35,6 +35,9 @@ public:
 
     const Barcode::State &barcode() const { return model->barcode(); }
 
+    uint8_t lastIndex() const { return model->lastIndex(); }
+    void rememberIndex(uint8_t index) { model->rememberIndex(index); }
+
     // ModelListener implementation
     virtual void onBarcodeChanged(const Barcode::State &state) override;
 

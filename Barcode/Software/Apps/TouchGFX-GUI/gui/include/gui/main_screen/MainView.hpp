@@ -43,6 +43,12 @@ private:
     Barcode::State mState;
     uint8_t        mIndex;
 
+    /// Set once onBarcodeChanged() has loaded mIndex from disk. The service
+    /// re-publishes on every resume, not just at launch, and only the first
+    /// of those should override wherever cycling has since moved mIndex to --
+    /// see onBarcodeChanged().
+    bool mIndexLoaded;
+
     /// Backing storage for textArea1's wildcard; the widget only stores the
     /// pointer, so this has to outlive it.
     touchgfx::Unicode::UnicodeChar idBuffer[Barcode::kMaxIdLength + 1];
