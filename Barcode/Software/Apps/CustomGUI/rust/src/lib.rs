@@ -474,7 +474,24 @@ fn render_smoothed(
     #[cfg(feature = "std")]
     let _guard = SS_LOCK.lock().unwrap();
 
-    let src_w = (measure_width(source, s) as i32 + 2).clamp(1, SS_MAX_W as i32);
+    // A glyph's own left bearing (bounding_box.top_left.x, measured from a
+    // pen position of zero) is not always 0 -- helvB24's "12345678" comes
+    // back at 2px, helvR24's "Bold Maximum" at 3px. Drawing at a flat x=1
+    // (assuming that bearing away) shifted every string's ink right by
+    // (bearing - 1)px with no matching increase to the buffer's right
+    // margin, silently dropping that many columns off the last glyph via
+    // SuperSample::draw_iter's bounds check -- a real, visible right-edge
+    // clip, not a display limitation. Measuring the bearing and folding it
+    // into the draw offset keeps the ink's left edge at x=1 regardless of
+    // the font's own bearing, so the fixed +2 margin is never eaten from one
+    // side only.
+    let bbox = source
+        .get_rendered_dimensions(s, Point::zero(), u8g2_fonts::types::VerticalPosition::Top)
+        .ok()
+        .and_then(|d| d.bounding_box);
+    let left = bbox.map(|b| b.top_left.x).unwrap_or(0);
+    let measured_w = bbox.map(|b| b.size.width as i32).unwrap_or(0);
+    let src_w = (measured_w + 2).clamp(1, SS_MAX_W as i32);
     let ascent = source.get_ascent() as i32;
     let descent = source.get_descent() as i32;
     let src_h = (ascent - descent + 2).clamp(1, SS_MAX_H as i32);
@@ -487,7 +504,7 @@ fn render_smoothed(
     }
 
     let mut target = SuperSample { w: src_w, h: src_h };
-    draw_text(&mut target, source, s, 1, 0, WHITE);
+    draw_text(&mut target, source, s, 1 - left, 0, WHITE);
 
     for dy in 0..dst_h {
         let sy0 = dy * src_h / dst_h;
@@ -1210,6 +1227,49 @@ mod tests {
                 large.get_rendered_dimensions(s.as_str(), Point::zero(), u8g2_fonts::types::VerticalPosition::Top).is_ok(),
                 "Font cannot render {:?} (0x{:02X}) -- outside _tr's coverage",
                 s, byte
+            );
+        }
+    }
+
+    /// Regression test for a right-edge clip: `render_smoothed()` drew its
+    /// scratch-buffer text at a flat `x=1`, sizing the buffer only from
+    /// `measure_width()` and assuming a string's own left bearing
+    /// (`get_rendered_dimensions()`'s `bounding_box.top_left.x`, measured
+    /// from a pen position of zero) is 0. It isn't -- helvB24's "12345678"
+    /// measures a 2px bearing, helvR24's "Bold Maximum" a 3px bearing -- so
+    /// the whole string's ink shifted right by `bearing - 1` px with no
+    /// matching growth of the buffer's right margin, and
+    /// `SuperSample::draw_iter`'s bounds check silently dropped that many
+    /// columns off the trailing glyph: the last "8", the last "m".
+    ///
+    /// The buffer is sized as `measured_w + 2`, one spare column on each
+    /// side of the ink. So long as nothing is clipped, the rightmost lit
+    /// column can never reach the buffer's last column (`src_w - 1`) --
+    /// that spare column must survive untouched. Landing exactly on it is
+    /// this bug's own signature: the true ink wanted to go one column
+    /// further and got cut off by `SuperSample`'s bounds check instead.
+    #[test]
+    fn scratch_buffer_never_uses_its_right_margin_column() {
+        // No SS_LOCK guard here -- render_smoothed() takes it internally,
+        // and it is not reentrant.
+        let large = FontRenderer::new::<Font>();
+        let small = FontRenderer::new::<FontSmall>();
+        let mut buf = vec![0u8; (PANEL_W * PANEL_H) as usize];
+
+        for (font, s) in [(&large, "12345678"), (&small, "Bold Maximum")] {
+            let mut fb = FrameBuf { buf: &mut buf, w: PANEL_W as u32, h: PANEL_H as u32 };
+            render_smoothed(&mut fb, font, s, 0, 0, 50, LARGE_H);
+
+            let src_w = (measure_width(font, s) as i32 + 2).clamp(1, SS_MAX_W as i32);
+            let last_col_is_lit = (0..SS_MAX_H as i32).any(|y| {
+                let idx = y as usize * SS_MAX_W + (src_w - 1) as usize;
+                unsafe { SS_BUF[idx] != 0 }
+            });
+            assert!(
+                !last_col_is_lit,
+                "{s:?} lights the scratch buffer's last column (col {} of {src_w}) -- \
+                 its ink is butting against the wall, meaning the real edge was clipped off",
+                src_w - 1
             );
         }
     }
