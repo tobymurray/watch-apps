@@ -355,13 +355,85 @@ Software/
 │   └── Sources/Service.cpp       # reads the config, publishes the result
 └── Apps/
     ├── Barcode-CMake/            # build glue
-    └── TouchGFX-GUI/             # the GUI: bars, or a prompt saying what to do
+    └── CustomGUI/                # the GUI: bars, or a prompt saying what to do
+        ├── Gui.cpp               # kernel message loop, the Service<->GUI contract,
+        │                         # the "remember last code" file, per-format dispatch
+        ├── barcode_gui.h         # the C ABI into the Rust core, checked at both
+        │                         # compile time and by a runtime fingerprint
+        └── rust/                 # no_std render core: embedded-graphics + u8g2-fonts
 ```
 
 The Service owns the codes and the GUI only renders what it is sent, so the
 configuration is read in exactly one place — which is also what `SDK::AppConfig`
 requires, since it is one instance per app on one thread. Cycling is the one
 thing the GUI does alone: it already has every code, so `L1`/`L2` never round-trip.
+
+### The GUI is Rust, through CustomGUI, not TouchGFX
+
+Ported from TouchGFX in place, following the architecture
+[`RustGuiPoc`](../RustGuiPoc) and [`QrGuiPoc`](../QrGuiPoc) proved out first.
+The SDK's **CustomGUI** entry point hands the GUI process a raw framebuffer
+and a kernel message loop instead of a widget/scene-graph framework;
+`Gui.cpp` owns that loop, and a `no_std` Rust crate under `CustomGUI/rust`
+owns only pixels, reached over the C ABI in `barcode_gui.h`. Every encoder
+this app draws — `Code128.hpp`, `Itf.hpp`, `Qr.hpp`, `Matrix.hpp` — is
+**unmodified**: `Gui.cpp` calls them exactly as the old TouchGFX `Model`/
+`BarcodeWidget` did, and only the widget tree that turned their output into
+pixels was rewritten.
+
+Measured against the TouchGFX GUI it replaced, from real `arm-none-eabi-size`
+output on the same 600 KiB GUI RAM window (code runs from RAM on this SDK, so
+framework size and the framebuffer share one budget):
+
+| | Rust/CustomGUI | TouchGFX (removed) |
+| --- | --- | --- |
+| `.text` | 41,888 | 84,712 |
+| `.bss` | 68,592 | 65,560 |
+| RAM total | 110,680 — 18.0% | 152,648 — 24.8% |
+| packaged `.uapp` | 70,760 bytes | 120,444 bytes |
+
+`.bss` is close either way — it is almost entirely the 57,600-byte
+framebuffer on both sides. The gap is `.text`: the TouchGFX framework and its
+generated Designer glue, not anything about what this app actually draws.
+
+Text is the one place `embedded-graphics`'s own `MonoTextStyle` could not
+follow TouchGFX's proportional-width id layout — it only ships fixed-width
+bitmap fonts. [`u8g2-fonts`](https://github.com/Finomnis/u8g2-fonts) closed
+that gap: real proportional bitmap glyphs, `no_std`, with a
+`get_rendered_dimensions()` measurement API that is the direct analogue of
+TouchGFX's `Font::getStringWidth()` the old id-layout algorithm was built on.
+The *algorithm* — prefer a bold face if it fits under an ink limit, else a
+smaller regular face, else split by character count rather than by width — is
+unchanged; only the two pixel thresholds are, because they were tuned to
+TouchGFX's specific proprietary font metrics and had to be re-derived against
+`u8g2-fonts`' bitmap faces. **The round-bezel ink-overflow measurement in
+["Fitting the id on a round screen"](#fitting-the-id-on-a-round-screen) below
+has not been redone against the new fonts** — it was verified against
+TouchGFX's fonts only, and is an open item before trusting the new build the
+way that section trusts the old one.
+
+Prompt text changed shape along the way: the old `promptFor()` hardcoded up
+to four pre-wrapped lines per `Problem`, by hand, except `BadFormat`'s, which
+was already generated from `Symbology::kFormatNames` and word-wrapped against
+measured pixel width — a past bug fix, keeping the on-screen format list from
+drifting out of sync with what the app actually draws. `Gui.cpp` now builds
+one flat, unwrapped message per `Problem` (`BadFormat`'s still built from
+`kFormatNames`, so it keeps tracking that list automatically) and the Rust
+core word-wraps every one of them the same way, at render time, against the
+font it actually has. One wrapper for every screen instead of one bespoke
+path and eight hand-split arrays.
+
+Code128 and ITF disagree on purpose about how element widths become pixels —
+`Symbology.hpp`'s `renderStyle()` documents why — and the port kept that
+disagreement rather than flattening it. ITF still rounds to one whole-pixel
+unit for the entire symbol, same as before. Code128 does not: its modules are
+already close to one pixel at the lengths this app draws, so flooring each
+one independently would nearly halve the narrow ones. It instead rounds each
+cumulative bar/space *boundary* to the nearest pixel from an accumulated
+sub-pixel position, which keeps every module close to its true fractional
+width without needing true alpha-blended anti-aliasing (which TouchGFX's
+`CanvasWidget` had and `embedded-graphics`'s fill primitives do not) on a
+panel with only four levels a channel to blend into anyway.
 
 ### Changing how many codes it holds
 
@@ -435,6 +507,19 @@ The build prints it, so it can be checked rather than assumed —
 `INFO:root:ID : 409506B8B69EC13E` in the `app_merging.py` output.
 
 ## Fitting the id on a round screen
+
+**This section, including the measurement table below, describes the
+TouchGFX build this app shipped before the Rust/CustomGUI port** (see
+["The GUI is Rust, through CustomGUI, not TouchGFX"](#the-gui-is-rust-through-customgui-not-touchgfx)
+above). The *reasoning* — a proportional font's width has to be measured
+rather than counted, the simulator cannot show bezel clipping, three tiers
+of large/small/split — still applies, and the new build follows the same
+shape with `u8g2-fonts`' own measurement API standing in for TouchGFX's
+`Font::getStringWidth()`. The specific pixel numbers in the table are
+TouchGFX's font metrics, not `u8g2-fonts`'; they have not been re-measured
+against the new build with the disc-mask methodology below, which is an open
+item before trusting the Rust build's bezel fit the way this section trusts
+the old one.
 
 The id under the bars is the human-readable half of the barcode: what someone
 reads out or types in when a scanner will not cooperate. It is also the widest
@@ -639,11 +724,13 @@ artifact from the bottom-right corner to the left edge. Fixed again in 0.3.2.
 
 The pager marks carry the affordance instead: a row of small marks below the id,
 one per code with the current one lit, says there are four codes without drawing
-anything the blit path can corrupt. They are `touchgfx::Box` fills — a path that
-renders correctly on device, unlike the indicator bitmaps. The unlit ones are
-`170`, not something dimmer, because `LCD8bpp_ABGR2222` has two bits a channel:
-the only greys are 85, 170 and 255, and 85 is the first thing to wash out in
-daylight. A pager whose unlit marks vanish has lost the one thing it says.
+anything a blit path can corrupt. They were `touchgfx::Box` fills before the
+Rust port and are plain filled rectangles now — in both cases, solid colour
+straight into the framebuffer, the path that renders correctly on device
+unlike the indicator bitmaps. The unlit ones are `170`, not something dimmer,
+because `LCD8bpp_ABGR2222` has two bits a channel: the only greys are 85, 170
+and 255, and 85 is the first thing to wash out in daylight. A pager whose
+unlit marks vanish has lost the one thing it says.
 
 The marks replaced a fraction appended to the caption in 0.3.4. `Gym 1/2` read as
 a title with a number in it rather than as the first of two codes, so the caption
@@ -654,10 +741,15 @@ the row cannot outgrow the screen. An unnamed code now has no caption at all: th
 marks and the id beneath the bars say everything the fraction used to.
 
 Getting real hints back means *drawing* the arcs rather than blitting them —
-[`SleepLab`](../SleepLab) and [`Squash`](../Squash) both replaced this container
-with one built from `touchgfx::Circle` and `PainterABGR2222` for exactly that
-reason, and gained a five-colour palette in the process. Barcode still uses the
-SDK template's bitmap version.
+[`SleepLab`](../SleepLab) and [`Squash`](../Squash), both still on TouchGFX,
+replaced their bitmap container with one built from `touchgfx::Circle` and
+`PainterABGR2222` for exactly that reason. The Rust/CustomGUI renderer this
+app now draws through has no bitmap-blit path to corrupt in the first place —
+`embedded-graphics`' own circle/arc primitives fill straight into the
+framebuffer the same way the pager marks do — so the constraint that kept
+Barcode on the SDK template's bitmap version no longer applies here. Nothing
+draws button hints yet; this just means the door TouchGFX kept shut for this
+app is open now, not that it has been walked through.
 
 Nothing else is bound. There was a GUI-to-Service "set the id" message; it went
 when the file arrived, because a GUI path that can overwrite a provisioned value
@@ -666,26 +758,39 @@ watch write an ID back to the file — and it still should not.
 
 ## Building
 
+Needs a Rust toolchain with the `thumbv8m.main-none-eabihf` target alongside
+the usual ARM/CMake/Python setup — same requirement as
+[`RustGuiPoc`](../RustGuiPoc)/[`QrGuiPoc`](../QrGuiPoc), and already present in
+this repo's own `toolchain/Dockerfile`.
+
 ```sh
+rustup target add thumbv8m.main-none-eabihf
 export UNA_SDK=/path/to/una-sdk
 cd Barcode/Software/Apps/Barcode-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.5.0 .. && cmake --build build
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.5.0 . && cmake --build build
 ```
 
-Or the desktop simulator, which is where the provisioning flow is easiest to
-exercise:
+`cmake --build` always invokes `cargo build --release` for
+`CustomGUI/rust` first and links the resulting `libbarcode_gui.a` into the
+GUI ELF (`Gui::run()` checks a runtime ABI fingerprint against it at startup,
+so a stale archive fails loudly rather than misreading the C struct it was
+handed). The `.uapp` lands in `Output/` as before.
+
+There is no TouchGFX simulator any more. The nearest equivalent is the Rust
+core's own desktop simulator, which calls the identical `render()` the
+firmware calls against hand-built `Frame`s rather than driving the app end to
+end through a mocked filesystem and kernel:
 
 ```sh
-cd Barcode/Software/Apps/TouchGFX-GUI
-UNA_SDK=/path/to/una-sdk make -f simulator/gcc/Makefile -j4
-./build/bin/simulator.out
+cd Barcode/Software/Apps/CustomGUI/rust
+cargo run --bin sim --features sim              # interactive, TAB cycles scenes
+cargo run --bin sim --features sim -- --dump     # every scene to /tmp/barcode_gui_preview/*.png
 ```
 
-Dropping `input.json` into the simulator's filesystem root is the same thing as
-writing it over USB. Take the root from the `Path to files created by app` line
-the app logs at startup and do not guess at it: the mock filesystem's root is a
-fixed number of `..` above the GUI directory, chosen for an app sitting inside
-the SDK tree, so out of tree it lands somewhere unrelated to this app.
+Exercising the actual provisioning flow — `input.json` arriving, `SDK::AppConfig`
+reading it, the Service publishing a real `Barcode::State` — needs either real
+hardware or a Service-side host harness; nothing here mocks the kernel message
+bus the way the old TouchGFX simulator did.
 
 ## Tests
 
