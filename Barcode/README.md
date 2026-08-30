@@ -387,10 +387,10 @@ framework size and the framebuffer share one budget):
 
 | | Rust/CustomGUI | TouchGFX (removed) |
 | --- | --- | --- |
-| `.text` | 59,032 | 84,712 |
+| `.text` | 59,288 | 84,712 |
 | `.bss` | 83,952 | 65,560 |
-| RAM total | 143,184 — 23.3% | 152,648 — 24.8% |
-| packaged `.uapp` | 87,964 bytes | 120,444 bytes |
+| RAM total | 143,440 — 23.3% | 152,648 — 24.8% |
+| packaged `.uapp` | 88,220 bytes | 120,444 bytes |
 
 These are smaller than an earlier version of this table (18.5%/73,472 bytes)
 because that version's text had a real problem: u8g2-fonts' bitmap glyphs
@@ -448,14 +448,34 @@ path and eight hand-split arrays.
 Code128 and ITF disagree on purpose about how element widths become pixels —
 `Symbology.hpp`'s `renderStyle()` documents why — and the port kept that
 disagreement rather than flattening it. ITF still rounds to one whole-pixel
-unit for the entire symbol, same as before. Code128 does not: its modules are
-already close to one pixel at the lengths this app draws, so flooring each
-one independently would nearly halve the narrow ones. It instead rounds each
-cumulative bar/space *boundary* to the nearest pixel from an accumulated
-sub-pixel position, which keeps every module close to its true fractional
-width without needing true alpha-blended anti-aliasing (which TouchGFX's
-`CanvasWidget` had and `embedded-graphics`'s fill primitives do not) on a
-panel with only four levels a channel to blend into anyway.
+unit for the entire symbol, same as before, since that trade (ITF's 3:1 ratio
+affording crisp integer edges) was already deliberate. Code128 does not take
+that trade: its modules are already close to one pixel at the lengths this
+app draws, and TouchGFX drew it with real `CanvasWidget` anti-aliasing, which
+`embedded-graphics`'s fill primitives do not have. A first version rounded
+each cumulative bar/space *boundary* to the nearest pixel instead, which kept
+every module's true fractional width but had no partial-coverage edges at
+all — and next to a real device capture (`Resources/capture_code128.png`),
+that showed up as a structured difference concentrated exactly on the narrow
+bars TouchGFX drew partially gray. Fixed with true sub-pixel coverage: each
+bar's fractional overlap with every pixel column it touches is accumulated
+into a small stack array (not blitted independently, so two sub-pixel-wide
+bars sharing a column still add up correctly regardless of processing
+order), then quantised to the panel's four gray levels — the one-dimensional
+version of the same coverage idea `render_smoothed()` uses for text, cheap
+enough here to compute in closed form rather than needing a scratch bitmap to
+average down. Diffing against the real capture dropped the bars area's mean
+pixel difference from 7.0 to 4.9 (of 255) for roughly 250 bytes of `.text` —
+the coverage math needs no new static storage, just a 200-entry stack array
+live for one `draw_code128()` call.
+
+Worth being precise about what that comparison does and doesn't establish:
+it matches this app's own previously-shipped, real-device rendering, which is
+a fidelity claim, not a scan-reliability one. Whether anti-aliased edges scan
+better, worse, or the same as whole-pixel ones was never measured here in
+either direction — this app has never had scanner testing for Code 128 at
+all (see ["Tests"](#tests) below), so the honest framing is "matches known
+behavior," not "improved."
 
 ### Changing how many codes it holds
 

@@ -257,13 +257,6 @@ const WHITE: Abgr2222 = Abgr2222::WHITE;
 const BLACK: Abgr2222 = Abgr2222::BLACK;
 const DIM: Abgr2222 = Abgr2222::rgb(170, 170, 170);
 
-/// `f32::round()` needs `std` or an extra crate for `no_std`. Every caller
-/// here passes a non-negative screen coordinate, where truncating `v + 0.5`
-/// toward zero is exactly round-half-up -- not worth a dependency for.
-fn round_positive(v: f32) -> i32 {
-    (v + 0.5) as i32
-}
-
 fn fill_rect(fb: &mut FrameBuf, x: i32, y: i32, w: i32, h: i32, color: Abgr2222) {
     if w <= 0 || h <= 0 {
         return;
@@ -394,12 +387,28 @@ impl DrawTarget for SuperSample {
     }
 }
 
+/// Coverage of WHITE ink on a black background (text: more coverage = closer
+/// to white). `None` at level 0 leaves the background untouched rather than
+/// drawing black-on-black.
 fn gray_for_level(level: i32) -> Option<Abgr2222> {
     match level {
         0 => None,
         1 => Some(Abgr2222::rgb(85, 85, 85)),
         2 => Some(Abgr2222::rgb(170, 170, 170)),
         _ => Some(WHITE),
+    }
+}
+
+/// Coverage of BLACK ink on a white background (Code128's bars: more
+/// coverage = closer to black) -- the inverse of `gray_for_level()`. `None`
+/// at level 0 leaves the white backing box untouched rather than drawing
+/// white-on-white.
+fn ink_gray_for_level(level: i32) -> Option<Abgr2222> {
+    match level {
+        0 => None,
+        1 => Some(Abgr2222::rgb(170, 170, 170)),
+        2 => Some(Abgr2222::rgb(85, 85, 85)),
+        _ => Some(BLACK),
     }
 }
 
@@ -629,12 +638,57 @@ fn draw_id(fb: &mut FrameBuf, id: &str) {
     let _ = ID_LINE_H;
 }
 
-/// Code128: cumulative-boundary rounding, not a single flat unit-per-module.
-/// Symbology.hpp's renderStyle() documents why Code128 does not take ITF's
-/// whole-pixel trade -- its modules are already close to one pixel at the
-/// lengths this app draws, and flooring each one independently would nearly
-/// halve the narrow ones. Rounding each cumulative *boundary* instead keeps
-/// every module close to its true fractional width.
+/// `f32::floor()`/`ceil()` need `std` or an extra crate for `no_std`. Every
+/// caller here passes a non-negative value, where truncating toward zero is
+/// exactly `floor`, and `floor` plus one more than truncation exactly
+/// disagrees is exactly `ceil` -- not worth a dependency for two cases this
+/// narrow.
+fn floor_nonneg(v: f32) -> i32 {
+    v as i32
+}
+
+fn ceil_nonneg(v: f32) -> i32 {
+    let t = v as i32;
+    if (t as f32) < v {
+        t + 1
+    } else {
+        t
+    }
+}
+
+/// Accumulates how much of [x0, x1) (in fractional pixels) each integer
+/// column in `coverage` is covered by a bar, in bar-processing order.
+/// Order-independent by construction -- a column's final coverage is the sum
+/// of every bar's overlap with it, so two adjacent sub-pixel-wide bars still
+/// add up correctly no matter which is processed first, unlike blitting each
+/// bar as its own independently-rounded rectangle.
+fn accumulate_coverage(coverage: &mut [f32], x0: f32, x1: f32) {
+    let start = floor_nonneg(x0).max(0) as usize;
+    let end = ceil_nonneg(x1).max(0) as usize;
+    for col in start..end.min(coverage.len()) {
+        let px0 = col as f32;
+        let px1 = px0 + 1.0;
+        let overlap = (x1.min(px1) - x0.max(px0)).max(0.0);
+        coverage[col] += overlap;
+    }
+}
+
+/// Code128: true sub-pixel coverage, not whole-pixel rounding. Symbology.hpp's
+/// renderStyle() documents why Code128 does not take ITF's whole-pixel trade
+/// -- its modules are already close to one pixel at the lengths this app
+/// draws, and flooring each one independently would nearly halve the narrow
+/// ones. TouchGFX's original drew this with `CanvasWidget` anti-aliasing;
+/// side-by-side against a real device capture, a plain whole-pixel-rounded
+/// port showed up as a structured difference concentrated exactly on the
+/// narrow bars TouchGFX rendered partially gray and this had been drawing
+/// solid black or not at all. Matching that needs real coverage, not just
+/// accurate boundaries: each bar's fractional overlap with every pixel column
+/// it touches is accumulated (not blitted independently, so two sub-pixel-
+/// wide bars sharing a column still add up correctly regardless of order),
+/// then quantised to the panel's four gray levels -- the same coverage-to-
+/// gray-level idea `render_smoothed()` uses for text, minus the scratch
+/// buffer, since a bar's coverage is one-dimensional and computable in closed
+/// form rather than needing a bitmap to average down.
 fn draw_code128(fb: &mut FrameBuf, frame: &Frame) {
     fill_rect(fb, BACKING_X, BACKING_Y, BACKING_W, BACKING_H, WHITE);
 
@@ -642,17 +696,23 @@ fn draw_code128(fb: &mut FrameBuf, frame: &Frame) {
         return;
     }
     let module_px = BARS_W as f32 / frame.total_modules as f32;
-    let mut x = BARS_X as f32;
+    let mut coverage = [0f32; BARS_W as usize];
+    let mut x = 0f32;
     let mut is_bar = true;
     for i in 0..frame.width_count as usize {
         let w = frame.widths[i] as f32 * module_px;
-        let x0 = round_positive(x);
-        let x1 = round_positive(x + w);
         if is_bar {
-            fill_rect(fb, x0, BARS_Y, x1 - x0, BARS_H, BLACK);
+            accumulate_coverage(&mut coverage, x, x + w);
         }
         x += w;
         is_bar = !is_bar;
+    }
+
+    for (col, &c) in coverage.iter().enumerate() {
+        let level = (c.clamp(0.0, 1.0) * 3.0 + 0.5) as i32;
+        if let Some(color) = ink_gray_for_level(level) {
+            fill_rect(fb, BARS_X + col as i32, BARS_Y, 1, BARS_H, color);
+        }
     }
 }
 
@@ -865,6 +925,30 @@ mod tests {
         // the pixel just inside the bars area's left edge should be black.
         let idx = (BARS_Y as u32 + 2) * PANEL_W as u32 + (BARS_X as u32 + 1);
         assert_eq!(buf[idx as usize], BLACK.0, "first module should be a dark bar");
+    }
+
+    /// TouchGFX's original CanvasWidget drew Code128 anti-aliased; a plain
+    /// whole-pixel-rounded port lost that entirely, which showed up as a
+    /// structured diff against a real device capture concentrated on the
+    /// narrow bars TouchGFX drew partially gray. This pins that fractional
+    /// bar boundaries still produce intermediate gray levels, not just
+    /// black/white, the same failure mode the text-smoothing test above
+    /// guards against.
+    #[test]
+    fn code128_bars_have_anti_aliased_edges() {
+        let n = (PANEL_W * PANEL_H) as usize;
+        let mut buf = vec![0u8; n];
+        let frame = linear_frame(KIND_CODE128, &CODE128_MAXLEN, CODE128_MAXLEN_TOTAL, "0123456789ABCDEF");
+        render(&mut buf, PANEL_W as u32, PANEL_H as u32, &frame);
+
+        let dim = Abgr2222::rgb(170, 170, 170).0;
+        let mid = Abgr2222::rgb(85, 85, 85).0;
+        let row_start = (BARS_Y as u32 + BARS_H as u32 / 2) * PANEL_W as u32 + BARS_X as u32;
+        let row_end = row_start + BARS_W as u32;
+        let has_intermediate = buf[row_start as usize..row_end as usize]
+            .iter()
+            .any(|&b| b == dim || b == mid);
+        assert!(has_intermediate, "bars should have anti-aliased edge pixels, not just black/white");
     }
 
     #[test]
