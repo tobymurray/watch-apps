@@ -387,14 +387,36 @@ framework size and the framebuffer share one budget):
 
 | | Rust/CustomGUI | TouchGFX (removed) |
 | --- | --- | --- |
-| `.text` | 44,600 | 84,712 |
-| `.bss` | 68,592 | 65,560 |
-| RAM total | 113,392 — 18.5% | 152,648 — 24.8% |
-| packaged `.uapp` | 73,472 bytes | 120,444 bytes |
+| `.text` | 59,032 | 84,712 |
+| `.bss` | 83,952 | 65,560 |
+| RAM total | 143,184 — 23.3% | 152,648 — 24.8% |
+| packaged `.uapp` | 87,964 bytes | 120,444 bytes |
 
-`.bss` is close either way — it is almost entirely the 57,600-byte
-framebuffer on both sides. The gap is `.text`: the TouchGFX framework and its
-generated Designer glue, not anything about what this app actually draws.
+These are smaller than an earlier version of this table (18.5%/73,472 bytes)
+because that version's text had a real problem: u8g2-fonts' bitmap glyphs
+have no anti-aliasing data to draw with, since the format is a fixed-resolution
+1bpp bitmap, not a vector outline — so text came out visibly more jagged than
+the Poppins TouchGFX drew, caught by putting real device captures
+(`Resources/capture_*.png`) side by side with the new renderer's output
+rather than judging it on the simulator alone. The fix (see `render_smoothed()`
+in `lib.rs`) renders each string with a bitmap font one size class larger,
+then shrinks it by area-averaging into the panel's four gray levels — a
+genuine if approximate stand-in for anti-aliasing, costing a 15,360-byte
+scratch buffer (`SS_MAX_W * SS_MAX_H`, sized from the actual widest string
+measured across every screen, not guessed) and two extra font tables for the
+larger source sizes. `.bss` is no longer "close either way" the way it was
+before that fix — the scratch buffer is real, counted overhead this build pays
+that TouchGFX's own pre-rendered, anti-aliased glyph bitmaps never needed to.
+The RAM total is still smaller than TouchGFX's, by a much narrower margin than
+first measured; the packaged `.uapp` stays meaningfully smaller, 27% down
+rather than the original 41%. A true fix — rasterizing the original Poppins
+TTF files (recoverable from git history) with real outline anti-aliasing via
+a crate like `ab_glyph` — was investigated and shelved: it needs a heap
+allocator, which on this Cortex-M target needs a hand-written
+`critical-section` implementation (interrupt disable/restore) for an SDK
+whose interrupt architecture isn't documented here and can't be verified
+without real hardware. The supersample-and-shrink approach was chosen
+specifically to avoid that risk.
 
 Text is the one place `embedded-graphics`'s own `MonoTextStyle` could not
 follow TouchGFX's proportional-width id layout — it only ships fixed-width

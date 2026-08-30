@@ -296,6 +296,17 @@ type Font = fonts::u8g2_font_helvB18_tf;
 type FontSmall = fonts::u8g2_font_helvR14_tf;
 type FontPrompt = fonts::u8g2_font_helvR14_tf;
 
+// u8g2 fonts are fixed-resolution 1bpp bitmaps, not vector outlines -- there
+// is no "render Font bigger" option, so smoothing comes from rendering one
+// size class up and shrinking the result (see render_smoothed() below), not
+// from asking u8g2-fonts for anti-aliasing it has no data to produce.
+// FontSource/FontSmallSource exist only as that larger source; every layout
+// decision (measurement, centering, the split threshold) still goes through
+// Font/FontSmall/FontPrompt above, so this is purely a rendering-quality
+// change with zero effect on where text ends up.
+type FontSource = fonts::u8g2_font_helvB24_tf;
+type FontSmallSource = fonts::u8g2_font_helvR24_tf;
+
 fn measure_width(renderer: &FontRenderer, s: &str) -> u32 {
     renderer
         .get_rendered_dimensions(
@@ -307,32 +318,10 @@ fn measure_width(renderer: &FontRenderer, s: &str) -> u32 {
         .unwrap_or(0)
 }
 
-/// Every text element this app draws is CENTER-aligned in the TouchGFX build
-/// being replaced -- both `T_TMP_REGULAR_18` and `T_TMP_SEMIBOLD_20` are
-/// `touchgfx::CENTER` in the generated `TypedTextDatabase.cpp` -- so centering
-/// within the box is the default here too, not an option to opt into.
-fn draw_text_centered(
-    fb: &mut FrameBuf,
-    renderer: &FontRenderer,
-    s: &str,
-    box_x: i32,
-    box_w: i32,
-    y: i32,
-    color: Abgr2222,
-) {
-    let width = measure_width(renderer, s) as i32;
-    let x = box_x + (box_w - width) / 2;
-    draw_text(fb, renderer, s, x, y, color);
-}
-
-fn draw_text(
-    fb: &mut FrameBuf,
-    renderer: &FontRenderer,
-    s: &str,
-    x: i32,
-    y: i32,
-    color: Abgr2222,
-) {
+fn draw_text<D>(fb: &mut D, renderer: &FontRenderer, s: &str, x: i32, y: i32, color: Abgr2222)
+where
+    D: DrawTarget<Color = Abgr2222>,
+{
     let _ = renderer.render(
         s,
         Point::new(x, y),
@@ -340,6 +329,163 @@ fn draw_text(
         u8g2_fonts::types::FontColor::Transparent(color),
         fb,
     );
+}
+
+// -- Smoothing: render one font size class up into a scratch buffer, shrink
+// it down to the on-screen size by area-averaging. A no_std, no-alloc, no
+// heap-allocator stand-in for real anti-aliasing -- see the plan note on why
+// this was chosen over rasterizing the original TTF with ab_glyph, which
+// would need a heap and a hand-written critical-section implementation for
+// this SDK's interrupt architecture that cannot be verified without hardware.
+
+// Sized from measurement, not guessed: every wrapped prompt line, the full
+// id at both source fonts, and both split-id halves were rendered and the
+// widest came to 345px (a wrapped prompt line) against a needed height of
+// 34px (helvB24/helvR24's ascent-descent, both 25-(-7)). ~10% margin on top
+// of that measured max, not a round number picked in advance -- a buffer
+// sized in advance of measuring would either waste flash/RAM on headroom
+// nothing uses, or silently clip text that turned out wider than guessed,
+// which render_smoothed()'s `.clamp()` calls would hide rather than flag.
+const SS_MAX_W: usize = 384;
+const SS_MAX_H: usize = 40;
+
+/// One scratch buffer, reused for every string. Safe on the real target
+/// because the GUI process is single-threaded and synchronous -- Gui.cpp's
+/// message loop calls barcode_gui_render() to completion before doing
+/// anything else, so there is never a second render (and therefore never a
+/// second borrow) in flight. `cargo test` does not honour that: its default
+/// runner executes tests in parallel threads, so two unrelated tests calling
+/// render() at once raced on this buffer and made `render_is_deterministic`
+/// flaky -- not a real bug in the single-render production path, but a real
+/// bug in trusting that path's assumption inside a multi-threaded test
+/// binary. `SS_LOCK` exists only to make the test binary honest about it;
+/// the no_std/ARM build has no threads to race and pays nothing for it.
+static mut SS_BUF: [u8; SS_MAX_W * SS_MAX_H] = [0; SS_MAX_W * SS_MAX_H];
+
+#[cfg(feature = "std")]
+static SS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+struct SuperSample {
+    w: i32,
+    h: i32,
+}
+
+impl OriginDimensions for SuperSample {
+    fn size(&self) -> Size {
+        Size::new(self.w.max(0) as u32, self.h.max(0) as u32)
+    }
+}
+
+impl DrawTarget for SuperSample {
+    type Color = Abgr2222;
+    type Error = core::convert::Infallible;
+
+    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Pixel<Self::Color>>,
+    {
+        for Pixel(coord, _color) in pixels {
+            if coord.x >= 0 && coord.y >= 0 && coord.x < self.w && coord.y < self.h {
+                let idx = coord.y as usize * SS_MAX_W + coord.x as usize;
+                unsafe { SS_BUF[idx] = 1; }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn gray_for_level(level: i32) -> Option<Abgr2222> {
+    match level {
+        0 => None,
+        1 => Some(Abgr2222::rgb(85, 85, 85)),
+        2 => Some(Abgr2222::rgb(170, 170, 170)),
+        _ => Some(WHITE),
+    }
+}
+
+/// Renders `s` with `source` -- a bitmap font one size class larger than the
+/// on-screen target -- into the scratch buffer, then shrinks it to
+/// `(dst_w, dst_h)` by area-averaging each destination pixel's source block,
+/// mapping the resulting coverage fraction to the panel's four gray levels.
+fn render_smoothed(
+    fb: &mut FrameBuf,
+    source: &FontRenderer,
+    s: &str,
+    dst_x: i32,
+    dst_y: i32,
+    dst_w: i32,
+    dst_h: i32,
+) {
+    if dst_w <= 0 || dst_h <= 0 {
+        return;
+    }
+
+    #[cfg(feature = "std")]
+    let _guard = SS_LOCK.lock().unwrap();
+
+    let src_w = (measure_width(source, s) as i32 + 2).clamp(1, SS_MAX_W as i32);
+    let ascent = source.get_ascent() as i32;
+    let descent = source.get_descent() as i32;
+    let src_h = (ascent - descent + 2).clamp(1, SS_MAX_H as i32);
+
+    for y in 0..src_h {
+        let row = y as usize * SS_MAX_W;
+        unsafe {
+            SS_BUF[row..row + src_w as usize].fill(0);
+        }
+    }
+
+    let mut target = SuperSample { w: src_w, h: src_h };
+    draw_text(&mut target, source, s, 1, 0, WHITE);
+
+    for dy in 0..dst_h {
+        let sy0 = dy * src_h / dst_h;
+        let sy1 = ((dy + 1) * src_h / dst_h).max(sy0 + 1).min(src_h);
+        for dx in 0..dst_w {
+            let sx0 = dx * src_w / dst_w;
+            let sx1 = ((dx + 1) * src_w / dst_w).max(sx0 + 1).min(src_w);
+
+            let mut lit = 0i32;
+            let mut total = 0i32;
+            for sy in sy0..sy1 {
+                let row = sy as usize * SS_MAX_W;
+                for sx in sx0..sx1 {
+                    total += 1;
+                    if unsafe { SS_BUF[row + sx as usize] } != 0 {
+                        lit += 1;
+                    }
+                }
+            }
+            if total == 0 {
+                continue;
+            }
+            let level = (lit * 3 + total / 2) / total;
+            if let Some(color) = gray_for_level(level) {
+                let _ = fb.draw_iter(core::iter::once(Pixel(Point::new(dst_x + dx, dst_y + dy), color)));
+            }
+        }
+    }
+}
+
+/// Every text element this app draws is CENTER-aligned in the TouchGFX build
+/// being replaced -- both `T_TMP_REGULAR_18` and `T_TMP_SEMIBOLD_20` are
+/// `touchgfx::CENTER` in the generated `TypedTextDatabase.cpp` -- so centering
+/// within the box (measured against `logical`, the same font used for every
+/// other layout decision) is the default here too. Drawn smoothed via
+/// `source` rather than `logical` directly -- see `render_smoothed()`.
+fn draw_text_centered_smoothed(
+    fb: &mut FrameBuf,
+    source: &FontRenderer,
+    logical: &FontRenderer,
+    s: &str,
+    box_x: i32,
+    box_w: i32,
+    y: i32,
+    h: i32,
+) {
+    let width = measure_width(logical, s) as i32;
+    let x = box_x + (box_w - width) / 2;
+    render_smoothed(fb, source, s, x, y, width, h);
 }
 
 /// Greedy word wrap against a measured pixel width, generic over any message
@@ -407,9 +553,14 @@ mod heapless_lines {
 
 fn draw_prompt(fb: &mut FrameBuf, frame: &Frame) {
     let font = FontRenderer::new::<FontPrompt>();
+    let source = FontRenderer::new::<FontSmallSource>();
+    let h = font.get_ascent() as i32 - font.get_descent() as i32;
     let lines = word_wrap(&font, frame.message_str(), PROMPT_W as u32);
     for (i, line) in lines.iter().enumerate() {
-        draw_text_centered(fb, &font, line, PROMPT_X, PROMPT_W, PROMPT_TOP + i as i32 * PROMPT_LINE_H, WHITE);
+        draw_text_centered_smoothed(
+            fb, &source, &font, line, PROMPT_X, PROMPT_W,
+            PROMPT_TOP + i as i32 * PROMPT_LINE_H, h,
+        );
     }
 }
 
@@ -430,7 +581,9 @@ fn draw_caption(fb: &mut FrameBuf, name: &str) {
         return;
     }
     let font = FontRenderer::new::<FontSmall>();
-    draw_text_centered(fb, &font, name, CAPTION_X, CAPTION_W, CAPTION_Y, WHITE);
+    let source = FontRenderer::new::<FontSmallSource>();
+    let h = font.get_ascent() as i32 - font.get_descent() as i32;
+    draw_text_centered_smoothed(fb, &source, &font, name, CAPTION_X, CAPTION_W, CAPTION_Y, h);
     let _ = CAPTION_H;
 }
 
@@ -442,14 +595,18 @@ fn draw_caption(fb: &mut FrameBuf, name: &str) {
 fn draw_id(fb: &mut FrameBuf, id: &str) {
     let small = FontRenderer::new::<FontSmall>();
     let large = FontRenderer::new::<Font>();
+    let small_source = FontRenderer::new::<FontSmallSource>();
+    let large_source = FontRenderer::new::<FontSource>();
+    let small_h = small.get_ascent() as i32 - small.get_descent() as i32;
+    let large_h = large.get_ascent() as i32 - large.get_descent() as i32;
 
     let small_width = measure_width(&small, id);
     if small_width <= ID_W as u32 {
         let large_width = measure_width(&large, id);
         if large_width <= ID_W as u32 {
-            draw_text_centered(fb, &large, id, ID_X, ID_W, ID_Y, WHITE);
+            draw_text_centered_smoothed(fb, &large_source, &large, id, ID_X, ID_W, ID_Y, large_h);
         } else {
-            draw_text_centered(fb, &small, id, ID_X, ID_W, ID_Y, WHITE);
+            draw_text_centered_smoothed(fb, &small_source, &small, id, ID_X, ID_W, ID_Y, small_h);
         }
         return;
     }
@@ -467,8 +624,8 @@ fn draw_id(fb: &mut FrameBuf, id: &str) {
     // Each line is centered in its own box independently, the same way two
     // TouchGFX TextAreas each center their own content rather than the pair
     // being centered as a block.
-    draw_text_centered(fb, &small, line1, ID_X, ID_W, ID_LINE1_Y, WHITE);
-    draw_text_centered(fb, &small, line2, ID_X, ID_W, ID_LINE2_Y, WHITE);
+    draw_text_centered_smoothed(fb, &small_source, &small, line1, ID_X, ID_W, ID_LINE1_Y, small_h);
+    draw_text_centered_smoothed(fb, &small_source, &small, line2, ID_X, ID_W, ID_LINE2_Y, small_h);
     let _ = ID_LINE_H;
 }
 
@@ -841,7 +998,64 @@ mod tests {
         render(&mut b, PANEL_W as u32, PANEL_H as u32, &frame);
         assert_eq!(a, b);
     }
+
+    /// The whole point of render_smoothed(): a bitmap font drawn directly has
+    /// only two colors present in its glyphs, black and white. Smoothed text
+    /// should show intermediate gray levels at glyph edges -- if it doesn't,
+    /// render_smoothed() silently degraded to a 1-bit copy somewhere (e.g. a
+    /// clamp()'d scratch buffer too small for the string, truncating the
+    /// coverage average back to all-or-nothing).
+    #[test]
+    fn id_text_uses_intermediate_gray_levels_not_just_black_and_white() {
+        let n = (PANEL_W * PANEL_H) as usize;
+        let mut buf = vec![0u8; n];
+        let frame = linear_frame(KIND_CODE128, &CODE128_A1234, CODE128_A1234_TOTAL, "A1234");
+        render(&mut buf, PANEL_W as u32, PANEL_H as u32, &frame);
+
+        let dim = Abgr2222::rgb(85, 85, 85).0;
+        let mid = Abgr2222::rgb(170, 170, 170).0;
+        let id_row_start = (ID_Y as u32 * PANEL_W as u32) as usize;
+        let id_row_end = ((ID_Y + 30) as u32 * PANEL_W as u32) as usize;
+        let has_intermediate = buf[id_row_start..id_row_end]
+            .iter()
+            .any(|&b| b == dim || b == mid);
+        assert!(has_intermediate, "id text should have anti-aliased edge pixels, not just black/white");
+    }
+
+    /// The scratch buffer is sized from real measurement (see SS_MAX_W's own
+    /// comment), not padded arbitrarily -- this pins that the widest string
+    /// this app actually draws still fits, so a future wording change to a
+    /// prompt message that quietly exceeds the buffer clamps (and silently
+    /// truncates a source glyph's contribution to the coverage average)
+    /// rather than passing unnoticed.
+    #[test]
+    fn widest_known_string_fits_the_scratch_buffer_without_clamping() {
+        let font = FontRenderer::new::<FontPrompt>();
+        let source = FontRenderer::new::<FontSmallSource>();
+        let messages = [
+            "No codes yet. Set one in the UNA app, or write input.json.",
+            "input.json has no usable code",
+            "No codes set yet. Open the UNA app and enter your ID",
+            "That ID cannot be drawn: 1-16 plain characters",
+            "ITF needs an even count of digits, 2 to 16",
+            "ITF only draws digits 0-9",
+            "That ID starts or ends with a space, remove it",
+            "Unknown format. Set it to Code128, QRCode or ITF.",
+        ];
+        for m in messages {
+            for line in word_wrap(&font, m, PROMPT_W as u32).iter() {
+                let src_w = measure_width(&source, line) as i32 + 2;
+                assert!(
+                    src_w <= SS_MAX_W as i32,
+                    "line {:?} needs {}px, exceeds SS_MAX_W={}",
+                    line, src_w, SS_MAX_W
+                );
+            }
+        }
+    }
 }
+
+
 
 
 
