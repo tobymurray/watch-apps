@@ -222,51 +222,86 @@ The one mistake nothing can catch is swapping the two fields, when both values
 happen to be valid latitudes. That lands you in the Southern Ocean, and only
 the time-zone check will notice.
 
-### The registry manifest
+### What makes the phone ask
 
-Kira only writes a settings file for an app that declares one. This is what
-this app's `registry/sun.toml` says:
+A phone only collects a value for an app that declares it wants one, and the
+declaration lives in [`app-manifest.json`](app-manifest.json) — `configFile`
+naming the file to write, `configFields` naming what goes in it. The ids are the
+keys under `values`, which is why they are `lat` and `lon` and why `HomeConfig`
+reads `values.lat` and `values.lon`:
 
-```toml
-app_id     = "CCAC55621745C147"
-source     = "https://github.com/tobymurray/watch-apps"
-subdir     = "SunGlance"
-folder     = "Sun"
-licence    = "MIT"
-maintainer = "tobymurray"
-
-[config]
-file   = "input.json"
-schema = 1
-
-[[config.fields]]
-path      = "values.lat"
-title     = "Latitude"
-help      = "Decimal degrees, north positive. e.g. 45.4215 for Ottawa."
-maxLength = 12
-required  = true
-
-[[config.fields]]
-path      = "values.lon"
-title     = "Longitude"
-help      = "Decimal degrees, east positive. e.g. -75.6972 for Ottawa."
-maxLength = 13
-required  = true
-
-# Plus a [[versions]] block naming the commit this was built from, which cannot
-# be written until there is one:
-#
-# [[versions]]
-# version = "0.1.0"
-# rev     = "<40-character commit sha>"
-# sdk_rev = "apps-v1.4.0"
-# notes   = "First build."
+```json
+{
+  "configFile": "input.json",
+  "configFields": [
+    {
+      "id": "lat",
+      "type": "string",
+      "label": "Latitude",
+      "description": "Decimal degrees, north positive. 45.4215 is Ottawa. …",
+      "default": "",
+      "maxLength": 12,
+      "pattern": "(?:-?\\d{1,2}(?:\\.\\d{1,6})?)?",
+      "required": true,
+      "validationMessage": "Decimal degrees between -90 and 90, e.g. 45.4215. …"
+    },
+    { "id": "lon", "…": "the same, to 180 and 13 characters" }
+  ]
+}
 ```
 
-`required` on both because the app shows no time at all without them, which is
-what that flag is for. There is no third field naming the place: Kira needs a
-value for every field it declares before it will assemble a document, so an
+**`string` and not `float`**, though the SDK offers both. A float field would get
+a numeric keypad and range validation on the phone, which sounds strictly better
+— and would probably work, because `InputConfig::getString` returns coreJSON's
+raw slice without checking the token type, so an unquoted `45.4215` would reach
+`parseDegrees` intact. But every fixture in `HomeConfig_test.cpp` is a quoted
+value, so that is an untested path, and the keypad is not worth taking it.
+
+**The patterns are the phone's manners, not the app's rules.** They accept what
+`parseDegrees` accepts and refuse the two mistakes above — the decimal comma and
+the hemisphere suffix — so those get caught on the form instead of on the glance.
+They do not enforce range: `91` satisfies the pattern and is refused by the app,
+because a regex that spells out ±90 correctly is longer than the check it
+duplicates and can disagree with it. Both admit the empty string, because a
+declared `default` has to satisfy its own constraints.
+
+**`required` on both**, because the app shows no time at all without them, which
+is what that flag is for. There is no third field naming the place: every
+declared field has to be filled before the phone will assemble a document, so an
 optional label would in practice be mandatory.
+
+### Why it is typed in and not sensed
+
+The obvious objection is that the watch has a GNSS receiver and this is a
+coordinate. Three reasons it is not used, in increasing order of how long they
+will stay true.
+
+A glance cannot take its own fix. The service runs only while the card is on
+screen and returns from `run()` when it scrolls away; a cold fix is tens of
+seconds and real battery. The card would be gone before the receiver had
+anything.
+
+Nothing records one for it, either. GNSS reaches an app through the sensor
+layer, and the four apps in this repository that read it — `RunMap`, `HikeMap`,
+`BikeMap`, `GpsLab` — are all `Activity` apps that run when you start a ride or a
+run and record into their own folders. There is no shared last-known fix under
+`SharedData/`, and no call anywhere in the SDK that hands back a position without
+powering the receiver. `Fix::Source::Cached` exists in the enum for the day one
+appears, and is documented as not yet produced because it is not.
+
+And on the day one does appear, this field stays. The ordering in
+[`Fix.hpp`](Software/Libs/Header/Fix.hpp) is cached-then-configured, with the
+configured home as the fallback for a watch that has never had a fix — which is
+every watch on the day it is unboxed, and permanently for somebody who wanted a
+sunrise glance and does not run.
+
+Which is fine, because for this question a typed position is not a compromise.
+Four minutes of sunrise per degree of longitude means a position good to 25 km is
+good to under a minute, and 25 km is "which city". A home typed once is right
+until you move to another one, which is why it is stored with `utc = -1` —
+timeless rather than fresh. What a cached fix would actually buy is the
+traveller, whose glance shows the sunrise they left behind until they edit the
+field.
 
 ## Building
 
