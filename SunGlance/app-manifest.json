@@ -4,8 +4,8 @@
     "glance"
   ],
   "name": "Sun",
-  "binary": "Sun_0.3.1.uapp",
-  "appVersion": "0.3.1",
+  "binary": "Sun_0.4.0.uapp",
+  "appVersion": "0.4.0",
   "minKernelVersion": "1.4.0",
   "requiredHardware": [],
   "description": "The next two things the sun will do, for a position you set once. Sunrise and sunset side by side, nearest first, and how long until it. Nothing on the card is in the past. One glance in the carousel; tapping it opens nothing, because there is nothing more to say.",

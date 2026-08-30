@@ -314,13 +314,18 @@ it at build time.
 ```sh
 export UNA_SDK=/path/to/una-sdk          # apps-v1.4.0
 cd Software/Apps/SunGlance-CMake
-cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.1.0 . && cmake --build build
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.4.0 . && cmake --build build
 ```
+
+The version is `appVersion` in [`app-manifest.json`](app-manifest.json), and CI
+reads it from there rather than being told; passing `-DBUILD_VERSION` by hand is
+for a build that is not a release. The two must agree, because the manifest also
+names the binary the build produces.
 
 Or with Kira:
 
 ```sh
-kira build-app --app SunGlance --sdk /path/to/una-sdk --version 0.1.0 --out Sun.uapp
+kira build-app --app SunGlance --sdk /path/to/una-sdk --version 0.4.0 --out Sun.uapp
 ```
 
 `AppID` is `CCAC55621745C147` =
