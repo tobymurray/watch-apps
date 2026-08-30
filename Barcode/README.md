@@ -387,10 +387,41 @@ framework size and the framebuffer share one budget):
 
 | | Rust/CustomGUI | TouchGFX (removed) |
 | --- | --- | --- |
-| `.text` | 59,288 | 84,712 |
+| `.text` | 49,768 | 84,712 |
 | `.bss` | 83,952 | 65,560 |
-| RAM total | 143,440 — 23.3% | 152,648 — 24.8% |
-| packaged `.uapp` | 88,220 bytes | 120,444 bytes |
+| RAM total | 133,920 — 21.8% | 152,648 — 24.8% |
+| packaged `.uapp` | 78,696 bytes | 120,444 bytes |
+
+Two optimizations found by asking "is there more size to find" after the
+anti-aliasing work above landed, both real and both verified not to cost
+accuracy before being kept:
+
+- **One font pair, not two.** The original anti-aliasing design kept helvB18/
+  helvR14 for measurement and layout and added helvB24/helvR24 purely as a
+  larger source to shrink from — four glyph sets for two visual weights.
+  Since the shrink step already needs a font one size up, there is nothing
+  the smaller pair does that scaling the larger pair's own measurement can't:
+  `Font`/`FontSmall` are helvB24/helvR24 directly now, and `scale_large()`/
+  `scale_small()` (the ratio of each pair's own heights, e.g. 24/32) stand in
+  for the fonts that used to do that job. Saved ~8.7 KB of `.text` for a
+  small, measured cost: mean pixel difference against the real captures rose
+  from 4.9 to 5.2 (of 255, Code 128) — the ratio is an approximation of what
+  the smaller fonts would have measured, not identical to it, but close
+  enough that no layout broke and nothing needed re-wrapping across more
+  lines than it already did.
+- **`fill_rect()` stopped going through embedded-graphics's generic styled-
+  primitive path** (`Rectangle::into_styled().draw()`) in favour of a direct
+  per-row slice fill. It is the single most-called primitive in the renderer
+  — every bar, module, pager mark and backing box — so its own code and the
+  point-iterator machinery behind a generic `Drawable` were both worth
+  avoiding. Saved another ~800 bytes, with no visual difference at all: it
+  draws the identical set of pixels, just without embedded-graphics's
+  dispatch in between.
+
+Checked and not worth pursuing further: dropping the now-unused
+`embedded_graphics_textstyle` feature from the `u8g2-fonts` dependency (the
+crate's `U8g2TextStyle` adapter this app never calls) changed nothing —
+LTO had already stripped it. Kept anyway as accurate intent, not for size.
 
 These are smaller than an earlier version of this table (18.5%/73,472 bytes)
 because that version's text had a real problem: u8g2-fonts' bitmap glyphs

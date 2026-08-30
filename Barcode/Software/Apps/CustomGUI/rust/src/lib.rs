@@ -257,17 +257,30 @@ const WHITE: Abgr2222 = Abgr2222::WHITE;
 const BLACK: Abgr2222 = Abgr2222::BLACK;
 const DIM: Abgr2222 = Abgr2222::rgb(170, 170, 170);
 
+/// A direct row-fill rather than going through embedded-graphics's generic
+/// styled-primitive machinery (`Rectangle::into_styled().draw()`) -- this is
+/// the single most-called drawing primitive in the whole renderer (every
+/// bar, module, pager mark and backing box), so its own code size and the
+/// styled-drawable/point-iterator machinery it would otherwise pull in for
+/// every distinct color it's called with are both worth avoiding.
 fn fill_rect(fb: &mut FrameBuf, x: i32, y: i32, w: i32, h: i32, color: Abgr2222) {
     if w <= 0 || h <= 0 {
         return;
     }
-    embedded_graphics::primitives::Rectangle::new(
-        Point::new(x, y),
-        Size::new(w as u32, h as u32),
-    )
-    .into_styled(embedded_graphics::primitives::PrimitiveStyle::with_fill(color))
-    .draw(fb)
-    .ok();
+    let fb_w = fb.w as i32;
+    let fb_h = fb.h as i32;
+    let x0 = x.max(0);
+    let y0 = y.max(0);
+    let x1 = (x + w).min(fb_w);
+    let y1 = (y + h).min(fb_h);
+    if x0 >= x1 || y0 >= y1 {
+        return;
+    }
+    for row in y0..y1 {
+        let start = (row * fb_w + x0) as usize;
+        let end = (row * fb_w + x1) as usize;
+        fb.buf[start..end].fill(color.0);
+    }
 }
 
 // -- Text: u8g2-fonts, the proportional bitmap font layer that
@@ -277,28 +290,48 @@ fn fill_rect(fb: &mut FrameBuf, x: i32, y: i32, w: i32, h: i32, color: Abgr2222)
 // and thresholds are chosen empirically against these specific bitmap fonts,
 // not reused from TouchGFX's proprietary font metrics -- see the plan's
 // note on why kIdW/kIdInkLimit do not carry over numerically.
-// helvB18/helvR14 were chosen over the initial helvB12/helvR10 by measuring
-// against the original TouchGFX fonts' own widths: helvR14's width for the
-// 16-char worst case (177px) lands almost exactly on Regular 18's (178px),
-// so the fit decision below behaves the same even though pixel heights
-// differ between font families. The original used exactly two faces --
+// helvB18/helvR14 were the original choice, picked over helvB12/helvR10 by
+// measuring against the original TouchGFX fonts' own widths: helvR14's width
+// for the 16-char worst case (177px) lands almost exactly on Regular 18's
+// (178px). Anti-aliasing then needed a *larger* source font to shrink from
+// (see render_smoothed() below -- u8g2 fonts are fixed-resolution 1bpp
+// bitmaps with no "render bigger" option), which meant shipping helvB24/
+// helvR24 as well: two more glyph sets, ~8.7KB of .text, for no visual
+// difference from just using the larger pair for measurement too and scaling
+// the result down. So Font/FontSmall *are* that larger pair now; LARGE_H/
+// SMALL_H and scale_large()/scale_small() below are what is left of the
+// smaller pair -- their target heights and the width ratio between the two
+// sizes, not the fonts themselves. The original used exactly two faces --
 // T_TMP_SEMIBOLD_20 for the preferred large id, T_TMP_REGULAR_18 for
 // everything else (split id lines, caption, every prompt line) -- so
 // FontSmall does all three jobs here too, rather than a third face.
-type Font = fonts::u8g2_font_helvB18_tf;
-type FontSmall = fonts::u8g2_font_helvR14_tf;
-type FontPrompt = fonts::u8g2_font_helvR14_tf;
+type Font = fonts::u8g2_font_helvB24_tf;
+type FontSmall = fonts::u8g2_font_helvR24_tf;
+type FontPrompt = fonts::u8g2_font_helvR24_tf;
 
-// u8g2 fonts are fixed-resolution 1bpp bitmaps, not vector outlines -- there
-// is no "render Font bigger" option, so smoothing comes from rendering one
-// size class up and shrinking the result (see render_smoothed() below), not
-// from asking u8g2-fonts for anti-aliasing it has no data to produce.
-// FontSource/FontSmallSource exist only as that larger source; every layout
-// decision (measurement, centering, the split threshold) still goes through
-// Font/FontSmall/FontPrompt above, so this is purely a rendering-quality
-// change with zero effect on where text ends up.
-type FontSource = fonts::u8g2_font_helvB24_tf;
-type FontSmallSource = fonts::u8g2_font_helvR24_tf;
+/// helvB18's own ascent(19) - descent(-5): the target height every "large" id
+/// draws at, now that helvB18 itself is no longer shipped.
+const LARGE_H: i32 = 24;
+/// helvR14's own ascent(14) - descent(-4): the target height everything
+/// "small" (split id lines, caption, every prompt line) draws at.
+const SMALL_H: i32 = 18;
+
+/// Scales a Font (helvB24) measurement down to what helvB18 would have
+/// measured, by the ratio of the two faces' own heights: 24/32, where 32 is
+/// helvB24's ascent(25) - descent(-7). Not exact -- a real font's width
+/// doesn't scale perfectly linearly with height across sizes -- but the
+/// thresholds this feeds were already an empirical approximation against
+/// TouchGFX's proprietary metrics, not exact ones, so this is one
+/// approximation layered on another that was already there.
+fn scale_large(px: u32) -> u32 {
+    px * 3 / 4
+}
+
+/// Scales a FontSmall (helvR24) measurement down to what helvR14 would have
+/// measured, by the ratio of the two faces' own heights: 18/32.
+fn scale_small(px: u32) -> u32 {
+    px * 9 / 16
+}
 
 fn measure_width(renderer: &FontRenderer, s: &str) -> u32 {
     renderer
@@ -479,22 +512,22 @@ fn render_smoothed(
 /// Every text element this app draws is CENTER-aligned in the TouchGFX build
 /// being replaced -- both `T_TMP_REGULAR_18` and `T_TMP_SEMIBOLD_20` are
 /// `touchgfx::CENTER` in the generated `TypedTextDatabase.cpp` -- so centering
-/// within the box (measured against `logical`, the same font used for every
-/// other layout decision) is the default here too. Drawn smoothed via
-/// `source` rather than `logical` directly -- see `render_smoothed()`.
+/// within the box is the default here too. `dst_w` is the already-scaled
+/// on-screen width (via `scale_large()`/`scale_small()`), computed by the
+/// caller since it is also needed there for the fit-threshold decision --
+/// measuring it twice would just be the same call made twice.
 fn draw_text_centered_smoothed(
     fb: &mut FrameBuf,
     source: &FontRenderer,
-    logical: &FontRenderer,
     s: &str,
     box_x: i32,
     box_w: i32,
     y: i32,
-    h: i32,
+    dst_w: i32,
+    dst_h: i32,
 ) {
-    let width = measure_width(logical, s) as i32;
-    let x = box_x + (box_w - width) / 2;
-    render_smoothed(fb, source, s, x, y, width, h);
+    let x = box_x + (box_w - dst_w) / 2;
+    render_smoothed(fb, source, s, x, y, dst_w, dst_h);
 }
 
 /// Greedy word wrap against a measured pixel width, generic over any message
@@ -562,13 +595,17 @@ mod heapless_lines {
 
 fn draw_prompt(fb: &mut FrameBuf, frame: &Frame) {
     let font = FontRenderer::new::<FontPrompt>();
-    let source = FontRenderer::new::<FontSmallSource>();
-    let h = font.get_ascent() as i32 - font.get_descent() as i32;
-    let lines = word_wrap(&font, frame.message_str(), PROMPT_W as u32);
+    // word_wrap measures in raw (unscaled) Font/FontSmall pixels, so the
+    // width it wraps against has to be PROMPT_W's on-screen pixels scaled
+    // back up by scale_small()'s inverse (16/9) -- the same box, expressed
+    // in the font's native measurement space instead of on-screen space.
+    let wrap_max = (PROMPT_W as u32) * 16 / 9;
+    let lines = word_wrap(&font, frame.message_str(), wrap_max);
     for (i, line) in lines.iter().enumerate() {
+        let w = scale_small(measure_width(&font, line)) as i32;
         draw_text_centered_smoothed(
-            fb, &source, &font, line, PROMPT_X, PROMPT_W,
-            PROMPT_TOP + i as i32 * PROMPT_LINE_H, h,
+            fb, &font, line, PROMPT_X, PROMPT_W,
+            PROMPT_TOP + i as i32 * PROMPT_LINE_H, w, SMALL_H,
         );
     }
 }
@@ -590,9 +627,8 @@ fn draw_caption(fb: &mut FrameBuf, name: &str) {
         return;
     }
     let font = FontRenderer::new::<FontSmall>();
-    let source = FontRenderer::new::<FontSmallSource>();
-    let h = font.get_ascent() as i32 - font.get_descent() as i32;
-    draw_text_centered_smoothed(fb, &source, &font, name, CAPTION_X, CAPTION_W, CAPTION_Y, h);
+    let w = scale_small(measure_width(&font, name)) as i32;
+    draw_text_centered_smoothed(fb, &font, name, CAPTION_X, CAPTION_W, CAPTION_Y, w, SMALL_H);
     let _ = CAPTION_H;
 }
 
@@ -604,18 +640,14 @@ fn draw_caption(fb: &mut FrameBuf, name: &str) {
 fn draw_id(fb: &mut FrameBuf, id: &str) {
     let small = FontRenderer::new::<FontSmall>();
     let large = FontRenderer::new::<Font>();
-    let small_source = FontRenderer::new::<FontSmallSource>();
-    let large_source = FontRenderer::new::<FontSource>();
-    let small_h = small.get_ascent() as i32 - small.get_descent() as i32;
-    let large_h = large.get_ascent() as i32 - large.get_descent() as i32;
 
-    let small_width = measure_width(&small, id);
+    let small_width = scale_small(measure_width(&small, id));
     if small_width <= ID_W as u32 {
-        let large_width = measure_width(&large, id);
+        let large_width = scale_large(measure_width(&large, id));
         if large_width <= ID_W as u32 {
-            draw_text_centered_smoothed(fb, &large_source, &large, id, ID_X, ID_W, ID_Y, large_h);
+            draw_text_centered_smoothed(fb, &large, id, ID_X, ID_W, ID_Y, large_width as i32, LARGE_H);
         } else {
-            draw_text_centered_smoothed(fb, &small_source, &small, id, ID_X, ID_W, ID_Y, small_h);
+            draw_text_centered_smoothed(fb, &small, id, ID_X, ID_W, ID_Y, small_width as i32, SMALL_H);
         }
         return;
     }
@@ -630,11 +662,13 @@ fn draw_id(fb: &mut FrameBuf, id: &str) {
         split -= 1;
     }
     let (line1, line2) = id.split_at(split);
+    let w1 = scale_small(measure_width(&small, line1)) as i32;
+    let w2 = scale_small(measure_width(&small, line2)) as i32;
     // Each line is centered in its own box independently, the same way two
     // TouchGFX TextAreas each center their own content rather than the pair
     // being centered as a block.
-    draw_text_centered_smoothed(fb, &small_source, &small, line1, ID_X, ID_W, ID_LINE1_Y, small_h);
-    draw_text_centered_smoothed(fb, &small_source, &small, line2, ID_X, ID_W, ID_LINE2_Y, small_h);
+    draw_text_centered_smoothed(fb, &small, line1, ID_X, ID_W, ID_LINE1_Y, w1, SMALL_H);
+    draw_text_centered_smoothed(fb, &small, line2, ID_X, ID_W, ID_LINE2_Y, w2, SMALL_H);
     let _ = ID_LINE_H;
 }
 
@@ -1012,12 +1046,14 @@ mod tests {
     fn word_wrap_never_exceeds_the_prompt_width_and_never_splits_a_word() {
         let font = FontRenderer::new::<FontPrompt>();
         let text = "Unknown format. Set it to Code128, QRCode or ITF.";
-        let lines = word_wrap(&font, text, PROMPT_W as u32);
+        // word_wrap measures in raw (unscaled) font pixels -- see draw_prompt().
+        let wrap_max = (PROMPT_W as u32) * 16 / 9;
+        let lines = word_wrap(&font, text, wrap_max);
 
         let mut seen_words = alloc_free_word_set();
         for line in lines.iter() {
             assert!(
-                measure_width(&font, line) <= PROMPT_W as u32,
+                scale_small(measure_width(&font, line)) <= PROMPT_W as u32,
                 "line {:?} exceeds {}px",
                 line,
                 PROMPT_W
@@ -1043,7 +1079,7 @@ mod tests {
         let small = FontRenderer::new::<FontSmall>();
         let large = FontRenderer::new::<Font>();
         let id = "A1234";
-        assert!(measure_width(&small, id) <= ID_W as u32);
+        assert!(scale_small(measure_width(&small, id)) <= ID_W as u32);
         // Whichever face is chosen, draw_id must not panic and must not need
         // a second line -- covered indirectly by never_writes_past_the_
         // stated_geometry above using this same short id via A1234's frame.
@@ -1058,7 +1094,7 @@ mod tests {
         // be ceil(len/2), not decided by measured width.
         let small = FontRenderer::new::<FontSmall>();
         for id in ["0123456789ABCDEF", "WWWWWWWWWWWWWWWW"] {
-            let width = measure_width(&small, id);
+            let width = scale_small(measure_width(&small, id));
             if width > ID_W as u32 {
                 let bytes = id.len();
                 let first = bytes.div_ceil(2);
@@ -1115,7 +1151,7 @@ mod tests {
     #[test]
     fn widest_known_string_fits_the_scratch_buffer_without_clamping() {
         let font = FontRenderer::new::<FontPrompt>();
-        let source = FontRenderer::new::<FontSmallSource>();
+        let wrap_max = (PROMPT_W as u32) * 16 / 9;
         let messages = [
             "No codes yet. Set one in the UNA app, or write input.json.",
             "input.json has no usable code",
@@ -1127,8 +1163,8 @@ mod tests {
             "Unknown format. Set it to Code128, QRCode or ITF.",
         ];
         for m in messages {
-            for line in word_wrap(&font, m, PROMPT_W as u32).iter() {
-                let src_w = measure_width(&source, line) as i32 + 2;
+            for line in word_wrap(&font, m, wrap_max).iter() {
+                let src_w = measure_width(&font, line) as i32 + 2;
                 assert!(
                     src_w <= SS_MAX_W as i32,
                     "line {:?} needs {}px, exceeds SS_MAX_W={}",
