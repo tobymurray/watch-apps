@@ -197,10 +197,23 @@ an accidental exit would cost the ride.
 
 | Screen | Shows | L1 | L2 | R1 | R2 |
 |---|---|---|---|---|---|
-| Ready | strap status, target if set | | | **START** | exit |
-| Riding | clock, heart rate, zone | | | **PAUSE** | |
-| Paused | dimmed clock, `PAUSED` | **FINISH** | **DISCARD** (hold) | **RESUME** | |
-| Saved / discarded | what happened | | | **DONE** | **DONE** |
+| Ready | strap status, target if set | | | **START** | **EXIT** |
+| Riding | clock, heart rate, zone | | | pause | |
+| Paused | dimmed clock, `PAUSED` | **SAVE** | **DISCARD** (hold) | resume | |
+| Saved / discarded | what happened | | | done | **DONE** |
+
+Each live button is marked by a short arc at its own corner of the bezel — the
+same mark the SDK's TouchGFX apps use, and it belongs to the zone ring's family
+rather than floating free. **Words appear only where there is a decision.**
+While riding there is one live button and one obvious thing for it to do, so it
+gets the mark alone; the same goes for resume when paused, which was PAUSE a
+second earlier. The two endings of a ride get words, because choosing between
+them is the whole reason that screen exists.
+
+The first version put the labels on horizontal rows above and below the clock,
+where `PAUSE` landed directly over it and read as its caption, and `FINISH` and
+`RESUME` read as a title bar. Hints belong on the diagonals, because that is
+where the buttons are.
 
 The two endings of a ride sit at opposite corners on purpose. Finish is the
 button you reach for every time; discard destroys the ride, and it should not be
