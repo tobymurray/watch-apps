@@ -43,23 +43,22 @@ const AppConfig::Field kFields[] = {
     // the watch shows, not what it writes.
     AppConfig::boolField("energyInKilojoules", false),
 
-    // ZONES. 0 means "use the watch's own", which is the default and what a
-    // wearer who never opens this form gets: their zones are already set once,
-    // system-wide, and a second copy is a second thing to keep in step.
-    //
-    // Setting a count here is for the models the watch cannot express -- a
-    // three-zone polarised split, or a seven- or eight-zone ladder -- and it
-    // takes the floors with it, because the count alone does not say where the
-    // boundaries fall and there is no percentage rule this app could pick that
-    // would not be inventing somebody's training model for them.
+    // ZONES. Five by default, because five is what almost everyone means by
+    // heart-rate zones and it is what the watch itself ships. 0 means "however
+    // many the watch has", for a watch configured with some other number.
     //
     // Two, because one zone is not zones. Eight, because that is where the
     // kernel's own threshold table stops.
-    AppConfig::intField("hrZoneCount", 0, 0, 8),
+    AppConfig::intField("hrZoneCount", 5, 0, 8),
 
     // Each zone's floor, in bpm. Zone N runs from its floor to the next one's,
     // and the top zone is open-ended -- so eight zones need eight floors, not
-    // nine. Unused ones are ignored. 250 is above any human maximum.
+    // nine. 250 is above any human maximum.
+    //
+    // Left at 0 they are spread evenly from half the watch's maximum heart
+    // rate up to it, which is the watch's own rule (50/60/70/80/90/100%) at
+    // whatever count is set -- and at five zones reproduces the watch's floors
+    // exactly. Set them to follow a published model instead.
     AppConfig::intField("hrZone1Min", 0, 0, 250),
     AppConfig::intField("hrZone2Min", 0, 0, 250),
     AppConfig::intField("hrZone3Min", 0, 0, 250),

@@ -45,6 +45,7 @@ enable_testing()
 # GoogleTest.
 add_executable(spin-hrhold-tests
     HrHold_test.cpp
+    ZoneSpread_test.cpp
 )
 target_include_directories(spin-hrhold-tests PRIVATE "${APP_LIBS}/Header")
 target_link_libraries(spin-hrhold-tests PRIVATE GTest::gtest_main)

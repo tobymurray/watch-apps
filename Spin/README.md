@@ -140,13 +140,22 @@ uses, and a second copy is a second thing to keep in step. The watch reports its
 ladder as 50/60/70/80/90/100% of maximum heart rate, so the last value is the
 maximum rather than a floor and Spin drops it to get five floors.
 
-**Set `hrZoneCount` to override that**, for models the watch cannot express — a
-three-zone polarised split, or a seven- or eight-zone ladder. The count comes
-with the floors, because the count alone does not say where the boundaries fall
-and there is no percentage rule this app could pick that would not be inventing
-somebody's training model for them. Zone *N* runs from its own floor up to the
-next zone's, and the top zone is open-ended, so eight zones need eight floors
-rather than nine.
+**`hrZoneCount` defaults to 5**, because five is what almost everyone means by
+heart-rate zones and it is what the watch itself ships. Set it to anything from
+2 to 8 for a model the watch cannot express — a three-zone polarised split, or a
+seven- or eight-zone ladder — or to 0 to take however many the watch has.
+
+**The floors can be left alone.** With every `hrZoneNMin` at 0 they are spread
+evenly from half the maximum heart rate up to it, which is the watch's own rule:
+its ladder is 50/60/70/80/90/100% of maximum. At five zones that reproduces the
+watch's floors *exactly*, which is the reason to trust it at three or eight —
+it is the same rule at a different count, not a training model invented here.
+[`ZoneSpread_test.cpp`](Tests/ZoneSpread_test.cpp) asserts that match, so if it
+ever stops holding the argument for the rule goes with it.
+
+Fill the floors in to follow a published model instead. Zone *N* runs from its
+own floor up to the next zone's and the top zone is open-ended, so eight zones
+need eight floors rather than nine.
 
 Floors that are not strictly increasing are ignored and the watch's zones used
 instead: a dial whose segments correspond to nothing is worse than one that is
@@ -203,8 +212,8 @@ a change takes effect on the next ride rather than the next reinstall.
 | `targetMinutes` | 0 (off) | Buzz once at this many minutes and say `TARGET MET` on the screen. |
 | `keepScreenLit` | off | Hold the backlight on for the whole ride. |
 | `energyInKilojoules` | off | Show energy as kJ instead of kcal. Display only. |
-| `hrZoneCount` | 0 (the watch's) | How many zones, 2 to 8. |
-| `hrZone1Min` … `hrZone8Min` | 0 | The bpm floor of each zone, needed when a count is set. |
+| `hrZoneCount` | 5 | How many zones, 2 to 8. 0 takes the watch's count. |
+| `hrZone1Min` … `hrZone8Min` | 0 | The bpm floor of each zone. All 0 spreads them over the watch's own range. |
 
 ![A target set, the target met, and energy in kJ](Docs/screens-config.png)
 
@@ -471,10 +480,16 @@ checked against the same list a human reviews.
 Two of them, with different rules, both drawn by script rather than committed
 as art nobody can regenerate:
 
-- [`make_icon.py`](Resources/make_icon.py) draws the watch icon at 30 and 60 px.
-  The watch stores it as ABGR2222 — four alpha levels, four shades — so the
-  flywheel's rim is drawn at 8x and downsampled, which is the difference
-  between a circle and a polygon.
+- [`make_icon.py`](Resources/make_icon.py) draws the watch icon at 30 and 60 px:
+  a spin bike in side view, because a flywheel alone could be any wheel. The
+  watch stores it as ABGR2222 — four alpha levels, four shades — and a stroke
+  thinner than a pixel downsamples to grey, which decides the whole design.
+  Ordinary line-art bike icons use a uniform hairline and a dozen separate
+  parts; at 30 px every one of those is sub-pixel and what comes out is a grey
+  smudge shaped like a bike. So the two sizes are **not the same drawing
+  scaled**: 60 px gets the top tube and the hub, 30 px keeps only what survives
+  at two pixels wide. One big wheel and a base are what say *stationary* bike,
+  so they get the space and the frame is what is left over.
 - [`make_store_icon.py`](Resources/make_store_icon.py) draws the 512 px icon the
   phone shows. None of the watch's constraints apply, so it gets the round
   panel, the flywheel and the app's one red heart.

@@ -26,6 +26,7 @@
 #include "ActivityWriter.hpp"
 #include "AppConfigFields.hpp"
 #include "HrHold.hpp"
+#include "ZoneSpread.hpp"
 #include "Commands.hpp"
 
 #include <memory>
@@ -115,6 +116,11 @@ private:
     /// back to them without another trip to the kernel.
     uint8_t mSystemZoneFloor[skMaxZones] = {};
     uint8_t mSystemZoneCount = 0;
+
+    /// The top of the watch's own ladder, which is its maximum heart rate
+    /// rather than a zone floor. Kept so a configured zone count with no floors
+    /// of its own can be spread across the same range.
+    uint8_t mSystemMaxHr = 0;
 
     /// Bridges a one-second dip in the arbiter's confidence, so the screen does
     /// not blank a reading the sensor still has. Display side only -- the FIT

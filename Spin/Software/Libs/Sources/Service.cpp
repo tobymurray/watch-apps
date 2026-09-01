@@ -263,6 +263,7 @@ void Service::loadSystemSettings()
     // which is what this app works in.
     uint8_t count = msg->heartRateCount;
     if (count > 0) {
+        mSystemMaxHr = msg->heartRateTh[count - 1];
         --count;
     }
     if (count > skMaxZones) {
@@ -288,32 +289,54 @@ void Service::applyZoneConfig()
 
     if (configured >= 2 && static_cast<size_t>(configured) <= skMaxZones) {
         uint8_t floors[skMaxZones] = {};
-        bool ordered = true;
+        bool complete = true;
+        bool ordered  = true;
         for (int32_t i = 0; i < configured; ++i) {
             const int32_t v = mConfig->getInt(
                 SpinConfig::zoneMinField(static_cast<size_t>(i + 1)));
             floors[i] = static_cast<uint8_t>(v);
-            // Strictly increasing, and no zone starting at zero: a floor of 0
-            // would put every reading in that zone and none below it.
-            if (v <= 0 || (i > 0 && v <= floors[i - 1])) {
+            if (v <= 0) {
+                complete = false;
+            } else if (i > 0 && v <= floors[i - 1]) {
                 ordered = false;
             }
         }
 
-        if (ordered) {
+        if (complete && ordered) {
             for (int32_t i = 0; i < configured; ++i) {
                 mZoneFloor[i] = floors[i];
             }
             mZoneCount = static_cast<uint8_t>(configured);
-            LOG_INFO("Zones: %u from this app's settings\n",
+            LOG_INFO("Zones: %u, floors from this app's settings\n",
                      static_cast<unsigned>(mZoneCount));
             return;
         }
 
-        // Not a usable ladder. Falling back is better than drawing a dial whose
-        // segments do not correspond to anything, and better than refusing to
-        // record: the ride still happens.
-        LOG_WARNING("Zone floors are not increasing; using the watch's zones\n");
+        if (!ordered) {
+            // A ladder that does not climb describes nothing. Falling through
+            // is better than a dial whose segments correspond to no heart rate.
+            LOG_WARNING("Zone floors are not increasing; ignoring them\n");
+        }
+
+        // A count with no floors of its own is the common case: the wearer
+        // picked how many zones they want and left the numbers alone. Spread
+        // them over the same range the watch uses -- its ladder is
+        // 50/60/70/80/90/100% of maximum heart rate, so evenly from half the
+        // maximum to the maximum. At five zones this reproduces the watch's own
+        // floors exactly, which is the reason to trust it at three or eight:
+        // it is the watch's rule at a different count, not a training model
+        // invented here.
+        if (ZoneSpread::floors(mSystemMaxHr, static_cast<uint8_t>(configured),
+                               mZoneFloor, skMaxZones)) {
+            mZoneCount = static_cast<uint8_t>(configured);
+            LOG_INFO("Zones: %u, spread from %u bpm maximum\n",
+                     static_cast<unsigned>(mZoneCount),
+                     static_cast<unsigned>(mSystemMaxHr));
+            return;
+        }
+
+        LOG_WARNING("No maximum heart rate to spread %d zones over\n",
+                    static_cast<int>(configured));
     }
 
     for (size_t i = 0; i < skMaxZones; ++i) {
