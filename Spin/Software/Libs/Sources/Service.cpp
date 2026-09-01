@@ -582,7 +582,12 @@ void Service::stopTrack(bool discard)
             // recovery marker stays for the next boot to finalize.
         }
     } else {
+        // Either the wearer discarded it, or there was never a record in it to
+        // keep. Both leave nothing behind: discard() removes the part-written
+        // .fit and the recovery marker with it, so the next boot does not
+        // finalize a ride that was thrown away.
         mActivityWriter.discard();
+        LOG_INFO("Ride %s\n", discard ? "discarded" : "was empty; nothing saved");
     }
 
     mTrackState = Track::State::INACTIVE;
@@ -604,7 +609,7 @@ void Service::stopTrack(bool discard)
 
     mGuiSender.trackState(mTrackState);
     mGuiSender.rideSaved(mTimeCounter.getValueActive(), mHrCounter.getAverage(),
-                         mTrackData.calories, saved);
+                         mTrackData.calories, saved, discard);
 
     disconnect();
 }

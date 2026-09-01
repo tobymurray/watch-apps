@@ -80,12 +80,17 @@ namespace CustomMessage {
         float       avgHr;      ///< bpm over the ride (0 when never measured)
         float       calories;   ///< kcal, active; the GUI converts for display
         bool        ok;         ///< the .fit is on disk and registered
+        /// The wearer threw the ride away. A different thing from `!ok`, which
+        /// is a ride that was meant to be kept and could not be written -- the
+        /// screen must not apologise for something that was asked for.
+        bool        discarded;
         RideSaved()
             : SDK::MessageBase(RIDE_SAVED)
             , duration(0)
             , avgHr(0.0f)
             , calories(0.0f)
             , ok(false)
+            , discarded(false)
         {}
     };
 
@@ -163,13 +168,14 @@ public:
         });
     }
 
-    bool rideSaved(std::time_t duration, float avgHr, float calories, bool ok)
+    bool rideSaved(std::time_t duration, float avgHr, float calories, bool ok, bool discarded)
     {
         return send<RideSaved>([&](RideSaved *m) {
-            m->duration = duration;
-            m->avgHr    = avgHr;
-            m->calories = calories;
-            m->ok       = ok;
+            m->duration  = duration;
+            m->avgHr     = avgHr;
+            m->calories  = calories;
+            m->ok        = ok;
+            m->discarded = discarded;
         });
     }
 

@@ -26,6 +26,9 @@ preview = ["std", "dep:png"]
 sim = ["preview", "dep:embedded-graphics-simulator"]
 
 [dependencies]
+# Already in embedded-graphics' own dependency graph, so taking it
+# directly costs nothing extra: sin/cos for the zone ring.
+micromath = "2.1"
 embedded-graphics = "0.8"
 embedded-graphics-simulator = { version = "0.7", optional = true }
 png = { version = "0.17", optional = true }

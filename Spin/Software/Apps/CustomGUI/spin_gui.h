@@ -17,6 +17,11 @@ extern "C" {
 #define SPIN_GUI_SCREEN_RIDING 1u  /* clock running */
 #define SPIN_GUI_SCREEN_PAUSED 2u  /* clock held */
 #define SPIN_GUI_SCREEN_SAVED  3u  /* finished: what was written */
+/* Hold-to-confirm before throwing a ride away, and the acknowledgement after.
+   The SDK's own activity apps gate Discard behind a held button rather than a
+   tap, and so does this: it is the one action here that destroys data. */
+#define SPIN_GUI_SCREEN_CONFIRM_DISCARD 4u
+#define SPIN_GUI_SCREEN_DISCARDED       5u
 
 /* The strap's BLE link, collapsed from SDK::Accessory::State the same way
    SDK::Gui::SensorStatusRow::hrState() collapses it. */
@@ -53,6 +58,7 @@ typedef struct {
     uint8_t  hr_zone;        /* 0 = below zone 1 or no zones set, 1..5 = the zone */
     uint8_t  has_zones;      /* 1 when the wearer has thresholds set on the watch */
     uint8_t  energy_is_kj;   /* 1 = `energy` is kJ, 0 = kcal */
+    uint8_t  hold_pct;       /* CONFIRM_DISCARD: how far the hold has got, 0..100 */
 } spin_gui_frame;
 
 uint32_t spin_gui_abi_fingerprint(void);
@@ -96,12 +102,13 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(spin_gui_frame, target_reached));
     h = fnv1a(h, offsetof(spin_gui_frame, hr_zone));
     h = fnv1a(h, offsetof(spin_gui_frame, has_zones));
-    return fnv1a(h, offsetof(spin_gui_frame, energy_is_kj));
+    h = fnv1a(h, offsetof(spin_gui_frame, energy_is_kj));
+    return fnv1a(h, offsetof(spin_gui_frame, hold_pct));
 }
 
 } // namespace spin_gui_abi
 
-static_assert(sizeof(spin_gui_frame) == 20, "spin_gui_frame size changed");
+static_assert(sizeof(spin_gui_frame) == 24, "spin_gui_frame size changed");
 static_assert(alignof(spin_gui_frame) == 4, "spin_gui_frame alignment changed");
 static_assert(offsetof(spin_gui_frame, elapsed_s) == 0, "elapsed_s moved");
 static_assert(offsetof(spin_gui_frame, hr_bpm) == 4, "hr_bpm moved");
@@ -116,6 +123,7 @@ static_assert(offsetof(spin_gui_frame, target_reached) == 16, "target_reached mo
 static_assert(offsetof(spin_gui_frame, hr_zone) == 17, "hr_zone moved");
 static_assert(offsetof(spin_gui_frame, has_zones) == 18, "has_zones moved");
 static_assert(offsetof(spin_gui_frame, energy_is_kj) == 19, "energy_is_kj moved");
+static_assert(offsetof(spin_gui_frame, hold_pct) == 20, "hold_pct moved");
 #endif
 
 #endif // SPIN_GUI_H

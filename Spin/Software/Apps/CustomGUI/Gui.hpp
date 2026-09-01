@@ -27,7 +27,8 @@ private:
     void queryDisplayConfig();
     void renderAndPush();
     void buildFrame(spin_gui_frame &out) const;
-    void handleButton(SDK::Message::EventButton::Id id);
+    void handleButton(SDK::Message::EventButton::Id id,
+                      SDK::Message::EventButton::Event event);
 
     static uint8_t strapFromAccessoryState(uint8_t accessoryState);
 
@@ -65,6 +66,18 @@ private:
     float       mSavedAvgHr   = 0.0f;
     float       mSavedCalories = 0.0f;   ///< kcal, whatever the display unit
     bool        mSavedOk      = false;
+    bool        mDiscarded    = false;
+
+    /// Hold-to-confirm state for Discard. The kernel decides when the hold is
+    /// long enough (its HOLD_1S event); the tick count only drives the ring, so
+    /// nothing here has to agree with the kernel about how long a second is.
+    bool    mHoldingDiscard = false;
+    uint8_t mHoldTicks      = 0;
+
+    /// SDK::GUI::Config::kFrameRate is 10, so ten ticks is the second the
+    /// kernel is timing. Used for the fill only -- if the two ever disagree the
+    /// ring sits full for a moment, which is a cosmetic error, not a wrong act.
+    static constexpr uint8_t kHoldTicksForFull = 10;
 
     uint8_t mFrameBuf[kMaxPixels * kBytesPerPixel];
 };

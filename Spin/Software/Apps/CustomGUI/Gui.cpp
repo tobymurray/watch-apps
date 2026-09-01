@@ -107,6 +107,19 @@ void Gui::buildFrame(spin_gui_frame &out) const
 
     out.energy_is_kj = mEnergyInKilojoules ? 1u : 0u;
 
+    if (mHoldingDiscard) {
+        out.screen = SPIN_GUI_SCREEN_CONFIRM_DISCARD;
+        const uint16_t pct =
+            static_cast<uint16_t>(mHoldTicks) * 100u / kHoldTicksForFull;
+        out.hold_pct = static_cast<uint8_t>(pct > 100u ? 100u : pct);
+        return;
+    }
+
+    if (mShowSaved && mDiscarded) {
+        out.screen = SPIN_GUI_SCREEN_DISCARDED;
+        return;
+    }
+
     if (mShowSaved) {
         out.screen     = SPIN_GUI_SCREEN_SAVED;
         out.elapsed_s  = static_cast<uint32_t>(mSavedSeconds);
@@ -162,17 +175,55 @@ void Gui::renderAndPush()
     }
 }
 
-void Gui::handleButton(SDK::Message::EventButton::Id id)
+void Gui::handleButton(SDK::Message::EventButton::Id id,
+                       SDK::Message::EventButton::Event event)
 {
     using Id = SDK::Message::EventButton::Id;
+    using Event = SDK::Message::EventButton::Event;
     CustomMessage::Sender sender(mKernel);
+
+    // Discard is held, not tapped -- the SDK's own activity apps gate it behind
+    // a hold and it is the one action here that destroys data. The kernel times
+    // the hold and says when it is long enough; releasing before that cancels.
+    // It sits on L2, the bottom-left button, a whole panel away from L1's
+    // Finish: the two endings of a ride should not be neighbours.
+    if (mHoldingDiscard) {
+        if (id != Id::SW3) {
+            return;
+        }
+        if (event == Event::HOLD_1S) {
+            LOG_INFO("Discard confirmed\n");
+            mHoldingDiscard = false;
+            sender.trackStop(true);
+        } else if (event == Event::RELEASE) {
+            LOG_INFO("Discard cancelled\n");
+            mHoldingDiscard = false;
+            renderAndPush();
+        }
+        return;
+    }
+
+    if (event == Event::PRESS) {
+        // Only PAUSED offers it: a ride you are still riding is not one you are
+        // deciding about, and one already saved is on disk.
+        if (id == Id::SW3 && !mShowSaved && mTrackState == Track::State::PAUSED) {
+            mHoldingDiscard = true;
+            mHoldTicks      = 0;
+            renderAndPush();
+        }
+        return;
+    }
+
+    if (event != Event::CLICK) {
+        return;
+    }
 
     // R1 is the one button that does the obvious thing on every screen, so it
     // is the only one a wearer has to find mid-ride. R2 leaves, but never while
     // the clock is running -- an accidental exit there costs the whole ride.
     if (mShowSaved) {
         if (id == Id::SW2 || id == Id::SW4) {
-            LOG_INFO("Leaving after a saved ride\n");
+            LOG_INFO("Leaving after a finished ride\n");
             mKernel.sys.exit(0);
         }
         return;
@@ -197,7 +248,7 @@ void Gui::handleButton(SDK::Message::EventButton::Id id)
         case Track::State::PAUSED:
             if (id == Id::SW2) {            // R1: resume
                 sender.trackResume();
-            } else if (id == Id::SW3) {     // L2: finish and save
+            } else if (id == Id::SW1) {     // L1: finish and save
                 sender.trackStop(false);
             }
             break;
@@ -250,6 +301,16 @@ void Gui::run()
             // acknowledged and dropped; the messages below are what redraw.
             case SDK::MessageType::EVENT_GUI_TICK:
                 msg->setResult(SDK::MessageResult::SUCCESS);
+                // The one thing that animates. Everywhere else a tick would
+                // redraw the same pixels at the tick rate.
+                if (mHoldingDiscard) {
+                    if (mHoldTicks < kHoldTicksForFull) {
+                        ++mHoldTicks;
+                    }
+                    mKernel.comm.releaseMessage(msg);
+                    renderAndPush();
+                    continue;
+                }
                 break;
 
             case CustomMessage::TRACK_STATE_UPDATE: {
@@ -261,6 +322,7 @@ void Gui::run()
                 // refused leaves the summary up instead of blanking it.
                 if (state == Track::State::ACTIVE && mTrackState == Track::State::INACTIVE) {
                     mShowSaved = false;
+                    mDiscarded = false;
                 }
                 mTrackState = state;
                 msg->setResult(SDK::MessageResult::SUCCESS);
@@ -301,6 +363,7 @@ void Gui::run()
                 mSavedAvgHr    = saved->avgHr;
                 mSavedCalories = saved->calories;
                 mSavedOk       = saved->ok;
+                mDiscarded     = saved->discarded;
                 mShowSaved    = true;
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 mKernel.comm.releaseMessage(msg);
@@ -310,9 +373,7 @@ void Gui::run()
 
             case SDK::MessageType::EVENT_BUTTON: {
                 auto *btn = static_cast<SDK::Message::EventButton *>(msg);
-                if (btn->event == SDK::Message::EventButton::Event::CLICK) {
-                    handleButton(btn->id);
-                }
+                handleButton(btn->id, btn->event);
                 msg->setResult(SDK::MessageResult::SUCCESS);
             } break;
 

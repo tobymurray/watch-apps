@@ -5,8 +5,9 @@
 //! a human reviews rather than a second list that can drift from it.
 
 use crate::{
-    Frame, HR_EXTERNAL, HR_NONE, HR_OPTICAL, SCREEN_PAUSED, SCREEN_READY, SCREEN_RIDING,
-    SCREEN_SAVED, STRAP_ABSENT, STRAP_CONNECTED, STRAP_SEARCHING,
+    Frame, HR_EXTERNAL, HR_NONE, HR_OPTICAL, SCREEN_CONFIRM_DISCARD, SCREEN_DISCARDED,
+    SCREEN_PAUSED, SCREEN_READY, SCREEN_RIDING, SCREEN_SAVED, STRAP_ABSENT,
+    STRAP_CONNECTED, STRAP_SEARCHING,
 };
 
 fn ready(strap: u8) -> Frame {
@@ -14,7 +15,7 @@ fn ready(strap: u8) -> Frame {
 }
 
 fn ready_with_target(strap: u8, target_minutes: u16) -> Frame {
-    Frame { target_minutes, ..ready(strap) }
+    Frame { target_minutes, has_zones: 1, ..ready(strap) }
 }
 
 fn riding(screen: u8, elapsed_s: u32, hr_bpm: u16, hr_source: u8) -> Frame {
@@ -64,6 +65,12 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
         // does not, and the screen has to say so rather than hold the number.
         ("riding_dropout", riding(SCREEN_RIDING, 1830, 0, HR_NONE)),
         ("riding_three_digit_hr", riding(SCREEN_RIDING, 2400, 187, HR_EXTERNAL)),
+        // A target part-way through, so the arc in the bottom gap is partly filled.
+        (
+            "riding_target_half",
+            Frame { target_minutes: 45, hr_zone: 3, has_zones: 1,
+                    ..riding(SCREEN_RIDING, 1250, 144, HR_EXTERNAL) },
+        ),
         // The hour boundary, where the clock grows a field and drops a size.
         ("riding_one_hour", riding(SCREEN_RIDING, 3725, 133, HR_EXTERNAL)),
         ("riding_long", riding(SCREEN_RIDING, 36_061, 121, HR_EXTERNAL)),
@@ -72,16 +79,25 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
         // the pause has to win it.
         (
             "riding_target_met",
-            Frame { target_minutes: 30, target_reached: 1,
+            Frame { target_minutes: 30, target_reached: 1, hr_zone: 4, has_zones: 1,
                     ..riding(SCREEN_RIDING, 1801, 148, HR_EXTERNAL) },
         ),
         (
             "paused_after_target",
-            Frame { target_minutes: 30, target_reached: 1,
+            Frame { target_minutes: 30, target_reached: 1, hr_zone: 2, has_zones: 1,
                     ..riding(SCREEN_PAUSED, 1860, 112, HR_EXTERNAL) },
         ),
         ("paused", riding(SCREEN_PAUSED, 912, 96, HR_EXTERNAL)),
         ("paused_no_hr", riding(SCREEN_PAUSED, 912, 0, HR_NONE)),
+        // Holding L1 on the paused screen: the ring fills, and letting go
+        // before it is full cancels.
+        ("discard_hold_start", Frame { screen: SCREEN_CONFIRM_DISCARD, hold_pct: 0,
+                                       ..Frame::default() }),
+        ("discard_hold_half", Frame { screen: SCREEN_CONFIRM_DISCARD, hold_pct: 55,
+                                      ..Frame::default() }),
+        ("discard_hold_full", Frame { screen: SCREEN_CONFIRM_DISCARD, hold_pct: 100,
+                                      ..Frame::default() }),
+        ("discarded", Frame { screen: SCREEN_DISCARDED, ..Frame::default() }),
         ("saved", saved(2712, 141, 402, true)),
         ("saved_kj", Frame { energy_is_kj: 1, ..saved(2712, 141, 1682, true) }),
         ("saved_no_hr", saved(2712, 0, 61, true)),

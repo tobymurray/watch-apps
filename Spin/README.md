@@ -83,10 +83,25 @@ cadence or power support — see [What it does not do](#what-it-does-not-do).
 
 ![Below zone 1, then zones 1, 3 and 5](Docs/screens-zones.png)
 
-Five segments under the heart rate, with the current zone lit. The zone is a
-position, not a gauge, so the segments below the current one stay dim rather
-than filling — a filling bar would read as progress through the zones, which is
-not a thing that happens.
+The zones are the rim. A 270-degree scale in the usual ladder — grey, blue,
+green, amber, red — with the zone you are in drawn bright **and** thicker,
+growing inward while the rest stay thin. Two signals rather than one, because on
+a reflective panel in bad light colour alone is thin.
+
+The panel is a circle and this is the one piece of information here that is
+naturally a scale, so it gets the perimeter and the middle stays clear for the
+numbers. Four levels a channel is the whole palette, so those five colours are
+not approximations of nicer ones: they are the colours.
+
+The zone is a position, not a gauge, so the segments below the current one do
+not fill — a filling scale would read as progress through the zones, which is
+not a thing that happens. Zone 0, below zone 1, lights nothing at all: the scale
+is there, you are not on it yet.
+
+The 90 degrees left open at the bottom is where the **target progress arc**
+goes, growing left to right to meet the zone scale where it ends. With no target
+set the gap stays empty, which is what keeps it reading as a speedometer rather
+than a closed circle.
 
 **The thresholds are the wearer's own**, read from the watch with
 `SDK::Message::RequestSystemSettings` — the same ones every other activity app
@@ -169,12 +184,16 @@ R1 is the primary action on every screen, so it is the only button you have to
 find from the saddle. R2 leaves — but never while the clock is running, where
 an accidental exit would cost the ride.
 
-| Screen | Shows | L2 | R1 | R2 |
-|---|---|---|---|---|
-| Ready | strap status, target if set | | **START** | exit |
-| Riding | clock, heart rate, zone | | **PAUSE** | |
-| Paused | dimmed clock, `PAUSED` | **FINISH** | **RESUME** | |
-| Saved | duration, average heart rate, energy | | **DONE** | **DONE** |
+| Screen | Shows | L1 | L2 | R1 | R2 |
+|---|---|---|---|---|---|
+| Ready | strap status, target if set | | | **START** | exit |
+| Riding | clock, heart rate, zone | | | **PAUSE** | |
+| Paused | dimmed clock, `PAUSED` | **FINISH** | **DISCARD** (hold) | **RESUME** | |
+| Saved / discarded | what happened | | | **DONE** | **DONE** |
+
+The two endings of a ride sit at opposite corners on purpose. Finish is the
+button you reach for every time; discard destroys the ride, and it should not be
+the neighbour of the one you press without looking.
 
 The clock picks the largest of three faces that fits, so `12:34` gets the big
 one and `10:00:00` is not clipped, and it drops to `M:SS` under an hour rather
@@ -188,6 +207,29 @@ dropout, past the hour, and a save that failed:
 `NOT SAVED` is not a hedge. `ActivityWriter::stop()` returns true only once the
 `.fit` is flushed and closed, and that boolean is what the screen reports — so
 "SAVED" is a fact about the filesystem, and its absence is worth an amber word.
+
+## Throwing a ride away
+
+![Holding, held, and the acknowledgement](Docs/screens-discard.png)
+
+Discard is **held, not tapped** — the same gate the SDK's own activity apps put
+on it, because it is the one action in the app that destroys data. Press and
+hold L2 on the paused screen and a red ring fills; let go before it is full and
+nothing happens.
+
+**The kernel times the hold, not the app.** The countdown fires on the kernel's
+own `HOLD_1S` button event, and the filling ring is drawn from the GUI tick
+count purely as a picture. If the two ever disagree the ring sits full for a
+moment before the event lands — a cosmetic error rather than a ride thrown away
+a moment early.
+
+`ActivityWriter::discard()` removes the part-written `.fit` **and the recovery
+marker with it**, so the next boot does not finalise a ride that was deliberately
+thrown away. There is a test for exactly that.
+
+`DISCARDED` is not the same screen as `NOT SAVED`. One is what the wearer asked
+for and the other is a failure, and the screen should agree with them rather
+than apologise for something they chose.
 
 ## How the two halves fit together
 
