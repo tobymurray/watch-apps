@@ -19,6 +19,7 @@ than living inside it.
 | [`RunMap`](RunMap) | The stock Running activity with the same live map. |
 | [`RustGuiPoc`](RustGuiPoc) | A proof of concept: a watch app whose GUI is drawn by Rust and `embedded-graphics` through the SDK's CustomGUI entry point, instead of TouchGFX. It shows a live accelerometer reading, which a GUI process cannot read on its own, so the Service half feeds it over the message bus. |
 | [`SleepLab`](SleepLab) | A background, autostart `Utility` app that records a night of wrist data and scores it with a published actigraphy algorithm — and refuses to report sleep stages, an unworn night, or a heart-rate figure it has not earned a baseline for, because a sleep app's failures are silent. |
+| [`Spin`](Spin) | A stationary bike ride: the clock, your heart rate and the zone it puts you in, and a FIT file that says `indoor_cycling` rather than a bike ride that covered no ground. Its GUI is Rust through CustomGUI and its settings come from the phone, like `Barcode`. |
 | [`Squash`](Squash) | A squash activity app, and the raw 100 Hz IMU recorder it is being built out of — because tuning shot detection needs labelled court data that does not exist yet. |
 | [`SunGlance`](SunGlance) | A `Glance` card that says what the sun does next — sunrise or sunset, and how long until it — for a position written into the app's folder at install time, because a three-second card cannot afford a GNSS fix and does not need one. |
 
@@ -30,7 +31,10 @@ AppID so the two install side by side; `MapManager` is new here, built off
 `RunMap` are forks of `Cycling`, `Hiking` and `Running` in the same
 install-alongside sense, and are the same app three times over as far as the map
 goes — the code that draws it lives once, in [`MapKit`](MapKit), which is a
-shared directory rather than an app.
+shared directory rather than an app. `Spin` is new here too, forked from
+`Squash` for its Service half — the indoor, GPS-free shape of an activity was
+already right — and then given a Rust `CustomGUI` frontend instead of `Squash`'s
+TouchGFX one.
 
 ## Building
 
@@ -76,12 +80,15 @@ core, its wording and its glance wiring under
 the round-panel geometry that encoder is drawn into, and the service that turns
 `input.json` into a barcode, under [`Barcode/Tests`](Barcode/Tests), and the
 three map apps share one suite
-under [`MapKit/Tests`](MapKit/Tests). `RustGuiPoc` and `QrGuiPoc`'s tests live
-inside their own crates rather than in a `Tests/` directory — see
-[RustGuiPoc's README](RustGuiPoc/README.md#tests) and
-[QrGuiPoc's](QrGuiPoc/README.md#tests).
+under [`MapKit/Tests`](MapKit/Tests), and `Spin` carries a decode-it-back test
+for the FIT file it writes under [`Spin/Tests`](Spin/Tests). `RustGuiPoc` and
+`QrGuiPoc`'s tests live inside their own crates rather than in a `Tests/`
+directory — see [RustGuiPoc's README](RustGuiPoc/README.md#tests) and
+[QrGuiPoc's](QrGuiPoc/README.md#tests) — and so do the renderer tests of the two
+apps that ship a Rust GUI, `Barcode` and `Spin`, which CI runs by discovering
+the crate rather than by being told about it.
 
-`SleepLab`, `SunGlance`, `RustGuiPoc` and `QrGuiPoc` target `apps-v1.4.0`. `Chrono`,
+`SleepLab`, `SunGlance`, `Spin`, `RustGuiPoc` and `QrGuiPoc` target `apps-v1.4.0`. `Chrono`,
 `MapManager` and the three map apps were pinned to `apps-v1.3.0` back when no
 1.4 firmware had shipped — their binaries still run on 1.4, since the launch
 check only refuses a kernel older than the app, but the pinning rationale in
