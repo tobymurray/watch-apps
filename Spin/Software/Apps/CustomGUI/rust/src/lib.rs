@@ -636,6 +636,23 @@ const TARGET_INNER: f32 = 108.0;
 
 const DEG_TO_RAD: f32 = core::f32::consts::PI / 180.0;
 
+/// How far apart consecutive samples are, in pixels, along the arc and along
+/// the radius. The samples form a grid of this pitch laid over the pixel grid
+/// at an arbitrary rotation, so the limit is not 1.0 but the diagonal: past
+/// 1/sqrt(2) ~= 0.707 a pixel can fall between four samples and never be
+/// painted.
+///
+/// Measured rather than reasoned: 0.85 leaves 95 unpainted pixels in the ring,
+/// 0.75 leaves 4, and 0.70 is clean -- which lands on the geometry exactly.
+/// 0.65 is that with a little margin.
+///
+/// These were 0.4 and 0.5, which painted every pixel of the ring three to nine
+/// times over. `the_hold_ring_has_no_gaps` is what makes tuning them safe: it
+/// asserts the ring is solid, not merely present, which is the one thing that
+/// goes wrong here and the one thing no other test would notice.
+const ARC_ANGULAR_PX: f32 = 0.65;
+const ARC_RADIAL_PX: f32 = 0.65;
+
 /// Fills the wedge between two radii and two angles.
 ///
 /// Swept rather than scanned: walking the angle and drawing a radial run at
@@ -654,7 +671,9 @@ fn fill_arc(
     if sweep_deg <= 0.0 || r_outer <= r_inner {
         return;
     }
-    let step = 0.4 / r_outer; // radians: 0.4 px of arc at the outer edge
+    // Radians per step, sized so the outer edge -- where consecutive runs are
+    // furthest apart -- moves by ARC_ANGULAR_PX.
+    let step = ARC_ANGULAR_PX / r_outer;
     let start = start_deg * DEG_TO_RAD;
     let end = start + sweep_deg * DEG_TO_RAD;
 
@@ -668,7 +687,7 @@ fn fill_arc(
             let x = (RING_CX + r * sa + 0.5) as i32;
             let y = (RING_CY - r * ca + 0.5) as i32;
             fill_rect(fb, x, y, 1, 1, color);
-            r += 0.5;
+            r += ARC_RADIAL_PX;
         }
         a += step;
     }
@@ -713,21 +732,23 @@ fn draw_target_arc(fb: &mut FrameBuf, elapsed_s: u32, target_minutes: u16, reach
         return;
     }
 
-    // The unfilled remainder, so the length of the ride is visible before any
-    // of it has been done.
-    fill_arc(fb, TARGET_INNER, TARGET_OUTER, TARGET_START_DEG - TARGET_SWEEP_DEG,
-             TARGET_SWEEP_DEG, ZONE_DIM_HUE[0]);
-
     let target_s = target_minutes as f32 * 60.0;
     let fraction = if reached { 1.0 } else { (elapsed_s as f32 / target_s).min(1.0) };
     let swept = TARGET_SWEEP_DEG * fraction;
-    if swept <= 0.0 {
-        return;
-    }
 
+    // The two arcs meet rather than overlap: the track covers only what is not
+    // yet filled. Drawing it end to end and then painting over half of it costs
+    // the whole ring twice for the same picture.
+    let remaining = TARGET_SWEEP_DEG - swept;
+    if remaining > 0.0 {
+        fill_arc(fb, TARGET_INNER, TARGET_OUTER, TARGET_START_DEG - TARGET_SWEEP_DEG,
+                 remaining, ZONE_DIM_HUE[0]);
+    }
     // Anchored at the bottom-left end and advancing toward the bottom-right, so
     // the filled part always starts in the same place.
-    fill_arc(fb, TARGET_INNER, TARGET_OUTER, TARGET_START_DEG - swept, swept, WHITE);
+    if swept > 0.0 {
+        fill_arc(fb, TARGET_INNER, TARGET_OUTER, TARGET_START_DEG - swept, swept, WHITE);
+    }
 }
 
 fn draw_hr_row(fb: &mut FrameBuf, bpm: u16, hr_source: u8, y: i32) {
@@ -855,8 +876,11 @@ fn draw_confirm_discard(fb: &mut FrameBuf, hold_pct: u8) {
     let heading = FontRenderer::new::<HeadingFont>();
     let label = FontRenderer::new::<LabelFont>();
 
-    fill_arc(fb, RING_INNER_OFF, RING_OUTER, 0.0, 360.0, ZONE_DIM_HUE[4]);
+    // Track and fill meet rather than overlap -- see draw_target_arc().
     let swept = 360.0 * (hold_pct.min(100) as f32) / 100.0;
+    if swept < 360.0 {
+        fill_arc(fb, RING_INNER_OFF, RING_OUTER, swept, 360.0 - swept, ZONE_DIM_HUE[4]);
+    }
     if swept > 0.0 {
         fill_arc(fb, RING_INNER_OFF, RING_OUTER, 0.0, swept, RED);
     }
@@ -1213,6 +1237,40 @@ mod tests {
 
         // Past full it stops rather than wrapping round for a second lap.
         assert_eq!(at(100), at(255));
+    }
+
+    #[test]
+    fn the_hold_ring_has_no_gaps() {
+        // The guard on ARC_ANGULAR_PX / ARC_RADIAL_PX. Loosening the sampling
+        // is only safe while consecutive samples still land on the same pixel
+        // or its neighbour; too coarse and the ring grows holes that no other
+        // test would notice, because it would still be lit, still be round and
+        // still be the right colour.
+        //
+        // The fully-held discard ring is the case to check: a complete circle,
+        // so every angle is covered and any gap is the sampling's fault rather
+        // than a segment boundary's.
+        let mut f = frame(SCREEN_CONFIRM_DISCARD);
+        f.hold_pct = 100;
+        let buf = draw(&f);
+
+        // A pixel is "inside the band" only if its whole 1x1 area is, so the
+        // outermost and innermost rows are excluded: those legitimately
+        // straddle the edge and may or may not be painted.
+        let lo = RING_INNER_OFF + 1.0;
+        let hi = RING_OUTER - 1.0;
+        let mut holes = 0;
+        for y in 0..H {
+            for x in 0..W {
+                let dx = x as f32 - RING_CX;
+                let dy = y as f32 - RING_CY;
+                let r = (dx * dx + dy * dy).sqrt();
+                if r >= lo && r <= hi && buf[(y * W + x) as usize] == BLACK.0 {
+                    holes += 1;
+                }
+            }
+        }
+        assert_eq!(holes, 0, "{holes} unpainted pixels inside the ring band");
     }
 
     #[test]
