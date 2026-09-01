@@ -29,6 +29,11 @@ public:
         uint32_t    appVersion = 0;  // Application version 4 bytes LE [patch, minor, major, 0]
         std::string devID;           // Developer ID (max len 16)
         std::string appID;           // Application ID (max len 16)
+        /// Zones this ride is scored against. The time_in_hr_zone arrays are
+        /// declared zoneCount + 1 long, so a five-zone ride writes six buckets
+        /// and an eight-zone ride writes nine -- a reader sees exactly the
+        /// zones that existed rather than a fixed array padded with zeros.
+        uint8_t zoneCount = 0;
     };
 
     struct RecordData {
@@ -60,10 +65,13 @@ public:
         uint8_t mFlags = 0;
     };
 
-    /// Heart-rate zones, plus a slot for time spent below zone 1. Index 0 is
-    /// "below zone 1", 1..5 are the zones themselves -- the layout the FIT
-    /// profile's own time_in_hr_zone array uses.
-    static constexpr size_t kZoneBuckets = 6;
+    /// Storage for the zone buckets: index 0 is "below zone 1" and 1..N are
+    /// the zones, which is the layout the FIT profile's own time_in_hr_zone
+    /// array uses. Sized for the most zones the app supports; how many are
+    /// actually written is AppInfo::zoneCount + 1, fixed for a ride when its
+    /// message definitions go down.
+    static constexpr size_t kMaxZones    = 8;
+    static constexpr size_t kZoneBuckets = kMaxZones + 1;
 
     struct LapData {
         std::time_t timestamp        = 0;     // UTC
@@ -147,6 +155,10 @@ private:
     std::unique_ptr<SDK::Interface::IFile> mFile = nullptr;
     std::unique_ptr<SDK::Fit::FitWriter>   mFit  = nullptr;
     SDK::Fit::RecordingMarker              mMarker;   ///< Shared crash-recovery marker.
+    /// Buckets written per lap and session: zoneCount + 1, or 0 when the ride
+    /// has no zones. Fixed at start(), because the message definition that
+    /// declares the array length is written once.
+    uint8_t     mZoneBuckets  = 0;
     uint16_t    mLapCounter   = 0;
     std::time_t mLastFlushUtc = 0;   ///< Record timestamp of the last durability flush.
 
@@ -154,8 +166,8 @@ private:
     void writeFieldDescription(uint8_t devFieldNum, const char* name,
                                const char* units, SDK::Fit::BaseType baseType);
     void addMessageEvent(std::time_t t, SDK::Fit::EventType type);
-    static void writeZoneSeconds(SDK::Fit::FitWriter::Data& d,
-                                 const std::time_t (&zones)[kZoneBuckets]);
+    void writeZoneSeconds(SDK::Fit::FitWriter::Data& d,
+                          const std::time_t (&zones)[kZoneBuckets]) const;
 
     bool createAndOpenFile(std::time_t utc);
     bool saveSummary(const TrackData& track);

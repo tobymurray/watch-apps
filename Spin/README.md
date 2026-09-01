@@ -127,14 +127,39 @@ goes, growing left to right to meet the zone scale where it ends. With no target
 set the gap stays empty, which is what keeps it reading as a speedometer rather
 than a closed circle.
 
-**The thresholds are the wearer's own**, read from the watch with
-`SDK::Message::RequestSystemSettings` — the same ones every other activity app
-on the watch uses. They are not a Spin setting, because a second place to
-configure them is a second place for them to be wrong.
+**Any number of zones from two to eight**, and the dial adapts: the ladder is
+written out per count rather than sampled from one palette by formula, so every
+size ends grey-to-red and the five-zone one is the familiar
+grey/blue/green/amber/red rather than whatever arithmetic produced. Eight is
+where the kernel's own threshold table stops, so it is not a limit invented
+here.
 
-If no thresholds are set, **the bar is not drawn at all**. "Below zone 1" and
-"you have not told the watch what your zones are" are different states, and an
-all-dim bar would say the first when it means the second.
+**By default the zones are the watch's own**, read with
+`SDK::Message::RequestSystemSettings` — the same ones every other activity app
+uses, and a second copy is a second thing to keep in step. The watch reports its
+ladder as 50/60/70/80/90/100% of maximum heart rate, so the last value is the
+maximum rather than a floor and Spin drops it to get five floors.
+
+**Set `hrZoneCount` to override that**, for models the watch cannot express — a
+three-zone polarised split, or a seven- or eight-zone ladder. The count comes
+with the floors, because the count alone does not say where the boundaries fall
+and there is no percentage rule this app could pick that would not be inventing
+somebody's training model for them. Zone *N* runs from its own floor up to the
+next zone's, and the top zone is open-ended, so eight zones need eight floors
+rather than nine.
+
+Floors that are not strictly increasing are ignored and the watch's zones used
+instead: a dial whose segments correspond to nothing is worse than one that is
+merely not what was asked for, and the ride still has to record either way.
+
+If no zones are set at all, **the dial is not drawn**. "Below zone 1" and "you
+have not set any zones" are different states, and an unlit dial would say the
+first when it means the second.
+
+The FIT file follows the same count: `time_in_hr_zone` is declared *zones + 1*
+long, so a five-zone ride writes six buckets and an eight-zone one writes nine,
+and a reader sees exactly the zones that existed rather than a fixed array
+padded with zeros it would have to read as time spent nowhere near a zone.
 
 ## Calories, and why not kJ
 
@@ -178,6 +203,8 @@ a change takes effect on the next ride rather than the next reinstall.
 | `targetMinutes` | 0 (off) | Buzz once at this many minutes and say `TARGET MET` on the screen. |
 | `keepScreenLit` | off | Hold the backlight on for the whole ride. |
 | `energyInKilojoules` | off | Show energy as kJ instead of kcal. Display only. |
+| `hrZoneCount` | 0 (the watch's) | How many zones, 2 to 8. |
+| `hrZone1Min` … `hrZone8Min` | 0 | The bpm floor of each zone, needed when a count is set. |
 
 ![A target set, the target met, and energy in kJ](Docs/screens-config.png)
 

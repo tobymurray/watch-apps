@@ -63,12 +63,11 @@ private:
     /// breaking it -- but it is why the figure is an estimate.
     static constexpr float skDefaultWeightKg = 75.0f;
 
-    /// Zone buckets: [0] below zone 1, [1..5] the zones. Matches
+    /// Zone buckets: [0] is below zone 1, [1..N] the zones themselves, so the
+    /// most buckets is one more than the most zones. Matches
     /// ActivityWriter::kZoneBuckets and Track::Data::zoneSeconds.
-    static constexpr size_t skZoneBuckets = 6;
-
-    /// The kernel reports up to six zone thresholds.
-    static constexpr size_t skMaxHrThresholds = 6;
+    static constexpr size_t skMaxZones    = SpinConfig::kMaxZones;
+    static constexpr size_t skZoneBuckets = skMaxZones + 1;
 
     // -- Infrastructure -------------------------------------------------------
 
@@ -104,8 +103,18 @@ private:
     SDK::Metric::VariableCounter                        mHrCounter;
 
     float   mWeightKg = skDefaultWeightKg;      ///< From the watch's own profile.
-    uint8_t mHrThresholds[skMaxHrThresholds] = {};
-    uint8_t mHrThresholdCount = 0;
+
+    /// The zone floors in use: mZoneFloor[i] is the lowest heart rate in zone
+    /// i+1, and zone i+1 runs up to mZoneFloor[i+1]. The top zone is
+    /// open-ended, so N zones need N floors. Filled from this app's config when
+    /// it declares a count, and from the watch's own settings otherwise.
+    uint8_t mZoneFloor[skMaxZones] = {};
+    uint8_t mZoneCount = 0;
+
+    /// The watch's own zone floors, kept separately so a bad config can fall
+    /// back to them without another trip to the kernel.
+    uint8_t mSystemZoneFloor[skMaxZones] = {};
+    uint8_t mSystemZoneCount = 0;
 
     /// Bridges a one-second dip in the arbiter's confidence, so the screen does
     /// not blank a reading the sensor still has. Display side only -- the FIT
@@ -148,6 +157,7 @@ private:
 
     void loadConfig();
     void loadSystemSettings();
+    void applyZoneConfig();
     void startTrack(std::time_t utc);
     void processTrack();
     void saveLap();

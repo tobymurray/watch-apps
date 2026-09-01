@@ -57,6 +57,10 @@ private:
     /// what the screen turns it into.
     bool mEnergyInKilojoules = false;
 
+    /// How many segments the dial has. From the app's configuration, or the
+    /// watch's own zones when it declares none.
+    uint8_t mZoneCount = 0;
+
     /// A finished ride is not a state the Service tracks -- it goes back to
     /// INACTIVE, which is also what "never started" looks like. This is the
     /// one bit that tells those two apart, set by RIDE_SAVED and cleared when

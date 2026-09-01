@@ -53,8 +53,97 @@
       "id": "energyInKilojoules",
       "type": "bool",
       "label": "Energy in kJ",
-      "description": "Show energy as kilojoules instead of calories. This is dietary energy (1 kcal = 4.184 kJ), not the kJ of work a power meter reports — the watch cannot measure that. The saved file always records kcal.",
+      "description": "Show energy as kilojoules instead of calories. This is dietary energy (1 kcal = 4.184 kJ), not the kJ of work a power meter reports \u2014 the watch cannot measure that. The saved file always records kcal.",
       "default": false
+    },
+    {
+      "id": "hrZoneCount",
+      "type": "int",
+      "label": "Heart rate zones",
+      "description": "How many zones to use, 2 to 8. Leave at 0 to use the zones already set on the watch. Setting a count needs the floors below filled in too.",
+      "default": 0,
+      "min": 0,
+      "max": 8
+    },
+    {
+      "id": "hrZone1Min",
+      "type": "int",
+      "label": "Zone 1 from",
+      "description": "Lowest heart rate in zone 1, in bpm. Zone 1 runs from here up to zone 2's floor.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
+    },
+    {
+      "id": "hrZone2Min",
+      "type": "int",
+      "label": "Zone 2 from",
+      "description": "Lowest heart rate in zone 2, in bpm. Zone 2 runs from here up to zone 3's floor.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
+    },
+    {
+      "id": "hrZone3Min",
+      "type": "int",
+      "label": "Zone 3 from",
+      "description": "Lowest heart rate in zone 3, in bpm. Zone 3 runs from here up to zone 4's floor.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
+    },
+    {
+      "id": "hrZone4Min",
+      "type": "int",
+      "label": "Zone 4 from",
+      "description": "Lowest heart rate in zone 4, in bpm. Zone 4 runs from here up to zone 5's floor.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
+    },
+    {
+      "id": "hrZone5Min",
+      "type": "int",
+      "label": "Zone 5 from",
+      "description": "Lowest heart rate in zone 5, in bpm. Zone 5 runs from here up to zone 6's floor.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
+    },
+    {
+      "id": "hrZone6Min",
+      "type": "int",
+      "label": "Zone 6 from",
+      "description": "Lowest heart rate in zone 6, in bpm. Zone 6 runs from here up to zone 7's floor.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
+    },
+    {
+      "id": "hrZone7Min",
+      "type": "int",
+      "label": "Zone 7 from",
+      "description": "Lowest heart rate in zone 7, in bpm. Zone 7 runs from here up to zone 8's floor.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
+    },
+    {
+      "id": "hrZone8Min",
+      "type": "int",
+      "label": "Zone 8 from",
+      "description": "Lowest heart rate in zone 8, in bpm. The top zone has no upper bound.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
     }
   ]
 }

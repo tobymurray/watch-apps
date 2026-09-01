@@ -141,6 +141,7 @@ void Gui::buildFrame(spin_gui_frame &out) const
     out.target_reached = mTrackData.targetReached ? 1u : 0u;
 
     out.hr_zone          = mTrackData.hrZone;
+    out.zone_count       = mZoneCount;
     out.hr_zone_fraction = mTrackData.hrZoneFraction;
     out.has_zones        = mTrackData.hasZones ? 1u : 0u;
 }
@@ -340,6 +341,7 @@ void Gui::run()
                 auto *cfg = static_cast<CustomMessage::RideConfigUpd *>(msg);
                 mTargetMinutes       = cfg->targetMinutes;
                 mEnergyInKilojoules  = cfg->energyInKilojoules;
+                mZoneCount           = cfg->zoneCount;
             }
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 mKernel.comm.releaseMessage(msg);

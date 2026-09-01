@@ -99,27 +99,55 @@ const DIM: Abgr2222 = Abgr2222::rgb(170, 170, 170);
 const RED: Abgr2222 = Abgr2222::rgb(255, 0, 0);
 /// Held / not-what-you-wanted. Paused, and a ride that failed to save.
 const AMBER: Abgr2222 = Abgr2222::rgb(255, 170, 0);
-/// One hue per heart-rate zone, in the ladder every training app uses: grey,
-/// blue, green, amber, red. Each has a dim twin, which is the same hue one
-/// level down on every non-zero channel -- so an inactive segment reads as the
-/// same zone, quieter, rather than as a different colour.
+/// Most zones the dial will draw. The kernel's own threshold table stops at
+/// eight too, so this is not a limit invented here.
+pub const MAX_ZONES: usize = 8;
+
+/// The colour ladder, cool to warm, eight stops.
+const HUE_GREY: Abgr2222 = Abgr2222::rgb(170, 170, 170);
+const HUE_BLUE: Abgr2222 = Abgr2222::rgb(0, 170, 255);
+const HUE_CYAN: Abgr2222 = Abgr2222::rgb(0, 255, 255);
+const HUE_GREEN: Abgr2222 = Abgr2222::rgb(0, 255, 0);
+const HUE_YELLOW: Abgr2222 = Abgr2222::rgb(255, 255, 0);
+const HUE_AMBER: Abgr2222 = Abgr2222::rgb(255, 170, 0);
+const HUE_ORANGE: Abgr2222 = Abgr2222::rgb(255, 85, 0);
+const HUE_RED: Abgr2222 = Abgr2222::rgb(255, 0, 0);
+
+/// Which hues a dial of N zones uses, written out per count rather than
+/// sampled from the ladder by formula.
+///
+/// A formula gets the ends right and the middle wrong: spreading eight stops
+/// over five zones lands on cyan and yellow and loses the blue-green-amber
+/// reading everyone already knows. Every row here ends grey-to-red, so the
+/// bottom zone is always easy and the top is always hard whatever the count,
+/// and the five-zone row is the familiar one rather than whatever arithmetic
+/// produced.
 ///
 /// Four levels a channel is the whole palette, so these are not approximations
 /// of nicer colours: they are the colours.
-const ZONE_BRIGHT: [Abgr2222; ZONE_COUNT as usize] = [
-    Abgr2222::rgb(170, 170, 170), // 1  grey
-    Abgr2222::rgb(0, 170, 255),   // 2  blue
-    Abgr2222::rgb(0, 255, 0),     // 3  green
-    Abgr2222::rgb(255, 170, 0),   // 4  amber
-    Abgr2222::rgb(255, 0, 0),     // 5  red
+const ZONE_HUES: [&[Abgr2222]; MAX_ZONES + 1] = [
+    &[],                                                        // 0 - no dial
+    &[HUE_RED],                                                 // 1 - not offered
+    &[HUE_GREY, HUE_RED],                                       // 2
+    &[HUE_GREY, HUE_AMBER, HUE_RED],                            // 3  polarised
+    &[HUE_GREY, HUE_GREEN, HUE_AMBER, HUE_RED],                 // 4
+    &[HUE_GREY, HUE_BLUE, HUE_GREEN, HUE_AMBER, HUE_RED],       // 5  the classic
+    &[HUE_GREY, HUE_BLUE, HUE_GREEN, HUE_YELLOW, HUE_AMBER, HUE_RED],            // 6
+    &[HUE_GREY, HUE_BLUE, HUE_CYAN, HUE_GREEN, HUE_YELLOW, HUE_AMBER, HUE_RED],  // 7
+    &[HUE_GREY, HUE_BLUE, HUE_CYAN, HUE_GREEN, HUE_YELLOW, HUE_AMBER, HUE_ORANGE,
+      HUE_RED],                                                                  // 8
 ];
-const ZONE_DIM_HUE: [Abgr2222; ZONE_COUNT as usize] = [
-    Abgr2222::rgb(85, 85, 85),
-    Abgr2222::rgb(0, 85, 170),
-    Abgr2222::rgb(0, 170, 0),
-    Abgr2222::rgb(170, 85, 0),
-    Abgr2222::rgb(170, 0, 0),
-];
+
+/// Dims a hue one level on every channel it uses, so an inactive segment reads
+/// as the same zone, quieter, rather than as a different colour.
+fn dim(c: Abgr2222) -> Abgr2222 {
+    // Two bits a channel: subtract one level from any channel that has any.
+    let step = |shift: u8| {
+        let v = (c.0 >> shift) & CHANNEL_MASK;
+        if v > 0 { v - 1 } else { 0 }
+    };
+    Abgr2222::from_levels(step(RED_SHIFT), step(GREEN_SHIFT), step(BLUE_SHIFT))
+}
 
 // -- Framebuffer -------------------------------------------------------------
 
@@ -200,7 +228,7 @@ pub const HR_EXTERNAL: u8 = 2;
 
 /// Heart-rate zones the bar draws. Zone 0 (below zone 1) is a state, not a
 /// segment: it dims every segment rather than adding a sixth.
-pub const ZONE_COUNT: u8 = 5;
+
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -216,6 +244,7 @@ pub struct Frame {
     pub saved_ok: u8,
     pub target_reached: u8,
     pub hr_zone: u8,
+    pub zone_count: u8,
     pub has_zones: u8,
     pub energy_is_kj: u8,
     pub hr_zone_fraction: u8,
@@ -245,6 +274,7 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(Frame, saved_ok));
     let h = fnv1a(h, core::mem::offset_of!(Frame, target_reached));
     let h = fnv1a(h, core::mem::offset_of!(Frame, hr_zone));
+    let h = fnv1a(h, core::mem::offset_of!(Frame, zone_count));
     let h = fnv1a(h, core::mem::offset_of!(Frame, has_zones));
     let h = fnv1a(h, core::mem::offset_of!(Frame, energy_is_kj));
     fnv1a(h, core::mem::offset_of!(Frame, hr_zone_fraction))
@@ -268,9 +298,10 @@ const _: () = assert!(core::mem::offset_of!(Frame, hr_source) == 14);
 const _: () = assert!(core::mem::offset_of!(Frame, saved_ok) == 15);
 const _: () = assert!(core::mem::offset_of!(Frame, target_reached) == 16);
 const _: () = assert!(core::mem::offset_of!(Frame, hr_zone) == 17);
-const _: () = assert!(core::mem::offset_of!(Frame, has_zones) == 18);
-const _: () = assert!(core::mem::offset_of!(Frame, energy_is_kj) == 19);
-const _: () = assert!(core::mem::offset_of!(Frame, hr_zone_fraction) == 20);
+const _: () = assert!(core::mem::offset_of!(Frame, zone_count) == 18);
+const _: () = assert!(core::mem::offset_of!(Frame, has_zones) == 19);
+const _: () = assert!(core::mem::offset_of!(Frame, energy_is_kj) == 20);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_zone_fraction) == 21);
 
 // -- Geometry ----------------------------------------------------------------
 
@@ -559,7 +590,7 @@ fn draw_ready(fb: &mut FrameBuf, frame: &Frame) {
     let w = text_width(&title, "SPIN") as i32;
     fill_rect(fb, CENTER_X - w / 2, top + 38, w, 2, DIM);
 
-    draw_zone_ring(fb, 0, frame.has_zones != 0);
+    draw_zone_ring(fb, 0, frame.zone_count, frame.has_zones != 0);
     draw_target_arc(fb, 0, frame.target_minutes, false);
 
     let connected = frame.strap == STRAP_CONNECTED;
@@ -639,8 +670,9 @@ fn draw_riding(fb: &mut FrameBuf, frame: &Frame) {
     }
 
     draw_hr_row(fb, frame.hr_bpm, frame.hr_source, HR_ROW_Y);
-    draw_zone_ring(fb, frame.hr_zone, frame.has_zones != 0);
-    draw_zone_needle(fb, frame.hr_zone, frame.hr_zone_fraction, frame.has_zones != 0);
+    draw_zone_ring(fb, frame.hr_zone, frame.zone_count, frame.has_zones != 0);
+    draw_zone_needle(fb, frame.hr_zone, frame.hr_zone_fraction, frame.zone_count,
+                     frame.has_zones != 0);
     draw_target_arc(fb, frame.elapsed_s, frame.target_minutes, frame.target_reached != 0);
 
     if paused {
@@ -775,22 +807,24 @@ const NEEDLE_SLOT_DEG: f32 = 5.4;
 /// Position within the lit segment, from the zone and the fraction across it.
 /// Computed here rather than sent as a position along the whole ring, so the
 /// needle cannot drift into the gap between two segments.
-fn zone_needle_deg(zone: u8, fraction: u8) -> f32 {
-    let n = ZONE_COUNT as f32;
+fn zone_needle_deg(zone: u8, fraction: u8, count: u8) -> f32 {
+    let n = count as f32;
     let segment = (RING_SWEEP_DEG - RING_GAP_DEG * (n - 1.0)) / n;
     let start = RING_START_DEG + (segment + RING_GAP_DEG) * (zone - 1) as f32;
     start + segment * (fraction as f32) / 255.0
 }
 
-fn draw_zone_needle(fb: &mut FrameBuf, zone: u8, fraction: u8, has_zones: bool) {
+fn draw_zone_needle(fb: &mut FrameBuf, zone: u8, fraction: u8, count: u8, has_zones: bool) {
     // Below zone 1 there is nowhere on the scale to point: the bottom of zone 1
     // is a threshold the wearer set, but there is no defined bottom to the
     // scale itself. The ring says "you are not on it yet" by lighting nothing,
     // and the needle says the same by being absent.
-    if !has_zones || zone < 1 || zone > ZONE_COUNT {
+    // The same bounds the ring uses, including the upper one: without it a
+    // nonsense count draws a needle on a dial that was never drawn.
+    if !has_zones || count < 2 || count as usize > MAX_ZONES || zone < 1 || zone > count {
         return;
     }
-    let deg = zone_needle_deg(zone, fraction);
+    let deg = zone_needle_deg(zone, fraction, count);
     fill_arc(fb, NEEDLE_INNER, NEEDLE_OUTER, deg - NEEDLE_SLOT_DEG / 2.0,
              NEEDLE_SLOT_DEG, BLACK);
     fill_arc(fb, NEEDLE_INNER, NEEDLE_OUTER, deg - NEEDLE_SWEEP_DEG / 2.0,
@@ -803,22 +837,20 @@ fn draw_zone_needle(fb: &mut FrameBuf, zone: u8, fraction: u8, has_zones: bool) 
 ///
 /// Zone 0 (below zone 1) lights nothing, which is the honest rendering of
 /// warming up: the scale is there, you are not on it yet.
-fn draw_zone_ring(fb: &mut FrameBuf, zone: u8, has_zones: bool) {
-    if !has_zones {
+fn draw_zone_ring(fb: &mut FrameBuf, zone: u8, count: u8, has_zones: bool) {
+    if !has_zones || count < 2 || count as usize > MAX_ZONES {
         return;
     }
+    let hues = ZONE_HUES[count as usize];
 
-    let n = ZONE_COUNT as f32;
+    let n = count as f32;
     let segment = (RING_SWEEP_DEG - RING_GAP_DEG * (n - 1.0)) / n;
 
-    for i in 0..ZONE_COUNT {
+    for i in 0..count {
         let start = RING_START_DEG + (segment + RING_GAP_DEG) * i as f32;
+        let hue = hues[i as usize];
         let active = zone == i + 1;
-        let (inner, color) = if active {
-            (RING_INNER_ON, ZONE_BRIGHT[i as usize])
-        } else {
-            (RING_INNER_OFF, ZONE_DIM_HUE[i as usize])
-        };
+        let (inner, color) = if active { (RING_INNER_ON, hue) } else { (RING_INNER_OFF, dim(hue)) };
         fill_arc(fb, inner, RING_OUTER, start, segment, color);
     }
 }
@@ -846,7 +878,7 @@ fn draw_target_arc(fb: &mut FrameBuf, elapsed_s: u32, target_minutes: u16, reach
     let remaining = TARGET_SWEEP_DEG - swept;
     if remaining > 0.0 {
         fill_arc(fb, TARGET_INNER, TARGET_OUTER, TARGET_START_DEG - TARGET_SWEEP_DEG,
-                 remaining, ZONE_DIM_HUE[0]);
+                 remaining, dim(HUE_GREY));
     }
     // Anchored at the bottom-left end and advancing toward the bottom-right, so
     // the filled part always starts in the same place.
@@ -1267,6 +1299,7 @@ mod tests {
             let mut f = frame(SCREEN_RIDING);
             f.target_minutes = 30;
             f.has_zones = 1;
+            f.zone_count = 5;
             f.hr_zone = 3;
             f
         };
@@ -1294,10 +1327,97 @@ mod tests {
         // than a closed circle, so nothing draws there without a target.
         let mut f = frame(SCREEN_RIDING);
         f.has_zones = 1;
+        f.zone_count = 5;
         f.hr_zone = 3;
         f.elapsed_s = 600;
         let with_target = Frame { target_minutes: 30, ..f };
         assert_ne!(draw(&f), draw(&with_target));
+    }
+
+    #[test]
+    fn no_zones_set_draws_no_dial_at_all() {
+        // "Below zone 1" and "you have set no zones" are different states. A
+        // dial with nothing lit would say the first when it means the second.
+        let none = Frame { elapsed_s: 300, hr_bpm: 120, ..frame(SCREEN_RIDING) };
+        let below_zone_1 = Frame { has_zones: 1, zone_count: 5, hr_zone: 0, ..none };
+        assert_ne!(draw(&none), draw(&below_zone_1),
+                   "a wearer with zones set should see the dial even below zone 1");
+    }
+
+    #[test]
+    fn each_zone_lights_a_different_segment() {
+        let base = Frame { elapsed_s: 900, hr_bpm: 140, has_zones: 1, zone_count: 5,
+                           hr_zone_fraction: 128, ..frame(SCREEN_RIDING) };
+        let mut seen: Vec<Vec<u8>> = Vec::new();
+        for zone in 0..=5u8 {
+            let drawn = draw(&Frame { hr_zone: zone, ..base });
+            assert!(!seen.contains(&drawn), "zone {zone} draws like another zone");
+            seen.push(drawn);
+        }
+    }
+
+    #[test]
+    fn every_dial_size_draws_and_reads_bottom_to_top() {
+        // Two through eight. Each count a different picture, and within each
+        // the bottom zone lit differently from the top -- a ladder that ran
+        // cool to cool would lose "red means hard" whatever its length.
+        let mut seen: Vec<Vec<u8>> = Vec::new();
+        for count in 2..=MAX_ZONES as u8 {
+            let base = Frame { has_zones: 1, zone_count: count, hr_zone_fraction: 128,
+                               elapsed_s: 600, ..frame(SCREEN_RIDING) };
+            let bottom = draw(&Frame { hr_zone: 1, ..base });
+            let top = draw(&Frame { hr_zone: count, ..base });
+            assert!(lit_pixels(&bottom) > 500, "{count} zones drew almost nothing");
+            assert_ne!(bottom, top, "{count} zones: top and bottom look the same");
+            assert!(!seen.contains(&bottom), "{count} zones draws like another count");
+            seen.push(bottom);
+        }
+    }
+
+    #[test]
+    fn a_count_outside_the_supported_range_draws_no_dial() {
+        // Rather than indexing off the end of the hue table.
+        for count in [1u8, 9, 200] {
+            let f = Frame { has_zones: 1, zone_count: count, hr_zone: 1,
+                            ..frame(SCREEN_RIDING) };
+            assert_eq!(draw(&f), draw(&Frame { has_zones: 0, ..f }),
+                       "count {count} drew something");
+        }
+    }
+
+    #[test]
+    fn the_needle_stays_inside_its_own_segment_at_any_count() {
+        // Why the fraction is sent per-zone rather than across the whole ring:
+        // equal slices with gaps between them, so a position measured over the
+        // whole scale drifts out of its own segment by the last one.
+        for count in 2..=MAX_ZONES as u8 {
+            let segment =
+                (RING_SWEEP_DEG - RING_GAP_DEG * (count as f32 - 1.0)) / count as f32;
+            for zone in 1..=count {
+                let start = RING_START_DEG + (segment + RING_GAP_DEG) * (zone - 1) as f32;
+                for frac in [0u8, 128, 255] {
+                    let deg = zone_needle_deg(zone, frac, count);
+                    assert!(deg >= start - 0.01 && deg <= start + segment + 0.01,
+                            "count {count} zone {zone} frac {frac}: {deg} is outside its segment");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_energy_unit_changes_the_word_not_the_number() {
+        let kcal = Frame { elapsed_s: 2712, avg_hr_bpm: 141, energy: 402, saved_ok: 1,
+                           ..frame(SCREEN_SAVED) };
+        assert_ne!(draw(&kcal), draw(&Frame { energy_is_kj: 1, ..kcal }));
+    }
+
+    #[test]
+    fn zero_energy_is_still_drawn() {
+        // A ride too short to burn a whole unit is a real ride. An absent row
+        // would read as a broken estimate rather than a small one.
+        let zero = Frame { elapsed_s: 12, saved_ok: 1, ..frame(SCREEN_SAVED) };
+        assert_ne!(draw(&zero), draw(&Frame { energy: 5, ..zero }));
+        assert!(lit_pixels(&draw(&zero)) > 500);
     }
 
     #[test]
@@ -1322,6 +1442,7 @@ mod tests {
         // It must not be mistakable for the zone dial behind it.
         let mut riding = frame(SCREEN_RIDING);
         riding.has_zones = 1;
+        riding.zone_count = 5;
         riding.hr_zone = 3;
         assert_ne!(buf, draw(&riding));
     }

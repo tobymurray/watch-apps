@@ -40,10 +40,8 @@ namespace {
 // Scale is 1000: the stored value is milliseconds, so seconds are multiplied
 // on the way in. The array is one element per zone bucket, index 0 being time
 // below zone 1 -- the layout kZoneBuckets describes.
-constexpr Field kLapTimeInHrZone{57, fit::BaseType::UInt32,
-                                 static_cast<uint8_t>(ActivityWriter::kZoneBuckets)};
-constexpr Field kSessionTimeInHrZone{65, fit::BaseType::UInt32,
-                                     static_cast<uint8_t>(ActivityWriter::kZoneBuckets)};
+constexpr uint8_t kLapTimeInHrZoneNum     = 57;
+constexpr uint8_t kSessionTimeInHrZoneNum = 65;
 
 /// FIT scale for time_in_hr_zone: the file stores milliseconds.
 constexpr uint32_t kTimeInHrZoneScale = 1000;
@@ -58,6 +56,12 @@ ActivityWriter::ActivityWriter(const SDK::Kernel& kernel, const char* pathToDir)
 
 void ActivityWriter::start(const AppInfo& info)
 {
+    // A ride with no zones writes no zone array at all, rather than one full of
+    // zeros a reader would take as "nowhere near a zone all ride".
+    mZoneBuckets = (info.zoneCount > 0 && info.zoneCount <= kMaxZones)
+                       ? static_cast<uint8_t>(info.zoneCount + 1)
+                       : 0;
+
     mLapCounter   = 0;
     mLastFlushUtc = info.timestamp;
 
@@ -117,21 +121,42 @@ void ActivityWriter::start(const AppInfo& info)
     defineRecordMessages();
 
     // lap / session / activity
-    mFit->defineMessage(L_LAP, fit::mesgNum(fit::MesgNum::Lap),
-        {fit::field::Lap::Timestamp, fit::field::Lap::StartTime,
-         fit::field::Lap::TotalElapsedTime, fit::field::Lap::TotalTimerTime,
-         fit::field::Lap::MessageIndex, fit::field::Lap::AvgHeartRate,
-         fit::field::Lap::MaxHeartRate, fit::field::Lap::TotalCalories,
-         kLapTimeInHrZone},
-        {{DF_LAP_RESTING_CAL, 2, 0}});
-    mFit->defineMessage(L_SESSION, fit::mesgNum(fit::MesgNum::Session),
-        {fit::field::Session::Timestamp, fit::field::Session::StartTime,
-         fit::field::Session::TotalElapsedTime, fit::field::Session::TotalTimerTime,
-         fit::field::Session::MessageIndex, fit::field::Session::NumLaps,
-         fit::field::Session::Sport, fit::field::Session::SubSport,
-         fit::field::Session::AvgHeartRate, fit::field::Session::MaxHeartRate,
-         fit::field::Session::TotalCalories, fit::field::Session::MetabolicCalories,
-         kSessionTimeInHrZone});
+    // The zone arrays are declared as long as this ride has zones, so a
+    // five-zone ride's definitions differ from an eight-zone ride's.
+    const Field lapZones{kLapTimeInHrZoneNum, fit::BaseType::UInt32, mZoneBuckets};
+    const Field sessionZones{kSessionTimeInHrZoneNum, fit::BaseType::UInt32, mZoneBuckets};
+
+    if (mZoneBuckets > 0) {
+        mFit->defineMessage(L_LAP, fit::mesgNum(fit::MesgNum::Lap),
+            {fit::field::Lap::Timestamp, fit::field::Lap::StartTime,
+             fit::field::Lap::TotalElapsedTime, fit::field::Lap::TotalTimerTime,
+             fit::field::Lap::MessageIndex, fit::field::Lap::AvgHeartRate,
+             fit::field::Lap::MaxHeartRate, fit::field::Lap::TotalCalories,
+             lapZones},
+            {{DF_LAP_RESTING_CAL, 2, 0}});
+        mFit->defineMessage(L_SESSION, fit::mesgNum(fit::MesgNum::Session),
+            {fit::field::Session::Timestamp, fit::field::Session::StartTime,
+             fit::field::Session::TotalElapsedTime, fit::field::Session::TotalTimerTime,
+             fit::field::Session::MessageIndex, fit::field::Session::NumLaps,
+             fit::field::Session::Sport, fit::field::Session::SubSport,
+             fit::field::Session::AvgHeartRate, fit::field::Session::MaxHeartRate,
+             fit::field::Session::TotalCalories, fit::field::Session::MetabolicCalories,
+             sessionZones});
+    } else {
+        mFit->defineMessage(L_LAP, fit::mesgNum(fit::MesgNum::Lap),
+            {fit::field::Lap::Timestamp, fit::field::Lap::StartTime,
+             fit::field::Lap::TotalElapsedTime, fit::field::Lap::TotalTimerTime,
+             fit::field::Lap::MessageIndex, fit::field::Lap::AvgHeartRate,
+             fit::field::Lap::MaxHeartRate, fit::field::Lap::TotalCalories},
+            {{DF_LAP_RESTING_CAL, 2, 0}});
+        mFit->defineMessage(L_SESSION, fit::mesgNum(fit::MesgNum::Session),
+            {fit::field::Session::Timestamp, fit::field::Session::StartTime,
+             fit::field::Session::TotalElapsedTime, fit::field::Session::TotalTimerTime,
+             fit::field::Session::MessageIndex, fit::field::Session::NumLaps,
+             fit::field::Session::Sport, fit::field::Session::SubSport,
+             fit::field::Session::AvgHeartRate, fit::field::Session::MaxHeartRate,
+             fit::field::Session::TotalCalories, fit::field::Session::MetabolicCalories});
+    }
     mFit->defineMessage(L_ACTIVITY, fit::mesgNum(fit::MesgNum::Activity),
         {fit::field::Activity::Timestamp, fit::field::Activity::TotalTimerTime,
          fit::field::Activity::LocalTimestamp, fit::field::Activity::NumSessions});
@@ -274,10 +299,12 @@ void ActivityWriter::addLap(const LapData& lap)
 }
 
 void ActivityWriter::writeZoneSeconds(fit::FitWriter::Data& d,
-                                      const std::time_t (&zones)[kZoneBuckets])
+                                      const std::time_t (&zones)[kZoneBuckets]) const
 {
-    // time_in_hr_zone is scaled by 1000, so the file holds milliseconds.
-    for (size_t i = 0; i < kZoneBuckets; ++i) {
+    // Scaled by 1000, so the file holds milliseconds. Only as many buckets as
+    // this ride declared: the definition and the data must agree on the array's
+    // length or the message is malformed.
+    for (size_t i = 0; i < mZoneBuckets; ++i) {
         d.u32(static_cast<uint32_t>(zones[i]) * kTimeInHrZoneScale);
     }
 }
