@@ -21,6 +21,35 @@ namespace fit = SDK::Fit;
 using Field = fit::FitWriter::Field;
 using DevFieldDef = fit::FitWriter::DevField;
 
+namespace {
+
+// time_in_hr_zone, carried here rather than taken from SDK/Fit/FitProfile.hpp,
+// which lists only the fields UNA's own apps write and has no entry for it.
+//
+// These are wire format, not SDK API: the FIT profile assigns them globally and
+// they cannot be revised without invalidating every file already written. Both
+// were checked against the Garmin FIT SDK profile (21.214.0Release) and against
+// python-fitparse's independently generated copy, which agree.
+//
+// THE TWO MESSAGES DO NOT USE THE SAME NUMBER, which is the whole reason this
+// comment exists. lap is 57 and session is 65. Session field 57 is
+// avg_temperature (sint8, degrees C) -- writing this uint32 array there would
+// have declared a temperature field as a six-element array and had every
+// decoder report nonsense for it, silently, in every file this app ever wrote.
+//
+// Scale is 1000: the stored value is milliseconds, so seconds are multiplied
+// on the way in. The array is one element per zone bucket, index 0 being time
+// below zone 1 -- the layout kZoneBuckets describes.
+constexpr Field kLapTimeInHrZone{57, fit::BaseType::UInt32,
+                                 static_cast<uint8_t>(ActivityWriter::kZoneBuckets)};
+constexpr Field kSessionTimeInHrZone{65, fit::BaseType::UInt32,
+                                     static_cast<uint8_t>(ActivityWriter::kZoneBuckets)};
+
+/// FIT scale for time_in_hr_zone: the file stores milliseconds.
+constexpr uint32_t kTimeInHrZoneScale = 1000;
+
+}  // namespace
+
 ActivityWriter::ActivityWriter(const SDK::Kernel& kernel, const char* pathToDir)
     : mKernel(kernel), mPath(pathToDir), mMarker(kernel.fs, pathToDir)
 {
@@ -71,27 +100,14 @@ void ActivityWriter::start(const AppInfo& info)
     writeFieldDescription(DF_HR_SOURCE, "hr_source", nullptr, fit::BaseType::UInt8);
     writeFieldDescription(DF_HR_OPTICAL, "hr_optical", "bpm", fit::BaseType::UInt8);
     writeFieldDescription(DF_HR_EXTERNAL, "hr_external", "bpm", fit::BaseType::UInt8);
-    // Lap-level resting calories, and time-in-zone on both lap and session.
-    //
-    // WHY THESE ARE DEVELOPER FIELDS AND NOT NATIVE ONES
-    //
-    // The FIT profile has native homes for both -- lap.resting_calories, and
-    // time_in_hr_zone on lap and session. Neither is in SDK/Fit/FitProfile.hpp,
-    // which carries only the fields UNA's own apps write, and there is no copy
-    // of the FIT profile in this SDK or this repository to check a field number
-    // against. Writing a guessed number into a native slot is not a harmless
-    // mistake: if it is wrong, this array lands in whatever field really has
-    // that number and a decoder reports it as that field, silently.
-    //
-    // A developer field cannot do that. It is namespaced to this app's
-    // developer_data_id and carries its own name, units and base type in the
-    // file, so a consumer either understands it or ignores it. The cost is that
-    // Garmin Connect will not draw its native time-in-zone chart from it.
-    //
-    // Promoting these to native fields is a one-line change each, and worth
-    // making as soon as the numbers can be checked against the FIT SDK.
+    // Lap resting calories stays a developer field, and for a checked reason
+    // rather than a cautious one: the FIT profile has no lap.resting_calories.
+    // There is nothing to promote it to. (session.metabolic_calories, field
+    // 196, does exist and is used natively below.) Checked against the Garmin
+    // FIT SDK profile 21.214.0 and python-fitparse's independently generated
+    // copy, which agree: `lap` has total_calories (11) and total_fat_calories
+    // (12) and nothing else in the family.
     writeFieldDescription(DF_LAP_RESTING_CAL, "resting_calories", "kcal", fit::BaseType::UInt16);
-    writeFieldDescription(DF_TIME_IN_HR_ZONE, "time_in_hr_zone", "s", fit::BaseType::UInt32);
 
     // event
     mFit->defineMessage(L_EVENT, fit::mesgNum(fit::MesgNum::Event),
@@ -101,26 +117,21 @@ void ActivityWriter::start(const AppInfo& info)
     defineRecordMessages();
 
     // lap / session / activity
-    // One uint32 per zone bucket, seconds, in the developer field declared
-    // above. kZoneBuckets * 4 bytes, flat -- the reader gets the base type from
-    // the field description and the count from the size.
-    const DevFieldDef zoneTimes{DF_TIME_IN_HR_ZONE,
-                                static_cast<uint8_t>(kZoneBuckets * sizeof(uint32_t)), 0};
-
     mFit->defineMessage(L_LAP, fit::mesgNum(fit::MesgNum::Lap),
         {fit::field::Lap::Timestamp, fit::field::Lap::StartTime,
          fit::field::Lap::TotalElapsedTime, fit::field::Lap::TotalTimerTime,
          fit::field::Lap::MessageIndex, fit::field::Lap::AvgHeartRate,
-         fit::field::Lap::MaxHeartRate, fit::field::Lap::TotalCalories},
-        {{DF_LAP_RESTING_CAL, 2, 0}, zoneTimes});
+         fit::field::Lap::MaxHeartRate, fit::field::Lap::TotalCalories,
+         kLapTimeInHrZone},
+        {{DF_LAP_RESTING_CAL, 2, 0}});
     mFit->defineMessage(L_SESSION, fit::mesgNum(fit::MesgNum::Session),
         {fit::field::Session::Timestamp, fit::field::Session::StartTime,
          fit::field::Session::TotalElapsedTime, fit::field::Session::TotalTimerTime,
          fit::field::Session::MessageIndex, fit::field::Session::NumLaps,
          fit::field::Session::Sport, fit::field::Session::SubSport,
          fit::field::Session::AvgHeartRate, fit::field::Session::MaxHeartRate,
-         fit::field::Session::TotalCalories, fit::field::Session::MetabolicCalories},
-        {zoneTimes});
+         fit::field::Session::TotalCalories, fit::field::Session::MetabolicCalories,
+         kSessionTimeInHrZone});
     mFit->defineMessage(L_ACTIVITY, fit::mesgNum(fit::MesgNum::Activity),
         {fit::field::Activity::Timestamp, fit::field::Activity::TotalTimerTime,
          fit::field::Activity::LocalTimestamp, fit::field::Activity::NumSessions});
@@ -246,9 +257,10 @@ void ActivityWriter::addLap(const LapData& lap)
      .u8(static_cast<uint8_t>(lap.hrAvg))
      .u8(static_cast<uint8_t>(lap.hrMax))
      .u16(static_cast<uint16_t>(lap.calories + 0.5f));
-    // Developer fields, in definition order.
-    d.u16(static_cast<uint16_t>(lap.restingCalories + 0.5f));
+    // Still a native field: time_in_hr_zone is the last one in the definition.
     writeZoneSeconds(d, lap.zoneSeconds);
+    // Developer fields follow every native one, in definition order.
+    d.u16(static_cast<uint16_t>(lap.restingCalories + 0.5f));
     d.write();
 
     mLapCounter++;
@@ -264,11 +276,9 @@ void ActivityWriter::addLap(const LapData& lap)
 void ActivityWriter::writeZoneSeconds(fit::FitWriter::Data& d,
                                       const std::time_t (&zones)[kZoneBuckets])
 {
-    // Plain seconds, matching the "s" units declared for the developer field.
-    // The native profile field this stands in for is scaled by 1000; a
-    // developer field carries its own units, so there is nothing to scale to.
+    // time_in_hr_zone is scaled by 1000, so the file holds milliseconds.
     for (size_t i = 0; i < kZoneBuckets; ++i) {
-        d.u32(static_cast<uint32_t>(zones[i]));
+        d.u32(static_cast<uint32_t>(zones[i]) * kTimeInHrZoneScale);
     }
 }
 

@@ -39,9 +39,10 @@ Everything else in the file, all asserted in
   `hr_external`. Which sensor the kernel believed is not recoverable from the
   arbitrated number afterwards, and on a ride whose point is the strap it is
   the first thing worth checking.
-- **Time in each heart-rate zone**, on the session and on every lap, in six
-  buckets that account for every active second. See
-  [the note on why these are developer fields](#why-time-in-zone-is-a-developer-field).
+- **Time in each heart-rate zone**, on the session and on every lap, as the
+  profile's native `time_in_hr_zone` — in six buckets that account for every
+  active second. The two messages do not use the same field number; see
+  [below](#time-in-zone-and-the-field-number-that-is-not-shared).
 - **Active and resting calories**, as `total_calories` and
   `metabolic_calories`.
 
@@ -219,25 +220,38 @@ compute an FNV-1a fingerprint over the layout their own compiler produced, and
 `Gui::run()` refuses to start if they disagree. A stale `libspin_gui.a` linked
 against a changed struct is otherwise silent until it draws garbage.
 
-## Why time-in-zone is a developer field
+## Time in zone, and the field number that is not shared
 
-The FIT profile has a native home for it — `time_in_hr_zone`, on both lap and
-session. It is not in `SDK/Fit/FitProfile.hpp`, which carries only the fields
-UNA's own apps write, and there is no copy of the FIT profile in this SDK or
-this repository to check a field number against.
+`time_in_hr_zone` is not in `SDK/Fit/FitProfile.hpp`, which carries only the
+fields UNA's own apps write, so its number had to come from the FIT profile
+itself. It is worth spelling out what that lookup found, because the obvious
+assumption is wrong:
 
-Writing a guessed number into a native slot is not a harmless mistake. If it is
-wrong, the array lands in whatever field really holds that number and a decoder
-reports it as that field, silently, in every file the app has ever written.
+| Message | `time_in_hr_zone` |
+|---|---|
+| `lap` | field **57** |
+| `session` | field **65** |
 
-A developer field cannot do that: it is namespaced to this app's
-`developer_data_id` and carries its own name, units and base type in the file,
-so a consumer either understands it or ignores it. The cost is that Garmin
-Connect will not draw its native time-in-zone chart from it. The same reasoning
-covers lap resting calories.
+**Session field 57 is `avg_temperature`** — a `sint8` in degrees Celsius. Using
+the lap number on the session would have declared a temperature field as a
+six-element `uint32` array and had every decoder report nonsense for it,
+silently, in every file this app ever wrote. The app measures no temperature, so
+nothing would have looked wrong from here.
 
-**Promoting both to native fields is a one-line change each**, and worth making
-as soon as the numbers can be checked against the FIT SDK rather than recalled.
+Both numbers were checked against the Garmin FIT SDK profile (21.214.0Release)
+and against python-fitparse's independently generated copy, which agree. The
+scale is 1000, so the file holds milliseconds and
+`ActivityWriter::writeZoneSeconds()` multiplies on the way in.
+
+**Lap resting calories stays a developer field**, and now for a checked reason
+rather than a cautious one: the FIT profile has no `lap.resting_calories`. `lap`
+has `total_calories` (11) and `total_fat_calories` (12) and nothing else in the
+family, so there is nothing to promote it to. Its sibling on the session,
+`metabolic_calories` (196), does exist and is used natively.
+
+A developer field is self-describing — it carries its own name, units and base
+type in the file — which is what makes it a safe home for a quantity the
+profile has no slot for.
 
 ## What it does not do
 

@@ -136,7 +136,6 @@ private:
         DF_HR_OPTICAL       = 5,
         DF_HR_EXTERNAL      = 6,
         DF_LAP_RESTING_CAL  = 7,
-        DF_TIME_IN_HR_ZONE  = 8,
     };
 
     /// Flush + marker-refresh cadence during recording (seconds of record time).

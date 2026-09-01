@@ -59,16 +59,26 @@ constexpr uint8_t kDevHrSource      = 4;
 constexpr uint8_t kDevHrOptical     = 5;
 constexpr uint8_t kDevHrExternal    = 6;
 constexpr uint8_t kDevLapRestingCal = 7;
-constexpr uint8_t kDevTimeInHrZone  = 8;
 
 constexpr uint8_t kFieldTotalCalories      = 11;   // session/lap total_calories
 constexpr uint8_t kFieldMetabolicCalories  = 196;  // session.metabolic_calories
 
-/// Decodes the flat uint32 array the time-in-zone developer field carries.
-std::vector<uint32_t> zoneSeconds(const FitReader::Message &m)
+// time_in_hr_zone, and the two messages do NOT share a number. Checked against
+// the Garmin FIT SDK profile 21.214.0 and python-fitparse's independent copy.
+// Session field 57 is avg_temperature, so using the lap number on the session
+// would write this array into a temperature field.
+constexpr uint8_t kFieldLapTimeInHrZone     = 57;
+constexpr uint8_t kFieldSessionTimeInHrZone = 65;
+constexpr uint8_t kFieldSessionAvgTemperature = 57;
+
+/// Stored value is milliseconds; the app holds seconds.
+constexpr uint32_t kTimeInHrZoneScale = 1000;
+
+/// Decodes the flat uint32 array a time_in_hr_zone field carries.
+std::vector<uint32_t> zoneMillis(const FitReader::Message &m, uint8_t fieldNum)
 {
-    const auto it = m.devFields.find(kDevTimeInHrZone);
-    if (it == m.devFields.end()) {
+    const auto it = m.fields.find(fieldNum);
+    if (it == m.fields.end()) {
         return {};
     }
     const std::vector<uint8_t> &raw = it->second.raw;
@@ -471,21 +481,33 @@ TEST(SpinActivityWriter, RecordsTimeInEachHeartRateZone)
     ASSERT_EQ(sessions.size(), 1u);
     ASSERT_EQ(laps.size(), 1u);
 
-    for (const auto *m : {sessions[0], laps[0]}) {
-        const std::vector<uint32_t> got = zoneSeconds(*m);
-        ASSERT_EQ(got.size(), ActivityWriter::kZoneBuckets);
+    // Each message uses its own field number, and they differ.
+    const std::pair<const FitReader::Message *, uint8_t> targets[] = {
+        {sessions[0], kFieldSessionTimeInHrZone},
+        {laps[0], kFieldLapTimeInHrZone},
+    };
+
+    for (const auto &target : targets) {
+        const std::vector<uint32_t> got = zoneMillis(*target.first, target.second);
+        ASSERT_EQ(got.size(), ActivityWriter::kZoneBuckets)
+            << "field " << unsigned(target.second) << " is missing or the wrong length";
         for (size_t i = 0; i < ActivityWriter::kZoneBuckets; ++i) {
-            EXPECT_EQ(got[i], static_cast<uint32_t>(zones[i])) << "bucket " << i;
+            EXPECT_EQ(got[i], static_cast<uint32_t>(zones[i]) * kTimeInHrZoneScale)
+                << "bucket " << i;
         }
-        // Plain seconds, matching the units the field description declares --
-        // not the native profile field's scale-by-1000.
         uint32_t sum = 0;
         for (uint32_t v : got) {
             sum += v;
         }
-        EXPECT_EQ(sum, static_cast<uint32_t>(total))
+        EXPECT_EQ(sum, static_cast<uint32_t>(total) * kTimeInHrZoneScale)
             << "the buckets should account for every active second";
     }
+
+    // The session must NOT have picked up the lap's field number: 57 there is
+    // avg_temperature, and this app measures no temperature. This is the
+    // assertion that would have caught the bug the FIT profile lookup found.
+    EXPECT_EQ(sessions[0]->fields.count(kFieldSessionAvgTemperature), 0u)
+        << "the session wrote something into avg_temperature";
 }
 
 TEST(SpinActivityWriter, RecordsActiveAndRestingCalories)
