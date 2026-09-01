@@ -9,6 +9,7 @@ name: App build
 #   app-manifest.json                   -> validate it against the binary's own
 #                                          copy of the field table
 #   Tests/CMakeLists.txt                -> configure, build and run the host tests
+#   Software/Apps/CustomGUI/rust/       -> run the Rust renderer's own unit tests
 #   Software/Apps/<name>-CMake/         -> build the .uapp and upload it
 #
 # An app with none of the three is a mistake rather than a no-op, so it fails.
@@ -125,16 +126,21 @@ jobs:
           manifest="$dir/app-manifest.json"
           tests="$dir/Tests/CMakeLists.txt"
           cmake=$(find "$dir/Software/Apps" -maxdepth 2 -name CMakeLists.txt 2>/dev/null | head -n 1 || true)
+          # A CustomGUI app's renderer is a Rust crate with its own unit tests.
+          # They cover the drawing, which no host test in Tests/ can reach.
+          crate=$(find "$dir/Software/Apps" -maxdepth 3 -name Cargo.toml 2>/dev/null | head -n 1 || true)
 
           {
             echo "manifest=$([ -f "$manifest" ] && echo "$manifest" || echo '')"
             echo "tests=$([ -f "$tests" ] && dirname "$tests" || echo '')"
             echo "cmake=$([ -n "$cmake" ] && dirname "$cmake" || echo '')"
+            echo "crate=$([ -n "$crate" ] && dirname "$crate" || echo '')"
           } >> "$GITHUB_OUTPUT"
 
           echo "app       $app"
           echo "manifest  ${manifest#apps/}$([ -f "$manifest" ] || echo ' (none)')"
           echo "tests     $([ -f "$tests" ] && echo yes || echo no)"
+          echo "crate     $([ -n "$crate" ] && echo yes || echo no)"
           echo "buildable $([ -n "$cmake" ] && echo yes || echo no)"
 
           if [ ! -f "$manifest" ] && [ ! -f "$tests" ] && [ -z "$cmake" ]; then
@@ -261,6 +267,26 @@ jobs:
           [ -n "$bounds" ] && args+=(--check-bounds "$bounds")
           python3 sdk/Utilities/Scripts/app_packer/validate_app_config.py "${args[@]}"
 
+      # The other half of the manifest that has to agree with something real:
+      # minKernelVersion is a floor derived from the SDK's own ABI
+      # (KERNEL_INTERFACE_VERSION), and the SDK this job builds against is the
+      # one pinned at the top of this file. Declaring a lower floor than the
+      # ABI needs produces an app the store will happily offer to a watch whose
+      # kernel refuses to launch it -- a failure with nothing in the diff to
+      # explain it, because the .uapp header looks identical either way.
+      #
+      # Checked rather than stamped: raising the floor changes who can install
+      # the app, which is a decision to make in a commit, not a side effect of
+      # a build. A developer may declare HIGHER than the floor (to require a
+      # firmware bugfix at the same ABI) and this passes.
+      - name: Check the minimum kernel version against the SDK ABI
+        if: steps.app.outputs.manifest != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 sdk/Utilities/Scripts/app_packer/min_kernel_version.py \
+            --check "${{ steps.app.outputs.manifest }}"
+
       - name: Host tests
         if: steps.app.outputs.tests != ''
         shell: bash
@@ -271,6 +297,16 @@ jobs:
           cmake -B /tmp/host-tests -S "${{ steps.app.outputs.tests }}"
           cmake --build /tmp/host-tests -j"$(nproc)"
           ctest --test-dir /tmp/host-tests --output-on-failure
+
+      # --features std, not a bare `cargo test`: the crate is no_std for the
+      # watch, and a test binary cannot link a crate whose panics do not
+      # unwind. Run before the .uapp build so a renderer regression fails here
+      # rather than after several minutes of cross-compiling.
+      - name: Renderer tests
+        if: steps.app.outputs.crate != ''
+        shell: bash
+        working-directory: ${{ steps.app.outputs.crate }}
+        run: cargo test --features std
 
       - name: Build the app
         if: steps.app.outputs.cmake != ''
