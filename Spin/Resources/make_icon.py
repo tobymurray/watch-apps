@@ -68,9 +68,8 @@ def draw(size):
         else:
             g.ellipse(box, outline=TEAL, width=width or w)
 
-    # WHAT MAKES A SPIN BIKE A SPIN BIKE, at a glance and at this size: one
-    # big wheel where a road bike has two, and a base where it has a back
-    # wheel. Those two carry the recognition, so they get the space; the frame
+    # One big wheel where a road bike has two, and a base where it has a back
+    # wheel: those carry the recognition, so they get the space and the frame
     # is what is left over.
 
     # The flywheel, front and dominant.
@@ -83,9 +82,8 @@ def draw(size):
     line((0.31, 0.91), (0.22, 0.33))
     line((0.11, 0.31), (0.33, 0.31))
 
-    # Handlebar post. It rises out of the flywheel rather than from the base,
-    # which is both where it sits on the machine and one less line crossing
-    # the wheel.
+    # Handlebar post, rising out of the flywheel: where it sits on the machine,
+    # and one less line crossing the wheel.
     line((0.66, 0.62), (0.71, 0.19))
     line((0.58, 0.17), (0.84, 0.17))
 
@@ -93,8 +91,8 @@ def draw(size):
         # 60 px can afford the top tube and the crank. At 30 px both land
         # between pixels and fill the middle of the bike with grey.
         line((0.245, 0.44), (0.69, 0.36), width=int(w * 0.75))
-        # The hub, at the wheel's centre. It was a crank down at the frame,
-        # which at this size read as a blob stuck to the rim.
+        # The hub. It was a crank down at the frame, which at this size read as a
+        # blob stuck to the rim.
         circle((0.62, 0.56), 0.045, fill=True)
 
     return img.resize((size, size), Image.LANCZOS)

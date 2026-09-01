@@ -1,12 +1,5 @@
-//! Host preview for the Spin renderer.
-//!
-//! Calls the same `render()` the watch calls, decodes ABGR2222 back to RGB and
-//! masks off everything outside the round bezel — which the device simulator
-//! does not do, so a layout that runs into the corner looks fine there and is
-//! clipped on the glass.
-//!
-//! Needs SDL2. For PNGs on a machine without it, use the `preview` binary,
-//! which draws the same scenes through the same render().
+//! Host preview: the same `render()` the watch calls, decoded back to RGB and
+//! masked to the round bezel. Needs SDL2; `preview` writes PNGs without it.
 //!
 //!   cargo run --features sim --bin sim   # TAB cycles the scenes
 

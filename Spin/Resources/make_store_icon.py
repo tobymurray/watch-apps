@@ -71,15 +71,15 @@ def draw():
                fill=tuple(int(BG_TOP[i] + (BG_BOTTOM[i] - BG_TOP[i]) * t)
                           for i in range(3)))
 
-    # The panel: round, because the watch's is, and black because that is what
-    # a memory-in-pixel LCD shows where nothing is drawn.
+    # The panel: round like the watch's, and black because that is what a
+    # memory-in-pixel LCD shows where nothing is drawn.
     c = S / 2.0
     panel_r = S * 0.40
     d.ellipse([c - panel_r, c - panel_r, c + panel_r, c + panel_r],
               fill=PANEL, outline=BEZEL, width=int(S * 0.012))
 
-    # The flywheel, same construction as the watch icon: a rim on its centre
-    # line, spokes from the hub to the inside of the rim, and a filled hub.
+    # The flywheel: a rim on its centre line, spokes from the hub to the inside
+    # of the rim, and a filled hub.
     r = S * 0.255
     rim = S * 0.030
     hub = S * 0.045
@@ -94,8 +94,8 @@ def draw():
                fill=TEAL, width=int(spoke))
     d.ellipse([c - hub, c - hub, c + hub, c + hub], fill=TEAL)
 
-    # The heart, sitting on the hub: the app's one accent, and the only thing
-    # on any of its screens that is ever red.
+    # The heart on the hub: the app's one accent, and the only thing on any of
+    # its screens that is ever red.
     heart(d, c, c - S * 0.018, S * 0.105, HEART)
 
     return img.resize((SIZE, SIZE), Image.LANCZOS)
