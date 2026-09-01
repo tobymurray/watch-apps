@@ -26,7 +26,7 @@
 #include "ActivityWriter.hpp"
 #include "AppConfigFields.hpp"
 #include "HrHold.hpp"
-#include "ZoneSpread.hpp"
+#include "ZoneLadder.hpp"
 #include "Commands.hpp"
 
 #include <memory>
