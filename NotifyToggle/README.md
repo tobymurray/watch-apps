@@ -23,10 +23,11 @@ version:
   all.** `FileSystemGuard::getFullPath` implements exactly one relative-path
   escape (a hardcoded match on `"../SharedData"`) and rejects every other
   `..` path outright — confirmed both by disassembly and by testing every
-  spelling of a two-`..` path on the device. `SettingsFile.cpp`/
-  `SettingsPatch.cpp` in this tree are the record of that dead end: fully
-  tested, conclusively unreachable, kept only for history. `Gui.cpp` does
-  not call them.
+  spelling of a two-`..` path on the device. An earlier `SettingsFile.cpp`/
+  `SettingsPatch.cpp` attempt at that route proved this conclusively; it's
+  gone from this tree now (git history and
+  [`Docs/Investigations/2026-08-31-live-settings-persistence/`](Docs/Investigations/2026-08-31-live-settings-persistence)
+  have the record), and `Gui.cpp` never called it for the live toggle logic.
 - **This hardware has no memory isolation for apps** (no MPU, apps run
   privileged, no TrustZone — confirmed from the watch's own boot-time
   register state). A running app can read and write arbitrary memory,
@@ -47,7 +48,17 @@ version:
 
 Everything above is specific to kernel 1.4.0 on this one unit — addresses
 that would need re-deriving, not assuming, on another watch or firmware
-version.
+version. This app never assumes it, either: `Software/Libs/Header/SettingsAddresses.hpp`
+holds a small table, one entry per firmware version this investigation has
+actually reverse-engineered and cross-validated (today: just `1.4.0`).
+`Gui.cpp` queries the watch's real running firmware version at startup
+(`SDK::Message::RequestSystemInfo`, a supported message — not the manifest's
+`minKernelVersion`, which is only a floor the phone's install flow checks, not
+an exact match), looks it up, and refuses to touch a single raw address —
+not just persistence, the live RAM read too — on anything not in the table.
+Growing this to support a new firmware version means doing that
+version's own RE pass and adding a row, never extrapolating from a
+neighboring one.
 
 ## Screen and buttons
 
@@ -126,9 +137,8 @@ renames across the ABI:
 clang++ -std=c++17 -fsyntax-only -Wall -I"$UNA_SDK/Libs/Header" \
   -ISoftware/Libs/Header -ISoftware/Apps/CustomGUI \
   Software/Apps/CustomGUI/Gui.cpp Software/Libs/Sources/Service.cpp \
-  Software/Libs/Sources/LiveSettings.cpp Software/Libs/Sources/SettingsPersist.cpp \
-  Software/Libs/Sources/SettingsFile.cpp Software/Libs/Sources/SettingsPatch.cpp \
-  Software/Libs/Sources/DebugLog.cpp
+  Software/Libs/Sources/SettingsAddresses.cpp Software/Libs/Sources/LiveSettings.cpp \
+  Software/Libs/Sources/SettingsPersist.cpp Software/Libs/Sources/DebugLog.cpp
 ```
 
 `app-manifest.json` is checked the same way every other app's is:

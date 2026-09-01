@@ -26,17 +26,19 @@
  * which cannot reach settings.json at all on this firmware -- see
  * LiveSettings.hpp's doc comment for that derivation).
  *
- * ADDRESS PROVENANCE: every function address and calling convention below is
- * register-evidenced against a real, confirmed caller in the 1.4.0 flash
- * dump (una-sdk/firmware-dumps/1.4.0, whole-image CRC32 0x14009D03) -- not a
- * decompiler guess. Full derivation, including the disassembly excerpts that
- * establish each signature, lives in una-sdk's `research` branch,
+ * ADDRESSES: not hardcoded here, same as LiveSettings.hpp -- every function
+ * below takes a `SettingsAddresses::AddressSet`, resolved by the caller from
+ * the watch's actual running firmware version and never guessed. Every
+ * function address and calling convention in the 1.4.0 entry
+ * (SettingsAddresses.cpp) is register-evidenced against a real, confirmed
+ * caller in the 1.4.0 flash dump (una-sdk/firmware-dumps/1.4.0, whole-image
+ * CRC32 0x14009D03) -- not a decompiler guess. Full derivation, including
+ * the disassembly excerpts that establish each signature, lives in
+ * una-sdk's `research` branch,
  * `Docs/Investigations/2026-08-31-live-settings-persistence/README.md`
- * ("Path 2 (in-process route)" section) -- that is the canonical, kept-current
- * record; treat this comment as a summary, not the source of truth.
- *
- * These addresses are valid ONLY for kernel 1.4.0 on this exact watch unit,
- * same caveat as LiveSettings.hpp.
+ * ("Path 2 (in-process route)" section) -- that is the canonical,
+ * kept-current record; treat this comment as a summary, not the source of
+ * truth.
  *
  * WHAT THIS DOES: reads the real current bytes of 2:/settings.json (not a
  * regeneration from known struct fields -- several fields, e.g. gender,
@@ -61,6 +63,8 @@
 
 #include "SDK/Interfaces/IFileSystem.hpp"
 
+#include "SettingsAddresses.hpp"
+
 namespace SettingsPersist
 {
 
@@ -81,10 +85,11 @@ enum class Status {
 
 /// Reads the real current content of `2:/settings.json`, replaces exactly the
 /// one `phone.notifications` field with `newEnabled`, writes the whole file
-/// back, and reads it back again to verify a byte-exact match. `fs` is used
-/// only for DebugLog diagnostics, same as LiveSettings -- there being no
-/// wired-up debug UART to log to instead.
-Status persistNotificationsFlag(SDK::Interface::IFileSystem &fs, bool newEnabled);
+/// back, and reads it back again to verify a byte-exact match. `addrs` is the
+/// caller's already-resolved SettingsAddresses::AddressSet for the watch's
+/// actual running firmware. `fs` is used only for DebugLog diagnostics, same
+/// as LiveSettings -- there being no wired-up debug UART to log to instead.
+Status persistNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, bool newEnabled);
 
 } // namespace SettingsPersist
 

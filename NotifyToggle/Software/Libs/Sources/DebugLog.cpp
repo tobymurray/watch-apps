@@ -19,8 +19,8 @@ char sLogPath[kLogPathCap] = "debug.log";
 constexpr size_t kMaxLogFileBytes = 64 * 1024;
 
 // Static, not local: this runs on the GUI task's 10 KB stack, called from
-// deep inside SettingsFile's own read/write paths, which have their own
-// static buffers for the same reason (see SettingsFile.cpp). One shared
+// deep inside LiveSettings/SettingsPersist's own read/write paths, which
+// have their own on-stack File objects and read/write buffers. One shared
 // scratch line is safe because nothing here is reentrant or concurrent --
 // single-threaded app, and each of these functions finishes writing and
 // returns before anything else could reuse it.

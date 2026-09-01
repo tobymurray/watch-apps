@@ -10,28 +10,26 @@ namespace LiveSettings
 namespace
 {
 
-// See LiveSettings.hpp for the full derivation. Valid only for kernel 1.4.0
-// on this exact unit.
-constexpr uintptr_t kSettingsStructBase     = 0x20010cb0u;
-constexpr uintptr_t kPhoneNotificationsAddr = kSettingsStructBase + 5u;
-constexpr uintptr_t kWatchFaceIdAddr        = kSettingsStructBase + 8u;
-
 // watchFaceId is a small selection index, not a large/garbage-looking
 // 64-bit value; settings.json read "watchFaceId":0 on this unit. This is a
 // sanity bound, not an exact match -- the user can pick a different face --
 // so it exists only to catch "this address plainly isn't what we think it
-// is", not to assert a specific value.
+// is", not to assert a specific value. Not part of AddressSet: it's a
+// validation constant, not a derived address, and stays the same shape of
+// check regardless of which firmware's addresses are in play.
 constexpr uint64_t kWatchFaceIdSanityMax = 1000u;
 
-volatile uint8_t &notificationsByte()
+volatile uint8_t &notificationsByte(const SettingsAddresses::AddressSet &addrs)
 {
-    return *reinterpret_cast<volatile uint8_t *>(kPhoneNotificationsAddr);
+    const uintptr_t addr = addrs.settingsStructBase + addrs.phoneNotificationsOffset;
+    return *reinterpret_cast<volatile uint8_t *>(addr);
 }
 
-uint64_t readWatchFaceIdRaw()
+uint64_t readWatchFaceIdRaw(const SettingsAddresses::AddressSet &addrs)
 {
+    const uintptr_t addr = addrs.settingsStructBase + addrs.watchFaceIdOffset;
     uint64_t value = 0;
-    const volatile uint8_t *src = reinterpret_cast<volatile uint8_t *>(kWatchFaceIdAddr);
+    const volatile uint8_t *src = reinterpret_cast<volatile uint8_t *>(addr);
     for (int i = 0; i < 8; ++i) {
         value |= static_cast<uint64_t>(src[i]) << (8 * i);
     }
@@ -41,15 +39,15 @@ uint64_t readWatchFaceIdRaw()
 /// Reads the live byte and cross-check field, and applies the same
 /// fail-closed checks readNotificationsFlag and writeNotificationsFlag both
 /// need. Never writes anything.
-Status readChecked(SDK::Interface::IFileSystem &fs, uint8_t &outRaw)
+Status readChecked(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, uint8_t &outRaw)
 {
-    const uint8_t raw = notificationsByte();
-    const uint64_t watchFaceId = readWatchFaceIdRaw();
+    const uint8_t raw = notificationsByte(addrs);
+    const uint64_t watchFaceId = readWatchFaceIdRaw(addrs);
 
     DebugLog::appendf(fs, "LiveSettings: read raw=0x%02X (addr=0x%08X) watchFaceId=%llu (addr=0x%08X)",
-                       raw, static_cast<unsigned>(kPhoneNotificationsAddr),
+                       raw, static_cast<unsigned>(addrs.settingsStructBase + addrs.phoneNotificationsOffset),
                        static_cast<unsigned long long>(watchFaceId),
-                       static_cast<unsigned>(kWatchFaceIdAddr));
+                       static_cast<unsigned>(addrs.settingsStructBase + addrs.watchFaceIdOffset));
 
     if (watchFaceId > kWatchFaceIdSanityMax) {
         DebugLog::append(fs, "LiveSettings: watchFaceId cross-check out of range -- refusing to trust this address");
@@ -67,10 +65,10 @@ Status readChecked(SDK::Interface::IFileSystem &fs, uint8_t &outRaw)
 
 } // namespace
 
-Status readNotificationsFlag(SDK::Interface::IFileSystem &fs, bool &outEnabled)
+Status readNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, bool &outEnabled)
 {
     uint8_t raw = 0;
-    const Status status = readChecked(fs, raw);
+    const Status status = readChecked(fs, addrs, raw);
     if (status != Status::Ok) {
         return status;
     }
@@ -78,10 +76,10 @@ Status readNotificationsFlag(SDK::Interface::IFileSystem &fs, bool &outEnabled)
     return Status::Ok;
 }
 
-Status writeNotificationsFlag(SDK::Interface::IFileSystem &fs, bool newEnabled)
+Status writeNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, bool newEnabled)
 {
     uint8_t raw = 0;
-    const Status status = readChecked(fs, raw);
+    const Status status = readChecked(fs, addrs, raw);
     if (status != Status::Ok) {
         return status;
     }
@@ -94,10 +92,10 @@ Status writeNotificationsFlag(SDK::Interface::IFileSystem &fs, bool newEnabled)
 
     const uint8_t newRaw = newEnabled ? 1 : 0;
     DebugLog::appendf(fs, "LiveSettings: writing raw=0x%02X to addr=0x%08X",
-                       newRaw, static_cast<unsigned>(kPhoneNotificationsAddr));
-    notificationsByte() = newRaw;
+                       newRaw, static_cast<unsigned>(addrs.settingsStructBase + addrs.phoneNotificationsOffset));
+    notificationsByte(addrs) = newRaw;
 
-    const uint8_t readBack = notificationsByte();
+    const uint8_t readBack = notificationsByte(addrs);
     DebugLog::appendf(fs, "LiveSettings: readback raw=0x%02X", readBack);
     if (readBack != newRaw) {
         DebugLog::append(fs, "LiveSettings: readback mismatch after write");

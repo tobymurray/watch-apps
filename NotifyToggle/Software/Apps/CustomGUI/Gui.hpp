@@ -5,6 +5,7 @@
 
 #include "SDK/Kernel/Kernel.hpp"
 
+#include "SettingsAddresses.hpp"
 #include "notify_toggle_gui.h"
 
 class Gui
@@ -17,6 +18,7 @@ public:
 
 private:
     void queryDisplayConfig();
+    bool resolveFirmwareSupport();
     void renderAndPush();
     void refreshLiveState();
     void toggle();
@@ -45,6 +47,13 @@ private:
     uint32_t mTicksSinceRead = 0;
 
     notify_toggle_state mState{};
+
+    // Resolved once at startup from the watch's actual running firmware
+    // version (see resolveFirmwareSupport()). Null on any firmware this app
+    // hasn't been reverse-engineered and cross-validated against -- every
+    // LiveSettings/SettingsPersist call site is gated on this being non-null,
+    // never called with a stale or default address set.
+    const SettingsAddresses::AddressSet *mAddresses = nullptr;
 
     uint8_t mFrameBuf[kMaxPixels * kBytesPerPixel];
 };

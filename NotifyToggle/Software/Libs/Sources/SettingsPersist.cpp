@@ -11,17 +11,6 @@ namespace SettingsPersist
 namespace
 {
 
-// See SettingsPersist.hpp for the full derivation and provenance. Valid only
-// for kernel 1.4.0 on this exact unit. Bit 0 set on every function address:
-// these are Thumb code, and a function pointer to Thumb code must carry the
-// Thumb bit for BLX interworking to dispatch correctly.
-constexpr uintptr_t kFileOpenAddr    = 0x0809b254u | 1u;
-constexpr uintptr_t kFileReadAddr    = 0x0809b4e8u | 1u;
-constexpr uintptr_t kFileWriteAddr   = 0x0809b334u | 1u;
-constexpr uintptr_t kFileCloseAddr   = 0x0809b450u | 1u;
-constexpr uintptr_t kFileReleaseAddr = 0x0809b2ccu | 1u;
-constexpr uintptr_t kSetPathAddr     = 0x0802b3eau | 1u;
-
 using FileOpenFn    = int (*)(void *self, int flag1, int flag2);
 using FileReadFn    = int (*)(void *self, void *buf, uint32_t len, uint32_t *bytesReadOut);
 using FileWriteFn   = int (*)(void *self, const void *buf, uint32_t len, uint32_t *bytesWrittenOut);
@@ -29,28 +18,14 @@ using FileCloseFn   = void (*)(void *self);
 using FileReleaseFn = void (*)(void *self);
 using SetPathFn     = char *(*)(char *dst, const char *src, unsigned maxlen);
 
-FileOpenFn fileOpen        = reinterpret_cast<FileOpenFn>(kFileOpenAddr);
-FileReadFn fileRead        = reinterpret_cast<FileReadFn>(kFileReadAddr);
-FileWriteFn fileWrite      = reinterpret_cast<FileWriteFn>(kFileWriteAddr);
-FileCloseFn fileClose      = reinterpret_cast<FileCloseFn>(kFileCloseAddr);
-FileReleaseFn fileRelease  = reinterpret_cast<FileReleaseFn>(kFileReleaseAddr);
-SetPathFn setPath          = reinterpret_cast<SetPathFn>(kSetPathAddr);
-
-// File object layout (856 bytes / 0x358, confirmed via a constructor-shaped
-// helper calling a zero-fill helper with literal 856). The vtable slot at
-// +0x00 is deliberately left zero -- safe as long as nothing here ever calls
-// the one File method (setPath, 0x0809b4a8) that dispatches through it. We
-// use the plain bounded-copy helper (0x0802b3ea) to set the path instead,
-// which has no vtable dependency.
-constexpr size_t kFileObjectSize      = 856;
-constexpr size_t kPathBufferOffset    = 0x04;
-constexpr size_t kPathBufferSize      = 0x100; // 256 bytes, +0x04..+0x103
-constexpr size_t kFileSizeFieldOffset = 0x118; // FIL.fsize, 8-byte FSIZE_t
-
-// open()'s (flag1, flag2) -> FatFs mode, confirmed:
+// open()'s (flag1, flag2) -> FatFs mode, confirmed on kernel 1.4.0 (see
+// SettingsAddresses.hpp/.cpp -- this part of the calling convention, unlike
+// the addresses themselves, is assumed stable across the firmware versions
+// this app might ever add to that table, since it's FatFs's own mode-flag
+// encoding, not anything specific to one kernel build):
 //   (0, _) -> FA_READ
 //   (1, 1) -> FA_CREATE_ALWAYS | FA_WRITE | FA_READ
-constexpr int kOpenReadOnly       = 0;
+constexpr int kOpenReadOnly        = 0;
 constexpr int kOpenCreateOrReplace = 1;
 
 constexpr const char *kSettingsPath = "2:/settings.json";
@@ -66,30 +41,58 @@ constexpr size_t kMaxSettingsFileSize = 512;
 constexpr size_t kBufferHeadroom = 8;
 constexpr size_t kBufferCapacity = kMaxSettingsFileSize + kBufferHeadroom;
 
+// Sane upper bound on AddressSet::fileObjectSize -- a fixed-capacity local
+// buffer needs a compile-time size, but the real size is a per-firmware
+// runtime value (SettingsAddresses::AddressSet::fileObjectSize). 1.4.0's
+// real object is 856 bytes; this leaves headroom for a future firmware
+// entry with a larger one while still refusing (not silently truncating or
+// overflowing the stack) anything implausible.
+constexpr size_t kMaxFileObjectSize = 1536;
+
 /// A raw, zero-initialized stand-in for the kernel's internal `File` object.
 /// Never constructed or destructed as a real C++ object -- just a correctly
 /// sized, correctly aligned byte buffer passed as `this` to the confirmed
-/// non-virtual methods above. 8-byte aligned because the FIL region embeds a
-/// 64-bit FSIZE_t field.
+/// non-virtual methods this firmware's AddressSet points at. Only the first
+/// `addrs.fileObjectSize` bytes are ever touched. 8-byte aligned because the
+/// FIL region embeds a 64-bit FSIZE_t field.
 struct alignas(8) RawFile {
-    uint8_t bytes[kFileObjectSize];
+    uint8_t bytes[kMaxFileObjectSize];
 
     void *self() { return bytes; }
 };
 
-void setFilePath(RawFile &file)
+/// True if `addrs` is safe to use with RawFile -- specifically, that its
+/// object size fits the fixed local buffer every RawFile actually is. A
+/// future table entry with an implausible value is refused here rather than
+/// silently corrupting the stack.
+bool objectSizeInRange(const SettingsAddresses::AddressSet &addrs)
 {
-    setPath(reinterpret_cast<char *>(file.bytes + kPathBufferOffset), kSettingsPath, kPathBufferSize);
+    return addrs.fileObjectSize > 0 && addrs.fileObjectSize <= kMaxFileObjectSize &&
+           addrs.pathBufferOffset + addrs.pathBufferSize <= addrs.fileObjectSize &&
+           addrs.fileSizeFieldOffset + sizeof(uint64_t) <= addrs.fileObjectSize;
+}
+
+void resetFile(RawFile &file, const SettingsAddresses::AddressSet &addrs)
+{
+    std::memset(file.bytes, 0, addrs.fileObjectSize);
+    reinterpret_cast<SetPathFn>(addrs.setPathAddr)(
+        reinterpret_cast<char *>(file.bytes + addrs.pathBufferOffset), kSettingsPath,
+        static_cast<unsigned>(addrs.pathBufferSize));
 }
 
 /// Reads the real current content of 2:/settings.json into `outBuf` (capacity
 /// `kMaxSettingsFileSize`), refusing rather than guessing if the reported
 /// size is 0 or larger than that cap.
-Status readCurrentFile(SDK::Interface::IFileSystem &fs, char *outBuf, size_t &outLen)
+Status readCurrentFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                        char *outBuf, size_t &outLen)
 {
     RawFile file{};
-    std::memset(file.bytes, 0, sizeof(file.bytes));
-    setFilePath(file);
+    resetFile(file, addrs);
+
+    const auto fileOpen = reinterpret_cast<FileOpenFn>(addrs.fileOpenAddr);
+    const auto fileRead = reinterpret_cast<FileReadFn>(addrs.fileReadAddr);
+    const auto fileClose = reinterpret_cast<FileCloseFn>(addrs.fileCloseAddr);
+    const auto fileRelease = reinterpret_cast<FileReleaseFn>(addrs.fileReleaseAddr);
 
     if (fileOpen(file.self(), kOpenReadOnly, 0) == 0) {
         DebugLog::append(fs, "SettingsPersist: read-open failed");
@@ -97,7 +100,7 @@ Status readCurrentFile(SDK::Interface::IFileSystem &fs, char *outBuf, size_t &ou
     }
 
     uint64_t fileSize = 0;
-    std::memcpy(&fileSize, file.bytes + kFileSizeFieldOffset, sizeof(fileSize));
+    std::memcpy(&fileSize, file.bytes + addrs.fileSizeFieldOffset, sizeof(fileSize));
 
     if (fileSize == 0 || fileSize > kMaxSettingsFileSize) {
         DebugLog::appendf(fs, "SettingsPersist: file size %llu out of expected range (cap=%zu)",
@@ -165,11 +168,16 @@ Status spliceNotificationsField(char *buf, size_t &len, bool newEnabled)
     return Status::Ok;
 }
 
-Status writeWholeFile(SDK::Interface::IFileSystem &fs, const char *buf, size_t len)
+Status writeWholeFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                       const char *buf, size_t len)
 {
     RawFile file{};
-    std::memset(file.bytes, 0, sizeof(file.bytes));
-    setFilePath(file);
+    resetFile(file, addrs);
+
+    const auto fileOpen = reinterpret_cast<FileOpenFn>(addrs.fileOpenAddr);
+    const auto fileWrite = reinterpret_cast<FileWriteFn>(addrs.fileWriteAddr);
+    const auto fileClose = reinterpret_cast<FileCloseFn>(addrs.fileCloseAddr);
+    const auto fileRelease = reinterpret_cast<FileReleaseFn>(addrs.fileReleaseAddr);
 
     if (fileOpen(file.self(), kOpenCreateOrReplace, 1) == 0) {
         DebugLog::append(fs, "SettingsPersist: write-open failed");
@@ -192,12 +200,18 @@ Status writeWholeFile(SDK::Interface::IFileSystem &fs, const char *buf, size_t l
 
 } // namespace
 
-Status persistNotificationsFlag(SDK::Interface::IFileSystem &fs, bool newEnabled)
+Status persistNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                                 bool newEnabled)
 {
+    if (!objectSizeInRange(addrs)) {
+        DebugLog::append(fs, "SettingsPersist: AddressSet's File object layout is out of range -- refusing");
+        return Status::SizeOutOfRange;
+    }
+
     char buf[kBufferCapacity];
     size_t len = 0;
 
-    Status status = readCurrentFile(fs, buf, len);
+    Status status = readCurrentFile(fs, addrs, buf, len);
     if (status != Status::Ok) {
         return status;
     }
@@ -210,14 +224,14 @@ Status persistNotificationsFlag(SDK::Interface::IFileSystem &fs, bool newEnabled
     }
     DebugLog::appendBytes(fs, "SettingsPersist: about to write", buf, len);
 
-    status = writeWholeFile(fs, buf, len);
+    status = writeWholeFile(fs, addrs, buf, len);
     if (status != Status::Ok) {
         return status;
     }
 
     char verifyBuf[kBufferCapacity];
     size_t verifyLen = 0;
-    status = readCurrentFile(fs, verifyBuf, verifyLen);
+    status = readCurrentFile(fs, addrs, verifyBuf, verifyLen);
     if (status != Status::Ok) {
         DebugLog::append(fs, "SettingsPersist: post-write readback failed");
         return Status::ReadbackMismatch;

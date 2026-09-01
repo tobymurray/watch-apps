@@ -48,9 +48,11 @@ add_custom_target(notify_toggle_gui_rust ALL
 )
 
 # The toggle is read, drawn, flipped and persisted entirely from the GUI
-# process (see Gui.cpp / SettingsFile.cpp), talking to the real settings.json
-# directly through SDK::Kernel::fs -- there is no SDK::AppConfig or JSON
-# dependency anywhere in this app any more (see the README for why).
+# process (see Gui.cpp / LiveSettings.cpp / SettingsPersist.cpp), via raw
+# pointers into the kernel's own live struct and internal File primitives --
+# not through SDK::Kernel::fs, which cannot reach settings.json on this
+# firmware at all (see the README for why). There is no SDK::AppConfig or
+# JSON dependency anywhere in this app.
 set(SERVICE_SOURCES
     ${LIBS_SOURCES}
     ${UNA_SDK_SOURCES_COMMON}
@@ -66,11 +68,10 @@ una_app_build_service(${APP_NAME}Service.elf)
 set(GUI_SOURCES
     $ENV{UNA_SDK}/Libs/Source/AppSystem/EntryPoint/CustomGUI/main.cpp
     ${CUSTOMGUI_PATH}/Gui.cpp
-    # Not all of LIBS_SOURCES: Service.cpp is a do-nothing stub (see its own
-    # comment) and has no reason to be linked into the GUI binary too.
-    ${LIBS_PATH}/Sources/SettingsFile.cpp
-    ${LIBS_PATH}/Sources/SettingsPatch.cpp
+    # Not all of LIBS_SOURCES: Service.cpp's own read-only probes have no
+    # reason to run twice, and no reason to be linked into the GUI binary too.
     ${LIBS_PATH}/Sources/DebugLog.cpp
+    ${LIBS_PATH}/Sources/SettingsAddresses.cpp
     ${LIBS_PATH}/Sources/LiveSettings.cpp
     ${LIBS_PATH}/Sources/SettingsPersist.cpp
     ${UNA_SDK_SOURCES_COMMON}

@@ -13,7 +13,8 @@ extern "C" {
    `known` is 0 whenever the last attempt to read or write that file did not
    confirm a value (missing file, unexpected shape, a write that failed) --
    the renderer must show an explicit "unknown" state rather than guess, the
-   same fail-closed rule SettingsPatch.hpp applies to the file itself. */
+   same fail-closed rule LiveSettings.cpp and SettingsPersist.cpp apply to
+   the live struct and the file itself. */
 typedef struct {
     uint8_t enabled;   /* 0 or 1: last confirmed value of the real flag */
     uint8_t known;     /* 0 or 1: whether `enabled` is actually trustworthy */

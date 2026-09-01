@@ -12,8 +12,9 @@
  * never affect, delay, or retry the real logic it is diagnosing.
  *
  * This is a temporary diagnostic aid, not something to ship long-term: it is
- * wired in from Gui.cpp/SettingsFile.cpp behind no flag right now because the
- * point of this pass is to see exactly what a real device does.
+ * wired in from Gui.cpp, LiveSettings.cpp and SettingsPersist.cpp behind no
+ * flag right now because the point of this pass is to see exactly what a
+ * real device does.
  ******************************************************************************
  */
 
