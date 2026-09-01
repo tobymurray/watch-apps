@@ -326,7 +326,7 @@ void Service::applyZoneConfig()
         // floors exactly, which is the reason to trust it at three or eight:
         // it is the watch's rule at a different count, not a training model
         // invented here.
-        if (ZoneSpread::floors(mSystemMaxHr, static_cast<uint8_t>(configured),
+        if (ZoneLadder::floors(mSystemMaxHr, static_cast<uint8_t>(configured),
                                mZoneFloor, skMaxZones)) {
             mZoneCount = static_cast<uint8_t>(configured);
             LOG_INFO("Zones: %u, spread from %u bpm maximum\n",
@@ -367,27 +367,9 @@ uint8_t Service::hrZoneFor(float hr) const
 
 uint8_t Service::hrZoneFractionFor(float hr, uint8_t zone) const
 {
-    // Where hr sits between this zone's floor and the next one's.
-    if (zone < 1 || zone > mZoneCount) {
-        return 0;
-    }
-    const float lo = static_cast<float>(mZoneFloor[zone - 1]);
-
-    // The top zone is open-ended, so there is no span to place a needle in and
-    // it pins to the top of its segment. Anything else would need a maximum
-    // heart rate this app has not been told.
-    if (zone == mZoneCount) {
-        return 255;
-    }
-    const float hi = static_cast<float>(mZoneFloor[zone]);
-    if (hi <= lo) {
-        return 255;
-    }
-
-    float f = (hr - lo) / (hi - lo);
-    if (f < 0.0f) { f = 0.0f; }
-    if (f > 1.0f) { f = 1.0f; }
-    return static_cast<uint8_t>(f * 255.0f + 0.5f);
+    // The maximum is handed over for the top zone only: membership there is
+    // open-ended, but the needle needs somewhere to go. See ZoneLadder.hpp.
+    return ZoneLadder::fraction(hr, zone, mZoneFloor, mZoneCount, mSystemMaxHr);
 }
 
 float Service::zoneMet(uint8_t zone)

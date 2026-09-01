@@ -154,8 +154,24 @@ it is the same rule at a different count, not a training model invented here.
 ever stops holding the argument for the rule goes with it.
 
 Fill the floors in to follow a published model instead. Zone *N* runs from its
-own floor up to the next zone's and the top zone is open-ended, so eight zones
-need eight floors rather than nine.
+own floor up to the next zone's, so eight zones need eight floors rather than
+nine.
+
+### Where the intervals close
+
+Each zone is **closed at its floor and open at the top**: zone *N* is
+`floor(N) <= hr < floor(N+1)`, so a heart rate exactly on a floor is in the zone
+above it, which is what "lowest heart rate in zone *N*" means.
+
+The **top zone is open** — everything at or above the last floor — because that
+is what every training model means by it. The **bottom is not**: below zone 1 is
+not a zone but a state of its own. Nothing lights on the dial, the needle is not
+drawn, and the FIT file records it as bucket `[0]`.
+
+The one place the open top needs a boundary is the needle, which cannot be
+placed in an unbounded interval. It — and only it — treats the maximum heart
+rate as the top zone's ceiling, and pins above it, because there is no scale
+beyond the top of the scale. Membership and time-in-zone stay open.
 
 Floors that are not strictly increasing are ignored and the watch's zones used
 instead: a dial whose segments correspond to nothing is worse than one that is
@@ -479,6 +495,8 @@ checked against the same list a human reviews.
 
 Two of them, with different rules, both drawn by script rather than committed
 as art nobody can regenerate:
+
+![The watch icon at 60 and 30 px, both enlarged](Docs/icon.png)
 
 - [`make_icon.py`](Resources/make_icon.py) draws the watch icon at 30 and 60 px:
   a spin bike in side view, because a flywheel alone could be any wheel. The
