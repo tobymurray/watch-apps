@@ -1,0 +1,60 @@
+{
+  "manifest_version": 1,
+  "type": [
+    "activity"
+  ],
+  "name": "Spin",
+  "icon": "icon.png",
+  "binary": "Spin_0.0.0.uapp",
+  "appVersion": "0.0.0",
+  "minKernelVersion": "1.4.0",
+  "requiredHardware": [],
+  "description": "A stationary bike ride: the clock, your heart rate, and a FIT file that says indoor cycling rather than a bike ride that covered no ground. Uses a paired chest strap when one is connected and the wrist sensor when it is not.",
+  "id": "8D853E73407250E7",
+  "stravaExport": true,
+  "supportsLaps": false,
+  "supportsDistance": false,
+  "supportsTrack": false,
+  "supportsHeartbeat": true,
+  "supportsElevation": false,
+  "supportsStep": false,
+  "supportsSpeed": "none",
+  "customMeasures": [],
+  "configFile": "app_config.json",
+  "configFields": [
+    {
+      "id": "autoLapMinutes",
+      "type": "int",
+      "label": "Auto lap",
+      "description": "Split the ride into laps this many minutes apart, with a buzz at each one. 0 records the ride as a single lap.",
+      "default": 0,
+      "min": 0,
+      "max": 60,
+      "unit": "min"
+    },
+    {
+      "id": "targetMinutes",
+      "type": "int",
+      "label": "Target time",
+      "description": "Buzz once when the ride reaches this many minutes, and say so on the screen. 0 for no target.",
+      "default": 0,
+      "min": 0,
+      "max": 300,
+      "unit": "min"
+    },
+    {
+      "id": "keepScreenLit",
+      "type": "bool",
+      "label": "Keep the screen lit",
+      "description": "Hold the backlight on for the whole ride. With your hands on the bars the wrist-tilt gesture rarely fires, so a dark room means a dark clock. It costs battery, and a lit room does not need it.",
+      "default": false
+    },
+    {
+      "id": "energyInKilojoules",
+      "type": "bool",
+      "label": "Energy in kJ",
+      "description": "Show energy as kilojoules instead of calories. This is dietary energy (1 kcal = 4.184 kJ), not the kJ of work a power meter reports \u2014 the watch cannot measure that. The saved file always records kcal.",
+      "default": false
+    }
+  ]
+}

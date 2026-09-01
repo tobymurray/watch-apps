@@ -1,0 +1,39 @@
+[package]
+name = "spin_gui"
+version = "0.1.0"
+edition = "2021"
+description = "no_std Rust rendering core for the UNA Watch Spin app's CustomGUI: draws the ride clock, heart rate and strap status into an 8bpp ABGR2222 framebuffer over a C ABI, with host previews that run the same render()."
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["staticlib", "lib"]
+
+# Two host binaries rather than one, because they need very different things.
+# `preview` writes PNGs and needs nothing but a PNG encoder, so it runs
+# anywhere -- including a machine with no SDL2, which is where the screenshots
+# in the README were actually taken. `sim` opens a window and needs SDL2.
+[[bin]]
+name = "preview"
+required-features = ["preview"]
+
+[[bin]]
+name = "sim"
+required-features = ["sim"]
+
+[features]
+std = []
+preview = ["std", "dep:png"]
+sim = ["preview", "dep:embedded-graphics-simulator"]
+
+[dependencies]
+embedded-graphics = "0.8"
+embedded-graphics-simulator = { version = "0.7", optional = true }
+png = { version = "0.17", optional = true }
+u8g2-fonts = "0.8"
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false
