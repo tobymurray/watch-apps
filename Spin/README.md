@@ -104,6 +104,19 @@ naturally a scale, so it gets the perimeter and the middle stays clear for the
 numbers. Four levels a channel is the whole palette, so those five colours are
 not approximations of nicer ones: they are the colours.
 
+A white needle crosses the ring at your actual heart rate — not just which zone,
+but where in it. Without it a 93 and a 109 both light zone 1 and look identical,
+and the dial is a guess. Its position comes from the Service, as a fraction
+*within* the lit zone rather than along the whole ring: the segments are equal
+angular slices with gaps between them, and a position measured across the whole
+scale drifts out of its own segment by the fifth one.
+
+It is drawn from the ring's inner edge out to just short of the bezel, with a
+black slot beneath it, so it reads against any segment colour — a white marker
+sitting entirely inside a grey zone-1 arc would be nearly invisible. Below zone
+1 there is no needle: the bottom of zone 1 is a threshold you set, but the scale
+itself has no defined bottom, so there is nowhere honest to point.
+
 The zone is a position, not a gauge, so the segments below the current one do
 not fill — a filling scale would read as progress through the zones, which is
 not a thing that happens. Zone 0, below zone 1, lights nothing at all: the scale
@@ -199,7 +212,7 @@ an accidental exit would cost the ride.
 |---|---|---|---|---|---|
 | Ready | strap status, target if set | | | **START** | **EXIT** |
 | Riding | clock, heart rate, zone | | | pause | |
-| Paused | dimmed clock, `PAUSED` | **SAVE** | **DISCARD** (hold) | resume | |
+| Paused | dimmed clock, `PAUSED` | **SAVE** | **DISCARD** | resume | |
 | Saved / discarded | what happened | | | done | **DONE** |
 
 Each live button is marked by a short arc at its own corner of the bezel — the
@@ -234,22 +247,28 @@ dropout, past the hour, and a save that failed:
 
 ## Throwing a ride away
 
-![Holding, held, and the acknowledgement](Docs/screens-discard.png)
+![Paused, the question, and the acknowledgement](Docs/screens-discard.png)
 
-Discard is **held, not tapped** — the same gate the SDK's own activity apps put
-on it, because it is the one action in the app that destroys data. Press and
-hold L2 on the paused screen and a red ring fills; let go before it is full and
-nothing happens.
+`DISCARD` on the paused screen asks first, on a screen of its own, with both
+answers on buttons: **R1 yes, R2 no**. Two deliberate presses on two screens,
+because this is the one action in the app that destroys data.
 
-**The kernel times the hold, not the app.** The countdown fires on the kernel's
-own `HOLD_1S` button event, and the filling ring is drawn from the GUI tick
-count purely as a picture. If the two ever disagree the ring sits full for a
-moment before the event lands — a cosmetic error rather than a ride thrown away
-a moment early.
+**It is not a press-and-hold, and that is the second design.** The first one
+was, matching the SDK's own activity apps — and on the watch it never fired
+once. Spin turns on the music-control overlay in `setCapabilities()`, the system
+claims the long press to open it, and `HOLD_1S` never reached the app. The SDK's
+own port notes say `LONG_PRESS` and `HOLD_*` are not forwarded to screens
+anyway.
+
+Worse than not working: the screen it stranded the wearer on could only be left
+by that same event, so there was no way out of it at all. Two ordinary clicks
+are intercepted by nothing, and the way back is a labelled button. Suspending
+the GUI also leaves the screen — a question you walked away from is not one you
+answered.
 
 `ActivityWriter::discard()` removes the part-written `.fit` **and the recovery
-marker with it**, so the next boot does not finalise a ride that was deliberately
-thrown away. There is a test for exactly that.
+marker with it**, so the next boot does not finalise a ride that was
+deliberately thrown away. There is a test for exactly that.
 
 `DISCARDED` is not the same screen as `NOT SAVED`. One is what the wearer asked
 for and the other is a failure, and the screen should agree with them rather

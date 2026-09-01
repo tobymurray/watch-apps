@@ -17,9 +17,9 @@ extern "C" {
 #define SPIN_GUI_SCREEN_RIDING 1u  /* clock running */
 #define SPIN_GUI_SCREEN_PAUSED 2u  /* clock held */
 #define SPIN_GUI_SCREEN_SAVED  3u  /* finished: what was written */
-/* Hold-to-confirm before throwing a ride away, and the acknowledgement after.
-   The SDK's own activity apps gate Discard behind a held button rather than a
-   tap, and so does this: it is the one action here that destroys data. */
+/* Asking before throwing a ride away, and the acknowledgement after. Two
+   deliberate presses on two screens, not one tap -- this is the one action
+   here that destroys data. See Gui.cpp for why it is not a press-and-hold. */
 #define SPIN_GUI_SCREEN_CONFIRM_DISCARD 4u
 #define SPIN_GUI_SCREEN_DISCARDED       5u
 
@@ -58,7 +58,13 @@ typedef struct {
     uint8_t  hr_zone;        /* 0 = below zone 1 or no zones set, 1..5 = the zone */
     uint8_t  has_zones;      /* 1 when the wearer has thresholds set on the watch */
     uint8_t  energy_is_kj;   /* 1 = `energy` is kJ, 0 = kcal */
-    uint8_t  hold_pct;       /* CONFIRM_DISCARD: how far the hold has got, 0..100 */
+    /* Where the current heart rate sits WITHIN hr_zone, 0..255 across that
+       zone's own span. Sent as a fraction of the zone rather than of the whole
+       scale so the needle always lands inside the segment that is lit: the
+       segments are equal angular slices with gaps between them, and a position
+       measured across the whole ring drifts out of its own segment by the
+       fifth one. Meaningless unless has_zones and hr_zone >= 1. */
+    uint8_t  hr_zone_fraction;
 } spin_gui_frame;
 
 uint32_t spin_gui_abi_fingerprint(void);
@@ -103,7 +109,7 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(spin_gui_frame, hr_zone));
     h = fnv1a(h, offsetof(spin_gui_frame, has_zones));
     h = fnv1a(h, offsetof(spin_gui_frame, energy_is_kj));
-    return fnv1a(h, offsetof(spin_gui_frame, hold_pct));
+    return fnv1a(h, offsetof(spin_gui_frame, hr_zone_fraction));
 }
 
 } // namespace spin_gui_abi
@@ -123,7 +129,7 @@ static_assert(offsetof(spin_gui_frame, target_reached) == 16, "target_reached mo
 static_assert(offsetof(spin_gui_frame, hr_zone) == 17, "hr_zone moved");
 static_assert(offsetof(spin_gui_frame, has_zones) == 18, "has_zones moved");
 static_assert(offsetof(spin_gui_frame, energy_is_kj) == 19, "energy_is_kj moved");
-static_assert(offsetof(spin_gui_frame, hold_pct) == 20, "hold_pct moved");
+static_assert(offsetof(spin_gui_frame, hr_zone_fraction) == 20, "hr_zone_fraction moved");
 #endif
 
 #endif // SPIN_GUI_H

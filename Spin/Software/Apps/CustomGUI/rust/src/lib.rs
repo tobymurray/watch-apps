@@ -218,7 +218,7 @@ pub struct Frame {
     pub hr_zone: u8,
     pub has_zones: u8,
     pub energy_is_kj: u8,
-    pub hold_pct: u8,
+    pub hr_zone_fraction: u8,
 }
 
 const FNV_OFFSET_BASIS: u32 = 0x811C_9DC5;
@@ -247,7 +247,7 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(Frame, hr_zone));
     let h = fnv1a(h, core::mem::offset_of!(Frame, has_zones));
     let h = fnv1a(h, core::mem::offset_of!(Frame, energy_is_kj));
-    fnv1a(h, core::mem::offset_of!(Frame, hold_pct))
+    fnv1a(h, core::mem::offset_of!(Frame, hr_zone_fraction))
 }
 
 #[no_mangle]
@@ -270,7 +270,7 @@ const _: () = assert!(core::mem::offset_of!(Frame, target_reached) == 16);
 const _: () = assert!(core::mem::offset_of!(Frame, hr_zone) == 17);
 const _: () = assert!(core::mem::offset_of!(Frame, has_zones) == 18);
 const _: () = assert!(core::mem::offset_of!(Frame, energy_is_kj) == 19);
-const _: () = assert!(core::mem::offset_of!(Frame, hold_pct) == 20);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_zone_fraction) == 20);
 
 // -- Geometry ----------------------------------------------------------------
 
@@ -640,6 +640,7 @@ fn draw_riding(fb: &mut FrameBuf, frame: &Frame) {
 
     draw_hr_row(fb, frame.hr_bpm, frame.hr_source, HR_ROW_Y);
     draw_zone_ring(fb, frame.hr_zone, frame.has_zones != 0);
+    draw_zone_needle(fb, frame.hr_zone, frame.hr_zone_fraction, frame.has_zones != 0);
     draw_target_arc(fb, frame.elapsed_s, frame.target_minutes, frame.target_reached != 0);
 
     if paused {
@@ -708,9 +709,9 @@ const DEG_TO_RAD: f32 = core::f32::consts::PI / 180.0;
 /// 0.65 is that with a little margin.
 ///
 /// These were 0.4 and 0.5, which painted every pixel of the ring three to nine
-/// times over. `the_hold_ring_has_no_gaps` is what makes tuning them safe: it
-/// asserts the ring is solid, not merely present, which is the one thing that
-/// goes wrong here and the one thing no other test would notice.
+/// times over. `the_confirm_ring_has_no_gaps` is what makes tuning them safe:
+/// it asserts the ring is solid, not merely present, which is the one thing
+/// that goes wrong here and the one thing no other test would notice.
 const ARC_ANGULAR_PX: f32 = 0.65;
 const ARC_RADIAL_PX: f32 = 0.65;
 
@@ -752,6 +753,48 @@ fn fill_arc(
         }
         a += step;
     }
+}
+
+/// The needle: where the heart rate sits on the scale, not merely which zone it
+/// is in. Without it a 93 and a 109 light the same segment and look identical.
+///
+/// Drawn longer than the ring is thick, poking out past both edges, so that
+/// most of its length lies over black however the segment under it is coloured
+/// -- a white marker sitting entirely inside a grey zone-1 arc would be nearly
+/// invisible. The black slot underneath separates it from the arc it crosses.
+/// Kept outboard of TICK_OUTER so the needle and a button mark can never
+/// occupy the same pixels: zone 4's arc runs straight through R1's corner, and
+/// two white marks at the same radius there read as one confusing smudge.
+/// 119, not 120: the bezel is the circle of radius 120 and a needle drawn to
+/// it loses its tip to the glass. nothing_is_drawn_outside_the_bezel catches it.
+const NEEDLE_INNER: f32 = 106.0;
+const NEEDLE_OUTER: f32 = 119.0;
+const NEEDLE_SWEEP_DEG: f32 = 2.2;
+const NEEDLE_SLOT_DEG: f32 = 5.4;
+
+/// Position within the lit segment, from the zone and the fraction across it.
+/// Computed here rather than sent as a position along the whole ring, so the
+/// needle cannot drift into the gap between two segments.
+fn zone_needle_deg(zone: u8, fraction: u8) -> f32 {
+    let n = ZONE_COUNT as f32;
+    let segment = (RING_SWEEP_DEG - RING_GAP_DEG * (n - 1.0)) / n;
+    let start = RING_START_DEG + (segment + RING_GAP_DEG) * (zone - 1) as f32;
+    start + segment * (fraction as f32) / 255.0
+}
+
+fn draw_zone_needle(fb: &mut FrameBuf, zone: u8, fraction: u8, has_zones: bool) {
+    // Below zone 1 there is nowhere on the scale to point: the bottom of zone 1
+    // is a threshold the wearer set, but there is no defined bottom to the
+    // scale itself. The ring says "you are not on it yet" by lighting nothing,
+    // and the needle says the same by being absent.
+    if !has_zones || zone < 1 || zone > ZONE_COUNT {
+        return;
+    }
+    let deg = zone_needle_deg(zone, fraction);
+    fill_arc(fb, NEEDLE_INNER, NEEDLE_OUTER, deg - NEEDLE_SLOT_DEG / 2.0,
+             NEEDLE_SLOT_DEG, BLACK);
+    fill_arc(fb, NEEDLE_INNER, NEEDLE_OUTER, deg - NEEDLE_SWEEP_DEG / 2.0,
+             NEEDLE_SWEEP_DEG, WHITE);
 }
 
 /// The five zone arcs. Drawn whenever the wearer has thresholds set, whatever
@@ -923,29 +966,35 @@ fn draw_value_row(
               HorizontalAlignment::Left, DIM);
 }
 
-/// Hold-to-confirm, the way the SDK's own activity apps gate Discard: the ring
-/// fills while the button is held and the ride only goes when it is full.
-/// Releasing early cancels, which is the whole point -- this is the one action
-/// in the app that destroys data, so it should be hard to do by accident and
-/// easy to back out of.
+/// Asks before destroying a ride. Two presses on two screens rather than one
+/// tap, and every button that does anything is labelled, including the one that
+/// backs out.
 ///
-/// The ring fills clockwise from twelve o'clock, whole-circle rather than the
-/// zone scale's 270 degrees, so it cannot be mistaken for the zone display.
-fn draw_confirm_discard(fb: &mut FrameBuf, hold_pct: u8) {
+/// WHY THIS IS NOT A PRESS-AND-HOLD
+///
+/// It was, briefly, the way the SDK's own activity apps gate Discard. On the
+/// watch it did not work at all: this app enables the music-control overlay in
+/// setCapabilities(), the system claims the long press to open it, and the app
+/// never saw the HOLD_1S it was waiting for. The SDK's own port notes say
+/// LONG_PRESS and HOLD_* are not forwarded to screens in the first place.
+///
+/// So the confirmation is two ordinary clicks, which nothing intercepts. That
+/// is also why the wearer can always leave: the previous version could only be
+/// exited by an event that never arrived, which left the screen stuck with no
+/// way out at all.
+fn draw_confirm_discard(fb: &mut FrameBuf) {
     let heading = FontRenderer::new::<HeadingFont>();
     let label = FontRenderer::new::<LabelFont>();
 
-    // Track and fill meet rather than overlap -- see draw_target_arc().
-    let swept = 360.0 * (hold_pct.min(100) as f32) / 100.0;
-    if swept < 360.0 {
-        fill_arc(fb, RING_INNER_OFF, RING_OUTER, swept, 360.0 - swept, ZONE_DIM_HUE[4]);
-    }
-    if swept > 0.0 {
-        fill_arc(fb, RING_INNER_OFF, RING_OUTER, 0.0, swept, RED);
-    }
+    // A full red ring, unbroken: this screen is not the zone dial and should
+    // not be mistaken for it even out of the corner of an eye.
+    fill_arc(fb, RING_INNER_OFF, RING_OUTER, 0.0, 360.0, RED);
 
-    draw_centered(fb, &heading, "DISCARD", 96, WHITE);
-    draw_centered(fb, &label, "KEEP HOLDING", 126, DIM);
+    draw_centered(fb, &heading, "DISCARD", 92, WHITE);
+    draw_centered(fb, &label, "THIS RIDE?", 122, DIM);
+
+    draw_button_hint(fb, BUTTON_R1_DEG, "YES", RED);
+    draw_button_hint(fb, BUTTON_R2_DEG, "NO", WHITE);
 }
 
 /// What happened, said plainly. Not "saved" and not an error: the wearer asked
@@ -976,7 +1025,7 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, frame: &Frame) {
     match frame.screen {
         SCREEN_RIDING | SCREEN_PAUSED => draw_riding(&mut fb, frame),
         SCREEN_SAVED => draw_saved(&mut fb, frame),
-        SCREEN_CONFIRM_DISCARD => draw_confirm_discard(&mut fb, frame.hold_pct),
+        SCREEN_CONFIRM_DISCARD => draw_confirm_discard(&mut fb),
         SCREEN_DISCARDED => draw_discarded(&mut fb),
         // READY is the default rather than a fourth arm: an out-of-range
         // screen byte is a bug somewhere upstream, and the pre-ride screen is
@@ -1263,58 +1312,18 @@ mod tests {
     }
 
     #[test]
-    fn the_hold_ring_fills_with_the_hold() {
-        let at = |pct: u8| {
-            let mut f = frame(SCREEN_CONFIRM_DISCARD);
-            f.hold_pct = pct;
-            draw(&f)
-        };
-        // Counting bright pixels, not lit ones: the dim track is drawn for the
-        // whole circle whatever the progress, so the number of non-black pixels
-        // never changes -- only how many of them are filled.
-        let filled = |b: &Vec<u8>| b.iter().filter(|&&x| x == RED.0).count();
+    fn the_confirm_screen_offers_a_way_out() {
+        // The bug this replaced: the screen could only be left by an event that
+        // the system was intercepting, so it could not be left at all. Both
+        // answers must be on screen.
+        let buf = draw(&frame(SCREEN_CONFIRM_DISCARD));
+        assert!(lit_pixels(&buf) > 500);
 
-        // More hold, more ring. Never less.
-        assert!(filled(&at(0)) < filled(&at(50)),
-                "no progress drawn: {} then {}", filled(&at(0)), filled(&at(50)));
-        assert!(filled(&at(50)) < filled(&at(100)));
-
-        // Past full it stops rather than wrapping round for a second lap.
-        assert_eq!(at(100), at(255));
-    }
-
-    #[test]
-    fn the_hold_ring_has_no_gaps() {
-        // The guard on ARC_ANGULAR_PX / ARC_RADIAL_PX. Loosening the sampling
-        // is only safe while consecutive samples still land on the same pixel
-        // or its neighbour; too coarse and the ring grows holes that no other
-        // test would notice, because it would still be lit, still be round and
-        // still be the right colour.
-        //
-        // The fully-held discard ring is the case to check: a complete circle,
-        // so every angle is covered and any gap is the sampling's fault rather
-        // than a segment boundary's.
-        let mut f = frame(SCREEN_CONFIRM_DISCARD);
-        f.hold_pct = 100;
-        let buf = draw(&f);
-
-        // A pixel is "inside the band" only if its whole 1x1 area is, so the
-        // outermost and innermost rows are excluded: those legitimately
-        // straddle the edge and may or may not be painted.
-        let lo = RING_INNER_OFF + 1.0;
-        let hi = RING_OUTER - 1.0;
-        let mut holes = 0;
-        for y in 0..H {
-            for x in 0..W {
-                let dx = x as f32 - RING_CX;
-                let dy = y as f32 - RING_CY;
-                let r = (dx * dx + dy * dy).sqrt();
-                if r >= lo && r <= hi && buf[(y * W + x) as usize] == BLACK.0 {
-                    holes += 1;
-                }
-            }
-        }
-        assert_eq!(holes, 0, "{holes} unpainted pixels inside the ring band");
+        // It must not be mistakable for the zone dial behind it.
+        let mut riding = frame(SCREEN_RIDING);
+        riding.has_zones = 1;
+        riding.hr_zone = 3;
+        assert_ne!(buf, draw(&riding));
     }
 
     #[test]

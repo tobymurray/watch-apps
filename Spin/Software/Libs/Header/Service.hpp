@@ -153,6 +153,7 @@ private:
     void saveLap();
     void updateHrDerivedMetrics();
     uint8_t hrZoneFor(float hr) const;
+    uint8_t hrZoneFractionFor(float hr, uint8_t zone) const;
     static float zoneMet(uint8_t zone);
     void stopTrack(bool discard);
     void pauseTrack(bool pause);

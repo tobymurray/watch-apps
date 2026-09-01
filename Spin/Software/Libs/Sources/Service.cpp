@@ -290,6 +290,32 @@ uint8_t Service::hrZoneFor(float hr) const
     return (zone > 5) ? 5 : zone;
 }
 
+uint8_t Service::hrZoneFractionFor(float hr, uint8_t zone) const
+{
+    // Zone N spans (threshold[N-1], threshold[N]]. The needle's position within
+    // it is where hr falls across that span.
+    if (zone < 1 || zone > mHrThresholdCount) {
+        return 0;
+    }
+    const float lo = static_cast<float>(mHrThresholds[zone - 1]);
+
+    // The top zone may have no threshold above it -- a watch configured with
+    // five bounds rather than six -- and there is no honest way to place a
+    // needle inside an open-ended band, so it pins to the top of the segment.
+    if (zone >= mHrThresholdCount) {
+        return 255;
+    }
+    const float hi = static_cast<float>(mHrThresholds[zone]);
+    if (hi <= lo) {
+        return 255;
+    }
+
+    float f = (hr - lo) / (hi - lo);
+    if (f < 0.0f) { f = 0.0f; }
+    if (f > 1.0f) { f = 1.0f; }
+    return static_cast<uint8_t>(f * 255.0f + 0.5f);
+}
+
 float Service::zoneMet(uint8_t zone)
 {
     // Metabolic equivalents per zone, the same ladder the Squash app uses.
@@ -305,8 +331,9 @@ float Service::zoneMet(uint8_t zone)
 
 void Service::updateHrDerivedMetrics()
 {
-    mTrackData.hrZone   = hrZoneFor(mTrackData.hr);
-    mTrackData.hasZones = mHrThresholdCount > 0;
+    mTrackData.hrZone         = hrZoneFor(mTrackData.hr);
+    mTrackData.hrZoneFraction = hrZoneFractionFor(mTrackData.hr, mTrackData.hrZone);
+    mTrackData.hasZones       = mHrThresholdCount > 0;
 
     if (mTrackState != Track::State::ACTIVE) {
         return;

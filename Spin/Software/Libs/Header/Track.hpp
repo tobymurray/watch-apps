@@ -39,6 +39,10 @@ struct Data {
     /// heart rate falls in, against the wearer's own thresholds from the watch.
     uint8_t hrZone = 0;
 
+    /// Where hr sits within hrZone, 0..255 across that zone's own span. The
+    /// dial's needle. Only meaningful when hrZone >= 1.
+    uint8_t hrZoneFraction = 0;
+
     /// The wearer has zone thresholds set on the watch. Without them there are
     /// no zones to be in, which is a different thing from being below zone 1.
     bool hasZones = false;
