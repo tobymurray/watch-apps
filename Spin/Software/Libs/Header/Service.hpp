@@ -25,6 +25,8 @@
 
 #include "ActivityWriter.hpp"
 #include "AppConfigFields.hpp"
+#include "HrHold.hpp"
+#include "ZoneLadder.hpp"
 #include "Commands.hpp"
 
 #include <memory>
@@ -62,12 +64,18 @@ private:
     /// breaking it -- but it is why the figure is an estimate.
     static constexpr float skDefaultWeightKg = 75.0f;
 
-    /// Zone buckets: [0] below zone 1, [1..5] the zones. Matches
-    /// ActivityWriter::kZoneBuckets and Track::Data::zoneSeconds.
-    static constexpr size_t skZoneBuckets = 6;
+    static constexpr size_t skMaxZones    = SpinConfig::kMaxZones;
+    static constexpr size_t skZoneBuckets = skMaxZones + 1;
 
-    /// The kernel reports up to six zone thresholds.
-    static constexpr size_t skMaxHrThresholds = 6;
+    // Three places size a zone-bucket array and every one of them is indexed by
+    // hrZone, which runs to mZoneCount. Track::Data::zoneSeconds was left at 6
+    // when the dial grew from five zones to eight, so an eight-zone ride wrote
+    // past it into the calorie accumulators. Now they cannot drift apart
+    // silently again.
+    static_assert(Track::kZoneBuckets == skZoneBuckets,
+                  "Track::Data::zoneSeconds is not the size the Service indexes");
+    static_assert(ActivityWriter::kZoneBuckets == skZoneBuckets,
+                  "ActivityWriter's zone arrays are not the size the Service fills");
 
     // -- Infrastructure -------------------------------------------------------
 
@@ -103,8 +111,28 @@ private:
     SDK::Metric::VariableCounter                        mHrCounter;
 
     float   mWeightKg = skDefaultWeightKg;      ///< From the watch's own profile.
-    uint8_t mHrThresholds[skMaxHrThresholds] = {};
-    uint8_t mHrThresholdCount = 0;
+
+    /// The zone floors in use: mZoneFloor[i] is the lowest heart rate in zone
+    /// i+1, and zone i+1 runs up to mZoneFloor[i+1]. The top zone is
+    /// open-ended, so N zones need N floors. Filled from this app's config when
+    /// it declares a count, and from the watch's own settings otherwise.
+    uint8_t mZoneFloor[skMaxZones] = {};
+    uint8_t mZoneCount = 0;
+
+    /// The watch's own zone floors, kept separately so a bad config can fall
+    /// back to them without another trip to the kernel.
+    uint8_t mSystemZoneFloor[skMaxZones] = {};
+    uint8_t mSystemZoneCount = 0;
+
+    /// The top of the watch's own ladder, which is its maximum heart rate
+    /// rather than a zone floor. Kept so a configured zone count with no floors
+    /// of its own can be spread across the same range.
+    uint8_t mSystemMaxHr = 0;
+
+    /// Bridges a one-second dip in the arbiter's confidence, so the screen does
+    /// not blank a reading the sensor still has. Display side only -- the FIT
+    /// record keeps the strict gate. See HrHold.hpp.
+    HrHold mHrHold;
 
     uint8_t mHrSource      = 0;  ///< Latest HeartRateEx::Source, for the icon + FIT hr_source.
     uint8_t mHrOpticalBpm  = 0;  ///< Latest raw optical (PPG) bpm, for the FIT hr_optical series.
@@ -142,11 +170,13 @@ private:
 
     void loadConfig();
     void loadSystemSettings();
+    void applyZoneConfig();
     void startTrack(std::time_t utc);
     void processTrack();
     void saveLap();
     void updateHrDerivedMetrics();
     uint8_t hrZoneFor(float hr) const;
+    uint8_t hrZoneFractionFor(float hr, uint8_t zone) const;
     static float zoneMet(uint8_t zone);
     void stopTrack(bool discard);
     void pauseTrack(bool pause);

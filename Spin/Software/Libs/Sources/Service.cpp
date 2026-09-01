@@ -55,6 +55,7 @@ void Service::run()
     // that trap for SDK::AppConfig specifically.
     loadConfig();
     loadSystemSettings();
+    applyZoneConfig();
 
     // Recover an activity a previous boot left unfinished (power loss or crash
     // mid-recording) before any new ride can start — the recovery marker names
@@ -228,7 +229,7 @@ void Service::onStartGUI()
     mGuiSender.trackState(mTrackState);
     mGuiSender.accessoryStatus(mAccessoryState, mAccessoryName);
     mGuiSender.rideConfig(static_cast<uint16_t>(mTargetSeconds / skSecondsPerMinute),
-                          mEnergyInKilojoules);
+                          mEnergyInKilojoules, mZoneCount);
 }
 
 void Service::onStopGUI()
@@ -241,10 +242,10 @@ void Service::onStopGUI()
 
 void Service::loadSystemSettings()
 {
-    // The wearer's weight and heart-rate zone thresholds are the watch's own
-    // settings, not this app's: they are the same for every activity app on the
-    // watch, so asking for them here is right and declaring them as config
-    // fields would be a second place to get them wrong.
+    // The wearer's weight and the watch's own zone floors. Both are watch-wide
+    // settings shared by every activity app, so asking for them here is right;
+    // this app's own config can override the zones, but should not have to
+    // restate them just to exist.
     auto msg = SDK::make_msg<SDK::Message::RequestSystemSettings>(mKernel);
     if (!msg || !msg.send(100) || !msg.ok()) {
         LOG_WARNING("No system settings; using %0.f kg and no zones\n",
@@ -256,38 +257,119 @@ void Service::loadSystemSettings()
         mWeightKg = msg->weightKg;
     }
 
+    // The watch reports N thresholds as the boundaries of N-1 zones: its own
+    // ladder is 50/60/70/80/90/100% of maximum heart rate, so the last one is
+    // the maximum rather than a floor. Dropping it turns the list into floors,
+    // which is what this app works in.
     uint8_t count = msg->heartRateCount;
-    if (count > skMaxHrThresholds) {
-        count = skMaxHrThresholds;
+    if (count > 0) {
+        mSystemMaxHr = msg->heartRateTh[count - 1];
+        --count;
+    }
+    if (count > skMaxZones) {
+        count = skMaxZones;
     }
     for (uint8_t i = 0; i < count; ++i) {
-        mHrThresholds[i] = msg->heartRateTh[i];
+        mSystemZoneFloor[i] = msg->heartRateTh[i];
     }
-    mHrThresholdCount = count;
+    mSystemZoneCount = count;
 
-    LOG_INFO("System: %.1f kg, %u heart-rate zone thresholds\n",
-             static_cast<double>(mWeightKg), static_cast<unsigned>(mHrThresholdCount));
+    LOG_INFO("System: %.1f kg, %u zone floors from the watch\n",
+             static_cast<double>(mWeightKg), static_cast<unsigned>(mSystemZoneCount));
+}
+
+void Service::applyZoneConfig()
+{
+    // This app's own zones win when it declares a count, because the reason to
+    // set one is a model the watch cannot express -- a three-zone polarised
+    // split, or a seven- or eight-zone ladder.
+    const int32_t configured = mConfig
+        ? mConfig->getInt(SpinConfig::field(SpinConfig::kHrZoneCount))
+        : 0;
+
+    if (configured >= 2 && static_cast<size_t>(configured) <= skMaxZones) {
+        uint8_t floors[skMaxZones] = {};
+        bool complete = true;
+        bool ordered  = true;
+        for (int32_t i = 0; i < configured; ++i) {
+            const int32_t v = mConfig->getInt(
+                SpinConfig::zoneMinField(static_cast<size_t>(i + 1)));
+            floors[i] = static_cast<uint8_t>(v);
+            if (v <= 0) {
+                complete = false;
+            } else if (i > 0 && v <= floors[i - 1]) {
+                ordered = false;
+            }
+        }
+
+        if (complete && ordered) {
+            for (int32_t i = 0; i < configured; ++i) {
+                mZoneFloor[i] = floors[i];
+            }
+            mZoneCount = static_cast<uint8_t>(configured);
+            LOG_INFO("Zones: %u, floors from this app's settings\n",
+                     static_cast<unsigned>(mZoneCount));
+            return;
+        }
+
+        if (!ordered) {
+            // A ladder that does not climb describes nothing. Falling through
+            // is better than a dial whose segments correspond to no heart rate.
+            LOG_WARNING("Zone floors are not increasing; ignoring them\n");
+        }
+
+        // A count with no floors of its own is the common case: the wearer
+        // picked how many zones they want and left the numbers alone. Spread
+        // them over the same range the watch uses -- its ladder is
+        // 50/60/70/80/90/100% of maximum heart rate, so evenly from half the
+        // maximum to the maximum. At five zones this reproduces the watch's own
+        // floors exactly, which is the reason to trust it at three or eight:
+        // it is the watch's rule at a different count, not a training model
+        // invented here.
+        if (ZoneLadder::floors(mSystemMaxHr, static_cast<uint8_t>(configured),
+                               mZoneFloor, skMaxZones)) {
+            mZoneCount = static_cast<uint8_t>(configured);
+            LOG_INFO("Zones: %u, spread from %u bpm maximum\n",
+                     static_cast<unsigned>(mZoneCount),
+                     static_cast<unsigned>(mSystemMaxHr));
+            return;
+        }
+
+        LOG_WARNING("No maximum heart rate to spread %d zones over\n",
+                    static_cast<int>(configured));
+    }
+
+    for (size_t i = 0; i < skMaxZones; ++i) {
+        mZoneFloor[i] = mSystemZoneFloor[i];
+    }
+    mZoneCount = mSystemZoneCount;
+    LOG_INFO("Zones: %u from the watch\n", static_cast<unsigned>(mZoneCount));
 }
 
 uint8_t Service::hrZoneFor(float hr) const
 {
-    // Zone N is "above the Nth threshold". No thresholds means no zones -- not
-    // zone 1 -- because a wearer who has never set them has no zones to be in,
-    // and inventing a default set would put a number on the screen that means
-    // nothing about them.
-    if (mHrThresholdCount == 0 || hr <= 0.0f) {
+    // Zone N is "at or above the Nth floor". No floors means no zones -- not
+    // zone 1 -- because a wearer who has set none has no zones to be in, and
+    // inventing a ladder would put a number on the screen that means nothing
+    // about them.
+    if (mZoneCount == 0 || hr <= 0.0f) {
         return 0;
     }
 
     uint8_t zone = 0;
-    for (uint8_t i = 0; i < mHrThresholdCount; ++i) {
-        if (hr > static_cast<float>(mHrThresholds[i])) {
+    for (uint8_t i = 0; i < mZoneCount; ++i) {
+        if (hr >= static_cast<float>(mZoneFloor[i])) {
             zone = static_cast<uint8_t>(i + 1);
         }
     }
-    // The kernel can report six thresholds; the display and the FIT buckets
-    // have five zones, so anything above the fifth is still zone 5.
-    return (zone > 5) ? 5 : zone;
+    return zone;
+}
+
+uint8_t Service::hrZoneFractionFor(float hr, uint8_t zone) const
+{
+    // The maximum is handed over for the top zone only: membership there is
+    // open-ended, but the needle needs somewhere to go. See ZoneLadder.hpp.
+    return ZoneLadder::fraction(hr, zone, mZoneFloor, mZoneCount, mSystemMaxHr);
 }
 
 float Service::zoneMet(uint8_t zone)
@@ -305,8 +387,9 @@ float Service::zoneMet(uint8_t zone)
 
 void Service::updateHrDerivedMetrics()
 {
-    mTrackData.hrZone   = hrZoneFor(mTrackData.hr);
-    mTrackData.hasZones = mHrThresholdCount > 0;
+    mTrackData.hrZone         = hrZoneFor(mTrackData.hr);
+    mTrackData.hrZoneFraction = hrZoneFractionFor(mTrackData.hr, mTrackData.hrZone);
+    mTrackData.hasZones       = mZoneCount > 0;
 
     if (mTrackState != Track::State::ACTIVE) {
         return;
@@ -384,12 +467,14 @@ void Service::startTrack(std::time_t utc)
     // the file while the app sits on the pre-ride screen, and the ride about to
     // start is the one the wearer just configured.
     loadConfig();
+    applyZoneConfig();
     mGuiSender.rideConfig(static_cast<uint16_t>(mTargetSeconds / skSecondsPerMinute),
-                          mEnergyInKilojoules);
+                          mEnergyInKilojoules, mZoneCount);
 
     mTimeCounter.reset();
     mHrCounter.reset();
     mTrackData = Track::Data{};
+    mHrHold.reset();
     mLapCalories        = 0.0f;
     mLapRestingCalories = 0.0f;
     for (size_t i = 0; i < skZoneBuckets; ++i) {
@@ -404,6 +489,7 @@ void Service::startTrack(std::time_t utc)
     info.appVersion = SDK::ParseVersion(BUILD_VERSION).u32;
     info.devID      = DEV_ID;
     info.appID      = APP_ID;
+    info.zoneCount  = mZoneCount;
     mActivityWriter.start(info);
 
     if (mKeepScreenLit) {
@@ -418,8 +504,15 @@ void Service::processTrack()
 {
     mTrackData.totalTime = mTimeCounter.getValueActive();
 
-    mTrackData.hr       = mHrCounter.getCurrent();
-    mTrackData.hrSource = mHrSource;
+    // What the screen should believe, which is not the same question as what
+    // was measured this second: a momentary loss of confidence holds the last
+    // reading rather than blanking it. prepareRecordData() below still applies
+    // the strict gate, so the file records the second as having no reading.
+    const bool trusted = mHrCounter.getCurrent() > skHrMinValid &&
+                         mTrackData.hrTrustLevel >= skHrTrustMin &&
+                         mTrackData.hrTrustLevel <= skHrTrustMax;
+    mTrackData.hr       = mHrHold.update(trusted, mHrCounter.getCurrent());
+    mTrackData.hrSource = (mTrackData.hr > 0.0f) ? mHrSource : 0;
     mTrackData.avgHR    = mHrCounter.getAverage();
     mTrackData.maxHR    = mHrCounter.getMaximum();
 

@@ -5,12 +5,12 @@
   ],
   "name": "Spin",
   "icon": "icon.png",
-  "binary": "Spin_0.2.0.uapp",
-  "appVersion": "0.2.0",
+  "binary": "Spin_0.5.3.uapp",
+  "appVersion": "0.5.3",
   "minKernelVersion": "1.4.0",
   "requiredHardware": [],
   "description": "A stationary bike ride: the clock, your heart rate, and a FIT file that says indoor cycling rather than a bike ride that covered no ground. Uses a paired chest strap when one is connected and the wrist sensor when it is not.",
-  "id": "8D853E73407250E7",
+  "id": "1B8D0B8FA049E33F",
   "stravaExport": true,
   "supportsLaps": false,
   "supportsDistance": false,
@@ -55,6 +55,95 @@
       "label": "Energy in kJ",
       "description": "Show energy as kilojoules instead of calories. This is dietary energy (1 kcal = 4.184 kJ), not the kJ of work a power meter reports — the watch cannot measure that. The saved file always records kcal.",
       "default": false
+    },
+    {
+      "id": "hrZoneCount",
+      "type": "int",
+      "label": "Heart rate zones",
+      "description": "How many heart rate zones, 2 to 8. Leave the floors below at 0 and they are spread evenly over the same range the watch uses. 0 means use however many zones the watch has.",
+      "default": 5,
+      "min": 0,
+      "max": 8
+    },
+    {
+      "id": "hrZone1Min",
+      "type": "int",
+      "label": "Zone 1 from",
+      "description": "Lowest heart rate in zone 1, in bpm. Leave every floor at 0 to have them spread evenly from half your maximum heart rate up to it.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
+    },
+    {
+      "id": "hrZone2Min",
+      "type": "int",
+      "label": "Zone 2 from",
+      "description": "Lowest heart rate in zone 2, in bpm. Leave every floor at 0 to have them spread evenly from half your maximum heart rate up to it.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
+    },
+    {
+      "id": "hrZone3Min",
+      "type": "int",
+      "label": "Zone 3 from",
+      "description": "Lowest heart rate in zone 3, in bpm. Leave every floor at 0 to have them spread evenly from half your maximum heart rate up to it.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
+    },
+    {
+      "id": "hrZone4Min",
+      "type": "int",
+      "label": "Zone 4 from",
+      "description": "Lowest heart rate in zone 4, in bpm. Leave every floor at 0 to have them spread evenly from half your maximum heart rate up to it.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
+    },
+    {
+      "id": "hrZone5Min",
+      "type": "int",
+      "label": "Zone 5 from",
+      "description": "Lowest heart rate in zone 5, in bpm. Leave every floor at 0 to have them spread evenly from half your maximum heart rate up to it.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
+    },
+    {
+      "id": "hrZone6Min",
+      "type": "int",
+      "label": "Zone 6 from",
+      "description": "Lowest heart rate in zone 6, in bpm. Leave every floor at 0 to have them spread evenly from half your maximum heart rate up to it.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
+    },
+    {
+      "id": "hrZone7Min",
+      "type": "int",
+      "label": "Zone 7 from",
+      "description": "Lowest heart rate in zone 7, in bpm. Leave every floor at 0 to have them spread evenly from half your maximum heart rate up to it.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
+    },
+    {
+      "id": "hrZone8Min",
+      "type": "int",
+      "label": "Zone 8 from",
+      "description": "Lowest heart rate in zone 8, in bpm. Leave every floor at 0 to have them spread evenly from half your maximum heart rate up to it.",
+      "default": 0,
+      "min": 0,
+      "max": 250,
+      "unit": "bpm"
     }
   ]
 }

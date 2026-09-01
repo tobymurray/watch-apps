@@ -10,7 +10,7 @@ set(DEV_ID "UNA")
 # Identity of the app in the store, and how the mobile app matches a new
 # *.uapp to the installed one when the file name changes. Stable for the life
 # of the app.
-set(APP_ID "8D853E73407250E7")   # sha256("https://github.com/tobymurray/watch-apps#spin")[0:8]
+set(APP_ID "1B8D0B8FA049E33F")   # assigned by UNA; not derived from anything local
 set(RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Resources")
 set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")
 set(LIBS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../Libs")

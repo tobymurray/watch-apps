@@ -18,13 +18,6 @@ namespace
 {
 constexpr uint32_t kWaitForever = 0xFFFFFFFF;
 
-/// The kernel's arbiter reports 0..3; 1..3 is a reading it stands behind. The
-/// same gate the Service applies before writing a beat to the FIT file, so the
-/// screen and the file never disagree about whether there was a heart rate.
-constexpr float kHrTrustMin = 1.0f;
-constexpr float kHrTrustMax = 3.0f;
-constexpr float kHrMinBpm   = 20.0f;
-
 /// 1 kcal = 4.184 kJ. This converts *dietary* energy between its two units --
 /// it is not, and must never be presented as, the kilojoules of mechanical work
 /// a power meter reports. Those need power, which this watch cannot measure,
@@ -107,11 +100,8 @@ void Gui::buildFrame(spin_gui_frame &out) const
 
     out.energy_is_kj = mEnergyInKilojoules ? 1u : 0u;
 
-    if (mHoldingDiscard) {
+    if (mConfirmingDiscard) {
         out.screen = SPIN_GUI_SCREEN_CONFIRM_DISCARD;
-        const uint16_t pct =
-            static_cast<uint16_t>(mHoldTicks) * 100u / kHoldTicksForFull;
-        out.hold_pct = static_cast<uint8_t>(pct > 100u ? 100u : pct);
         return;
     }
 
@@ -137,21 +127,23 @@ void Gui::buildFrame(spin_gui_frame &out) const
 
     out.elapsed_s = static_cast<uint32_t>(mTrackData.totalTime);
 
-    // 0 rather than a stale beat: a heart rate the watch has stopped believing
-    // is not a smaller heart rate, and the renderer must not have to guess.
-    const bool hrUsable = mTrackData.hr > kHrMinBpm &&
-                          mTrackData.hrTrustLevel >= kHrTrustMin &&
-                          mTrackData.hrTrustLevel <= kHrTrustMax;
-    out.hr_bpm    = hrUsable ? static_cast<uint16_t>(mTrackData.hr + 0.5f) : 0u;
-    out.hr_source = hrUsable ? mTrackData.hrSource : SPIN_GUI_HR_NONE;
+    // Taken as published, not re-judged here. The Service already decided what
+    // the screen should believe -- including holding a reading through a
+    // momentary dip in the arbiter's confidence -- and 0 already means "no
+    // heart rate". Re-applying the trust gate here was what blanked the number
+    // for a single second at a time on a signal that was not actually moving.
+    out.hr_bpm    = static_cast<uint16_t>(mTrackData.hr + 0.5f);
+    out.hr_source = (mTrackData.hr > 0.0f) ? mTrackData.hrSource : SPIN_GUI_HR_NONE;
 
     // Passed through, never recomputed here from elapsed_s against the target:
     // this is the same flag that fired the buzz, so the screen cannot announce
     // the target a second before or after the wrist felt it.
     out.target_reached = mTrackData.targetReached ? 1u : 0u;
 
-    out.hr_zone   = mTrackData.hrZone;
-    out.has_zones = mTrackData.hasZones ? 1u : 0u;
+    out.hr_zone          = mTrackData.hrZone;
+    out.zone_count       = mZoneCount;
+    out.hr_zone_fraction = mTrackData.hrZoneFraction;
+    out.has_zones        = mTrackData.hasZones ? 1u : 0u;
 }
 
 void Gui::renderAndPush()
@@ -182,39 +174,40 @@ void Gui::handleButton(SDK::Message::EventButton::Id id,
     using Event = SDK::Message::EventButton::Event;
     CustomMessage::Sender sender(mKernel);
 
-    // Discard is held, not tapped -- the SDK's own activity apps gate it behind
-    // a hold and it is the one action here that destroys data. The kernel times
-    // the hold and says when it is long enough; releasing before that cancels.
-    // It sits on L2, the bottom-left button, a whole panel away from L1's
-    // Finish: the two endings of a ride should not be neighbours.
-    if (mHoldingDiscard) {
-        if (id != Id::SW3) {
+    // Discard asks first, on a screen of its own, and both answers are
+    // buttons. It was a press-and-hold on L2, matching the SDK's own activity
+    // apps -- and on the watch it never fired once: this app turns on the
+    // music-control overlay in setCapabilities(), the system claims the long
+    // press to open it, and HOLD_1S never reached here. Worse, the screen it
+    // put the wearer on could only be left by that same event, so there was no
+    // way out of it at all.
+    //
+    // Two ordinary clicks, which nothing intercepts, and a labelled way back.
+    if (mConfirmingDiscard) {
+        if (event != Event::CLICK) {
             return;
         }
-        if (event == Event::HOLD_1S) {
+        if (id == Id::SW2) {            // R1: yes
             LOG_INFO("Discard confirmed\n");
-            mHoldingDiscard = false;
+            mConfirmingDiscard = false;
             sender.trackStop(true);
-        } else if (event == Event::RELEASE) {
+        } else if (id == Id::SW4) {     // R2: no
             LOG_INFO("Discard cancelled\n");
-            mHoldingDiscard = false;
-            renderAndPush();
-        }
-        return;
-    }
-
-    if (event == Event::PRESS) {
-        // Only PAUSED offers it: a ride you are still riding is not one you are
-        // deciding about, and one already saved is on disk.
-        if (id == Id::SW3 && !mShowSaved && mTrackState == Track::State::PAUSED) {
-            mHoldingDiscard = true;
-            mHoldTicks      = 0;
+            mConfirmingDiscard = false;
             renderAndPush();
         }
         return;
     }
 
     if (event != Event::CLICK) {
+        return;
+    }
+
+    // Only PAUSED offers it: a ride you are still riding is not one you are
+    // deciding about, and one already saved is on disk.
+    if (id == Id::SW3 && !mShowSaved && mTrackState == Track::State::PAUSED) {
+        mConfirmingDiscard = true;
+        renderAndPush();
         return;
     }
 
@@ -292,6 +285,10 @@ void Gui::run()
 
             case SDK::MessageType::COMMAND_APP_GUI_SUSPEND:
                 mResumed = false;
+                // A question the wearer walked away from is not one they
+                // answered, and coming back to a modal screen they did not ask
+                // for is how the previous version stranded them.
+                mConfirmingDiscard = false;
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 break;
 
@@ -299,18 +296,11 @@ void Gui::run()
             // snapshot every second while a ride is running, so a redraw per
             // tick would be the same pixels at the tick rate. Ticks are
             // acknowledged and dropped; the messages below are what redraw.
+            // Nothing animates. The Service publishes a snapshot every second
+            // while a ride runs, so a redraw per tick would be the same pixels
+            // at the tick rate.
             case SDK::MessageType::EVENT_GUI_TICK:
                 msg->setResult(SDK::MessageResult::SUCCESS);
-                // The one thing that animates. Everywhere else a tick would
-                // redraw the same pixels at the tick rate.
-                if (mHoldingDiscard) {
-                    if (mHoldTicks < kHoldTicksForFull) {
-                        ++mHoldTicks;
-                    }
-                    mKernel.comm.releaseMessage(msg);
-                    renderAndPush();
-                    continue;
-                }
                 break;
 
             case CustomMessage::TRACK_STATE_UPDATE: {
@@ -351,6 +341,7 @@ void Gui::run()
                 auto *cfg = static_cast<CustomMessage::RideConfigUpd *>(msg);
                 mTargetMinutes       = cfg->targetMinutes;
                 mEnergyInKilojoules  = cfg->energyInKilojoules;
+                mZoneCount           = cfg->zoneCount;
             }
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 mKernel.comm.releaseMessage(msg);

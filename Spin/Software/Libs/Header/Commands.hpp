@@ -104,10 +104,12 @@ namespace CustomMessage {
     struct RideConfigUpd : public SDK::MessageBase {
         uint16_t targetMinutes;        ///< 0 = no target
         bool     energyInKilojoules;   ///< display unit only; the file is kcal
+        uint8_t  zoneCount;            ///< segments on the dial, 0 = no zones set
         RideConfigUpd()
             : SDK::MessageBase(RIDE_CONFIG)
             , targetMinutes(0)
             , energyInKilojoules(false)
+            , zoneCount(0)
         {}
     };
 
@@ -160,11 +162,12 @@ public:
         });
     }
 
-    bool rideConfig(uint16_t targetMinutes, bool energyInKilojoules)
+    bool rideConfig(uint16_t targetMinutes, bool energyInKilojoules, uint8_t zoneCount)
     {
         return send<RideConfigUpd>([&](RideConfigUpd *m) {
             m->targetMinutes      = targetMinutes;
             m->energyInKilojoules = energyInKilojoules;
+            m->zoneCount          = zoneCount;
         });
     }
 

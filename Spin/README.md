@@ -68,11 +68,22 @@ app:
 | **White** | it came from the wrist sensor |
 | **Grey**, with `---` | no reading the watch is willing to stand behind |
 
-That last row is a deliberate third state. The kernel reports a 0–3 confidence
-alongside every reading, and both the screen and the FIT file drop anything
-outside 1–3 — so a strap that drops out mid-ride shows `---` rather than
-holding the last number it saw, and the file records the gap instead of
-inventing a beat.
+That last row is a deliberate third state, but it is not instant. The kernel
+reports a 0–3 confidence with every reading, and the **file** drops anything
+outside 1–3 — the gap is recorded rather than a beat invented. The **screen**
+holds the last trusted reading for up to ten seconds first, because those are
+different questions: the file answers "what was measured this second", the
+screen answers "what do we believe your heart rate is".
+
+That split came out of the first two rides on real hardware. 5% of seconds were
+reported untrusted, and in 31 of 32 of them the sensor still had a reading
+within a beat or two of its neighbours — every one lasting one second, or two.
+The number was disappearing and coming straight back, several times a minute,
+on a signal whose consecutive readings differ by 0.2 bpm on average. There is
+no jitter here to filter and [`HrHold`](Software/Libs/Header/HrHold.hpp)
+deliberately does not average anything; a held second reports exactly what the
+sensor last produced. Past ten seconds it gives up, because a watch off the
+wrist must stop showing a heart rate that is no longer anyone's.
 
 **Pairing happens in the watch's own settings, not here.** Spin opts in to
 whatever heart-rate monitor the firmware already knows about; it cannot scan
@@ -93,6 +104,19 @@ naturally a scale, so it gets the perimeter and the middle stays clear for the
 numbers. Four levels a channel is the whole palette, so those five colours are
 not approximations of nicer ones: they are the colours.
 
+A white needle crosses the ring at your actual heart rate — not just which zone,
+but where in it. Without it a 93 and a 109 both light zone 1 and look identical,
+and the dial is a guess. Its position comes from the Service, as a fraction
+*within* the lit zone rather than along the whole ring: the segments are equal
+angular slices with gaps between them, and a position measured across the whole
+scale drifts out of its own segment by the fifth one.
+
+It is drawn from the ring's inner edge out to just short of the bezel, with a
+black slot beneath it, so it reads against any segment colour — a white marker
+sitting entirely inside a grey zone-1 arc would be nearly invisible. Below zone
+1 there is no needle: the bottom of zone 1 is a threshold you set, but the scale
+itself has no defined bottom, so there is nowhere honest to point.
+
 The zone is a position, not a gauge, so the segments below the current one do
 not fill — a filling scale would read as progress through the zones, which is
 not a thing that happens. Zone 0, below zone 1, lights nothing at all: the scale
@@ -103,14 +127,64 @@ goes, growing left to right to meet the zone scale where it ends. With no target
 set the gap stays empty, which is what keeps it reading as a speedometer rather
 than a closed circle.
 
-**The thresholds are the wearer's own**, read from the watch with
-`SDK::Message::RequestSystemSettings` — the same ones every other activity app
-on the watch uses. They are not a Spin setting, because a second place to
-configure them is a second place for them to be wrong.
+**Any number of zones from two to eight**, and the dial adapts: the ladder is
+written out per count rather than sampled from one palette by formula, so every
+size ends grey-to-red and the five-zone one is the familiar
+grey/blue/green/amber/red rather than whatever arithmetic produced. Eight is
+where the kernel's own threshold table stops, so it is not a limit invented
+here.
 
-If no thresholds are set, **the bar is not drawn at all**. "Below zone 1" and
-"you have not told the watch what your zones are" are different states, and an
-all-dim bar would say the first when it means the second.
+**By default the zones are the watch's own**, read with
+`SDK::Message::RequestSystemSettings` — the same ones every other activity app
+uses, and a second copy is a second thing to keep in step. The watch reports its
+ladder as 50/60/70/80/90/100% of maximum heart rate, so the last value is the
+maximum rather than a floor and Spin drops it to get five floors.
+
+**`hrZoneCount` defaults to 5**, because five is what almost everyone means by
+heart-rate zones and it is what the watch itself ships. Set it to anything from
+2 to 8 for a model the watch cannot express — a three-zone polarised split, or a
+seven- or eight-zone ladder — or to 0 to take however many the watch has.
+
+**The floors can be left alone.** With every `hrZoneNMin` at 0 they are spread
+evenly from half the maximum heart rate up to it, which is the watch's own rule:
+its ladder is 50/60/70/80/90/100% of maximum. At five zones that reproduces the
+watch's floors *exactly*, which is the reason to trust it at three or eight —
+it is the same rule at a different count, not a training model invented here.
+[`ZoneSpread_test.cpp`](Tests/ZoneSpread_test.cpp) asserts that match, so if it
+ever stops holding the argument for the rule goes with it.
+
+Fill the floors in to follow a published model instead. Zone *N* runs from its
+own floor up to the next zone's, so eight zones need eight floors rather than
+nine.
+
+### Where the intervals close
+
+Each zone is **closed at its floor and open at the top**: zone *N* is
+`floor(N) <= hr < floor(N+1)`, so a heart rate exactly on a floor is in the zone
+above it, which is what "lowest heart rate in zone *N*" means.
+
+The **top zone is open** — everything at or above the last floor — because that
+is what every training model means by it. The **bottom is not**: below zone 1 is
+not a zone but a state of its own. Nothing lights on the dial, the needle is not
+drawn, and the FIT file records it as bucket `[0]`.
+
+The one place the open top needs a boundary is the needle, which cannot be
+placed in an unbounded interval. It — and only it — treats the maximum heart
+rate as the top zone's ceiling, and pins above it, because there is no scale
+beyond the top of the scale. Membership and time-in-zone stay open.
+
+Floors that are not strictly increasing are ignored and the watch's zones used
+instead: a dial whose segments correspond to nothing is worse than one that is
+merely not what was asked for, and the ride still has to record either way.
+
+If no zones are set at all, **the dial is not drawn**. "Below zone 1" and "you
+have not set any zones" are different states, and an unlit dial would say the
+first when it means the second.
+
+The FIT file follows the same count: `time_in_hr_zone` is declared *zones + 1*
+long, so a five-zone ride writes six buckets and an eight-zone one writes nine,
+and a reader sees exactly the zones that existed rather than a fixed array
+padded with zeros it would have to read as time spent nowhere near a zone.
 
 ## Calories, and why not kJ
 
@@ -154,6 +228,8 @@ a change takes effect on the next ride rather than the next reinstall.
 | `targetMinutes` | 0 (off) | Buzz once at this many minutes and say `TARGET MET` on the screen. |
 | `keepScreenLit` | off | Hold the backlight on for the whole ride. |
 | `energyInKilojoules` | off | Show energy as kJ instead of kcal. Display only. |
+| `hrZoneCount` | 5 | How many zones, 2 to 8. 0 takes the watch's count. |
+| `hrZone1Min` … `hrZone8Min` | 0 | The bpm floor of each zone. All 0 spreads them over the watch's own range. |
 
 ![A target set, the target met, and energy in kJ](Docs/screens-config.png)
 
@@ -186,10 +262,23 @@ an accidental exit would cost the ride.
 
 | Screen | Shows | L1 | L2 | R1 | R2 |
 |---|---|---|---|---|---|
-| Ready | strap status, target if set | | | **START** | exit |
-| Riding | clock, heart rate, zone | | | **PAUSE** | |
-| Paused | dimmed clock, `PAUSED` | **FINISH** | **DISCARD** (hold) | **RESUME** | |
-| Saved / discarded | what happened | | | **DONE** | **DONE** |
+| Ready | strap status, target if set | | | **START** | **EXIT** |
+| Riding | clock, heart rate, zone | | | pause | |
+| Paused | dimmed clock, `PAUSED` | **SAVE** | **DISCARD** | resume | |
+| Saved / discarded | what happened | | | done | **DONE** |
+
+Each live button is marked by a short arc at its own corner of the bezel — the
+same mark the SDK's TouchGFX apps use, and it belongs to the zone ring's family
+rather than floating free. **Words appear only where there is a decision.**
+While riding there is one live button and one obvious thing for it to do, so it
+gets the mark alone; the same goes for resume when paused, which was PAUSE a
+second earlier. The two endings of a ride get words, because choosing between
+them is the whole reason that screen exists.
+
+The first version put the labels on horizontal rows above and below the clock,
+where `PAUSE` landed directly over it and read as its caption, and `FINISH` and
+`RESUME` read as a title bar. Hints belong on the diagonals, because that is
+where the buttons are.
 
 The two endings of a ride sit at opposite corners on purpose. Finish is the
 button you reach for every time; discard destroys the ride, and it should not be
@@ -210,22 +299,28 @@ dropout, past the hour, and a save that failed:
 
 ## Throwing a ride away
 
-![Holding, held, and the acknowledgement](Docs/screens-discard.png)
+![Paused, the question, and the acknowledgement](Docs/screens-discard.png)
 
-Discard is **held, not tapped** — the same gate the SDK's own activity apps put
-on it, because it is the one action in the app that destroys data. Press and
-hold L2 on the paused screen and a red ring fills; let go before it is full and
-nothing happens.
+`DISCARD` on the paused screen asks first, on a screen of its own, with both
+answers on buttons: **R1 yes, R2 no**. Two deliberate presses on two screens,
+because this is the one action in the app that destroys data.
 
-**The kernel times the hold, not the app.** The countdown fires on the kernel's
-own `HOLD_1S` button event, and the filling ring is drawn from the GUI tick
-count purely as a picture. If the two ever disagree the ring sits full for a
-moment before the event lands — a cosmetic error rather than a ride thrown away
-a moment early.
+**It is not a press-and-hold, and that is the second design.** The first one
+was, matching the SDK's own activity apps — and on the watch it never fired
+once. Spin turns on the music-control overlay in `setCapabilities()`, the system
+claims the long press to open it, and `HOLD_1S` never reached the app. The SDK's
+own port notes say `LONG_PRESS` and `HOLD_*` are not forwarded to screens
+anyway.
+
+Worse than not working: the screen it stranded the wearer on could only be left
+by that same event, so there was no way out of it at all. Two ordinary clicks
+are intercepted by nothing, and the way back is a labelled button. Suspending
+the GUI also leaves the screen — a question you walked away from is not one you
+answered.
 
 `ActivityWriter::discard()` removes the part-written `.fit` **and the recovery
-marker with it**, so the next boot does not finalise a ride that was deliberately
-thrown away. There is a test for exactly that.
+marker with it**, so the next boot does not finalise a ride that was
+deliberately thrown away. There is a test for exactly that.
 
 `DISCARDED` is not the same screen as `NOT SAVED`. One is what the wearer asked
 for and the other is a failure, and the screen should agree with them rather
@@ -401,10 +496,18 @@ checked against the same list a human reviews.
 Two of them, with different rules, both drawn by script rather than committed
 as art nobody can regenerate:
 
-- [`make_icon.py`](Resources/make_icon.py) draws the watch icon at 30 and 60 px.
-  The watch stores it as ABGR2222 — four alpha levels, four shades — so the
-  flywheel's rim is drawn at 8x and downsampled, which is the difference
-  between a circle and a polygon.
+![The watch icon at 60 and 30 px, both enlarged](Docs/icon.png)
+
+- [`make_icon.py`](Resources/make_icon.py) draws the watch icon at 30 and 60 px:
+  a spin bike in side view, because a flywheel alone could be any wheel. The
+  watch stores it as ABGR2222 — four alpha levels, four shades — and a stroke
+  thinner than a pixel downsamples to grey, which decides the whole design.
+  Ordinary line-art bike icons use a uniform hairline and a dozen separate
+  parts; at 30 px every one of those is sub-pixel and what comes out is a grey
+  smudge shaped like a bike. So the two sizes are **not the same drawing
+  scaled**: 60 px gets the top tube and the hub, 30 px keeps only what survives
+  at two pixels wide. One big wheel and a base are what say *stationary* bike,
+  so they get the space and the frame is what is left over.
 - [`make_store_icon.py`](Resources/make_store_icon.py) draws the 512 px icon the
   phone shows. None of the watch's constraints apply, so it gets the round
   panel, the flywheel and the app's one red heart.

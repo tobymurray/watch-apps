@@ -17,9 +17,9 @@ extern "C" {
 #define SPIN_GUI_SCREEN_RIDING 1u  /* clock running */
 #define SPIN_GUI_SCREEN_PAUSED 2u  /* clock held */
 #define SPIN_GUI_SCREEN_SAVED  3u  /* finished: what was written */
-/* Hold-to-confirm before throwing a ride away, and the acknowledgement after.
-   The SDK's own activity apps gate Discard behind a held button rather than a
-   tap, and so does this: it is the one action here that destroys data. */
+/* Asking before throwing a ride away, and the acknowledgement after. Two
+   deliberate presses on two screens, not one tap -- this is the one action
+   here that destroys data. See Gui.cpp for why it is not a press-and-hold. */
 #define SPIN_GUI_SCREEN_CONFIRM_DISCARD 4u
 #define SPIN_GUI_SCREEN_DISCARDED       5u
 
@@ -35,10 +35,11 @@ extern "C" {
 #define SPIN_GUI_HR_OPTICAL  1u
 #define SPIN_GUI_HR_EXTERNAL 2u
 
-/* Heart-rate zones. 0 means below zone 1 -- or that the wearer has set no
-   thresholds on the watch, in which case there are no zones to be in and the
-   bar is not drawn at all. */
-#define SPIN_GUI_ZONE_COUNT 5u
+/* Heart-rate zones. hr_zone 0 means below zone 1 -- or that no zones are set
+   at all, in which case there are none to be in and the dial is not drawn.
+   How many there are is zone_count, which comes from the app's configuration
+   or the watch's own settings; this is only the ceiling. */
+#define SPIN_GUI_MAX_ZONES 8u
 
 /* Field order puts the 32-bit field first and the 16-bit pair next, so every
    field lands on its natural alignment with no padding. Not load-bearing --
@@ -55,10 +56,17 @@ typedef struct {
     uint8_t  hr_source;      /* one of the SPIN_GUI_HR_* values above */
     uint8_t  saved_ok;       /* SAVED only: 1 the .fit is on disk, 0 it is not */
     uint8_t  target_reached; /* 1 once the target is passed; the flag that buzzed */
-    uint8_t  hr_zone;        /* 0 = below zone 1 or no zones set, 1..5 = the zone */
+    uint8_t  hr_zone;        /* 0 = below zone 1 or no zones set, else 1..zone_count */
+    uint8_t  zone_count;     /* segments on the dial, 2..8; 0 = no zones set */
     uint8_t  has_zones;      /* 1 when the wearer has thresholds set on the watch */
     uint8_t  energy_is_kj;   /* 1 = `energy` is kJ, 0 = kcal */
-    uint8_t  hold_pct;       /* CONFIRM_DISCARD: how far the hold has got, 0..100 */
+    /* Where the current heart rate sits WITHIN hr_zone, 0..255 across that
+       zone's own span. Sent as a fraction of the zone rather than of the whole
+       scale so the needle always lands inside the segment that is lit: the
+       segments are equal angular slices with gaps between them, and a position
+       measured across the whole ring drifts out of its own segment by the
+       fifth one. Meaningless unless has_zones and hr_zone >= 1. */
+    uint8_t  hr_zone_fraction;
 } spin_gui_frame;
 
 uint32_t spin_gui_abi_fingerprint(void);
@@ -101,9 +109,10 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(spin_gui_frame, saved_ok));
     h = fnv1a(h, offsetof(spin_gui_frame, target_reached));
     h = fnv1a(h, offsetof(spin_gui_frame, hr_zone));
+    h = fnv1a(h, offsetof(spin_gui_frame, zone_count));
     h = fnv1a(h, offsetof(spin_gui_frame, has_zones));
     h = fnv1a(h, offsetof(spin_gui_frame, energy_is_kj));
-    return fnv1a(h, offsetof(spin_gui_frame, hold_pct));
+    return fnv1a(h, offsetof(spin_gui_frame, hr_zone_fraction));
 }
 
 } // namespace spin_gui_abi
@@ -121,9 +130,10 @@ static_assert(offsetof(spin_gui_frame, hr_source) == 14, "hr_source moved");
 static_assert(offsetof(spin_gui_frame, saved_ok) == 15, "saved_ok moved");
 static_assert(offsetof(spin_gui_frame, target_reached) == 16, "target_reached moved");
 static_assert(offsetof(spin_gui_frame, hr_zone) == 17, "hr_zone moved");
-static_assert(offsetof(spin_gui_frame, has_zones) == 18, "has_zones moved");
-static_assert(offsetof(spin_gui_frame, energy_is_kj) == 19, "energy_is_kj moved");
-static_assert(offsetof(spin_gui_frame, hold_pct) == 20, "hold_pct moved");
+static_assert(offsetof(spin_gui_frame, zone_count) == 18, "zone_count moved");
+static_assert(offsetof(spin_gui_frame, has_zones) == 19, "has_zones moved");
+static_assert(offsetof(spin_gui_frame, energy_is_kj) == 20, "energy_is_kj moved");
+static_assert(offsetof(spin_gui_frame, hr_zone_fraction) == 21, "hr_zone_fraction moved");
 #endif
 
 #endif // SPIN_GUI_H

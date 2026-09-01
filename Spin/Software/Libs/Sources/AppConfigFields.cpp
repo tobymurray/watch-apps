@@ -14,12 +14,12 @@ using SDK::AppConfig;
 
 // Every value here must match app-manifest.json exactly; CI compares them.
 //
-// Four settings, and each one is here because it needs no hardware the watch
-// has not got. Cadence, power and a trainer link would all need a BLE sensor
+// Thirteen settings, and each one is here because it needs no hardware the
+// watch has not got. Cadence, power and a trainer link would all need a BLE sensor
 // the firmware would have to pair with, so none of them is a setting -- an
 // option that cannot work is worse than an absent one.
 //
-// All four default to "off" or "as before", so a wearer who never opens the
+// All of them default to "off" or "as before", so a wearer who never opens the
 // form gets exactly the app described in the README: one lap, no alert, and
 // the ordinary wrist-tilt backlight.
 //
@@ -42,6 +42,31 @@ const AppConfig::Field kFields[] = {
     // the profile's total_calories field is defined in -- this switches what
     // the watch shows, not what it writes.
     AppConfig::boolField("energyInKilojoules", false),
+
+    // ZONES. Five by default, because five is what almost everyone means by
+    // heart-rate zones and it is what the watch itself ships. 0 means "however
+    // many the watch has", for a watch configured with some other number.
+    //
+    // Two, because one zone is not zones. Eight, because that is where the
+    // kernel's own threshold table stops.
+    AppConfig::intField("hrZoneCount", 5, 0, 8),
+
+    // Each zone's floor, in bpm. Zone N runs from its floor to the next one's,
+    // and the top zone is open-ended -- so eight zones need eight floors, not
+    // nine. 250 is above any human maximum.
+    //
+    // Left at 0 they are spread evenly from half the watch's maximum heart
+    // rate up to it, which is the watch's own rule (50/60/70/80/90/100%) at
+    // whatever count is set -- and at five zones reproduces the watch's floors
+    // exactly. Set them to follow a published model instead.
+    AppConfig::intField("hrZone1Min", 0, 0, 250),
+    AppConfig::intField("hrZone2Min", 0, 0, 250),
+    AppConfig::intField("hrZone3Min", 0, 0, 250),
+    AppConfig::intField("hrZone4Min", 0, 0, 250),
+    AppConfig::intField("hrZone5Min", 0, 0, 250),
+    AppConfig::intField("hrZone6Min", 0, 0, 250),
+    AppConfig::intField("hrZone7Min", 0, 0, 250),
+    AppConfig::intField("hrZone8Min", 0, 0, 250),
 };
 
 const size_t kFieldCount = sizeof(kFields) / sizeof(kFields[0]);

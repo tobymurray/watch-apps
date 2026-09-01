@@ -15,7 +15,7 @@ fn ready(strap: u8) -> Frame {
 }
 
 fn ready_with_target(strap: u8, target_minutes: u16) -> Frame {
-    Frame { target_minutes, has_zones: 1, ..ready(strap) }
+    Frame { target_minutes, has_zones: 1, zone_count: 5, ..ready(strap) }
 }
 
 fn riding(screen: u8, elapsed_s: u32, hr_bpm: u16, hr_source: u8) -> Frame {
@@ -32,7 +32,26 @@ fn riding(screen: u8, elapsed_s: u32, hr_bpm: u16, hr_source: u8) -> Frame {
 /// The same ride on a watch whose wearer has set their zone thresholds.
 fn in_zone(mut f: Frame, zone: u8) -> Frame {
     f.hr_zone = zone;
+    f.zone_count = 5;
     f.has_zones = 1;
+    f.hr_zone_fraction = 128; // mid-zone unless a scene says otherwise
+    f
+}
+
+/// A dial with a different number of segments: three for a polarised split,
+/// eight for the long ladders.
+fn zones(mut f: Frame, count: u8, zone: u8) -> Frame {
+    f.zone_count = count;
+    f.hr_zone = zone;
+    f.has_zones = 1;
+    f.hr_zone_fraction = 128;
+    f
+}
+
+/// The needle at a named position within its zone.
+fn at(mut f: Frame, zone: u8, fraction: u8) -> Frame {
+    f = in_zone(f, zone);
+    f.hr_zone_fraction = fraction;
     f
 }
 
@@ -61,6 +80,16 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
         ("zone_1", in_zone(riding(SCREEN_RIDING, 312, 101, HR_EXTERNAL), 1)),
         ("zone_3", in_zone(riding(SCREEN_RIDING, 1204, 138, HR_EXTERNAL), 3)),
         ("zone_5", in_zone(riding(SCREEN_RIDING, 2610, 179, HR_EXTERNAL), 5)),
+        // The needle at both ends of a zone and in the middle: 93 and 109 bpm
+        // both sit in zone 1 and used to look identical.
+        ("needle_low_in_zone", at(riding(SCREEN_RIDING, 300, 93, HR_EXTERNAL), 1, 6)),
+        ("needle_high_in_zone", at(riding(SCREEN_RIDING, 340, 109, HR_EXTERNAL), 1, 249)),
+        ("needle_zone_4_mid", at(riding(SCREEN_RIDING, 1500, 157, HR_EXTERNAL), 4, 128)),
+        // Every dial size the app offers, so each ladder can be looked at.
+        ("zones_3_of_3", zones(riding(SCREEN_RIDING, 900, 168, HR_EXTERNAL), 3, 3)),
+        ("zones_4_of_7", zones(riding(SCREEN_RIDING, 900, 141, HR_EXTERNAL), 7, 4)),
+        ("zones_6_of_8", zones(riding(SCREEN_RIDING, 900, 155, HR_EXTERNAL), 8, 6)),
+        ("zones_2_of_2", zones(riding(SCREEN_RIDING, 900, 120, HR_EXTERNAL), 2, 2)),
         // A strap that dropped out mid-ride: the clock keeps going, the beat
         // does not, and the screen has to say so rather than hold the number.
         ("riding_dropout", riding(SCREEN_RIDING, 1830, 0, HR_NONE)),
@@ -89,14 +118,7 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
         ),
         ("paused", riding(SCREEN_PAUSED, 912, 96, HR_EXTERNAL)),
         ("paused_no_hr", riding(SCREEN_PAUSED, 912, 0, HR_NONE)),
-        // Holding L1 on the paused screen: the ring fills, and letting go
-        // before it is full cancels.
-        ("discard_hold_start", Frame { screen: SCREEN_CONFIRM_DISCARD, hold_pct: 0,
-                                       ..Frame::default() }),
-        ("discard_hold_half", Frame { screen: SCREEN_CONFIRM_DISCARD, hold_pct: 55,
-                                      ..Frame::default() }),
-        ("discard_hold_full", Frame { screen: SCREEN_CONFIRM_DISCARD, hold_pct: 100,
-                                      ..Frame::default() }),
+        ("discard_confirm", Frame { screen: SCREEN_CONFIRM_DISCARD, ..Frame::default() }),
         ("discarded", Frame { screen: SCREEN_DISCARDED, ..Frame::default() }),
         ("saved", saved(2712, 141, 402, true)),
         ("saved_kj", Frame { energy_is_kj: 1, ..saved(2712, 141, 1682, true) }),

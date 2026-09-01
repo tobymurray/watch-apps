@@ -434,19 +434,27 @@ TEST(SpinActivityWriter, RecordsTimeInEachHeartRateZone)
     SDK::TestSupport::KernelFixture fx;
     ActivityWriter w(fx.kernel, "Activity");
 
+    constexpr uint8_t kZones = 5;
+
     ActivityWriter::AppInfo info;
     info.timestamp = kStartUtc;
     info.devID     = "UNA";
     info.appID     = "spin";
+    info.zoneCount = kZones;
     w.start(info);
 
     ActivityWriter::RecordData r;
     r.timestamp = kStartUtc;
     w.addRecord(r);
 
-    // [0] is below zone 1; [1..5] are the zones. A real ride warms up, works
-    // and eases off, so every bucket has something in it.
-    const std::time_t zones[ActivityWriter::kZoneBuckets] = {90, 240, 600, 900, 300, 60};
+    // [0] is below zone 1; [1..N] are the zones. A real ride warms up, works
+    // and eases off, so every bucket has something in it. The array is sized
+    // for the most zones the app supports; only kZones + 1 are written.
+    std::time_t zones[ActivityWriter::kZoneBuckets] = {};
+    const std::time_t used[] = {90, 240, 600, 900, 300, 60};
+    for (size_t i = 0; i < sizeof(used) / sizeof(used[0]); ++i) {
+        zones[i] = used[i];
+    }
     std::time_t total = 0;
     for (std::time_t z : zones) {
         total += z;
@@ -489,9 +497,11 @@ TEST(SpinActivityWriter, RecordsTimeInEachHeartRateZone)
 
     for (const auto &target : targets) {
         const std::vector<uint32_t> got = zoneMillis(*target.first, target.second);
-        ASSERT_EQ(got.size(), ActivityWriter::kZoneBuckets)
+        // One bucket per zone plus the one below zone 1 -- not the storage
+        // array's length. A five-zone ride writes six, an eight-zone ride nine.
+        ASSERT_EQ(got.size(), static_cast<size_t>(kZones) + 1u)
             << "field " << unsigned(target.second) << " is missing or the wrong length";
-        for (size_t i = 0; i < ActivityWriter::kZoneBuckets; ++i) {
+        for (size_t i = 0; i < static_cast<size_t>(kZones) + 1u; ++i) {
             EXPECT_EQ(got[i], static_cast<uint32_t>(zones[i]) * kTimeInHrZoneScale)
                 << "bucket " << i;
         }
@@ -508,6 +518,65 @@ TEST(SpinActivityWriter, RecordsTimeInEachHeartRateZone)
     // assertion that would have caught the bug the FIT profile lookup found.
     EXPECT_EQ(sessions[0]->fields.count(kFieldSessionAvgTemperature), 0u)
         << "the session wrote something into avg_temperature";
+}
+
+TEST(SpinActivityWriter, TheZoneArrayIsAsLongAsTheRideHasZones)
+{
+    // The point of sizing it per ride: a reader sees exactly the zones that
+    // existed, rather than a fixed array padded with zeros it would have to
+    // read as time spent nowhere near a zone.
+    for (uint8_t zoneCount : {0, 3, 5, 8}) {
+        SDK::TestSupport::KernelFixture fx;
+        ActivityWriter w(fx.kernel, "Activity");
+
+        ActivityWriter::AppInfo info;
+        info.timestamp = kStartUtc;
+        info.devID     = "UNA";
+        info.appID     = "spin";
+        info.zoneCount = zoneCount;
+        w.start(info);
+
+        ActivityWriter::RecordData r;
+        r.timestamp = kStartUtc;
+        w.addRecord(r);
+
+        ActivityWriter::LapData lap;
+        lap.timestamp = kStartUtc + 60;
+        lap.timeStart = kStartUtc;
+        lap.duration  = 60;
+        lap.elapsed   = 60;
+        for (size_t i = 0; i <= zoneCount; ++i) {
+            lap.zoneSeconds[i] = 10;
+        }
+        w.addLap(lap);
+
+        ActivityWriter::TrackData t;
+        t.timestamp = kStartUtc + 60;
+        t.timeStart = kStartUtc;
+        t.duration  = 60;
+        t.elapsed   = 60;
+        for (size_t i = 0; i <= zoneCount; ++i) {
+            t.zoneSeconds[i] = 10;
+        }
+        ASSERT_TRUE(w.stop(t)) << "zoneCount " << unsigned(zoneCount);
+
+        FitReader reader(readFit(fx.fileSystem));
+        ASSERT_TRUE(reader.ok()) << "zoneCount " << unsigned(zoneCount);
+        EXPECT_TRUE(reader.crcValid()) << "zoneCount " << unsigned(zoneCount);
+
+        const auto sessions = reader.withGlobal(kMesgSession);
+        ASSERT_EQ(sessions.size(), 1u);
+        const std::vector<uint32_t> got =
+            zoneMillis(*sessions[0], kFieldSessionTimeInHrZone);
+
+        if (zoneCount == 0) {
+            // No zones set means no zone field at all, not an array of zeros.
+            EXPECT_TRUE(got.empty()) << "a ride with no zones wrote a zone array";
+        } else {
+            EXPECT_EQ(got.size(), static_cast<size_t>(zoneCount) + 1u)
+                << "zoneCount " << unsigned(zoneCount);
+        }
+    }
 }
 
 TEST(SpinActivityWriter, RecordsActiveAndRestingCalories)

@@ -49,11 +49,33 @@ enum Index : size_t {
     kTargetMinutes,
     kKeepScreenLit,
     kEnergyInKilojoules,
+    kHrZoneCount,
+    kHrZone1Min,
+    kHrZone2Min,
+    kHrZone3Min,
+    kHrZone4Min,
+    kHrZone5Min,
+    kHrZone6Min,
+    kHrZone7Min,
+    kHrZone8Min,
     kIndexCount,
 };
 
+/// Most zones this app will draw or record. The kernel's own settings message
+/// tops out at eight thresholds too (RequestSystemSettings::skMaxHearRateTh),
+/// so this is not a limit invented here.
+constexpr size_t kMaxZones = 8;
+
+
 extern const SDK::AppConfig::Field kFields[];
 extern const size_t kFieldCount;
+
+/// The floor of zone @p n, 1-based. Zone n runs from its own floor up to the
+/// next zone's, and the top zone is open-ended.
+inline const char *zoneMinField(size_t n)
+{
+    return kFields[kHrZone1Min + (n - 1)].id;
+}
 
 /// The declared id of one field, taken from the table rather than repeated.
 inline const char *field(Index index)

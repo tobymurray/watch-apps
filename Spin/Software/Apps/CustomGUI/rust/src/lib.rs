@@ -99,27 +99,55 @@ const DIM: Abgr2222 = Abgr2222::rgb(170, 170, 170);
 const RED: Abgr2222 = Abgr2222::rgb(255, 0, 0);
 /// Held / not-what-you-wanted. Paused, and a ride that failed to save.
 const AMBER: Abgr2222 = Abgr2222::rgb(255, 170, 0);
-/// One hue per heart-rate zone, in the ladder every training app uses: grey,
-/// blue, green, amber, red. Each has a dim twin, which is the same hue one
-/// level down on every non-zero channel -- so an inactive segment reads as the
-/// same zone, quieter, rather than as a different colour.
+/// Most zones the dial will draw. The kernel's own threshold table stops at
+/// eight too, so this is not a limit invented here.
+pub const MAX_ZONES: usize = 8;
+
+/// The colour ladder, cool to warm, eight stops.
+const HUE_GREY: Abgr2222 = Abgr2222::rgb(170, 170, 170);
+const HUE_BLUE: Abgr2222 = Abgr2222::rgb(0, 170, 255);
+const HUE_CYAN: Abgr2222 = Abgr2222::rgb(0, 255, 255);
+const HUE_GREEN: Abgr2222 = Abgr2222::rgb(0, 255, 0);
+const HUE_YELLOW: Abgr2222 = Abgr2222::rgb(255, 255, 0);
+const HUE_AMBER: Abgr2222 = Abgr2222::rgb(255, 170, 0);
+const HUE_ORANGE: Abgr2222 = Abgr2222::rgb(255, 85, 0);
+const HUE_RED: Abgr2222 = Abgr2222::rgb(255, 0, 0);
+
+/// Which hues a dial of N zones uses, written out per count rather than
+/// sampled from the ladder by formula.
+///
+/// A formula gets the ends right and the middle wrong: spreading eight stops
+/// over five zones lands on cyan and yellow and loses the blue-green-amber
+/// reading everyone already knows. Every row here ends grey-to-red, so the
+/// bottom zone is always easy and the top is always hard whatever the count,
+/// and the five-zone row is the familiar one rather than whatever arithmetic
+/// produced.
 ///
 /// Four levels a channel is the whole palette, so these are not approximations
 /// of nicer colours: they are the colours.
-const ZONE_BRIGHT: [Abgr2222; ZONE_COUNT as usize] = [
-    Abgr2222::rgb(170, 170, 170), // 1  grey
-    Abgr2222::rgb(0, 170, 255),   // 2  blue
-    Abgr2222::rgb(0, 255, 0),     // 3  green
-    Abgr2222::rgb(255, 170, 0),   // 4  amber
-    Abgr2222::rgb(255, 0, 0),     // 5  red
+const ZONE_HUES: [&[Abgr2222]; MAX_ZONES + 1] = [
+    &[],                                                        // 0 - no dial
+    &[HUE_RED],                                                 // 1 - not offered
+    &[HUE_GREY, HUE_RED],                                       // 2
+    &[HUE_GREY, HUE_AMBER, HUE_RED],                            // 3  polarised
+    &[HUE_GREY, HUE_GREEN, HUE_AMBER, HUE_RED],                 // 4
+    &[HUE_GREY, HUE_BLUE, HUE_GREEN, HUE_AMBER, HUE_RED],       // 5  the classic
+    &[HUE_GREY, HUE_BLUE, HUE_GREEN, HUE_YELLOW, HUE_AMBER, HUE_RED],            // 6
+    &[HUE_GREY, HUE_BLUE, HUE_CYAN, HUE_GREEN, HUE_YELLOW, HUE_AMBER, HUE_RED],  // 7
+    &[HUE_GREY, HUE_BLUE, HUE_CYAN, HUE_GREEN, HUE_YELLOW, HUE_AMBER, HUE_ORANGE,
+      HUE_RED],                                                                  // 8
 ];
-const ZONE_DIM_HUE: [Abgr2222; ZONE_COUNT as usize] = [
-    Abgr2222::rgb(85, 85, 85),
-    Abgr2222::rgb(0, 85, 170),
-    Abgr2222::rgb(0, 170, 0),
-    Abgr2222::rgb(170, 85, 0),
-    Abgr2222::rgb(170, 0, 0),
-];
+
+/// Dims a hue one level on every channel it uses, so an inactive segment reads
+/// as the same zone, quieter, rather than as a different colour.
+fn dim(c: Abgr2222) -> Abgr2222 {
+    // Two bits a channel: subtract one level from any channel that has any.
+    let step = |shift: u8| {
+        let v = (c.0 >> shift) & CHANNEL_MASK;
+        if v > 0 { v - 1 } else { 0 }
+    };
+    Abgr2222::from_levels(step(RED_SHIFT), step(GREEN_SHIFT), step(BLUE_SHIFT))
+}
 
 // -- Framebuffer -------------------------------------------------------------
 
@@ -200,7 +228,7 @@ pub const HR_EXTERNAL: u8 = 2;
 
 /// Heart-rate zones the bar draws. Zone 0 (below zone 1) is a state, not a
 /// segment: it dims every segment rather than adding a sixth.
-pub const ZONE_COUNT: u8 = 5;
+
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -216,9 +244,10 @@ pub struct Frame {
     pub saved_ok: u8,
     pub target_reached: u8,
     pub hr_zone: u8,
+    pub zone_count: u8,
     pub has_zones: u8,
     pub energy_is_kj: u8,
-    pub hold_pct: u8,
+    pub hr_zone_fraction: u8,
 }
 
 const FNV_OFFSET_BASIS: u32 = 0x811C_9DC5;
@@ -245,9 +274,10 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(Frame, saved_ok));
     let h = fnv1a(h, core::mem::offset_of!(Frame, target_reached));
     let h = fnv1a(h, core::mem::offset_of!(Frame, hr_zone));
+    let h = fnv1a(h, core::mem::offset_of!(Frame, zone_count));
     let h = fnv1a(h, core::mem::offset_of!(Frame, has_zones));
     let h = fnv1a(h, core::mem::offset_of!(Frame, energy_is_kj));
-    fnv1a(h, core::mem::offset_of!(Frame, hold_pct))
+    fnv1a(h, core::mem::offset_of!(Frame, hr_zone_fraction))
 }
 
 #[no_mangle]
@@ -268,9 +298,10 @@ const _: () = assert!(core::mem::offset_of!(Frame, hr_source) == 14);
 const _: () = assert!(core::mem::offset_of!(Frame, saved_ok) == 15);
 const _: () = assert!(core::mem::offset_of!(Frame, target_reached) == 16);
 const _: () = assert!(core::mem::offset_of!(Frame, hr_zone) == 17);
-const _: () = assert!(core::mem::offset_of!(Frame, has_zones) == 18);
-const _: () = assert!(core::mem::offset_of!(Frame, energy_is_kj) == 19);
-const _: () = assert!(core::mem::offset_of!(Frame, hold_pct) == 20);
+const _: () = assert!(core::mem::offset_of!(Frame, zone_count) == 18);
+const _: () = assert!(core::mem::offset_of!(Frame, has_zones) == 19);
+const _: () = assert!(core::mem::offset_of!(Frame, energy_is_kj) == 20);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_zone_fraction) == 21);
 
 // -- Geometry ----------------------------------------------------------------
 
@@ -278,27 +309,85 @@ const PANEL_W: i32 = 240;
 const PANEL_H: i32 = 240;
 const CENTER_X: i32 = PANEL_W / 2;
 
-/// Button labels live above and below the clock, never beside it. The clock is
-/// the widest thing on the panel and spans it edge to edge at its own rows, so
-/// a label level with the buttons themselves gets drawn straight through --
-/// which is what the first layout did.
-///
-/// The x insets are set by the *round* panel, not by the 240x240 buffer. The
-/// half-chord at y=44 is 92px, so a label whose right edge sat at 214 lost its
-/// last glyph to the bezel -- invisible in a square simulator and obvious on
-/// the glass. `nothing_is_drawn_outside_the_bezel` is the regression test.
-// Lower than the bezel alone would need. The paused screen puts two labels on
-// this row -- DISCARD on the left button and RESUME on the right -- and at y=44
-// the ring's inner edge leaves only ~116px between them, which is not enough
-// for both. Ten pixels down the chord is 150px and they fit with room to spare.
-const HINT_TOP_Y: i32 = 54;
-const HINT_BOTTOM_Y: i32 = 184;
-/// Pulled in far enough to clear the zone ring, not just the bezel. At the top
-/// row the ring's inner edge is the binding constraint; at the bottom row it is
-/// the edge of the ring's 90-degree opening. Both work out to about the same
-/// inset, so there is one pair rather than two.
-const HINT_LEFT_X: i32 = 48;
-const HINT_RIGHT_X: i32 = PANEL_W - 48;
+// -- Button hints -----------------------------------------------------------
+// The four buttons sit at the corners of the bezel, so their hints sit on the
+// diagonals, not stacked above and below the clock. The first version put them
+// on horizontal rows and PAUSE landed directly over the clock, where it read as
+// a caption for it rather than as a thing a button does.
+//
+// Each hint is a short thick arc at the button's own angle -- the same mark the
+// SDK's TouchGFX apps use, and it belongs to the zone ring's visual family --
+// optionally with a word inboard of it.
+//
+// WORDS ONLY WHERE THERE IS A DECISION. While riding there is exactly one thing
+// R1 can do, and labelling it every second buys nothing and costs the clock its
+// space; the mark alone says "this button is live". Paused is a decision --
+// resume, finish or discard -- so those get words.
+
+/// Clockwise from twelve o'clock, matching the bezel: L1 top-left, R1
+/// top-right, L2 bottom-left, R2 bottom-right (CommandMessages.hpp).
+const BUTTON_L1_DEG: f32 = -45.0;
+const BUTTON_R1_DEG: f32 = 45.0;
+const BUTTON_R2_DEG: f32 = 135.0;
+const BUTTON_L2_DEG: f32 = 225.0;
+
+/// The mark: inboard of the zone ring, so the two never touch.
+const TICK_INNER: f32 = 98.0;
+const TICK_OUTER: f32 = 105.0;
+const TICK_SWEEP_DEG: f32 = 17.0;
+
+/// Gap between a mark and its word. The word is placed off the mark's inner
+/// end rather than at a radius of its own: on the diagonal the clock's corner
+/// and the mark are only a few pixels apart, and anything measured from the
+/// centre lands on one or the other.
+const LABEL_GAP: i32 = 8;
+
+/// The heading row on the screens that have one, where the clock does not
+/// reach. Level with the top pair of buttons but centred, so it reads as a
+/// title rather than as either button's label.
+const HEADING_Y: i32 = 50;
+
+fn polar(radius: f32, deg: f32) -> (i32, i32) {
+    let a = deg * DEG_TO_RAD;
+    (
+        (RING_CX + radius * a.sin() + 0.5) as i32,
+        (RING_CY - radius * a.cos() + 0.5) as i32,
+    )
+}
+
+/// The mark alone: this button does something.
+fn draw_button_tick(fb: &mut FrameBuf, deg: f32, color: Abgr2222) {
+    fill_arc(fb, TICK_INNER, TICK_OUTER, deg - TICK_SWEEP_DEG / 2.0, TICK_SWEEP_DEG, color);
+}
+
+/// The mark plus what it does. The word grows away from its own edge -- right
+/// buttons right-aligned, left buttons left-aligned -- so it always reads as
+/// hanging off that side rather than floating in the middle.
+fn draw_button_hint(fb: &mut FrameBuf, deg: f32, text: &str, color: Abgr2222) {
+    draw_button_tick(fb, deg, color);
+
+    let label = FontRenderer::new::<LabelFont>();
+    let right_hand = (deg * DEG_TO_RAD).sin() > 0.0;
+
+    // Measured from the mark's nearest EDGE, found by evaluating both ends of
+    // the arc rather than assuming which one is nearer. Which end that is
+    // depends on the quadrant -- it is deg-sweep/2 for the top-right button and
+    // deg+sweep/2 for the top-left -- and guessing it wrong runs the word
+    // straight through the mark, which is what the previous two attempts did.
+    let (ax, _) = polar(TICK_INNER, deg - TICK_SWEEP_DEG / 2.0);
+    let (bx, _) = polar(TICK_INNER, deg + TICK_SWEEP_DEG / 2.0);
+    let (_, ty) = polar(TICK_INNER, deg);
+    let (x, align) = if right_hand {
+        // The word runs leftward from the mark, so it must clear the mark's
+        // leftmost pixel.
+        (ax.min(bx) - LABEL_GAP, HorizontalAlignment::Right)
+    } else {
+        (ax.max(bx) + LABEL_GAP, HorizontalAlignment::Left)
+    };
+    // Lifted half a line so the word straddles the mark rather than hanging
+    // below it.
+    draw_text(fb, &label, text, x, ty - 6, align, color);
+}
 
 /// The clock's top edge, on every screen that shows one. Chosen so the clock
 /// plus the row under it sits centred between the two hint rows.
@@ -501,7 +590,7 @@ fn draw_ready(fb: &mut FrameBuf, frame: &Frame) {
     let w = text_width(&title, "SPIN") as i32;
     fill_rect(fb, CENTER_X - w / 2, top + 38, w, 2, DIM);
 
-    draw_zone_ring(fb, 0, frame.has_zones != 0);
+    draw_zone_ring(fb, 0, frame.zone_count, frame.has_zones != 0);
     draw_target_arc(fb, 0, frame.target_minutes, false);
 
     let connected = frame.strap == STRAP_CONNECTED;
@@ -539,8 +628,8 @@ fn draw_ready(fb: &mut FrameBuf, frame: &Frame) {
                   HorizontalAlignment::Left, DIM);
     }
 
-    draw_hint(fb, HINT_RIGHT_X, HINT_TOP_Y, HorizontalAlignment::Right, "START", WHITE);
-    draw_hint(fb, HINT_RIGHT_X, HINT_BOTTOM_Y, HorizontalAlignment::Right, "EXIT", DIM);
+    draw_button_hint(fb, BUTTON_R1_DEG, "START", WHITE);
+    draw_button_hint(fb, BUTTON_R2_DEG, "EXIT", DIM);
 }
 
 /// Draws the clock at the largest of the three faces that fits, and returns
@@ -581,19 +670,24 @@ fn draw_riding(fb: &mut FrameBuf, frame: &Frame) {
     }
 
     draw_hr_row(fb, frame.hr_bpm, frame.hr_source, HR_ROW_Y);
-    draw_zone_ring(fb, frame.hr_zone, frame.has_zones != 0);
+    draw_zone_ring(fb, frame.hr_zone, frame.zone_count, frame.has_zones != 0);
+    draw_zone_needle(fb, frame.hr_zone, frame.hr_zone_fraction, frame.zone_count,
+                     frame.has_zones != 0);
     draw_target_arc(fb, frame.elapsed_s, frame.target_minutes, frame.target_reached != 0);
 
     if paused {
-        // FINISH and DISCARD on the two left buttons, at opposite ends. Both on
-        // the top row ran into RESUME, and putting the destructive one a whole
-        // panel away from the one you reach for every ride is worth more than
-        // the symmetry anyway.
-        draw_hint(fb, HINT_LEFT_X, HINT_TOP_Y, HorizontalAlignment::Left, "FINISH", AMBER);
-        draw_hint(fb, HINT_RIGHT_X, HINT_TOP_Y, HorizontalAlignment::Right, "RESUME", WHITE);
-        draw_hint(fb, HINT_LEFT_X, HINT_BOTTOM_Y, HorizontalAlignment::Left, "DISCARD", RED);
+        // The two endings get words, because choosing between them is the
+        // whole reason this screen exists. Resume gets the mark alone: R1 was
+        // PAUSE a second ago, it is the only other thing that can happen here,
+        // and two words on this band do not fit -- "SAVE" and "RESUME" ran
+        // into each other with nothing left to trim.
+        draw_button_hint(fb, BUTTON_L1_DEG, "SAVE", AMBER);
+        draw_button_tick(fb, BUTTON_R1_DEG, WHITE);
+        draw_button_hint(fb, BUTTON_L2_DEG, "DISCARD", RED);
     } else {
-        draw_hint(fb, HINT_RIGHT_X, HINT_TOP_Y, HorizontalAlignment::Right, "PAUSE", WHITE);
+        // Riding: one live button and one obvious thing for it to do. The mark
+        // alone. A word here sat over the clock and read as its caption.
+        draw_button_tick(fb, BUTTON_R1_DEG, WHITE);
     }
 }
 
@@ -647,9 +741,9 @@ const DEG_TO_RAD: f32 = core::f32::consts::PI / 180.0;
 /// 0.65 is that with a little margin.
 ///
 /// These were 0.4 and 0.5, which painted every pixel of the ring three to nine
-/// times over. `the_hold_ring_has_no_gaps` is what makes tuning them safe: it
-/// asserts the ring is solid, not merely present, which is the one thing that
-/// goes wrong here and the one thing no other test would notice.
+/// times over. `the_confirm_ring_has_no_gaps` is what makes tuning them safe:
+/// it asserts the ring is solid, not merely present, which is the one thing
+/// that goes wrong here and the one thing no other test would notice.
 const ARC_ANGULAR_PX: f32 = 0.65;
 const ARC_RADIAL_PX: f32 = 0.65;
 
@@ -693,28 +787,70 @@ fn fill_arc(
     }
 }
 
+/// The needle: where the heart rate sits on the scale, not merely which zone it
+/// is in. Without it a 93 and a 109 light the same segment and look identical.
+///
+/// Drawn longer than the ring is thick, poking out past both edges, so that
+/// most of its length lies over black however the segment under it is coloured
+/// -- a white marker sitting entirely inside a grey zone-1 arc would be nearly
+/// invisible. The black slot underneath separates it from the arc it crosses.
+/// Kept outboard of TICK_OUTER so the needle and a button mark can never
+/// occupy the same pixels: zone 4's arc runs straight through R1's corner, and
+/// two white marks at the same radius there read as one confusing smudge.
+/// 119, not 120: the bezel is the circle of radius 120 and a needle drawn to
+/// it loses its tip to the glass. nothing_is_drawn_outside_the_bezel catches it.
+const NEEDLE_INNER: f32 = 106.0;
+const NEEDLE_OUTER: f32 = 119.0;
+const NEEDLE_SWEEP_DEG: f32 = 2.2;
+const NEEDLE_SLOT_DEG: f32 = 5.4;
+
+/// Position within the lit segment, from the zone and the fraction across it.
+/// Computed here rather than sent as a position along the whole ring, so the
+/// needle cannot drift into the gap between two segments.
+fn zone_needle_deg(zone: u8, fraction: u8, count: u8) -> f32 {
+    let n = count as f32;
+    let segment = (RING_SWEEP_DEG - RING_GAP_DEG * (n - 1.0)) / n;
+    let start = RING_START_DEG + (segment + RING_GAP_DEG) * (zone - 1) as f32;
+    start + segment * (fraction as f32) / 255.0
+}
+
+fn draw_zone_needle(fb: &mut FrameBuf, zone: u8, fraction: u8, count: u8, has_zones: bool) {
+    // Below zone 1 there is nowhere on the scale to point: the bottom of zone 1
+    // is a threshold the wearer set, but there is no defined bottom to the
+    // scale itself. The ring says "you are not on it yet" by lighting nothing,
+    // and the needle says the same by being absent.
+    // The same bounds the ring uses, including the upper one: without it a
+    // nonsense count draws a needle on a dial that was never drawn.
+    if !has_zones || count < 2 || count as usize > MAX_ZONES || zone < 1 || zone > count {
+        return;
+    }
+    let deg = zone_needle_deg(zone, fraction, count);
+    fill_arc(fb, NEEDLE_INNER, NEEDLE_OUTER, deg - NEEDLE_SLOT_DEG / 2.0,
+             NEEDLE_SLOT_DEG, BLACK);
+    fill_arc(fb, NEEDLE_INNER, NEEDLE_OUTER, deg - NEEDLE_SWEEP_DEG / 2.0,
+             NEEDLE_SWEEP_DEG, WHITE);
+}
+
 /// The five zone arcs. Drawn whenever the wearer has thresholds set, whatever
 /// zone they are in -- the scale is the point, and a ring that appeared only
 /// once you reached zone 1 would be a ring that vanished when you eased off.
 ///
 /// Zone 0 (below zone 1) lights nothing, which is the honest rendering of
 /// warming up: the scale is there, you are not on it yet.
-fn draw_zone_ring(fb: &mut FrameBuf, zone: u8, has_zones: bool) {
-    if !has_zones {
+fn draw_zone_ring(fb: &mut FrameBuf, zone: u8, count: u8, has_zones: bool) {
+    if !has_zones || count < 2 || count as usize > MAX_ZONES {
         return;
     }
+    let hues = ZONE_HUES[count as usize];
 
-    let n = ZONE_COUNT as f32;
+    let n = count as f32;
     let segment = (RING_SWEEP_DEG - RING_GAP_DEG * (n - 1.0)) / n;
 
-    for i in 0..ZONE_COUNT {
+    for i in 0..count {
         let start = RING_START_DEG + (segment + RING_GAP_DEG) * i as f32;
+        let hue = hues[i as usize];
         let active = zone == i + 1;
-        let (inner, color) = if active {
-            (RING_INNER_ON, ZONE_BRIGHT[i as usize])
-        } else {
-            (RING_INNER_OFF, ZONE_DIM_HUE[i as usize])
-        };
+        let (inner, color) = if active { (RING_INNER_ON, hue) } else { (RING_INNER_OFF, dim(hue)) };
         fill_arc(fb, inner, RING_OUTER, start, segment, color);
     }
 }
@@ -742,7 +878,7 @@ fn draw_target_arc(fb: &mut FrameBuf, elapsed_s: u32, target_minutes: u16, reach
     let remaining = TARGET_SWEEP_DEG - swept;
     if remaining > 0.0 {
         fill_arc(fb, TARGET_INNER, TARGET_OUTER, TARGET_START_DEG - TARGET_SWEEP_DEG,
-                 remaining, ZONE_DIM_HUE[0]);
+                 remaining, dim(HUE_GREY));
     }
     // Anchored at the bottom-left end and advancing toward the bottom-right, so
     // the filled part always starts in the same place.
@@ -804,7 +940,7 @@ fn draw_saved(fb: &mut FrameBuf, frame: &Frame) {
         fb,
         &heading,
         if ok { "SAVED" } else { "NOT SAVED" },
-        HINT_TOP_Y,
+        HEADING_Y,
         if ok { WHITE } else { AMBER },
     );
 
@@ -830,10 +966,8 @@ fn draw_saved(fb: &mut FrameBuf, frame: &Frame) {
     let unit = if frame.energy_is_kj != 0 { "KJ" } else { "KCAL" };
     draw_value_row(fb, &label, "", energy, unit, 156);
 
-    // Bottom right, not top right: the heading owns the top row here, and
-    // "NOT SAVED" is wide enough to reach a label placed beside it. Leaving is
-    // the bottom-right button on every screen that offers it anyway.
-    draw_hint(fb, HINT_RIGHT_X, HINT_BOTTOM_Y, HorizontalAlignment::Right, "DONE", WHITE);
+    // Bottom right, where leaving lives on every screen that offers it.
+    draw_button_hint(fb, BUTTON_R2_DEG, "DONE", WHITE);
 }
 
 /// `prefix value unit`, centred as one group, the value in white and the words
@@ -864,29 +998,35 @@ fn draw_value_row(
               HorizontalAlignment::Left, DIM);
 }
 
-/// Hold-to-confirm, the way the SDK's own activity apps gate Discard: the ring
-/// fills while the button is held and the ride only goes when it is full.
-/// Releasing early cancels, which is the whole point -- this is the one action
-/// in the app that destroys data, so it should be hard to do by accident and
-/// easy to back out of.
+/// Asks before destroying a ride. Two presses on two screens rather than one
+/// tap, and every button that does anything is labelled, including the one that
+/// backs out.
 ///
-/// The ring fills clockwise from twelve o'clock, whole-circle rather than the
-/// zone scale's 270 degrees, so it cannot be mistaken for the zone display.
-fn draw_confirm_discard(fb: &mut FrameBuf, hold_pct: u8) {
+/// WHY THIS IS NOT A PRESS-AND-HOLD
+///
+/// It was, briefly, the way the SDK's own activity apps gate Discard. On the
+/// watch it did not work at all: this app enables the music-control overlay in
+/// setCapabilities(), the system claims the long press to open it, and the app
+/// never saw the HOLD_1S it was waiting for. The SDK's own port notes say
+/// LONG_PRESS and HOLD_* are not forwarded to screens in the first place.
+///
+/// So the confirmation is two ordinary clicks, which nothing intercepts. That
+/// is also why the wearer can always leave: the previous version could only be
+/// exited by an event that never arrived, which left the screen stuck with no
+/// way out at all.
+fn draw_confirm_discard(fb: &mut FrameBuf) {
     let heading = FontRenderer::new::<HeadingFont>();
     let label = FontRenderer::new::<LabelFont>();
 
-    // Track and fill meet rather than overlap -- see draw_target_arc().
-    let swept = 360.0 * (hold_pct.min(100) as f32) / 100.0;
-    if swept < 360.0 {
-        fill_arc(fb, RING_INNER_OFF, RING_OUTER, swept, 360.0 - swept, ZONE_DIM_HUE[4]);
-    }
-    if swept > 0.0 {
-        fill_arc(fb, RING_INNER_OFF, RING_OUTER, 0.0, swept, RED);
-    }
+    // A full red ring, unbroken: this screen is not the zone dial and should
+    // not be mistaken for it even out of the corner of an eye.
+    fill_arc(fb, RING_INNER_OFF, RING_OUTER, 0.0, 360.0, RED);
 
-    draw_centered(fb, &heading, "DISCARD", 96, WHITE);
-    draw_centered(fb, &label, "KEEP HOLDING", 126, DIM);
+    draw_centered(fb, &heading, "DISCARD", 92, WHITE);
+    draw_centered(fb, &label, "THIS RIDE?", 122, DIM);
+
+    draw_button_hint(fb, BUTTON_R1_DEG, "YES", RED);
+    draw_button_hint(fb, BUTTON_R2_DEG, "NO", WHITE);
 }
 
 /// What happened, said plainly. Not "saved" and not an error: the wearer asked
@@ -897,22 +1037,7 @@ fn draw_discarded(fb: &mut FrameBuf) {
 
     draw_centered(fb, &heading, "DISCARDED", 96, AMBER);
     draw_centered(fb, &label, "NOTHING WAS SAVED", 126, DIM);
-    draw_hint(fb, HINT_RIGHT_X, HINT_BOTTOM_Y, HorizontalAlignment::Right, "DONE", WHITE);
-}
-
-/// A button label, drawn at the edge the button is on. Only ever drawn for a
-/// button that does something on this screen, so a blank edge means that
-/// button is inert rather than undocumented.
-fn draw_hint(
-    fb: &mut FrameBuf,
-    x: i32,
-    y: i32,
-    align: HorizontalAlignment,
-    text: &str,
-    color: Abgr2222,
-) {
-    let label = FontRenderer::new::<LabelFont>();
-    draw_text(fb, &label, text, x, y, align, color);
+    draw_button_hint(fb, BUTTON_R2_DEG, "DONE", WHITE);
 }
 
 // -- Entry points ------------------------------------------------------------
@@ -932,7 +1057,7 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, frame: &Frame) {
     match frame.screen {
         SCREEN_RIDING | SCREEN_PAUSED => draw_riding(&mut fb, frame),
         SCREEN_SAVED => draw_saved(&mut fb, frame),
-        SCREEN_CONFIRM_DISCARD => draw_confirm_discard(&mut fb, frame.hold_pct),
+        SCREEN_CONFIRM_DISCARD => draw_confirm_discard(&mut fb),
         SCREEN_DISCARDED => draw_discarded(&mut fb),
         // READY is the default rather than a fourth arm: an out-of-range
         // screen byte is a bug somewhere upstream, and the pre-ride screen is
@@ -1174,6 +1299,7 @@ mod tests {
             let mut f = frame(SCREEN_RIDING);
             f.target_minutes = 30;
             f.has_zones = 1;
+            f.zone_count = 5;
             f.hr_zone = 3;
             f
         };
@@ -1201,10 +1327,97 @@ mod tests {
         // than a closed circle, so nothing draws there without a target.
         let mut f = frame(SCREEN_RIDING);
         f.has_zones = 1;
+        f.zone_count = 5;
         f.hr_zone = 3;
         f.elapsed_s = 600;
         let with_target = Frame { target_minutes: 30, ..f };
         assert_ne!(draw(&f), draw(&with_target));
+    }
+
+    #[test]
+    fn no_zones_set_draws_no_dial_at_all() {
+        // "Below zone 1" and "you have set no zones" are different states. A
+        // dial with nothing lit would say the first when it means the second.
+        let none = Frame { elapsed_s: 300, hr_bpm: 120, ..frame(SCREEN_RIDING) };
+        let below_zone_1 = Frame { has_zones: 1, zone_count: 5, hr_zone: 0, ..none };
+        assert_ne!(draw(&none), draw(&below_zone_1),
+                   "a wearer with zones set should see the dial even below zone 1");
+    }
+
+    #[test]
+    fn each_zone_lights_a_different_segment() {
+        let base = Frame { elapsed_s: 900, hr_bpm: 140, has_zones: 1, zone_count: 5,
+                           hr_zone_fraction: 128, ..frame(SCREEN_RIDING) };
+        let mut seen: Vec<Vec<u8>> = Vec::new();
+        for zone in 0..=5u8 {
+            let drawn = draw(&Frame { hr_zone: zone, ..base });
+            assert!(!seen.contains(&drawn), "zone {zone} draws like another zone");
+            seen.push(drawn);
+        }
+    }
+
+    #[test]
+    fn every_dial_size_draws_and_reads_bottom_to_top() {
+        // Two through eight. Each count a different picture, and within each
+        // the bottom zone lit differently from the top -- a ladder that ran
+        // cool to cool would lose "red means hard" whatever its length.
+        let mut seen: Vec<Vec<u8>> = Vec::new();
+        for count in 2..=MAX_ZONES as u8 {
+            let base = Frame { has_zones: 1, zone_count: count, hr_zone_fraction: 128,
+                               elapsed_s: 600, ..frame(SCREEN_RIDING) };
+            let bottom = draw(&Frame { hr_zone: 1, ..base });
+            let top = draw(&Frame { hr_zone: count, ..base });
+            assert!(lit_pixels(&bottom) > 500, "{count} zones drew almost nothing");
+            assert_ne!(bottom, top, "{count} zones: top and bottom look the same");
+            assert!(!seen.contains(&bottom), "{count} zones draws like another count");
+            seen.push(bottom);
+        }
+    }
+
+    #[test]
+    fn a_count_outside_the_supported_range_draws_no_dial() {
+        // Rather than indexing off the end of the hue table.
+        for count in [1u8, 9, 200] {
+            let f = Frame { has_zones: 1, zone_count: count, hr_zone: 1,
+                            ..frame(SCREEN_RIDING) };
+            assert_eq!(draw(&f), draw(&Frame { has_zones: 0, ..f }),
+                       "count {count} drew something");
+        }
+    }
+
+    #[test]
+    fn the_needle_stays_inside_its_own_segment_at_any_count() {
+        // Why the fraction is sent per-zone rather than across the whole ring:
+        // equal slices with gaps between them, so a position measured over the
+        // whole scale drifts out of its own segment by the last one.
+        for count in 2..=MAX_ZONES as u8 {
+            let segment =
+                (RING_SWEEP_DEG - RING_GAP_DEG * (count as f32 - 1.0)) / count as f32;
+            for zone in 1..=count {
+                let start = RING_START_DEG + (segment + RING_GAP_DEG) * (zone - 1) as f32;
+                for frac in [0u8, 128, 255] {
+                    let deg = zone_needle_deg(zone, frac, count);
+                    assert!(deg >= start - 0.01 && deg <= start + segment + 0.01,
+                            "count {count} zone {zone} frac {frac}: {deg} is outside its segment");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_energy_unit_changes_the_word_not_the_number() {
+        let kcal = Frame { elapsed_s: 2712, avg_hr_bpm: 141, energy: 402, saved_ok: 1,
+                           ..frame(SCREEN_SAVED) };
+        assert_ne!(draw(&kcal), draw(&Frame { energy_is_kj: 1, ..kcal }));
+    }
+
+    #[test]
+    fn zero_energy_is_still_drawn() {
+        // A ride too short to burn a whole unit is a real ride. An absent row
+        // would read as a broken estimate rather than a small one.
+        let zero = Frame { elapsed_s: 12, saved_ok: 1, ..frame(SCREEN_SAVED) };
+        assert_ne!(draw(&zero), draw(&Frame { energy: 5, ..zero }));
+        assert!(lit_pixels(&draw(&zero)) > 500);
     }
 
     #[test]
@@ -1219,58 +1432,19 @@ mod tests {
     }
 
     #[test]
-    fn the_hold_ring_fills_with_the_hold() {
-        let at = |pct: u8| {
-            let mut f = frame(SCREEN_CONFIRM_DISCARD);
-            f.hold_pct = pct;
-            draw(&f)
-        };
-        // Counting bright pixels, not lit ones: the dim track is drawn for the
-        // whole circle whatever the progress, so the number of non-black pixels
-        // never changes -- only how many of them are filled.
-        let filled = |b: &Vec<u8>| b.iter().filter(|&&x| x == RED.0).count();
+    fn the_confirm_screen_offers_a_way_out() {
+        // The bug this replaced: the screen could only be left by an event that
+        // the system was intercepting, so it could not be left at all. Both
+        // answers must be on screen.
+        let buf = draw(&frame(SCREEN_CONFIRM_DISCARD));
+        assert!(lit_pixels(&buf) > 500);
 
-        // More hold, more ring. Never less.
-        assert!(filled(&at(0)) < filled(&at(50)),
-                "no progress drawn: {} then {}", filled(&at(0)), filled(&at(50)));
-        assert!(filled(&at(50)) < filled(&at(100)));
-
-        // Past full it stops rather than wrapping round for a second lap.
-        assert_eq!(at(100), at(255));
-    }
-
-    #[test]
-    fn the_hold_ring_has_no_gaps() {
-        // The guard on ARC_ANGULAR_PX / ARC_RADIAL_PX. Loosening the sampling
-        // is only safe while consecutive samples still land on the same pixel
-        // or its neighbour; too coarse and the ring grows holes that no other
-        // test would notice, because it would still be lit, still be round and
-        // still be the right colour.
-        //
-        // The fully-held discard ring is the case to check: a complete circle,
-        // so every angle is covered and any gap is the sampling's fault rather
-        // than a segment boundary's.
-        let mut f = frame(SCREEN_CONFIRM_DISCARD);
-        f.hold_pct = 100;
-        let buf = draw(&f);
-
-        // A pixel is "inside the band" only if its whole 1x1 area is, so the
-        // outermost and innermost rows are excluded: those legitimately
-        // straddle the edge and may or may not be painted.
-        let lo = RING_INNER_OFF + 1.0;
-        let hi = RING_OUTER - 1.0;
-        let mut holes = 0;
-        for y in 0..H {
-            for x in 0..W {
-                let dx = x as f32 - RING_CX;
-                let dy = y as f32 - RING_CY;
-                let r = (dx * dx + dy * dy).sqrt();
-                if r >= lo && r <= hi && buf[(y * W + x) as usize] == BLACK.0 {
-                    holes += 1;
-                }
-            }
-        }
-        assert_eq!(holes, 0, "{holes} unpainted pixels inside the ring band");
+        // It must not be mistakable for the zone dial behind it.
+        let mut riding = frame(SCREEN_RIDING);
+        riding.has_zones = 1;
+        riding.zone_count = 5;
+        riding.hr_zone = 3;
+        assert_ne!(buf, draw(&riding));
     }
 
     #[test]
