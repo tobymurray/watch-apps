@@ -64,11 +64,18 @@ private:
     /// breaking it -- but it is why the figure is an estimate.
     static constexpr float skDefaultWeightKg = 75.0f;
 
-    /// Zone buckets: [0] is below zone 1, [1..N] the zones themselves, so the
-    /// most buckets is one more than the most zones. Matches
-    /// ActivityWriter::kZoneBuckets and Track::Data::zoneSeconds.
     static constexpr size_t skMaxZones    = SpinConfig::kMaxZones;
     static constexpr size_t skZoneBuckets = skMaxZones + 1;
+
+    // Three places size a zone-bucket array and every one of them is indexed by
+    // hrZone, which runs to mZoneCount. Track::Data::zoneSeconds was left at 6
+    // when the dial grew from five zones to eight, so an eight-zone ride wrote
+    // past it into the calorie accumulators. Now they cannot drift apart
+    // silently again.
+    static_assert(Track::kZoneBuckets == skZoneBuckets,
+                  "Track::Data::zoneSeconds is not the size the Service indexes");
+    static_assert(ActivityWriter::kZoneBuckets == skZoneBuckets,
+                  "ActivityWriter's zone arrays are not the size the Service fills");
 
     // -- Infrastructure -------------------------------------------------------
 
