@@ -15,6 +15,7 @@ than living inside it.
 | [`GpsLab`](GpsLab) | The Running activity plus GNSS instrumentation — per-sample error estimate, fix and dead-reckoning state, recorded alongside the activity. |
 | [`HikeMap`](HikeMap) | The stock Hiking activity with the same live map. |
 | [`MapManager`](MapManager) | A background, autostart `Utility` app that discovers and CRC-verifies offline map packs dropped into the shared `SharedData/maps/` directory, so map-consuming apps read from one already-verified location instead of each running their own copy of this pipeline. |
+| [`NotifyToggle`](NotifyToggle) | A single on/off switch for phone-notification forwarding, reading and writing the watch's real `settings.json` flag directly, in-process — because the SDK's sandboxed filesystem API cannot reach that file at all on this firmware, and the paired phone app itself turns out to persist it over a plain BLE file overwrite rather than any documented mechanism. |
 | [`QrGuiPoc`](QrGuiPoc) | A proof slice built on `RustGuiPoc`'s architecture: `Barcode`'s QR screen alone, redrawn through CustomGUI + Rust instead of TouchGFX, reusing `Barcode`'s own encoder unmodified, to measure what the rewrite would actually cost before attempting the rest of the app. |
 | [`RunMap`](RunMap) | The stock Running activity with the same live map. |
 | [`RustGuiPoc`](RustGuiPoc) | A proof of concept: a watch app whose GUI is drawn by Rust and `embedded-graphics` through the SDK's CustomGUI entry point, instead of TouchGFX. It shows a live accelerometer reading, which a GUI process cannot read on its own, so the Service half feeds it over the message bus. |
@@ -34,7 +35,8 @@ goes — the code that draws it lives once, in [`MapKit`](MapKit), which is a
 shared directory rather than an app. `Spin` is new here too, forked from
 `Squash` for its Service half — the indoor, GPS-free shape of an activity was
 already right — and then given a Rust `CustomGUI` frontend instead of `Squash`'s
-TouchGFX one.
+TouchGFX one. `NotifyToggle` is new here too, built from scratch on the same
+Rust `CustomGUI` pattern.
 
 ## Building
 
@@ -81,12 +83,13 @@ the round-panel geometry that encoder is drawn into, and the service that turns
 `input.json` into a barcode, under [`Barcode/Tests`](Barcode/Tests), and the
 three map apps share one suite
 under [`MapKit/Tests`](MapKit/Tests), and `Spin` carries a decode-it-back test
-for the FIT file it writes under [`Spin/Tests`](Spin/Tests). `RustGuiPoc` and
-`QrGuiPoc`'s tests live inside their own crates rather than in a `Tests/`
-directory — see [RustGuiPoc's README](RustGuiPoc/README.md#tests) and
-[QrGuiPoc's](QrGuiPoc/README.md#tests) — and so do the renderer tests of the two
-apps that ship a Rust GUI, `Barcode` and `Spin`, which CI runs by discovering
-the crate rather than by being told about it.
+for the FIT file it writes under [`Spin/Tests`](Spin/Tests). `RustGuiPoc`,
+`QrGuiPoc` and `NotifyToggle`'s tests live inside their own crates rather than
+in a `Tests/` directory — see [RustGuiPoc's README](RustGuiPoc/README.md#tests),
+[QrGuiPoc's](QrGuiPoc/README.md#tests) and
+[NotifyToggle's](NotifyToggle/README.md#tests) — and so do the renderer tests
+of the three apps that ship a Rust GUI, `Barcode`, `NotifyToggle` and `Spin`,
+which CI runs by discovering the crate rather than by being told about it.
 
 `SleepLab`, `SunGlance`, `Spin`, `RustGuiPoc` and `QrGuiPoc` target `apps-v1.4.0`. `Chrono`,
 `MapManager` and the three map apps were pinned to `apps-v1.3.0` back when no

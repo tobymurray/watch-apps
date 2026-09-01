@@ -1,0 +1,5 @@
+# Real device backups (settings.json snapshots, debug logs) captured during
+# the live-settings-persistence investigation -- contains real personal
+# health data (height, weight, gender, date of birth, heart-rate zones).
+# Local diagnostic material only, never committed.
+DeviceBackups/
