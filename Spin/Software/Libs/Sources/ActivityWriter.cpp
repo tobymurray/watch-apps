@@ -23,28 +23,49 @@ using DevFieldDef = fit::FitWriter::DevField;
 
 namespace {
 
-// time_in_hr_zone, carried here rather than taken from SDK/Fit/FitProfile.hpp,
-// which lists only the fields UNA's own apps write and has no entry for it.
+// WIRE FORMAT. None of these are in SDK/Fit/FitProfile.hpp, so every number
+// came from the FIT profile itself via Tools/fit-profile/lookup.py, checked
+// against the Garmin FIT SDK profile (21.214.0Release) and python-fitparse,
+// which agree. They cannot be revised without invalidating every file already
+// written.
 //
-// These are wire format, not SDK API: the FIT profile assigns them globally and
-// they cannot be revised without invalidating every file already written. Both
-// were checked against the Garmin FIT SDK profile (21.214.0Release) and against
-// python-fitparse's independently generated copy, which agree.
+// A FIELD NUMBER IS NOT SHARED BETWEEN lap AND session, and every wrong number
+// below lands on a real field that looks plausible:
 //
-// THE TWO MESSAGES DO NOT USE THE SAME NUMBER, which is the whole reason this
-// comment exists. lap is 57 and session is 65. Session field 57 is
-// avg_temperature (sint8, degrees C) -- writing this uint32 array there would
-// have declared a temperature field as a six-element array and had every
-// decoder report nonsense for it, silently, in every file this app ever wrote.
+//   meant                     right  wrong  what actually lives there
+//   session.time_in_hr_zone      65     57  avg_temperature, sint8, degrees C
+//   session.total_work           48     41  avg_stroke_count, uint32, strokes/lap
+//   session.avg_power            20     19  max_cadence, uint8, rpm
+//   lap.avg_power                19     20  max_power -- the average as the maximum
 //
-// Scale is 1000: the stored value is milliseconds, so seconds are multiplied
-// on the way in. The array is one element per zone bucket, index 0 being time
-// below zone 1 -- the layout kZoneBuckets describes.
+// Spin measures no temperature, no strokes and no cadence, so nothing would
+// look wrong from here; the damage is entirely in the reader.
+// ActivityWriter_test.cpp asserts the session wrote nothing into 57, 41, 19 or
+// 21, and that no lap carried a work field.
 constexpr uint8_t kLapTimeInHrZoneNum     = 57;
 constexpr uint8_t kSessionTimeInHrZoneNum = 65;
+constexpr uint8_t kSessionTotalWorkNum    = 48;
+constexpr uint8_t kSessionAvgPowerNum     = 20;
 
-/// FIT scale for time_in_hr_zone: the file stores milliseconds.
+/// time_in_hr_zone is stored in milliseconds; the app holds seconds.
 constexpr uint32_t kTimeInHrZoneScale = 1000;
+
+/// total_work is defined in JOULES, and the wearer enters kilojoules.
+constexpr uint32_t kJoulesPerKilojoule = 1000;
+
+/// Work over ACTIVE seconds, not elapsed: a ride paused for ten minutes did no
+/// work in them. Rounds rather than truncating, which would lose up to a watt
+/// in the same direction every ride -- a bias, not noise.
+uint16_t averageWatts(uint32_t joules, std::time_t activeSeconds)
+{
+    if (joules == 0 || activeSeconds <= 0) {
+        return 0;
+    }
+    const uint64_t seconds = static_cast<uint64_t>(activeSeconds);
+    const uint64_t watts   = (static_cast<uint64_t>(joules) + seconds / 2) / seconds;
+    constexpr uint64_t kMaxWatts = 65535;   // the field is a uint16
+    return static_cast<uint16_t>(watts > kMaxWatts ? kMaxWatts : watts);
+}
 
 }  // namespace
 
@@ -56,8 +77,8 @@ ActivityWriter::ActivityWriter(const SDK::Kernel& kernel, const char* pathToDir)
 
 void ActivityWriter::start(const AppInfo& info)
 {
-    // A ride with no zones writes no zone array at all, rather than one full of
-    // zeros a reader would take as "nowhere near a zone all ride".
+    // A ride with no zones writes no zone array, rather than one full of zeros
+    // a reader would take as "nowhere near a zone all ride".
     mZoneBuckets = (info.zoneCount > 0 && info.zoneCount <= kMaxZones)
                        ? static_cast<uint8_t>(info.zoneCount + 1)
                        : 0;
@@ -98,19 +119,16 @@ void ActivityWriter::start(const AppInfo& info)
         mFit->data(L_DEV_ID).bytes(appId, sizeof(appId)).u8(0).write();
     }
 
-    // Developer field descriptions (label/units survive any profile).
+    // Developer fields are self-describing, so they survive any profile.
     writeFieldDescription(DF_BATTERY_LEVEL, "batteryLevel", "%", fit::BaseType::UInt8);
     writeFieldDescription(DF_BATTERY_VOLTAGE, "battVoltage", "mV", fit::BaseType::UInt16);
     writeFieldDescription(DF_HR_SOURCE, "hr_source", nullptr, fit::BaseType::UInt8);
     writeFieldDescription(DF_HR_OPTICAL, "hr_optical", "bpm", fit::BaseType::UInt8);
     writeFieldDescription(DF_HR_EXTERNAL, "hr_external", "bpm", fit::BaseType::UInt8);
-    // Lap resting calories stays a developer field, and for a checked reason
-    // rather than a cautious one: the FIT profile has no lap.resting_calories.
-    // There is nothing to promote it to. (session.metabolic_calories, field
-    // 196, does exist and is used natively below.) Checked against the Garmin
-    // FIT SDK profile 21.214.0 and python-fitparse's independently generated
-    // copy, which agree: `lap` has total_calories (11) and total_fat_calories
-    // (12) and nothing else in the family.
+    // WIRE FORMAT: there is no lap.resting_calories to promote this to. `lap`
+    // has total_calories (11) and total_fat_calories (12) and nothing else in
+    // the family; session.metabolic_calories (196) does exist and is native
+    // below. Re-check with Tools/fit-profile/lookup.py lap.
     writeFieldDescription(DF_LAP_RESTING_CAL, "resting_calories", "kcal", fit::BaseType::UInt16);
 
     // event
@@ -120,11 +138,8 @@ void ActivityWriter::start(const AppInfo& info)
 
     defineRecordMessages();
 
-    // lap / session / activity
-    // The zone arrays are declared as long as this ride has zones, so a
-    // five-zone ride's definitions differ from an eight-zone ride's.
+    // The zone array is as long as this ride has zones.
     const Field lapZones{kLapTimeInHrZoneNum, fit::BaseType::UInt32, mZoneBuckets};
-    const Field sessionZones{kSessionTimeInHrZoneNum, fit::BaseType::UInt32, mZoneBuckets};
 
     if (mZoneBuckets > 0) {
         mFit->defineMessage(L_LAP, fit::mesgNum(fit::MesgNum::Lap),
@@ -134,14 +149,6 @@ void ActivityWriter::start(const AppInfo& info)
              fit::field::Lap::MaxHeartRate, fit::field::Lap::TotalCalories,
              lapZones},
             {{DF_LAP_RESTING_CAL, 2, 0}});
-        mFit->defineMessage(L_SESSION, fit::mesgNum(fit::MesgNum::Session),
-            {fit::field::Session::Timestamp, fit::field::Session::StartTime,
-             fit::field::Session::TotalElapsedTime, fit::field::Session::TotalTimerTime,
-             fit::field::Session::MessageIndex, fit::field::Session::NumLaps,
-             fit::field::Session::Sport, fit::field::Session::SubSport,
-             fit::field::Session::AvgHeartRate, fit::field::Session::MaxHeartRate,
-             fit::field::Session::TotalCalories, fit::field::Session::MetabolicCalories,
-             sessionZones});
     } else {
         mFit->defineMessage(L_LAP, fit::mesgNum(fit::MesgNum::Lap),
             {fit::field::Lap::Timestamp, fit::field::Lap::StartTime,
@@ -149,14 +156,10 @@ void ActivityWriter::start(const AppInfo& info)
              fit::field::Lap::MessageIndex, fit::field::Lap::AvgHeartRate,
              fit::field::Lap::MaxHeartRate, fit::field::Lap::TotalCalories},
             {{DF_LAP_RESTING_CAL, 2, 0}});
-        mFit->defineMessage(L_SESSION, fit::mesgNum(fit::MesgNum::Session),
-            {fit::field::Session::Timestamp, fit::field::Session::StartTime,
-             fit::field::Session::TotalElapsedTime, fit::field::Session::TotalTimerTime,
-             fit::field::Session::MessageIndex, fit::field::Session::NumLaps,
-             fit::field::Session::Sport, fit::field::Session::SubSport,
-             fit::field::Session::AvgHeartRate, fit::field::Session::MaxHeartRate,
-             fit::field::Session::TotalCalories, fit::field::Session::MetabolicCalories});
     }
+    // L_SESSION is NOT defined here. Whether the session carries a work figure
+    // is not known until the ride ends, and an absent field has to be absent
+    // from the definition -- see defineSessionMessage().
     mFit->defineMessage(L_ACTIVITY, fit::mesgNum(fit::MesgNum::Activity),
         {fit::field::Activity::Timestamp, fit::field::Activity::TotalTimerTime,
          fit::field::Activity::LocalTimestamp, fit::field::Activity::NumSessions});
@@ -195,13 +198,45 @@ void ActivityWriter::defineRecordMessages()
         {batt5[0], batt5[1], batt5[2], batt5[3], batt5[4]});
 }
 
+void ActivityWriter::defineSessionMessage(bool withWork)
+{
+    const Field zones{kSessionTimeInHrZoneNum, fit::BaseType::UInt32, mZoneBuckets};
+    const Field work{kSessionTotalWorkNum, fit::BaseType::UInt32};
+    const Field power{kSessionAvgPowerNum, fit::BaseType::UInt16};
+
+    // Four spellings, because two fields are optional and defineMessage() takes
+    // an initializer_list, which cannot be built at runtime or spliced. The
+    // preprocessor can splice tokens, so the twelve mandatory fields are named
+    // once rather than copied out four times.
+#define SPIN_SESSION_FIELDS                                                        \
+    fit::field::Session::Timestamp, fit::field::Session::StartTime,                \
+    fit::field::Session::TotalElapsedTime, fit::field::Session::TotalTimerTime,    \
+    fit::field::Session::MessageIndex, fit::field::Session::NumLaps,               \
+    fit::field::Session::Sport, fit::field::Session::SubSport,                     \
+    fit::field::Session::AvgHeartRate, fit::field::Session::MaxHeartRate,          \
+    fit::field::Session::TotalCalories, fit::field::Session::MetabolicCalories
+
+    const uint16_t mesg = fit::mesgNum(fit::MesgNum::Session);
+    if (mZoneBuckets > 0 && withWork) {
+        mFit->defineMessage(L_SESSION, mesg, {SPIN_SESSION_FIELDS, zones, work, power});
+    } else if (mZoneBuckets > 0) {
+        mFit->defineMessage(L_SESSION, mesg, {SPIN_SESSION_FIELDS, zones});
+    } else if (withWork) {
+        mFit->defineMessage(L_SESSION, mesg, {SPIN_SESSION_FIELDS, work, power});
+    } else {
+        mFit->defineMessage(L_SESSION, mesg, {SPIN_SESSION_FIELDS});
+    }
+
+#undef SPIN_SESSION_FIELDS
+}
+
 void ActivityWriter::writeFieldDescription(uint8_t devFieldNum, const char* name,
                                            const char* units, fit::BaseType baseType)
 {
     const uint8_t nameLen  = name ? static_cast<uint8_t>(std::strlen(name) + 1) : 1;
     const uint8_t unitsLen = units ? static_cast<uint8_t>(std::strlen(units) + 1) : 1;
 
-    // Redefine the field_description slot to size the name/units strings exactly.
+    // Redefined per call, to size the name/units strings exactly.
     mFit->defineMessage(L_FIELD_DESC, fit::mesgNum(fit::MesgNum::FieldDescription),
         {fit::field::FieldDescription::DeveloperDataIndex,
          fit::field::FieldDescription::FieldDefinitionNumber,
@@ -255,11 +290,9 @@ void ActivityWriter::addRecord(const RecordData& record)
 
     d.write();
 
-    // Periodic durability flush: sync to eMMC and advance the marker to this
-    // record boundary so a later crash recovers a record-complete file.
     if (record.timestamp - mLastFlushUtc >= skFlushIntervalSec) {
-        // Only advance the marker when the flush durably landed; otherwise keep
-        // the previous good offset (never point recover() past non-durable data).
+        // Advance the marker only when the flush landed, so recover() is never
+        // pointed past non-durable data.
         if (mFile->flush()) {
             mMarker.update(static_cast<uint32_t>(mFile->getPosition()));
             mLastFlushUtc = record.timestamp;
@@ -290,8 +323,6 @@ void ActivityWriter::addLap(const LapData& lap)
 
     mLapCounter++;
 
-    // Laps are sparse: flush and advance the marker, but only when the flush
-    // durably landed (else keep the previous good offset).
     if (mFile->flush()) {
         mMarker.update(static_cast<uint32_t>(mFile->getPosition()));
         mLastFlushUtc = lap.timestamp;
@@ -301,9 +332,8 @@ void ActivityWriter::addLap(const LapData& lap)
 void ActivityWriter::writeZoneSeconds(fit::FitWriter::Data& d,
                                       const std::time_t (&zones)[kZoneBuckets]) const
 {
-    // Scaled by 1000, so the file holds milliseconds. Only as many buckets as
-    // this ride declared: the definition and the data must agree on the array's
-    // length or the message is malformed.
+    // Only as many buckets as this ride declared: definition and data must
+    // agree on the length or the message is malformed.
     for (size_t i = 0; i < mZoneBuckets; ++i) {
         d.u32(static_cast<uint32_t>(zones[i]) * kTimeInHrZoneScale);
     }
@@ -317,6 +347,19 @@ bool ActivityWriter::stop(const TrackData& track)
 
     bool ok = mFit->ok();
 
+    // Absent, not zero: `total_work = 0` is a measurement claiming the wearer
+    // produced nothing, which a platform downstream would average into a season.
+    // Out of the DEFINITION rather than written as an invalid sentinel, because
+    // a sentinel is absent only to a decoder that honours it.
+    const uint32_t workJoules =
+        static_cast<uint32_t>(track.workKilojoules) * kJoulesPerKilojoule;
+    const uint16_t watts = averageWatts(workJoules, track.duration);
+    // Both or neither: a total_work with no avg_power leaves a reader dividing
+    // by a duration it may define differently.
+    const bool withWork = track.workKilojoules > 0 && watts > 0;
+
+    defineSessionMessage(withWork);
+
     fit::FitWriter::Data session = mFit->data(L_SESSION);
     session
         .u32(unixToFitTimestamp(track.timestamp))
@@ -325,12 +368,9 @@ bool ActivityWriter::stop(const TrackData& track)
         .u32(static_cast<uint32_t>(track.duration * 1000))
         .u16(0)  // message_index
         .u16(mLapCounter)
-        // A stationary bike is cycling that goes nowhere, and the FIT profile
-        // says so in two fields rather than one: sport=cycling is what a
-        // consumer aggregates under, sub_sport=indoor_cycling is what stops it
-        // asking where the ride went. Both come from the SDK's profile header,
-        // which already carries this pair — unlike the racket family this app
-        // was forked from, which it does not.
+        // Two fields, not one: sport=cycling is what a consumer aggregates
+        // under, sub_sport=indoor_cycling is what stops it asking where the
+        // ride went.
         .u8(static_cast<uint8_t>(fit::Sport::Cycling))
         .u8(static_cast<uint8_t>(fit::SubSport::IndoorCycling))
         .u8(static_cast<uint8_t>(track.hrAvg))
@@ -338,6 +378,10 @@ bool ActivityWriter::stop(const TrackData& track)
         .u16(static_cast<uint16_t>(track.calories + 0.5f))
         .u16(static_cast<uint16_t>(track.metabolicCalories + 0.5f));
     writeZoneSeconds(session, track.zoneSeconds);
+    // In definition order, so these come after the zone array.
+    if (withWork) {
+        session.u32(workJoules).u16(watts);
+    }
     ok = session.write() && ok;
 
     ok = mFit->data(L_ACTIVITY)
@@ -361,21 +405,14 @@ bool ActivityWriter::stop(const TrackData& track)
         ok = false;
     }
 
-    // The .fit is durably finished on disk: drop the recovery marker so the
-    // next boot does not treat this activity as interrupted.
+    // Durably on disk, so the next boot must not treat this as interrupted.
     if (ok) {
         mMarker.remove();
     }
 
-    // FIT durability IS the save-success contract: the kernel auto-registers the
-    // .fit the moment its FileGuard::close() fires (and recoverInterrupted()
-    // re-registers after a crash), so once `ok` is true the activity is never
-    // orphaned. The .json summary is auxiliary/best-effort — recovery cannot
-    // rebuild it — so a summary-only failure must NOT suppress registration.
-    // Attempt it ONLY when the FIT is durable (ok): with ok == false the marker
-    // is kept for next-boot recovery / the FIT is invalid, so a .json sidecar
-    // would misrepresent a non-durable activity. Log on failure; the return
-    // value is gated on FIT durability regardless.
+    // Only when the FIT is durable: with ok == false the marker is kept for
+    // next-boot recovery, and a sidecar would misrepresent the activity. The
+    // summary is best-effort, so its failure never flips the return value.
     if (ok && !saveSummary(track)) {
         LOG_ERROR("Activity summary (.json) save failed; FIT is durable and registered\n");
     }
@@ -407,10 +444,8 @@ void ActivityWriter::addMessageEvent(std::time_t t, fit::EventType type)
 
 bool ActivityWriter::recoverInterrupted()
 {
-    // All marker I/O + FitWriter::recover() orchestration lives in the shared
-    // SDK::Fit::RecordingMarker. Recovery needs no sibling .json to register a
-    // recovered activity (the kernel's activity registry tracks .fit files
-    // only), so this is pure wiring.
+    // The kernel's activity registry tracks .fit files only, so a recovered
+    // activity needs no sibling .json.
     const auto result = mMarker.recover();
     if (result.recovered) {
         LOG_INFO("Recovery: finalized interrupted activity [%s]\n", result.path.c_str());

@@ -45,6 +45,11 @@ Everything else in the file, all asserted in
   [below](#time-in-zone-and-the-field-number-that-is-not-shared).
 - **Active and resting calories**, as `total_calories` and
   `metabolic_calories`.
+- **The work the bike reported**, when the wearer typed it in, as
+  `total_work` in joules and the `avg_power` it implies — the two native fields
+  that let something downstream work out whether you are getting fitter.
+  Absent, not zero, on a ride where nobody said. See
+  [below](#the-kilojoules-the-bike-knows).
 
 A `.json` summary lands beside the `.fit`, saying `"activity_type": "cycling"`.
 It is auxiliary and best-effort by contract — the FIT file is what
@@ -150,7 +155,7 @@ evenly from half the maximum heart rate up to it, which is the watch's own rule:
 its ladder is 50/60/70/80/90/100% of maximum. At five zones that reproduces the
 watch's floors *exactly*, which is the reason to trust it at three or eight —
 it is the same rule at a different count, not a training model invented here.
-[`ZoneSpread_test.cpp`](Tests/ZoneSpread_test.cpp) asserts that match, so if it
+[`ZoneLadder_test.cpp`](Tests/ZoneLadder_test.cpp) asserts that match, so if it
 ever stops holding the argument for the rule goes with it.
 
 Fill the floors in to follow a published model instead. Zone *N* runs from its
@@ -200,20 +205,197 @@ active second regardless, and is reported separately as
 It is a model, not calorimetry. It will be wrong for you by some steady factor,
 and it is most useful compared against itself ride to ride.
 
-**There is no kJ-of-work figure, and there will not be one without a power
-meter.** In cycling, kJ means mechanical work, which comes from power — and
-that it lands close to the kcal you burned is a coincidence of human efficiency
-being about a quarter. Deriving kJ from a heart-rate calorie estimate and
-labelling it kJ would put a number on screen that a rider would compare against
-their power meter and find roughly four times too large, in exactly the unit
-that invites the comparison. Silent, familiar and wrong is the worst of the
-three.
+**The watch will never *derive* a kJ-of-work figure.** In cycling, kJ means
+mechanical work, which comes from power — and that it lands close to the kcal
+you burned is a coincidence of human efficiency being about a quarter. Deriving
+kJ from a heart-rate calorie estimate and labelling it kJ would put a number on
+screen that a rider would compare against their power meter and find roughly
+four times too large, in exactly the unit that invites the comparison. Silent,
+familiar and wrong is the worst of the three.
+
+The way to have the number honestly is to **ask** — which is what the screen
+[below](#the-kilojoules-the-bike-knows) does. A measurement with a source is a
+different thing from a guess wearing the same unit, and the distinction is
+load-bearing enough that the entry screen refuses to pre-fill itself with the
+guess.
 
 What **is** offered is kJ as a unit for the same dietary energy — 1 kcal =
 4.184 kJ, the unit food labels use across much of the world. That is a
 relabelling of the estimate, not a different measurement, and the `Energy in
 kJ` setting says so. **The FIT file always records kcal**, because that is the
 unit `total_calories` is defined in.
+
+## The kilojoules the bike knows
+
+![Nothing said, 430 entered, and a ride with no estimate to offer](Docs/screens-work.png)
+
+Spin measures **strain** and not **work**, and the gap between those is why
+nothing in this app can show you getting fitter. Heart rate alone is confounded
+by sleep, heat, caffeine and stress, so "142 bpm again" says nothing about
+fitness. Work is the missing half: kJ ÷ duration is average power, and average
+power ÷ average heart rate is Efficiency Factor — which rising at a constant
+heart rate is precisely what getting fitter looks like.
+
+The watch cannot measure work. The bike in front of you already has. So when a
+ride ends, before the file is written, the screen asks for the number on the
+console.
+
+**The analysis is not on the watch, and must not be.** `total_work` and
+`avg_power` are native FIT fields and the manifest already sets
+`stravaExport: true`, so Intervals.icu and TrainingPeaks compute the trend for
+free once the numbers are in the file. A training log on a 240×240 panel would
+be a worse version of a thing that already exists.
+
+### Two buttons, two places, no mode
+
+Four buttons, `CLICK` only, no auto-repeat, no touch — and two of the four are
+spoken for on every screen in this app (R1 acts, R2 leaves). So the number gets
+exactly two: **L1 advances the hundreds, L2 advances the tens.** Each wraps
+within itself and carries nothing, so a click always moves the value by exactly
+the amount printed on the button, and overshooting one place never disturbs the
+other.
+
+The alternatives were measured rather than argued. Over 200,000 simulated
+sessions (25–90 min at 70–280 W, median 490 kJ), clicks to enter the value:
+
+| scheme | mean | p50 | p95 | max |
+|---|---:|---:|---:|---:|
+| **two places, +100 / +10** | **9.2** | **9** | **15** | **22** |
+| one adder + a 100↔10 step toggle | 10.2 | 10 | 16 | 23 |
+| one adder + a 100/10/1 step cycle | 10.2 | 10 | 16 | 23 |
+| increment + a digit cursor | 10.2 | 10 | 16 | 23 |
+
+Every scheme that needs a mode pays exactly the one click it spends changing
+the mode — and then still has the mode, for a wearer to track while out of
+breath. So the mode buys nothing and is not there.
+
+**The step is 10 kJ.** A third place costs 6.4 clicks on average (9.2 → 15.6)
+and buys ±5 kJ, which on a 45-minute ride is ±1.85 W. That is inside the
+console's own accuracy, and it is unbiased — rounding to the nearest ten is as
+often high as low, so it adds noise to one ride and shifts no trend.
+
+**The hundreds run to 19, not 9.** Stopping at 990 kJ would make 2.3% of those
+sessions unenterable, and a two-hour trainer ride at 200 W is 1440 kJ. Reaching
+1990 costs nothing on a typical ride, because the cost is the hundreds digit and
+that digit is under 10 for a typical ride.
+
+The labels are formatted from the same constants the buttons add, so `+100` and
+the arithmetic cannot drift apart. [`work.rs`](Software/Apps/CustomGUI/rust/src/work.rs)
+owns both, and its tests are what hold the promise.
+
+### Nothing is pre-filled, and that is the whole point
+
+The obvious seed is the app's own calorie estimate, which for cycling lands
+within about 10% of the work in kJ. **It is the wrong thing to put in the
+field.** `total_work` carries no "estimated" flag, so a wearer who pressed SAVE
+on an unedited seed would write a heart-rate-derived number into the one field
+whose purpose is to be independent of heart rate — and Efficiency Factor
+computed from it would be a fixed function of the calorie model rather than a
+measurement, flat no matter how fit anyone got. Half a season of console
+numbers mixed with half a season of seeds is worse than either alone.
+
+So the estimate is shown *beside* the field and never in it: dim, labelled
+`ESTIMATE`, doing the one job it is honest at — catching an entry that is off by
+a factor of ten. Every digit that reaches the file was put there by the wearer.
+
+### Skipping is a normal ride, not an escape hatch
+
+Most rides will not have a number entered. The wearer may not care, may be in a
+hurry, or may be on a bike with no console. **SKIP is one labelled click, drawn
+as brightly as SAVE**, and the ride it produces records exactly what this app
+recorded before the screen existed — same fields, same values, same durability
+contract, same `RideSaved`, same SAVED screen. (Not byte-identical: the session
+definition moved later in the stream, for the reason below. Nothing a reader
+sees changed.)
+
+And the file **omits both fields entirely** rather than writing zeros. Zero is a
+*measurement* meaning the wearer pedalled and produced nothing; absent means
+nobody said. Any platform downstream would average a zero into your season. The
+fields are left out of the session's message *definition*, not merely written as
+an invalid sentinel — a declared field is absent only to a decoder that honours
+sentinels, and this is the one place in the app with no way to check what read
+the file. That is also why the session definition is emitted in `stop()` rather
+than beside the others in `start()`: whether the ride has a work figure is not
+known until it ends.
+
+`askForKilojoules` turns the question off for a bike that has no console. It
+defaults to **on**, because a screen nobody knows to enable is a feature nobody
+has.
+
+### It rides on `TRACK_STOP`
+
+The FIT file is finalised when the Service handles `TRACK_STOP`, so the question
+comes *before* that message and the answer travels on it. Writing the file and
+then reopening it to amend it would put two things at risk for nothing: the
+durability contract `ActivityWriter::stop()` reports — which the SAVED screen
+repeats to the wearer as a fact about the filesystem — and the crash-recovery
+marker that is dropped on the strength of it. The ride ending stays one atomic
+event.
+
+A crash-recovered ride therefore has no work figure, because no screen ever ran.
+That is fine, and it has to stay fine: absent work is a normal state.
+
+### The field numbers, and the trap they share
+
+Neither field is in `SDK/Fit/FitProfile.hpp`, so both numbers came from the FIT
+profile itself via [`Tools/fit-profile`](../Tools/fit-profile). And they spring
+exactly the trap `time_in_hr_zone` already sprang here — worse, because every
+wrong number lands somewhere plausible:
+
+| Meant | Right | Wrong | What actually lives there |
+|---|---:|---:|---|
+| `session.total_work` | **48** | 41 | `avg_stroke_count`, uint32, strokes/lap |
+| `session.avg_power` | **20** | 19 | `max_cadence`, uint8, rpm |
+| `lap.avg_power` | 19 | 20 | `max_power` — the average, reported as the maximum |
+
+Spin measures no strokes and no cadence, so nothing would look wrong from the
+writing end. `ActivityWriter_test.cpp` asserts the session wrote nothing into
+41, 19 or 21, and the numbers themselves decode correctly under
+**python-fitparse**, which shares no code with the writer or with the SDK's test
+reader.
+
+**`total_work` is in joules**, not kilojoules. The wearer enters kJ; the file
+holds a thousand times that.
+
+### What is deliberately not written
+
+- **No per-record power stream.** Tempting, because it would make Strava draw a
+  power graph — but a constant stream makes normalized power ≈ average power,
+  and every platform downstream then computes a confidently wrong TSS from it.
+  Session totals only.
+- **No `training_stress_score` or `intensity_factor`.** Both need a real FTP.
+  Derived from a fake NP they are precision-shaped garbage.
+- **Nothing in `total_training_effect`.** That field is Firstbeat's 0–5 aerobic
+  TE and means something specific.
+- **Nothing on the lap.** One number covers the whole ride and cannot be
+  honestly divided between auto-lap splits; apportioning it by time would be
+  inventing a distribution, which is the per-record argument one level up.
+
+## What the phone shows
+
+`customMeasures` in [`app-manifest.json`](app-manifest.json) is the mechanism by
+which anything beyond the standard metrics appears in the UNA phone app after an
+activity. It is a manifest concept and not a FIT one — the display layer,
+independent of whether the number underneath is a native field or a developer
+field.
+
+It had been `[]` since the first release, which meant the four developer fields
+this app has always written (`resting_calories`, `hr_source`, `hr_optical`,
+`hr_external`) were **invisible on the phone**. They are declared now, along
+with the two new ones:
+
+| Measure | Unit | Shown as |
+|---|---|---|
+| `total_work` | kJ | a number, in the preview |
+| `avg_power` | W | a number, in the preview |
+| `resting_calories` | kcal | a number |
+| `hr_source` | — | a line chart |
+| `hr_optical` | bpm | a line chart |
+| `hr_external` | bpm | a line chart |
+
+Every entry names the app's own `icon.png`: Spin ships one icon, and the packer
+does no icon processing at all today, so a path to per-measure art nobody has
+drawn would be a promise the repository could not keep.
 
 ## Settings
 
@@ -228,10 +410,17 @@ a change takes effect on the next ride rather than the next reinstall.
 | `targetMinutes` | 0 (off) | Buzz once at this many minutes and say `TARGET MET` on the screen. |
 | `keepScreenLit` | off | Hold the backlight on for the whole ride. |
 | `energyInKilojoules` | off | Show energy as kJ instead of kcal. Display only. |
+| `askForKilojoules` | **on** | Ask for the bike console's kJ when a ride ends, and record them as work and average power. |
 | `hrZoneCount` | 5 | How many zones, 2 to 8. 0 takes the watch's count. |
 | `hrZone1Min` … `hrZone8Min` | 0 | The bpm floor of each zone. All 0 spreads them over the watch's own range. |
 
 ![A target set, the target met, and energy in kJ](Docs/screens-config.png)
+
+`askForKilojoules` is the one default that is on rather than off. The screen it
+controls is the only way this app can learn what work a ride did, so hiding it
+behind a setting nobody knows to enable would be hiding the feature — and it
+costs a wearer who does not want it exactly one labelled click to skip. Off is
+for the bike with no console, where the question can never be answered.
 
 Both integer settings use 0 as "off" rather than carrying a separate toggle:
 there is no useful reading of "auto-lap every 0 minutes", so the value can
@@ -265,7 +454,14 @@ an accidental exit would cost the ride.
 | Ready | strap status, target if set | | | **START** | **EXIT** |
 | Riding | clock, heart rate, zone | | | pause | |
 | Paused | dimmed clock, `PAUSED` | **SAVE** | **DISCARD** | resume | |
+| Bike kJ | the number being built | **+100** | **+10** | **SAVE** | **SKIP** |
 | Saved / discarded | what happened | | | done | **DONE** |
+
+The kJ screen is the only one where all four buttons are live, and it is why
+`SAVE` on the paused screen no longer stops the ride outright: it asks first.
+Every other route to a stopped ride — skipping, discarding, the system
+force-stopping the app — reaches the file with no work figure, which is a
+perfectly normal ride.
 
 Each live button is marked by a short arc at its own corner of the bezel — the
 same mark the SDK's TouchGFX apps use, and it belongs to the zone ring's family
@@ -394,9 +590,12 @@ profile has no slot for.
 
 Deliberately, and the first two are firmware limits rather than choices:
 
-- **No cadence and no power.** Both need a BLE sensor the watch would have to
-  pair with itself, and an app can only opt in to accessory kinds the firmware
-  supports. Today that is heart rate.
+- **No cadence, and no *measured* power.** Both need a BLE sensor the watch
+  would have to pair with itself, and an app can only opt in to accessory kinds
+  the firmware supports. Today that is heart rate. The `avg_power` in the file
+  is arithmetic on a number the wearer read off the bike, not something this
+  watch measured — which is why it is a session total and never a per-second
+  series. See [the kilojoules the bike knows](#the-kilojoules-the-bike-knows).
 - **No broadcasting heart rate** to a trainer or to Zwift, for the same reason:
   that needs the BLE peripheral role.
 - **No distance or speed.** There is no honest way to produce either without a

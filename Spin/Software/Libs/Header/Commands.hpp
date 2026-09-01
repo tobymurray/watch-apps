@@ -3,11 +3,9 @@
  * @file    Commands.hpp
  * @brief   The whole Service <-> GUI protocol for a stationary ride.
  *
- * Six messages, because a ride that measures nothing but time and heart rate
- * has six things to say. The GUI owns no timer and no sensor: it draws the
- * last snapshot it was handed and sends button presses back, so the number on
- * the screen and the number in the FIT file can never be two different
- * measurements of the same second.
+ * The GUI owns no timer and no sensor: it draws the last snapshot it was handed
+ * and sends button presses back, so the number on the screen and the number in
+ * the FIT file can never be two measurements of the same second.
  ******************************************************************************
  */
 
@@ -58,10 +56,8 @@ namespace CustomMessage {
         {}
     };
 
-    /// External-accessory link status, forwarded from the kernel's
-    /// EVENT_ACCESSORY_STATUS. This is the strap's BLE link, not the heart rate
-    /// itself — a connected strap that has not produced a beat yet is still
-    /// CONNECTED here, which is exactly what the pre-ride screen wants to say.
+    /// The strap's BLE link, not the heart rate: a connected strap that has not
+    /// produced a beat yet is still CONNECTED here.
     struct AccessoryStatusUpd : public SDK::MessageBase {
         uint8_t state;     ///< SDK::Accessory::State
         char    name[24];  ///< device name (may be empty)
@@ -72,17 +68,14 @@ namespace CustomMessage {
         {}
     };
 
-    /// Sent once, after the FIT file is durably closed. `ok` is the durability
-    /// contract from ActivityWriter::stop(), so the GUI can tell the wearer the
-    /// ride was saved without having to believe it on the Service's word alone.
+    /// Sent once, after the FIT file is durably closed.
     struct RideSaved : public SDK::MessageBase {
         std::time_t duration;   ///< active seconds
         float       avgHr;      ///< bpm over the ride (0 when never measured)
         float       calories;   ///< kcal, active; the GUI converts for display
         bool        ok;         ///< the .fit is on disk and registered
-        /// The wearer threw the ride away. A different thing from `!ok`, which
-        /// is a ride that was meant to be kept and could not be written -- the
-        /// screen must not apologise for something that was asked for.
+        /// The wearer threw the ride away -- a different thing from `!ok`, so
+        /// the screen does not apologise for something that was asked for.
         bool        discarded;
         RideSaved()
             : SDK::MessageBase(RIDE_SAVED)
@@ -94,22 +87,20 @@ namespace CustomMessage {
         {}
     };
 
-    /// The parts of the app's configuration the screen has to show. Sent when
-    /// the GUI starts and again whenever the values are re-read, so a change
-    /// made on the phone shows up without reinstalling anything.
-    ///
-    /// Only the target is here. Auto-lap and the backlight setting change what
-    /// the watch *does*, not what it draws, so sending them would be a field
-    /// the GUI never reads.
+    /// The parts of the app's configuration the screen has to show. Auto-lap
+    /// and the backlight change what the watch does rather than what it draws,
+    /// so they are not here.
     struct RideConfigUpd : public SDK::MessageBase {
         uint16_t targetMinutes;        ///< 0 = no target
         bool     energyInKilojoules;   ///< display unit only; the file is kcal
         uint8_t  zoneCount;            ///< segments on the dial, 0 = no zones set
+        bool     askForKilojoules;   ///< a whole screen, so the GUI needs it
         RideConfigUpd()
             : SDK::MessageBase(RIDE_CONFIG)
             , targetMinutes(0)
             , energyInKilojoules(false)
             , zoneCount(0)
+            , askForKilojoules(true)
         {}
     };
 
@@ -121,9 +112,21 @@ namespace CustomMessage {
 
     struct TrackStop : public SDK::MessageBase {
         bool discard;   ///< true: throw the ride away; false: save it
+
+        /// kJ from the bike console; 0 = nobody said. A completed ride never did
+        /// zero work, so the one value that cannot be a measurement carries the
+        /// absence of one, and the protocol needs no second flag.
+        ///
+        /// It rides on TRACK_STOP because that is when the FIT file is
+        /// finalised: asking afterwards would mean reopening a closed .fit and
+        /// risking ActivityWriter::stop()'s durability contract to save a
+        /// message.
+        uint16_t workKilojoules;
+
         TrackStop()
             : SDK::MessageBase(TRACK_STOP)
             , discard(false)
+            , workKilojoules(0)
         {}
     };
 
@@ -135,7 +138,7 @@ namespace CustomMessage {
         TrackResume() : SDK::MessageBase(TRACK_RESUME) {}
     };
 
-/// Allocate/send/release, so neither half ever writes that dance out by hand.
+/// Allocate/send/release, so neither half writes that dance out by hand.
 class Sender {
 public:
     explicit Sender(const SDK::Kernel &kernel) : mKernel(kernel) {}
@@ -162,12 +165,14 @@ public:
         });
     }
 
-    bool rideConfig(uint16_t targetMinutes, bool energyInKilojoules, uint8_t zoneCount)
+    bool rideConfig(uint16_t targetMinutes, bool energyInKilojoules, uint8_t zoneCount,
+                    bool askForKilojoules)
     {
         return send<RideConfigUpd>([&](RideConfigUpd *m) {
             m->targetMinutes      = targetMinutes;
             m->energyInKilojoules = energyInKilojoules;
             m->zoneCount          = zoneCount;
+            m->askForKilojoules   = askForKilojoules;
         });
     }
 
@@ -187,9 +192,14 @@ public:
     bool trackPause()  { return send<TrackPause>([](TrackPause *) {}); }
     bool trackResume() { return send<TrackResume>([](TrackResume *) {}); }
 
-    bool trackStop(bool discard)
+    /// @param workKilojoules  kJ, or 0 for "nobody said". Not defaulted: a
+    ///        caller with no number should have to write the 0 that says so.
+    bool trackStop(bool discard, uint16_t workKilojoules)
     {
-        return send<TrackStop>([&](TrackStop *m) { m->discard = discard; });
+        return send<TrackStop>([&](TrackStop *m) {
+            m->discard        = discard;
+            m->workKilojoules = workKilojoules;
+        });
     }
 
 private:

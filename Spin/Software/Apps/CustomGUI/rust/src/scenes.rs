@@ -1,13 +1,10 @@
-//! The frames worth looking at, in one place.
-//!
-//! Shared by the PNG dump (`preview`), the interactive window (`sim`) and the
-//! unit tests, so "every screen still draws" is checked against the same list
-//! a human reviews rather than a second list that can drift from it.
+//! The frames worth looking at, shared by `preview`, `sim` and the unit tests,
+//! so "every screen still draws" is checked against the list a human reviews.
 
 use crate::{
     Frame, HR_EXTERNAL, HR_NONE, HR_OPTICAL, SCREEN_CONFIRM_DISCARD, SCREEN_DISCARDED,
-    SCREEN_PAUSED, SCREEN_READY, SCREEN_RIDING, SCREEN_SAVED, STRAP_ABSENT,
-    STRAP_CONNECTED, STRAP_SEARCHING,
+    SCREEN_ENTER_WORK, SCREEN_PAUSED, SCREEN_READY, SCREEN_RIDING, SCREEN_SAVED,
+    STRAP_ABSENT, STRAP_CONNECTED, STRAP_SEARCHING,
 };
 
 fn ready(strap: u8) -> Frame {
@@ -29,7 +26,6 @@ fn riding(screen: u8, elapsed_s: u32, hr_bpm: u16, hr_source: u8) -> Frame {
     }
 }
 
-/// The same ride on a watch whose wearer has set their zone thresholds.
 fn in_zone(mut f: Frame, zone: u8) -> Frame {
     f.hr_zone = zone;
     f.zone_count = 5;
@@ -38,8 +34,6 @@ fn in_zone(mut f: Frame, zone: u8) -> Frame {
     f
 }
 
-/// A dial with a different number of segments: three for a polarised split,
-/// eight for the long ladders.
 fn zones(mut f: Frame, count: u8, zone: u8) -> Frame {
     f.zone_count = count;
     f.hr_zone = zone;
@@ -48,11 +42,15 @@ fn zones(mut f: Frame, count: u8, zone: u8) -> Frame {
     f
 }
 
-/// The needle at a named position within its zone.
 fn at(mut f: Frame, zone: u8, fraction: u8) -> Frame {
     f = in_zone(f, zone);
     f.hr_zone_fraction = fraction;
     f
+}
+
+/// `work_estimate_kj` of 0 draws no reference row.
+fn enter_work(work_kj: u16, work_estimate_kj: u16) -> Frame {
+    Frame { screen: SCREEN_ENTER_WORK, work_kj, work_estimate_kj, ..Frame::default() }
 }
 
 fn saved(elapsed_s: u32, avg_hr_bpm: u16, energy: u16, ok: bool) -> Frame {
@@ -71,17 +69,17 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
         ("ready_no_strap", ready(STRAP_ABSENT)),
         ("ready_searching", ready(STRAP_SEARCHING)),
         ("ready_strap", ready(STRAP_CONNECTED)),
-        // The first minute, when the clock is at its narrowest.
+        // The clock at its narrowest.
         ("riding_start", riding(SCREEN_RIDING, 7, 0, HR_NONE)),
         ("riding_wrist", riding(SCREEN_RIDING, 754, 118, HR_OPTICAL)),
         ("riding_strap", riding(SCREEN_RIDING, 754, 142, HR_EXTERNAL)),
-        // With zones set, every zone the bar can show, plus below zone 1.
+        // Every zone the dial can show, plus below zone 1.
         ("zone_below", in_zone(riding(SCREEN_RIDING, 92, 88, HR_EXTERNAL), 0)),
         ("zone_1", in_zone(riding(SCREEN_RIDING, 312, 101, HR_EXTERNAL), 1)),
         ("zone_3", in_zone(riding(SCREEN_RIDING, 1204, 138, HR_EXTERNAL), 3)),
         ("zone_5", in_zone(riding(SCREEN_RIDING, 2610, 179, HR_EXTERNAL), 5)),
-        // The needle at both ends of a zone and in the middle: 93 and 109 bpm
-        // both sit in zone 1 and used to look identical.
+        // Both ends of a zone and the middle: 93 and 109 bpm both sit in zone
+        // 1 and used to look identical.
         ("needle_low_in_zone", at(riding(SCREEN_RIDING, 300, 93, HR_EXTERNAL), 1, 6)),
         ("needle_high_in_zone", at(riding(SCREEN_RIDING, 340, 109, HR_EXTERNAL), 1, 249)),
         ("needle_zone_4_mid", at(riding(SCREEN_RIDING, 1500, 157, HR_EXTERNAL), 4, 128)),
@@ -90,22 +88,20 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
         ("zones_4_of_7", zones(riding(SCREEN_RIDING, 900, 141, HR_EXTERNAL), 7, 4)),
         ("zones_6_of_8", zones(riding(SCREEN_RIDING, 900, 155, HR_EXTERNAL), 8, 6)),
         ("zones_2_of_2", zones(riding(SCREEN_RIDING, 900, 120, HR_EXTERNAL), 2, 2)),
-        // A strap that dropped out mid-ride: the clock keeps going, the beat
-        // does not, and the screen has to say so rather than hold the number.
+        // A strap that dropped out mid-ride.
         ("riding_dropout", riding(SCREEN_RIDING, 1830, 0, HR_NONE)),
         ("riding_three_digit_hr", riding(SCREEN_RIDING, 2400, 187, HR_EXTERNAL)),
-        // A target part-way through, so the arc in the bottom gap is partly filled.
+        // The arc in the bottom gap, partly filled.
         (
             "riding_target_half",
             Frame { target_minutes: 45, hr_zone: 3, has_zones: 1,
                     ..riding(SCREEN_RIDING, 1250, 144, HR_EXTERNAL) },
         ),
-        // The hour boundary, where the clock grows a field and drops a size.
+        // Where the clock grows a field and drops a size.
         ("riding_one_hour", riding(SCREEN_RIDING, 3725, 133, HR_EXTERNAL)),
         ("riding_long", riding(SCREEN_RIDING, 36_061, 121, HR_EXTERNAL)),
         ("ready_target", ready_with_target(STRAP_CONNECTED, 45)),
-        // The target met, and then the same ride paused: one banner slot, and
-        // the pause has to win it.
+        // One banner slot, and the pause has to win it.
         (
             "riding_target_met",
             Frame { target_minutes: 30, target_reached: 1, hr_zone: 4, has_zones: 1,
@@ -120,6 +116,12 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
         ("paused_no_hr", riding(SCREEN_PAUSED, 912, 0, HR_NONE)),
         ("discard_confirm", Frame { screen: SCREEN_CONFIRM_DISCARD, ..Frame::default() }),
         ("discarded", Frame { screen: SCREEN_DISCARDED, ..Frame::default() }),
+        ("enter_work_zero", enter_work(0, 390)),
+        // No heart rate means no calorie estimate, so no reference row.
+        ("enter_work_no_estimate", enter_work(0, 0)),
+        ("enter_work_typical", enter_work(430, 390)),
+        // Both places at their limit: the widest number the screen can hold.
+        ("enter_work_max", enter_work(1990, 1720)),
         ("saved", saved(2712, 141, 402, true)),
         ("saved_kj", Frame { energy_is_kj: 1, ..saved(2712, 141, 1682, true) }),
         ("saved_no_hr", saved(2712, 0, 61, true)),
