@@ -18,13 +18,6 @@ namespace
 {
 constexpr uint32_t kWaitForever = 0xFFFFFFFF;
 
-/// The kernel's arbiter reports 0..3; 1..3 is a reading it stands behind. The
-/// same gate the Service applies before writing a beat to the FIT file, so the
-/// screen and the file never disagree about whether there was a heart rate.
-constexpr float kHrTrustMin = 1.0f;
-constexpr float kHrTrustMax = 3.0f;
-constexpr float kHrMinBpm   = 20.0f;
-
 /// 1 kcal = 4.184 kJ. This converts *dietary* energy between its two units --
 /// it is not, and must never be presented as, the kilojoules of mechanical work
 /// a power meter reports. Those need power, which this watch cannot measure,
@@ -137,13 +130,13 @@ void Gui::buildFrame(spin_gui_frame &out) const
 
     out.elapsed_s = static_cast<uint32_t>(mTrackData.totalTime);
 
-    // 0 rather than a stale beat: a heart rate the watch has stopped believing
-    // is not a smaller heart rate, and the renderer must not have to guess.
-    const bool hrUsable = mTrackData.hr > kHrMinBpm &&
-                          mTrackData.hrTrustLevel >= kHrTrustMin &&
-                          mTrackData.hrTrustLevel <= kHrTrustMax;
-    out.hr_bpm    = hrUsable ? static_cast<uint16_t>(mTrackData.hr + 0.5f) : 0u;
-    out.hr_source = hrUsable ? mTrackData.hrSource : SPIN_GUI_HR_NONE;
+    // Taken as published, not re-judged here. The Service already decided what
+    // the screen should believe -- including holding a reading through a
+    // momentary dip in the arbiter's confidence -- and 0 already means "no
+    // heart rate". Re-applying the trust gate here was what blanked the number
+    // for a single second at a time on a signal that was not actually moving.
+    out.hr_bpm    = static_cast<uint16_t>(mTrackData.hr + 0.5f);
+    out.hr_source = (mTrackData.hr > 0.0f) ? mTrackData.hrSource : SPIN_GUI_HR_NONE;
 
     // Passed through, never recomputed here from elapsed_s against the target:
     // this is the same flag that fired the buzz, so the screen cannot announce

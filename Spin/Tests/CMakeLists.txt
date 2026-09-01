@@ -40,6 +40,16 @@ include("${UNA_SDK_ROOT}/Tests/Host/cmake/FetchGoogleTest.cmake")
 
 enable_testing()
 
+# HrHold is plain C++ over no SDK types at all -- the one piece of the
+# heart-rate path with a rule in it -- so it builds against nothing but
+# GoogleTest.
+add_executable(spin-hrhold-tests
+    HrHold_test.cpp
+)
+target_include_directories(spin-hrhold-tests PRIVATE "${APP_LIBS}/Header")
+target_link_libraries(spin-hrhold-tests PRIVATE GTest::gtest_main)
+add_test(NAME spin-hrhold-tests COMMAND spin-hrhold-tests)
+
 add_executable(spin-activitywriter-tests
     ActivityWriter_test.cpp
     "${APP_LIBS}/Sources/ActivityWriter.cpp"

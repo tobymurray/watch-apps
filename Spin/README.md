@@ -68,11 +68,22 @@ app:
 | **White** | it came from the wrist sensor |
 | **Grey**, with `---` | no reading the watch is willing to stand behind |
 
-That last row is a deliberate third state. The kernel reports a 0–3 confidence
-alongside every reading, and both the screen and the FIT file drop anything
-outside 1–3 — so a strap that drops out mid-ride shows `---` rather than
-holding the last number it saw, and the file records the gap instead of
-inventing a beat.
+That last row is a deliberate third state, but it is not instant. The kernel
+reports a 0–3 confidence with every reading, and the **file** drops anything
+outside 1–3 — the gap is recorded rather than a beat invented. The **screen**
+holds the last trusted reading for up to ten seconds first, because those are
+different questions: the file answers "what was measured this second", the
+screen answers "what do we believe your heart rate is".
+
+That split came out of the first two rides on real hardware. 5% of seconds were
+reported untrusted, and in 31 of 32 of them the sensor still had a reading
+within a beat or two of its neighbours — every one lasting one second, or two.
+The number was disappearing and coming straight back, several times a minute,
+on a signal whose consecutive readings differ by 0.2 bpm on average. There is
+no jitter here to filter and [`HrHold`](Software/Libs/Header/HrHold.hpp)
+deliberately does not average anything; a held second reports exactly what the
+sensor last produced. Past ten seconds it gives up, because a watch off the
+wrist must stop showing a heart rate that is no longer anyone's.
 
 **Pairing happens in the watch's own settings, not here.** Spin opts in to
 whatever heart-rate monitor the firmware already knows about; it cannot scan

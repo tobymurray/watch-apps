@@ -25,6 +25,7 @@
 
 #include "ActivityWriter.hpp"
 #include "AppConfigFields.hpp"
+#include "HrHold.hpp"
 #include "Commands.hpp"
 
 #include <memory>
@@ -105,6 +106,11 @@ private:
     float   mWeightKg = skDefaultWeightKg;      ///< From the watch's own profile.
     uint8_t mHrThresholds[skMaxHrThresholds] = {};
     uint8_t mHrThresholdCount = 0;
+
+    /// Bridges a one-second dip in the arbiter's confidence, so the screen does
+    /// not blank a reading the sensor still has. Display side only -- the FIT
+    /// record keeps the strict gate. See HrHold.hpp.
+    HrHold mHrHold;
 
     uint8_t mHrSource      = 0;  ///< Latest HeartRateEx::Source, for the icon + FIT hr_source.
     uint8_t mHrOpticalBpm  = 0;  ///< Latest raw optical (PPG) bpm, for the FIT hr_optical series.

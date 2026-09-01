@@ -390,6 +390,7 @@ void Service::startTrack(std::time_t utc)
     mTimeCounter.reset();
     mHrCounter.reset();
     mTrackData = Track::Data{};
+    mHrHold.reset();
     mLapCalories        = 0.0f;
     mLapRestingCalories = 0.0f;
     for (size_t i = 0; i < skZoneBuckets; ++i) {
@@ -418,8 +419,15 @@ void Service::processTrack()
 {
     mTrackData.totalTime = mTimeCounter.getValueActive();
 
-    mTrackData.hr       = mHrCounter.getCurrent();
-    mTrackData.hrSource = mHrSource;
+    // What the screen should believe, which is not the same question as what
+    // was measured this second: a momentary loss of confidence holds the last
+    // reading rather than blanking it. prepareRecordData() below still applies
+    // the strict gate, so the file records the second as having no reading.
+    const bool trusted = mHrCounter.getCurrent() > skHrMinValid &&
+                         mTrackData.hrTrustLevel >= skHrTrustMin &&
+                         mTrackData.hrTrustLevel <= skHrTrustMax;
+    mTrackData.hr       = mHrHold.update(trusted, mHrCounter.getCurrent());
+    mTrackData.hrSource = (mTrackData.hr > 0.0f) ? mHrSource : 0;
     mTrackData.avgHR    = mHrCounter.getAverage();
     mTrackData.maxHR    = mHrCounter.getMaximum();
 
