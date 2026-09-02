@@ -1,0 +1,7 @@
+[package]
+name = "proto_c_outline"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+ttf-parser = { version = "0.25", default-features = false, features = ["no-std-float"] }
+core_maths = "0.1"

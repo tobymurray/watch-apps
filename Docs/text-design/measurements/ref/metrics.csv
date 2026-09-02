@@ -1,0 +1,85 @@
+group,text,variant,face,px,w,h,ink,l1,l2,l3,partial
+barcode,0123456789ABCD,sq,helvB24_tr,24,203,18,1818,32,272,1514,0.167
+barcode,0123456789ABCD,ref,Poppins-SemiBold.ttf,20,184,16,1444,252,324,868,0.399
+barcode,0123456789ABCD,ref_light,Poppins-SemiBold.ttf,20,185,15,1438,296,266,876,0.391
+barcode,0123456789ABCD,hard,Poppins-SemiBold.ttf,20,184,15,1191,0,0,1191,0.0
+barcode,A1234,sq,helvB24_tr,24,69,18,583,8,118,457,0.216
+barcode,A1234,ref,Poppins-SemiBold.ttf,20,66,15,465,84,109,272,0.415
+barcode,A1234,ref_light,Poppins-SemiBold.ttf,20,66,15,459,96,79,284,0.381
+barcode,A1234,hard,Poppins-SemiBold.ttf,20,65,15,378,0,0,378,0.0
+barcode,GYMWORLD12345678,sq,helvR24_tr,18,188,13,1059,107,410,542,0.488
+barcode,GYMWORLD12345678,ref,Poppins-Regular.ttf,18,187,15,1068,281,328,459,0.57
+barcode,GYMWORLD12345678,ref_light,Poppins-Regular.ttf,18,193,13,1063,276,306,481,0.548
+barcode,GYMWORLD12345678,hard,Poppins-Regular.ttf,18,185,13,800,0,0,800,0.0
+barcode,"Set it to Code128,",sq,helvR24_tr,18,143,16,723,70,299,354,0.51
+barcode,"Set it to Code128,",ref,Poppins-Regular.ttf,18,148,17,790,230,228,332,0.58
+barcode,"Set it to Code128,",ref_light,Poppins-Regular.ttf,18,158,16,782,227,207,348,0.555
+barcode,"Set it to Code128,",hard,Poppins-Regular.ttf,18,148,17,548,0,0,548,0.0
+barcode,Toby Murray,sq,helvR24_tr,18,100,17,519,49,192,278,0.464
+barcode,Toby Murray,ref,Poppins-Regular.ttf,18,106,19,546,104,207,235,0.57
+barcode,Toby Murray,ref_light,Poppins-Regular.ttf,18,113,18,540,92,200,248,0.541
+barcode,Toby Murray,hard,Poppins-Regular.ttf,18,105,18,438,0,0,438,0.0
+spin,NOTHING WAS SAVED,sq,helvR24_tr,16,175,13,985,146,423,416,0.578
+spin,NOTHING WAS SAVED,ref,Poppins-Regular.ttf,16,157,12,801,213,307,281,0.649
+spin,NOTHING WAS SAVED,ref_light,Poppins-Regular.ttf,16,164,11,797,218,298,281,0.647
+spin,NOTHING WAS SAVED,hard,Poppins-Regular.ttf,16,157,11,587,0,0,587,0.0
+spin,FINDING STRAP,sq,helvR24_tr,16,124,13,710,89,323,298,0.58
+spin,FINDING STRAP,ref,Poppins-Regular.ttf,16,107,12,560,125,252,183,0.673
+spin,FINDING STRAP,ref_light,Poppins-Regular.ttf,16,112,11,570,141,245,184,0.677
+spin,FINDING STRAP,hard,Poppins-Regular.ttf,16,107,11,432,0,0,432,0.0
+spin,NOT SAVED,sq,helvB24_tr,18,104,13,714,38,187,489,0.315
+spin,NOT SAVED,ref,Poppins-SemiBold.ttf,18,96,13,691,125,191,375,0.457
+spin,NOT SAVED,ref_light,Poppins-SemiBold.ttf,18,100,12,635,108,129,398,0.373
+spin,NOT SAVED,hard,Poppins-SemiBold.ttf,18,95,13,572,0,0,572,0.0
+spin,YES,sq,helvB24_tr,24,46,18,399,6,43,350,0.123
+spin,YES,ref,Poppins-SemiBold.ttf,24,41,17,374,59,70,245,0.345
+spin,YES,ref_light,Poppins-SemiBold.ttf,24,42,17,374,64,52,258,0.31
+spin,YES,hard,Poppins-SemiBold.ttf,24,40,17,317,0,0,317,0.0
+spin,SPIN,sq,helvB24_tr,32,72,24,905,0,35,870,0.039
+spin,SPIN,ref,Poppins-SemiBold.ttf,32,67,24,917,134,173,610,0.335
+spin,SPIN,ref_light,Poppins-SemiBold.ttf,32,68,22,877,93,178,606,0.309
+spin,SPIN,hard,Poppins-SemiBold.ttf,32,65,23,787,0,0,787,0.0
+spin,142,sq,fub49_tn,25,42,20,418,41,109,268,0.359
+spin,142,ref,Poppins-SemiBold.ttf,27,45,20,458,73,89,296,0.354
+spin,142,ref_light,Poppins-SemiBold.ttf,27,47,20,440,66,67,307,0.302
+spin,142,hard,Poppins-SemiBold.ttf,27,45,20,387,0,0,387,0.0
+spin,12:34,sq,fub49_tn,54,144,43,2484,10,103,2371,0.045
+spin,12:34,ref,Poppins-SemiBold.ttf,60,159,46,2987,255,262,2470,0.173
+spin,12:34,ref_light,Poppins-SemiBold.ttf,60,163,45,2966,219,222,2525,0.149
+spin,12:34,hard,Poppins-SemiBold.ttf,60,159,45,2744,0,0,2744,0.0
+spin,1:02:05,sq,fub49_tn,44,158,35,2313,29,226,2058,0.11
+spin,1:02:05,ref,Poppins-SemiBold.ttf,49,173,38,2846,263,279,2304,0.19
+spin,1:02:05,ref_light,Poppins-SemiBold.ttf,49,175,38,2847,228,243,2376,0.165
+spin,1:02:05,hard,Poppins-SemiBold.ttf,49,172,36,2592,0,0,2592,0.0
+conditions,José Zoë 12:34 µg ±5°,hard,Poppins-Regular.ttf,16,166,16,527,0,0,527,0.0
+conditions,José Zoë 12:34 µg ±5°,ref,Poppins-Regular.ttf,16,167,18,782,256,223,303,0.613
+conditions,José Zoë 12:34 µg ±5°,fringe170,Poppins-Regular.ttf,16,166,16,620,0,292,328,0.471
+conditions,José Zoë 12:34 µg ±5°,ref_light,Poppins-Regular.ttf,16,172,17,800,275,220,305,0.619
+conditions,José Zoë 12:34 µg ±5°,hard,Poppins-SemiBold.ttf,16,166,17,778,0,0,778,0.0
+conditions,José Zoë 12:34 µg ±5°,ref,Poppins-SemiBold.ttf,16,167,18,1018,241,255,522,0.487
+conditions,José Zoë 12:34 µg ±5°,fringe170,Poppins-SemiBold.ttf,16,166,17,886,0,324,562,0.366
+conditions,José Zoë 12:34 µg ±5°,ref_light,Poppins-SemiBold.ttf,16,182,17,983,201,241,541,0.45
+conditions,José Zoë 12:34 µg ±5°,hard,Poppins-Regular.ttf,18,186,19,701,0,0,701,0.0
+conditions,José Zoë 12:34 µg ±5°,ref,Poppins-Regular.ttf,18,186,19,954,252,307,395,0.586
+conditions,José Zoë 12:34 µg ±5°,fringe170,Poppins-Regular.ttf,18,186,19,807,0,383,424,0.475
+conditions,José Zoë 12:34 µg ±5°,ref_light,Poppins-Regular.ttf,18,196,19,931,246,272,413,0.556
+conditions,José Zoë 12:34 µg ±5°,hard,Poppins-SemiBold.ttf,18,190,20,999,0,0,999,0.0
+conditions,José Zoë 12:34 µg ±5°,ref,Poppins-SemiBold.ttf,18,192,20,1229,234,296,699,0.431
+conditions,José Zoë 12:34 µg ±5°,fringe170,Poppins-SemiBold.ttf,18,191,19,1085,0,345,740,0.318
+conditions,José Zoë 12:34 µg ±5°,ref_light,Poppins-SemiBold.ttf,18,199,20,1197,231,244,722,0.397
+conditions,José Zoë 12:34 µg ±5°,hard,Poppins-Regular.ttf,22,226,23,1021,0,0,1021,0.0
+conditions,José Zoë 12:34 µg ±5°,ref,Poppins-Regular.ttf,22,227,23,1357,331,360,666,0.509
+conditions,José Zoë 12:34 µg ±5°,fringe170,Poppins-Regular.ttf,22,226,23,1167,0,446,721,0.382
+conditions,José Zoë 12:34 µg ±5°,ref_light,Poppins-Regular.ttf,22,242,23,1282,243,391,648,0.495
+conditions,José Zoë 12:34 µg ±5°,hard,Poppins-SemiBold.ttf,22,234,24,1455,0,0,1455,0.0
+conditions,José Zoë 12:34 µg ±5°,ref,Poppins-SemiBold.ttf,22,234,24,1811,362,346,1103,0.391
+conditions,José Zoë 12:34 µg ±5°,fringe170,Poppins-SemiBold.ttf,22,234,24,1592,0,401,1191,0.252
+conditions,José Zoë 12:34 µg ±5°,ref_light,Poppins-SemiBold.ttf,22,248,25,1830,304,327,1199,0.345
+conditions,José Zoë 12:34 µg ±5°,hard,Poppins-Regular.ttf,26,272,27,1431,0,0,1431,0.0
+conditions,José Zoë 12:34 µg ±5°,ref,Poppins-Regular.ttf,26,272,27,1774,354,431,989,0.443
+conditions,José Zoë 12:34 µg ±5°,fringe170,Poppins-Regular.ttf,26,272,27,1560,0,481,1079,0.308
+conditions,José Zoë 12:34 µg ±5°,ref_light,Poppins-Regular.ttf,26,289,28,1809,344,358,1107,0.388
+conditions,José Zoë 12:34 µg ±5°,hard,Poppins-SemiBold.ttf,26,282,28,2071,0,0,2071,0.0
+conditions,José Zoë 12:34 µg ±5°,ref,Poppins-SemiBold.ttf,26,282,28,2405,353,386,1666,0.307
+conditions,José Zoë 12:34 µg ±5°,fringe170,Poppins-SemiBold.ttf,26,282,28,2215,0,514,1701,0.232
+conditions,José Zoë 12:34 µg ±5°,ref_light,Poppins-SemiBold.ttf,26,290,29,2433,348,338,1747,0.282

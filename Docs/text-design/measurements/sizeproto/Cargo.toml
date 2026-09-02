@@ -1,0 +1,10 @@
+[workspace]
+members = ["proto_a_u8g2", "proto_b_atlas", "proto_c_outline", "proto_0_empty"]
+resolver = "2"
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false
+debug = false

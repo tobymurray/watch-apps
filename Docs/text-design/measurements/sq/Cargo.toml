@@ -1,0 +1,11 @@
+[package]
+name = "sq"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+embedded-graphics = "0.8"
+u8g2-fonts = "0.8"
+
+[profile.release]
+opt-level = 2

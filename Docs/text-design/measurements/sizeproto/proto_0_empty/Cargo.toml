@@ -1,0 +1,5 @@
+[package]
+name = "proto_0_empty"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
