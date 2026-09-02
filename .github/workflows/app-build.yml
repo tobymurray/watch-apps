@@ -55,7 +55,7 @@ env:
   #
   # It has to be repeated in `container.image` below, because the `env` context
   # is not available where a job declares its container.
-  TOOLCHAIN: ghcr.io/tobymurray/watch-apps-toolchain@sha256:f5689e6804e63c0694aa0dbbf0eb27c4552e68d5a6ce8ce312729070ca717a35
+  TOOLCHAIN: ghcr.io/tobymurray/watch-apps-toolchain@sha256:cca44e2ca090850480a612f4ed3d4acbd317f3bd32516b0d8fe323cf37c0ee26
 
   # The SDK is a separate repository and every app in this one builds against it,
   # so it is pinned here rather than floating on a branch: an SDK commit that
@@ -77,7 +77,7 @@ jobs:
       contents: write
       packages: read
     container:
-      image: ghcr.io/tobymurray/watch-apps-toolchain@sha256:f5689e6804e63c0694aa0dbbf0eb27c4552e68d5a6ce8ce312729070ca717a35
+      image: ghcr.io/tobymurray/watch-apps-toolchain@sha256:cca44e2ca090850480a612f4ed3d4acbd317f3bd32516b0d8fe323cf37c0ee26
       # Published by this repository's own toolchain.yml, so the default
       # GITHUB_TOKEN can always pull it -- no cross-repository grant needed,
       # which was the whole problem with depending on kira's package instead.
