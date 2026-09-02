@@ -129,18 +129,26 @@ jobs:
           # A CustomGUI app's renderer is a Rust crate with its own unit tests.
           # They cover the drawing, which no host test in Tests/ can reach.
           crate=$(find "$dir/Software/Apps" -maxdepth 3 -name Cargo.toml 2>/dev/null | head -n 1 || true)
+          # A renderer that draws text does it through the shared TextKit
+          # crate, whose atlases are generated files checked in beside their
+          # generator; a build of this app is the only thing that exercises
+          # them, so it is what checks they are current.
+          textkit=no
+          if [ -n "$crate" ] && grep -q 'TextKit' "$crate"; then textkit=yes; fi
 
           {
             echo "manifest=$([ -f "$manifest" ] && echo "$manifest" || echo '')"
             echo "tests=$([ -f "$tests" ] && dirname "$tests" || echo '')"
             echo "cmake=$([ -n "$cmake" ] && dirname "$cmake" || echo '')"
             echo "crate=$([ -n "$crate" ] && dirname "$crate" || echo '')"
+            echo "textkit=$textkit"
           } >> "$GITHUB_OUTPUT"
 
           echo "app       $app"
           echo "manifest  ${manifest#apps/}$([ -f "$manifest" ] || echo ' (none)')"
           echo "tests     $([ -f "$tests" ] && echo yes || echo no)"
           echo "crate     $([ -n "$crate" ] && echo yes || echo no)"
+          echo "textkit   $textkit"
           echo "buildable $([ -n "$cmake" ] && echo yes || echo no)"
 
           if [ ! -f "$manifest" ] && [ ! -f "$tests" ] && [ -z "$cmake" ]; then
@@ -307,6 +315,22 @@ jobs:
         shell: bash
         working-directory: ${{ steps.app.outputs.crate }}
         run: cargo test --features std
+
+      # TextKit's src/faces.rs is what Tools/atlas.py writes, checked in so an
+      # app builds without FreeType; --check regenerates it in place and fails
+      # if a face in faces.json changed without the output following. The
+      # image carries the pinned freetype-py, fonttools and numpy the tool
+      # needs (toolchain/Dockerfile). The crate's own tests hold every atlas
+      # glyph to the TouchGFX-generated tables in Squash, which is the parity
+      # claim this repository makes about them.
+      - name: TextKit atlases are current and match TouchGFX
+        if: steps.app.outputs.textkit == 'yes'
+        shell: bash
+        working-directory: apps/TextKit
+        run: |
+          set -euo pipefail
+          python3 Tools/atlas.py --check
+          cargo test --features std
 
       - name: Build the app
         if: steps.app.outputs.cmake != ''

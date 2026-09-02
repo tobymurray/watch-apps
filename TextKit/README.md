@@ -145,10 +145,11 @@ python3 -m venv .venv && .venv/bin/pip install -r Tools/requirements.txt
 .venv/bin/python Tools/touchgfx_oracle.py  # refreshes tests/oracle/touchgfx.rs from Squash
 ```
 
-The toolchain image carries the same pins, so `--check` can run in CI once
-`app-build.yml` is repinned to an image built from the Dockerfile that added
-them. The fonts are in `Fonts/`, byte-identical to the blobs TouchGFX
-rasterized; `Fonts/FONTS.md` has the licence.
+The toolchain image carries the same pins, and `app-build.yml` runs
+`--check` and this crate's tests for every app whose renderer depends on it;
+a change under `TextKit/` triggers those apps' builds. The fonts are in
+`Fonts/`, byte-identical to the blobs TouchGFX rasterized; `Fonts/FONTS.md`
+has the licence.
 
 ## Porting notes
 

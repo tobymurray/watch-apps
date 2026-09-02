@@ -14,11 +14,17 @@ on:
     branches: [main]
     paths:
       - 'Barcode/**'
+      # The renderer's text comes from the shared crate; a change there is a
+      # change to this app's binary.
+      - 'TextKit/**'
       - '.github/workflows/barcode.yml'
       - '.github/workflows/app-build.yml'
   pull_request:
     paths:
       - 'Barcode/**'
+      # The renderer's text comes from the shared crate; a change there is a
+      # change to this app's binary.
+      - 'TextKit/**'
       - '.github/workflows/barcode.yml'
       - '.github/workflows/app-build.yml'
   workflow_dispatch:

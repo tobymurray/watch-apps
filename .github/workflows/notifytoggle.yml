@@ -14,11 +14,17 @@ on:
     branches: [main]
     paths:
       - 'NotifyToggle/**'
+      # The renderer's text comes from the shared crate; a change there is a
+      # change to this app's binary.
+      - 'TextKit/**'
       - '.github/workflows/notifytoggle.yml'
       - '.github/workflows/app-build.yml'
   pull_request:
     paths:
       - 'NotifyToggle/**'
+      # The renderer's text comes from the shared crate; a change there is a
+      # change to this app's binary.
+      - 'TextKit/**'
       - '.github/workflows/notifytoggle.yml'
       - '.github/workflows/app-build.yml'
   workflow_dispatch:

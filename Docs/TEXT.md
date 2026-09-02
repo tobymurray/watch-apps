@@ -596,9 +596,11 @@ What the ports taught, in the order it was learned (each app's entry in
   layout constants did so by naming the old top-to-baseline offset once.
 - **The linker does the subsetting across apps.** One `faces.rs` with twelve
   faces; each map shows only the faces that app names.
-- **The toolchain image needed the font tools.** Added and pinned; the
-  `atlas.py --check` step belongs in `app-build.yml` once `toolchain.yml` has
-  repinned it to an image that carries them, and is not there yet.
+- **The toolchain image needed the font tools.** Added and pinned, and
+  `app-build.yml` runs `atlas.py --check` plus the crate's tests for every app
+  that depends on TextKit. Until `toolchain.yml` has published the image with
+  the tools and repinned `app-build.yml` to it, that step fails on the old
+  image; the repin is automatic on the push that changes the Dockerfile.
 - **Every app should have a preview binary.** Spin's `preview` wrote its
   captures; Barcode's and NotifyToggle's came from a throwaway host tool in a
   scratch directory. A `preview` bin per CustomGUI app, writing PNGs through
