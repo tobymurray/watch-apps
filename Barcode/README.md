@@ -385,12 +385,32 @@ Measured against the TouchGFX GUI it replaced, from real `arm-none-eabi-size`
 output on the same 600 KiB GUI RAM window (code runs from RAM on this SDK, so
 framework size and the framebuffer share one budget):
 
-| | Rust/CustomGUI | TouchGFX (removed) |
-| --- | --- | --- |
-| `.text` | 42,488 | 84,712 |
-| `.bss` | 83,952 | 65,560 |
-| RAM total | 126,640 — 20.6% | 152,648 — 24.8% |
-| packaged `.uapp` | 71,416 bytes | 120,444 bytes |
+| | Rust/CustomGUI, TextKit | Rust/CustomGUI, u8g2 (replaced) | TouchGFX (removed) |
+| --- | --- | --- | --- |
+| `.text` | 46,780 | 42,176 | 84,712 |
+| `.bss` | 58,352 | 73,712 | 65,560 |
+| RAM total, with the 10,240 stack | 115,572 — 18.8% | 126,328 — 20.6% | 152,648 — 24.8% |
+| packaged `.uapp` | 76,176 bytes | 72,004 bytes | 120,444 bytes |
+
+The text is drawn by [`TextKit`](../TextKit): Poppins SemiBold 20 for the
+preferred id tier and Regular 18 for everything else, pre-rendered at build
+time into 2bpp atlases that reproduce the glyphs the TouchGFX build shipped
+pixel for pixel, with Latin-1 and Latin Extended-A on the Regular face so a
+name like José draws. That replaced the u8g2 faces and the 15,360-byte
+scratch buffer the paragraphs below describe; `.text` grew by the two
+atlases (17.6 KB of glyph data less the 6.1 KB of u8g2 faces and their
+renderer) and `.bss` shrank by the buffer, so the GUI is 10.8 KB smaller in
+RAM and 4.2 KB larger on disk. Before and after, through the bezel mask:
+
+![Before and after the TextKit port](Docs/text-before-after.png)
+
+Because the metrics are Poppins' own again, the id tiers step at the
+thresholds the measured table in
+["Fitting the id on a round screen"](#fitting-the-id-on-a-round-screen)
+gives (186 for the bold face, 187 for the regular), and the crate's own
+test asserts those advances. Why atlases rather than a runtime rasterizer
+or the shrink trick is measured in [`Docs/TEXT.md`](../Docs/TEXT.md) at the
+repo root. What follows is the record of the u8g2 port that came before.
 
 Three optimizations found by asking "is there more size to find" after the
 anti-aliasing work above landed, each real and each verified not to cost
@@ -471,11 +491,12 @@ The *algorithm* — prefer a bold face if it fits under an ink limit, else a
 smaller regular face, else split by character count rather than by width — is
 unchanged; only the two pixel thresholds are, because they were tuned to
 TouchGFX's specific proprietary font metrics and had to be re-derived against
-`u8g2-fonts`' bitmap faces. **The round-bezel ink-overflow measurement in
+`u8g2-fonts`' bitmap faces. The round-bezel ink-overflow measurement in
 ["Fitting the id on a round screen"](#fitting-the-id-on-a-round-screen) below
-has not been redone against the new fonts** — it was verified against
-TouchGFX's fonts only, and is an open item before trusting the new build the
-way that section trusts the old one.
+was never redone against the u8g2 fonts; with TextKit the advances are the
+TouchGFX faces' own again (`textkit`'s tests hold the table's numbers), and
+`nothing_is_drawn_outside_the_bezel` in this crate renders every tier and
+every prompt and asserts no pixel behind the bezel.
 
 Prompt text changed shape along the way: the old `promptFor()` hardcoded up
 to four pre-wrapped lines per `Problem`, by hand, except `BadFormat`'s, which
@@ -593,18 +614,13 @@ The build prints it, so it can be checked rather than assumed —
 
 ## Fitting the id on a round screen
 
-**This section, including the measurement table below, describes the
-TouchGFX build this app shipped before the Rust/CustomGUI port** (see
-["The GUI is Rust, through CustomGUI, not TouchGFX"](#the-gui-is-rust-through-customgui-not-touchgfx)
-above). The *reasoning* — a proportional font's width has to be measured
-rather than counted, the simulator cannot show bezel clipping, three tiers
-of large/small/split — still applies, and the new build follows the same
-shape with `u8g2-fonts`' own measurement API standing in for TouchGFX's
-`Font::getStringWidth()`. The specific pixel numbers in the table are
-TouchGFX's font metrics, not `u8g2-fonts`'; they have not been re-measured
-against the new build with the disc-mask methodology below, which is an open
-item before trusting the Rust build's bezel fit the way this section trusts
-the old one.
+**This section was written for the TouchGFX build, and its numbers hold
+again.** The Rust GUI draws the id from TextKit's atlases of the same
+Poppins faces at the same sizes, and `textkit`'s
+`advances_match_the_touchgfx_build_barcode_measured` asserts every width in
+the table below to the pixel. The u8g2 build in between used other faces
+and never re-ran this measurement; the crate's bezel test now does it on
+every render.
 
 The id under the bars is the human-readable half of the barcode: what someone
 reads out or types in when a scanner will not cooperate. It is also the widest

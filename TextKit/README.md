@@ -180,3 +180,36 @@ The smallest app, two words and a hint, on `embedded-graphics`'s fixed-width
 - **A face constant per role** (`WORD_FACE`, `HINT_FACE`) rather than a face
   name at each call site: the port was two edits to change a face and the
   coverage test checks each role's strings against its own face.
+
+### Barcode
+
+The first supersample-and-shrink app: two u8g2 faces, a 15,360-byte scratch
+buffer, widths scaled by a height ratio. Ported to `SEMIBOLD_20_ASCII` for
+the preferred id tier and `REGULAR_18_LATIN` for the rest.
+
+- **The measured table came back.** Barcode's README measured the TouchGFX
+  build's id widths with `getStringWidth` and never re-measured the u8g2
+  build. Poppins' advances are those numbers again, so the 186 / 187 tier
+  thresholds hold by construction and the `0123456789ABCD` id, which the
+  u8g2 build had demoted to the small face because its bold face was
+  wider, is bold again.
+- **Baselines, not tops.** u8g2 placed text by the top of its ascent box;
+  the atlases place by baseline. Keeping the picture still meant computing
+  each old baseline once (box top plus the scaled ascent, 19 and 14) and
+  naming it, rather than reusing the box tops with a face whose ascent
+  differs.
+- **Poppins is wider than Helvetica shrunk.** The same prompt wraps into
+  three lines at Regular 18 where the shrink drew it in three narrower
+  ones; nothing needed a fourth, and the wrap test asserts every literal
+  fits four.
+- **Footprint.** `.text` 42,176 → 46,780, `.bss` 73,712 → 58,352, `.uapp`
+  72,004 → 76,176: 17,561 bytes of two atlases in, 6,125 of faces and
+  15,360 of scratch out, so 10.8 KB less RAM and 4.2 KB more file. TextKit
+  in situ: 2,248 bytes of code with `wrap` linked, 18,743 of data.
+- **Bars are not text.** The Code128 sub-pixel coverage path has its own
+  four-level shading for dark bars on the white backing and stayed exactly
+  as it was; only the glyph path changed.
+- **A caption of twelve `W`s still overflows its 160 px box**, at 216 px in
+  Regular 18 as it did in every build before; the crate clips it to the
+  disc rather than to the box. Not new, not fixed here, and worth a ladder
+  or an ellipsis if a real name ever does it.
