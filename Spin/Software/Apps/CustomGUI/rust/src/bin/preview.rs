@@ -1,9 +1,6 @@
-//! Writes one PNG per scene, by calling the same `render()` the watch calls.
-//!
-//! Needs a PNG encoder and nothing else — no SDL2, no window, no display — so
-//! it runs on any machine and in CI. Pixels outside the round bezel are
-//! blacked out, which the device simulator does not do: a layout that runs
-//! into the corner looks fine there and is clipped on the glass.
+//! One PNG per scene, through the same `render()` the watch calls. Needs a PNG
+//! encoder and nothing else, so it runs anywhere. Blacks out the corners
+//! outside the round bezel, which the device simulator does not.
 //!
 //!   cargo run --features preview --bin preview [-- <out-dir>]
 

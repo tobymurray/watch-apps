@@ -3,3 +3,8 @@ build/
 # Packed apps land here; they are outputs, not sources.
 *.uapp
 SleepLab/**/build/
+
+# Claude Code. The shared commands and the project instructions are tracked;
+# worktrees and scratch files under .claude/ are local to one machine.
+.claude/*
+!.claude/commands/

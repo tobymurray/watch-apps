@@ -1,15 +1,8 @@
-# Host tests for what Spin writes, built out of tree like the app.
+# Host tests for what Spin writes. The FIT reader they decode with lives under
+# the SDK's Tests/, not its Libs/, so this needs an SDK *checkout*.
 #
-# One executable, covering ActivityWriter: the ride is encoded with the real
-# writer against the SDK's in-memory filesystem double and decoded again with
-# the SDK's own independent test FIT reader. That reader lives under the SDK's
-# Tests/, not its Libs/, so this suite needs an SDK *checkout* rather than an
-# SDK install -- which is what $UNA_SDK already is everywhere in this repo.
-#
-# The renderer's tests are not here. They are Rust unit tests inside the crate
-# (`cargo test --features std` in Software/Apps/CustomGUI/rust), the same
-# arrangement Barcode uses, because a test that has to link libcore is a worse
-# test than one that lives next to the code it covers.
+# The renderer's tests are not here: they are Rust unit tests inside the crate,
+# next to the code they cover (`cargo test --features std`).
 
 cmake_minimum_required(VERSION 3.21)
 project(spin-host-tests CXX C)
@@ -34,14 +27,12 @@ if("$ENV{UNA_SDK}" STREQUAL "")
 endif()
 set(UNA_SDK_ROOT "$ENV{UNA_SDK}")
 
-# Take the SDK's pinned GoogleTest revision rather than choosing our own, so a
-# failure here means the same thing it means in the SDK's own host tests.
+# The SDK's pinned GoogleTest, so a failure here means what it means there.
 include("${UNA_SDK_ROOT}/Tests/Host/cmake/FetchGoogleTest.cmake")
 
 enable_testing()
 
-# HrHold is plain C++ over no SDK types at all -- the one piece of the
-# heart-rate path with a rule in it -- so it builds against nothing but
+# Plain C++ over no SDK types at all, so these build against nothing but
 # GoogleTest.
 add_executable(spin-hrhold-tests
     HrHold_test.cpp

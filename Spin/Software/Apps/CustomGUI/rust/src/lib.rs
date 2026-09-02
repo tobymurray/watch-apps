@@ -1,18 +1,14 @@
-//! The Spin app's renderer: everything the watch draws during a stationary
-//! ride, as a pure function of one `Frame`.
+//! The Spin app's renderer, as a pure function of one `Frame`. Layout
+//! reasoning: `Spin/README.md`.
 //!
-//! No clock, no sensor, no state. `Gui.cpp` fills a `Frame` from whatever the
-//! Service last published and calls `render()`; the same call from the host
-//! simulator draws the same pixels, which is what makes a screenshot on a
-//! laptop evidence about the watch.
-//!
-//! The framebuffer is the panel's own format: 8bpp `ABGR2222`, four levels a
-//! channel. Any grey that is not 0/85/170/255 is quantised on the way to the
-//! glass, so the palette below only names colours the panel can actually hold.
+//! PANEL. 240x240, round, 8bpp `ABGR2222` — four levels a channel, so every
+//! colour here is one of 0/85/170/255 and anything else is quantised on the
+//! way to the glass. The corners of the square buffer sit behind the bezel.
+//! Falsified by a different display; `nothing_is_drawn_outside_the_bezel`
+//! is what holds the round part.
 
-// The tests below need `--features std`, same as Barcode's crate: without it
-// the lib is no_std and a test binary cannot link against a crate whose
-// panics do not unwind. `cargo test --features std` is the invocation.
+// `cargo test --features std`: the crate is no_std, and a test binary cannot
+// link one whose panics do not unwind.
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use embedded_graphics::{pixelcolor::raw::RawU8, pixelcolor::PixelColor, prelude::*};
@@ -29,9 +25,8 @@ extern "C" {
     fn spin_gui_host_panic(msg: *const u8, len: u32);
 }
 
-/// A panic in the renderer reaches the SDK logger and stops the app. Without
-/// this the GUI thread would hang silently and the only way out would be a
-/// reboot -- with a ride in progress and a half-written FIT file.
+/// Without this a panic hangs the GUI thread silently, and the only way out is
+/// a reboot with a ride in progress.
 #[cfg(not(feature = "std"))]
 #[panic_handler]
 fn on_panic(_info: &core::panic::PanicInfo) -> ! {
@@ -40,10 +35,11 @@ fn on_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-/// The frames worth looking at. Host-only: the watch is handed frames by
-/// Gui.cpp and never needs a table of them.
+/// The frames worth looking at. Host-only: the watch is handed frames.
 #[cfg(feature = "std")]
 pub mod scenes;
+
+pub mod work;
 
 // -- Colour ------------------------------------------------------------------
 
@@ -92,15 +88,15 @@ impl PixelColor for Abgr2222 {
 
 const WHITE: Abgr2222 = Abgr2222::WHITE;
 const BLACK: Abgr2222 = Abgr2222::BLACK;
-/// The dimmest grey worth using. 85 is the only other non-black level and it
-/// washes out in daylight on this reflective panel, so "secondary" is 170.
+/// The dimmest usable grey: 85 is the only other non-black level and it washes
+/// out in daylight on this reflective panel.
 const DIM: Abgr2222 = Abgr2222::rgb(170, 170, 170);
 /// Heart rate, and only heart rate. Nothing else on any screen is red.
 const RED: Abgr2222 = Abgr2222::rgb(255, 0, 0);
 /// Held / not-what-you-wanted. Paused, and a ride that failed to save.
 const AMBER: Abgr2222 = Abgr2222::rgb(255, 170, 0);
-/// Most zones the dial will draw. The kernel's own threshold table stops at
-/// eight too, so this is not a limit invented here.
+/// Most zones the dial will draw, matching the ceiling of the kernel's own
+/// threshold table (`RequestSystemSettings::skMaxHearRateTh`).
 pub const MAX_ZONES: usize = 8;
 
 /// The colour ladder, cool to warm, eight stops.
@@ -113,18 +109,9 @@ const HUE_AMBER: Abgr2222 = Abgr2222::rgb(255, 170, 0);
 const HUE_ORANGE: Abgr2222 = Abgr2222::rgb(255, 85, 0);
 const HUE_RED: Abgr2222 = Abgr2222::rgb(255, 0, 0);
 
-/// Which hues a dial of N zones uses, written out per count rather than
-/// sampled from the ladder by formula.
-///
-/// A formula gets the ends right and the middle wrong: spreading eight stops
-/// over five zones lands on cyan and yellow and loses the blue-green-amber
-/// reading everyone already knows. Every row here ends grey-to-red, so the
-/// bottom zone is always easy and the top is always hard whatever the count,
-/// and the five-zone row is the familiar one rather than whatever arithmetic
-/// produced.
-///
-/// Four levels a channel is the whole palette, so these are not approximations
-/// of nicer colours: they are the colours.
+/// Which hues a dial of N zones uses, written out per count rather than sampled
+/// by formula; every row runs grey to red. With four levels a channel these are
+/// not approximations of nicer colours, they are the colours.
 const ZONE_HUES: [&[Abgr2222]; MAX_ZONES + 1] = [
     &[],                                                        // 0 - no dial
     &[HUE_RED],                                                 // 1 - not offered
@@ -141,7 +128,6 @@ const ZONE_HUES: [&[Abgr2222]; MAX_ZONES + 1] = [
 /// Dims a hue one level on every channel it uses, so an inactive segment reads
 /// as the same zone, quieter, rather than as a different colour.
 fn dim(c: Abgr2222) -> Abgr2222 {
-    // Two bits a channel: subtract one level from any channel that has any.
     let step = |shift: u8| {
         let v = (c.0 >> shift) & CHANNEL_MASK;
         if v > 0 { v - 1 } else { 0 }
@@ -182,10 +168,8 @@ impl DrawTarget for FrameBuf<'_> {
     }
 }
 
-/// A direct row-fill rather than embedded-graphics's styled-primitive
-/// machinery: this is the only rectangle primitive the renderer has, and
-/// `Rectangle::into_styled().draw()` would pull in the point-iterator layer
-/// once per distinct colour it is called with.
+/// A direct row-fill: `Rectangle::into_styled().draw()` would pull in the
+/// point-iterator layer once per distinct colour it is called with.
 fn fill_rect(fb: &mut FrameBuf, x: i32, y: i32, w: i32, h: i32, color: Abgr2222) {
     if w <= 0 || h <= 0 {
         return;
@@ -207,9 +191,7 @@ fn fill_rect(fb: &mut FrameBuf, x: i32, y: i32, w: i32, h: i32, color: Abgr2222)
 }
 
 // -- The C ABI frame ---------------------------------------------------------
-// Mirrors spin_gui_frame (spin_gui.h) field for field. The fingerprint below
-// checks whatever the two compilers actually produced rather than trusting
-// that this list still matches by inspection.
+// Mirrors spin_gui_frame (spin_gui.h); the fingerprint below is what checks it.
 
 pub const SCREEN_READY: u8 = 0;
 pub const SCREEN_RIDING: u8 = 1;
@@ -217,6 +199,7 @@ pub const SCREEN_PAUSED: u8 = 2;
 pub const SCREEN_SAVED: u8 = 3;
 pub const SCREEN_CONFIRM_DISCARD: u8 = 4;
 pub const SCREEN_DISCARDED: u8 = 5;
+pub const SCREEN_ENTER_WORK: u8 = 6;
 
 pub const STRAP_ABSENT: u8 = 0;
 pub const STRAP_SEARCHING: u8 = 1;
@@ -226,10 +209,6 @@ pub const HR_NONE: u8 = 0;
 pub const HR_OPTICAL: u8 = 1;
 pub const HR_EXTERNAL: u8 = 2;
 
-/// Heart-rate zones the bar draws. Zone 0 (below zone 1) is a state, not a
-/// segment: it dims every segment rather than adding a sixth.
-
-
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct Frame {
@@ -238,6 +217,10 @@ pub struct Frame {
     pub avg_hr_bpm: u16,
     pub target_minutes: u16,
     pub energy: u16,
+    /// kJ; 0 = nothing said yet.
+    pub work_kj: u16,
+    /// kJ the calorie model suggests; 0 = draw no reference.
+    pub work_estimate_kj: u16,
     pub screen: u8,
     pub strap: u8,
     pub hr_source: u8,
@@ -257,8 +240,7 @@ const fn fnv1a(hash: u32, byte: usize) -> u32 {
     (hash ^ ((byte as u32) & 0xFF)).wrapping_mul(FNV_PRIME)
 }
 
-/// Must walk the same values in the same order as `spin_gui_abi::fingerprint()`
-/// in spin_gui.h.
+/// Must walk the same values in the same order as `spin_gui_abi::fingerprint()`.
 const fn abi_fingerprint() -> u32 {
     let h = FNV_OFFSET_BASIS;
     let h = fnv1a(h, core::mem::size_of::<Frame>());
@@ -268,6 +250,8 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(Frame, avg_hr_bpm));
     let h = fnv1a(h, core::mem::offset_of!(Frame, target_minutes));
     let h = fnv1a(h, core::mem::offset_of!(Frame, energy));
+    let h = fnv1a(h, core::mem::offset_of!(Frame, work_kj));
+    let h = fnv1a(h, core::mem::offset_of!(Frame, work_estimate_kj));
     let h = fnv1a(h, core::mem::offset_of!(Frame, screen));
     let h = fnv1a(h, core::mem::offset_of!(Frame, strap));
     let h = fnv1a(h, core::mem::offset_of!(Frame, hr_source));
@@ -285,23 +269,25 @@ pub extern "C" fn spin_gui_abi_fingerprint() -> u32 {
     abi_fingerprint()
 }
 
-const _: () = assert!(core::mem::size_of::<Frame>() == 24);
+const _: () = assert!(core::mem::size_of::<Frame>() == 28);
 const _: () = assert!(core::mem::align_of::<Frame>() == 4);
 const _: () = assert!(core::mem::offset_of!(Frame, elapsed_s) == 0);
 const _: () = assert!(core::mem::offset_of!(Frame, hr_bpm) == 4);
 const _: () = assert!(core::mem::offset_of!(Frame, avg_hr_bpm) == 6);
 const _: () = assert!(core::mem::offset_of!(Frame, target_minutes) == 8);
 const _: () = assert!(core::mem::offset_of!(Frame, energy) == 10);
-const _: () = assert!(core::mem::offset_of!(Frame, screen) == 12);
-const _: () = assert!(core::mem::offset_of!(Frame, strap) == 13);
-const _: () = assert!(core::mem::offset_of!(Frame, hr_source) == 14);
-const _: () = assert!(core::mem::offset_of!(Frame, saved_ok) == 15);
-const _: () = assert!(core::mem::offset_of!(Frame, target_reached) == 16);
-const _: () = assert!(core::mem::offset_of!(Frame, hr_zone) == 17);
-const _: () = assert!(core::mem::offset_of!(Frame, zone_count) == 18);
-const _: () = assert!(core::mem::offset_of!(Frame, has_zones) == 19);
-const _: () = assert!(core::mem::offset_of!(Frame, energy_is_kj) == 20);
-const _: () = assert!(core::mem::offset_of!(Frame, hr_zone_fraction) == 21);
+const _: () = assert!(core::mem::offset_of!(Frame, work_kj) == 12);
+const _: () = assert!(core::mem::offset_of!(Frame, work_estimate_kj) == 14);
+const _: () = assert!(core::mem::offset_of!(Frame, screen) == 16);
+const _: () = assert!(core::mem::offset_of!(Frame, strap) == 17);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_source) == 18);
+const _: () = assert!(core::mem::offset_of!(Frame, saved_ok) == 19);
+const _: () = assert!(core::mem::offset_of!(Frame, target_reached) == 20);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_zone) == 21);
+const _: () = assert!(core::mem::offset_of!(Frame, zone_count) == 22);
+const _: () = assert!(core::mem::offset_of!(Frame, has_zones) == 23);
+const _: () = assert!(core::mem::offset_of!(Frame, energy_is_kj) == 24);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_zone_fraction) == 25);
 
 // -- Geometry ----------------------------------------------------------------
 
@@ -310,19 +296,9 @@ const PANEL_H: i32 = 240;
 const CENTER_X: i32 = PANEL_W / 2;
 
 // -- Button hints -----------------------------------------------------------
-// The four buttons sit at the corners of the bezel, so their hints sit on the
-// diagonals, not stacked above and below the clock. The first version put them
-// on horizontal rows and PAUSE landed directly over the clock, where it read as
-// a caption for it rather than as a thing a button does.
-//
-// Each hint is a short thick arc at the button's own angle -- the same mark the
-// SDK's TouchGFX apps use, and it belongs to the zone ring's visual family --
-// optionally with a word inboard of it.
-//
-// WORDS ONLY WHERE THERE IS A DECISION. While riding there is exactly one thing
-// R1 can do, and labelling it every second buys nothing and costs the clock its
-// space; the mark alone says "this button is live". Paused is a decision --
-// resume, finish or discard -- so those get words.
+// HARDWARE: the four buttons are at the corners of the bezel, so a hint belongs
+// on its button's diagonal. Falsified by a differently laid out watch.
+// Why words appear on some and not others: Spin/README.md.
 
 /// Clockwise from twelve o'clock, matching the bezel: L1 top-left, R1
 /// top-right, L2 bottom-left, R2 bottom-right (CommandMessages.hpp).
@@ -336,15 +312,11 @@ const TICK_INNER: f32 = 98.0;
 const TICK_OUTER: f32 = 105.0;
 const TICK_SWEEP_DEG: f32 = 17.0;
 
-/// Gap between a mark and its word. The word is placed off the mark's inner
-/// end rather than at a radius of its own: on the diagonal the clock's corner
-/// and the mark are only a few pixels apart, and anything measured from the
-/// centre lands on one or the other.
+/// Gap between a mark and its word, measured from the mark's edge rather than
+/// from the centre: on the diagonal the clock's corner and the mark are a few
+/// pixels apart, and a radius lands on one or the other.
 const LABEL_GAP: i32 = 8;
 
-/// The heading row on the screens that have one, where the clock does not
-/// reach. Level with the top pair of buttons but centred, so it reads as a
-/// title rather than as either button's label.
 const HEADING_Y: i32 = 50;
 
 fn polar(radius: f32, deg: f32) -> (i32, i32) {
@@ -363,110 +335,288 @@ fn draw_button_tick(fb: &mut FrameBuf, deg: f32, color: Abgr2222) {
 /// The mark plus what it does. The word grows away from its own edge -- right
 /// buttons right-aligned, left buttons left-aligned -- so it always reads as
 /// hanging off that side rather than floating in the middle.
-fn draw_button_hint(fb: &mut FrameBuf, deg: f32, text: &str, color: Abgr2222) {
-    draw_button_tick(fb, deg, color);
-
-    let label = FontRenderer::new::<LabelFont>();
-    let right_hand = (deg * DEG_TO_RAD).sin() > 0.0;
-
-    // Measured from the mark's nearest EDGE, found by evaluating both ends of
-    // the arc rather than assuming which one is nearer. Which end that is
-    // depends on the quadrant -- it is deg-sweep/2 for the top-right button and
-    // deg+sweep/2 for the top-left -- and guessing it wrong runs the word
-    // straight through the mark, which is what the previous two attempts did.
+/// Where a word hangs off its mark: x, the alignment, and the mark's own row.
+///
+/// Both ends of the arc are evaluated, because which one is nearer depends on
+/// the quadrant; assuming it runs the word straight through the mark.
+fn hint_anchor(deg: f32) -> (i32, HorizontalAlignment, i32) {
     let (ax, _) = polar(TICK_INNER, deg - TICK_SWEEP_DEG / 2.0);
     let (bx, _) = polar(TICK_INNER, deg + TICK_SWEEP_DEG / 2.0);
     let (_, ty) = polar(TICK_INNER, deg);
-    let (x, align) = if right_hand {
-        // The word runs leftward from the mark, so it must clear the mark's
-        // leftmost pixel.
-        (ax.min(bx) - LABEL_GAP, HorizontalAlignment::Right)
+    if (deg * DEG_TO_RAD).sin() > 0.0 {
+        (ax.min(bx) - LABEL_GAP, HorizontalAlignment::Right, ty)
     } else {
-        (ax.max(bx) + LABEL_GAP, HorizontalAlignment::Left)
-    };
-    // Lifted half a line so the word straddles the mark rather than hanging
-    // below it.
+        (ax.max(bx) + LABEL_GAP, HorizontalAlignment::Left, ty)
+    }
+}
+
+fn draw_button_hint(fb: &mut FrameBuf, deg: f32, text: &str, color: Abgr2222) {
+    draw_button_tick(fb, deg, color);
+    let label = label_face();
+    let (x, align, ty) = hint_anchor(deg);
+    // Lifted half a line so the word straddles the mark.
     draw_text(fb, &label, text, x, ty - 6, align, color);
 }
 
-/// The clock's top edge, on every screen that shows one. Chosen so the clock
-/// plus the row under it sits centred between the two hint rows.
+/// A hint in the answer face, smoothed. Only the discard screen uses it.
+fn draw_button_answer(fb: &mut FrameBuf, deg: f32, text: &str, color: Abgr2222) {
+    draw_button_tick(fb, deg, color);
+    let answer = bold_face(ANSWER_H);
+    let (x, align, ty) = hint_anchor(deg);
+    draw_text(fb, &answer, text, x, ty - 9, align, color);
+}
+
 const CLOCK_Y: i32 = 70;
-/// The heart-rate row, on both riding screens. Identical on each so the number
-/// does not jump when the clock is paused.
+/// Identical on both riding screens, so the number does not jump on a pause.
 const HR_ROW_Y: i32 = 138;
-/// "PAUSED", tucked between the clock and the heart-rate row. Not on the hint
-/// row: a centred word there runs into the right-hand button label, and the
-/// two longest cases ("PAUSED"/"RESUME") are exactly the pair that collide.
+/// All four buttons are labelled on the entry screen, leaving about forty
+/// pixels between "+100" and "SAVE" -- not a heading's worth -- so the whole
+/// block sits below the top hint row.
+const ENTER_WORK_HEADING_Y: i32 = 66;
+const ENTER_WORK_VALUE_Y: i32 = 90;
+const ENTER_WORK_ESTIMATE_Y: i32 = 148;
+
+/// Not on the hint row: a centred word there collides with the right-hand
+/// label, and "PAUSED"/"RESUME" are the pair that do it.
 const PAUSED_BANNER_Y: i32 = 116;
 
-// -- Fonts -------------------------------------------------------------------
-// `_tn` (digits, ':' and a little punctuation) for every number, `_tr` (the
-// reduced ASCII tier) for every label. Nothing this app draws is outside
-// either set: the labels are fixed English literals and the numbers are
-// formatted here, so the full-Unicode `_tf` tiers would be dead flash.
+// -- Fonts and smoothing -----------------------------------------------------
+// FONT ASSETS: `_tn` faces carry DIGITS ONLY -- no letters -- and `_tr` is the
+// reduced ASCII tier. A `_tn` face given a letter silently draws nothing.
+//
+// u8g2 faces are fixed-resolution 1bpp bitmaps with no alpha and no "render
+// bigger" option, so there is no antialiasing to ask for -- text drawn straight
+// from one has a hard staircase on every diagonal. The way round it is
+// Barcode's: render from a face a size class LARGER than the target, then
+// area-average down to the panel's four levels. See render_smoothed().
+//
+// That means the small faces are not needed at all -- only their heights are.
+// Three glyph sets replace the eight this app used to ship.
 
-/// Largest to smallest. `render_clock` walks this list and takes the first
-/// that fits the panel, so "1:23" gets the big face and "10:23:45" does not
-/// get clipped -- rather than one compromise size that suits neither.
-type ClockXl = fonts::u8g2_font_fub42_tn;
-type ClockL = fonts::u8g2_font_fub35_tn;
-type ClockM = fonts::u8g2_font_fub25_tn;
+type NumberSrc = fonts::u8g2_font_fub49_tn;    // 63 tall: every digit on screen
+type BoldSrc = fonts::u8g2_font_helvB24_tr;    // 32 tall: titles, headings, answers
+type LabelSrc = fonts::u8g2_font_helvR24_tr;   // 32 tall: every label
 
-type NumberFont = fonts::u8g2_font_fub20_tn;
-type TitleFont = fonts::u8g2_font_helvB24_tr;
-type HeadingFont = fonts::u8g2_font_helvB14_tr;
-type LabelFont = fonts::u8g2_font_helvR12_tr;
+// On-screen heights, each the ascent-descent span of the face that used to draw
+// it, so nothing moves: fub42/35/25/20 and helvB24/18/14, helvR12.
+const CLOCK_XL_H: i32 = 54;
+const CLOCK_L_H: i32 = 44;
+const CLOCK_M_H: i32 = 32;
+const NUMBER_H: i32 = 25;
+const TITLE_H: i32 = 32;
+const HEADING_H: i32 = 18;
+const LABEL_H: i32 = 16;
+/// The discard answers, and only those. Bold and half again the label size,
+/// because they are the one place where a misread costs the wearer their ride.
+const ANSWER_H: i32 = 24;
 
-/// The clock's own drawn height at each size, used to place it by its top
-/// edge. u8g2 reports ascent/descent per face; these are the ascent-descent
-/// spans of the three faces above.
-const CLOCK_H_XL: i32 = 42;
-const CLOCK_H_L: i32 = 35;
-const CLOCK_H_M: i32 = 25;
-
-/// Widest the clock may draw. The panel is round, so this is the chord at the
-/// clock's own rows rather than the full 240.
+/// Widest the clock may draw: the round panel's chord at the clock's own rows,
+/// not the full 240.
 const CLOCK_MAX_W: u32 = 218;
 
-fn text_width(renderer: &FontRenderer, s: &str) -> u32 {
-    renderer
+/// A face to render from and the height to shrink it to.
+struct Face {
+    font: FontRenderer,
+    src_h: i32,
+    dst_h: i32,
+}
+
+impl Face {
+    fn new(font: FontRenderer, dst_h: i32) -> Self {
+        let src_h = font.get_ascent() as i32 - font.get_descent() as i32;
+        Face { font, src_h, dst_h }
+    }
+
+    /// The on-screen width: the source's own width, scaled by the same ratio
+    /// the glyphs are. Measured on the source and scaled rather than measured
+    /// on a face this app no longer ships.
+    fn width(&self, s: &str) -> i32 {
+        let w = self
+            .font
+            .get_rendered_dimensions(s, Point::zero(), VerticalPosition::Top)
+            .ok()
+            .and_then(|d| d.bounding_box)
+            .map(|b| b.size.width as i32)
+            .unwrap_or(0);
+        if self.src_h <= 0 { 0 } else { w * self.dst_h / self.src_h }
+    }
+}
+
+fn number_face(dst_h: i32) -> Face { Face::new(FontRenderer::new::<NumberSrc>(), dst_h) }
+fn bold_face(dst_h: i32) -> Face { Face::new(FontRenderer::new::<BoldSrc>(), dst_h) }
+fn label_face() -> Face { Face::new(FontRenderer::new::<LabelSrc>(), LABEL_H) }
+
+fn text_width(face: &Face, s: &str) -> u32 {
+    face.width(s).max(0) as u32
+}
+
+// -- The scratch buffer ------------------------------------------------------
+// Sized from measurement, not guessed. Every string this app can draw was
+// rendered at its source face: the widest is "NOTHING WAS SAVED" at 351 px on
+// helvR24, and the tallest source is fub49 at 63. ~9% margin on each. A buffer
+// guessed in advance would either waste RAM or silently clip, and the clamps
+// below would hide the clipping rather than flag it.
+const SS_MAX_W: usize = 384;
+const SS_MAX_H: usize = 70;
+
+/// One scratch buffer, reused for every string. Safe on the watch because the
+/// GUI process is single-threaded: Gui.cpp runs spin_gui_render() to completion
+/// before it does anything else, so there is never a second render in flight.
+/// `cargo test` does not honour that -- its runner uses threads -- so SS_LOCK
+/// exists to make the test binary honest. The no_std build has no threads and
+/// pays nothing for it.
+static mut SS_BUF: [u8; SS_MAX_W * SS_MAX_H] = [0; SS_MAX_W * SS_MAX_H];
+
+#[cfg(feature = "std")]
+static SS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Records coverage only: which source pixels the glyph lit.
+struct SuperSample {
+    w: i32,
+    h: i32,
+}
+
+impl OriginDimensions for SuperSample {
+    fn size(&self) -> Size {
+        Size::new(self.w.max(0) as u32, self.h.max(0) as u32)
+    }
+}
+
+impl DrawTarget for SuperSample {
+    type Color = Abgr2222;
+    type Error = core::convert::Infallible;
+
+    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Pixel<Self::Color>>,
+    {
+        for Pixel(coord, _) in pixels {
+            if coord.x >= 0 && coord.y >= 0 && coord.x < self.w && coord.y < self.h {
+                let idx = coord.y as usize * SS_MAX_W + coord.x as usize;
+                unsafe { SS_BUF[idx] = 1 };
+            }
+        }
+        Ok(())
+    }
+}
+
+/// `color` at `level` of 3 coverage, on the panel's own levels. Level 0 is
+/// nothing at all, so the background shows through rather than being painted
+/// over in the darkest shade.
+fn shade(color: Abgr2222, level: i32) -> Option<Abgr2222> {
+    if level <= 0 {
+        return None;
+    }
+    let ch = |shift: u8| {
+        let v = ((color.0 >> shift) & CHANNEL_MASK) as i32;
+        (((v * level) + 1) / 3).clamp(0, CHANNEL_MASK as i32) as u8
+    };
+    Some(Abgr2222::from_levels(ch(RED_SHIFT), ch(GREEN_SHIFT), ch(BLUE_SHIFT)))
+}
+
+/// Renders `s` from `face`'s source into the scratch buffer, then shrinks it to
+/// the face's target height by area-averaging each destination pixel's source
+/// block and mapping the coverage onto the panel's four levels.
+fn render_smoothed(
+    fb: &mut FrameBuf,
+    face: &Face,
+    s: &str,
+    dst_x: i32,
+    dst_y: i32,
+    color: Abgr2222,
+) {
+    let dst_w = face.width(s);
+    let dst_h = face.dst_h;
+    if dst_w <= 0 || dst_h <= 0 {
+        return;
+    }
+
+    #[cfg(feature = "std")]
+    let _guard = SS_LOCK.lock().unwrap();
+
+    // A glyph's own left bearing is not always 0. Drawing at a flat x=1 and
+    // assuming it away shifts the ink right by (bearing - 1) with no matching
+    // right margin, dropping that many columns off the last glyph -- silently,
+    // through the bounds check in SuperSample::draw_iter.
+    let bbox = face
+        .font
         .get_rendered_dimensions(s, Point::zero(), VerticalPosition::Top)
-        .map(|d| d.bounding_box.map(|b| b.size.width).unwrap_or(0))
-        .unwrap_or(0)
+        .ok()
+        .and_then(|d| d.bounding_box);
+    let left = bbox.map(|b| b.top_left.x).unwrap_or(0);
+    let measured_w = bbox.map(|b| b.size.width as i32).unwrap_or(0);
+    let src_w = (measured_w + 2).clamp(1, SS_MAX_W as i32);
+    let src_h = (face.src_h + 2).clamp(1, SS_MAX_H as i32);
+
+    for y in 0..src_h {
+        let row = y as usize * SS_MAX_W;
+        unsafe { SS_BUF[row..row + src_w as usize].fill(0) };
+    }
+
+    let mut target = SuperSample { w: src_w, h: src_h };
+    let _ = face.font.render_aligned(
+        s,
+        Point::new(1 - left, 0),
+        VerticalPosition::Top,
+        HorizontalAlignment::Left,
+        FontColor::Transparent(Abgr2222::WHITE),
+        &mut target,
+    );
+
+    for dy in 0..dst_h {
+        let sy0 = dy * src_h / dst_h;
+        let sy1 = ((dy + 1) * src_h / dst_h).max(sy0 + 1).min(src_h);
+        for dx in 0..dst_w {
+            let sx0 = dx * src_w / dst_w;
+            let sx1 = ((dx + 1) * src_w / dst_w).max(sx0 + 1).min(src_w);
+            let mut lit = 0i32;
+            let mut total = 0i32;
+            for sy in sy0..sy1 {
+                let row = sy as usize * SS_MAX_W;
+                for sx in sx0..sx1 {
+                    total += 1;
+                    if unsafe { SS_BUF[row + sx as usize] } != 0 {
+                        lit += 1;
+                    }
+                }
+            }
+            if total == 0 {
+                continue;
+            }
+            if let Some(c) = shade(color, (lit * 3 + total / 2) / total) {
+                fill_rect(fb, dst_x + dx, dst_y + dy, 1, 1, c);
+            }
+        }
+    }
 }
 
 fn draw_text(
     fb: &mut FrameBuf,
-    renderer: &FontRenderer,
+    face: &Face,
     s: &str,
     x: i32,
     y: i32,
     align: HorizontalAlignment,
     color: Abgr2222,
 ) {
-    let _ = renderer.render_aligned(
-        s,
-        Point::new(x, y),
-        VerticalPosition::Top,
-        align,
-        FontColor::Transparent(color),
-        fb,
-    );
+    let w = face.width(s);
+    let dst_x = match align {
+        HorizontalAlignment::Left => x,
+        HorizontalAlignment::Center => x - w / 2,
+        HorizontalAlignment::Right => x - w,
+    };
+    render_smoothed(fb, face, s, dst_x, y, color);
 }
 
-fn draw_centered(fb: &mut FrameBuf, renderer: &FontRenderer, s: &str, y: i32, color: Abgr2222) {
-    draw_text(fb, renderer, s, CENTER_X, y, HorizontalAlignment::Center, color);
+fn draw_centered(fb: &mut FrameBuf, face: &Face, s: &str, y: i32, color: Abgr2222) {
+    draw_text(fb, face, s, CENTER_X, y, HorizontalAlignment::Center, color);
 }
 
 // -- Number formatting -------------------------------------------------------
-// no_std and no allocator, so every string is built into a caller-owned
-// buffer. `core::fmt` would work through `format_args!`, but it drags the
-// whole formatting machinery in for what is two loops.
+// No allocator, so every string is built into a caller-owned buffer.
 
 /// Writes `value` as decimal into the end of `buf`, returning just the digits.
-/// No padding: the one field that needs it (minutes, and only in the hours
-/// form) is padded by its caller, where the rule actually lives.
+/// Unpadded; the one caller that needs padding does it itself.
 fn u32_to_str(mut value: u32, buf: &mut [u8; 12]) -> &str {
     let mut i = buf.len();
     loop {
@@ -520,15 +670,12 @@ pub fn format_duration(seconds: u32, buf: &mut [u8; 12]) -> &str {
 }
 
 // -- The heart -------------------------------------------------------------
-// Hand-drawn rather than a font glyph: `_tr` has no heart in it, and a second
-// symbol font for one 15x13 shape would cost more flash than the shape does.
-// Bit 0 of each row is its leftmost pixel.
+// Hand-drawn because `_tr` has no heart glyph. Bit 0 of each row is leftmost.
 
 const HEART_W: i32 = 15;
 const HEART_H: i32 = 13;
-/// Space between the heart and the text it belongs to, and between words laid
-/// out side by side. Both are explicit because the font renderer measures ink,
-/// not advance, so a space inside a string is not a gap it will report.
+/// Explicit because the font renderer measures ink, not advance: a space inside
+/// a string contributes no width it will report.
 const HEART_GAP: i32 = 8;
 const WORD_GAP: i32 = 9;
 const HEART: [u16; HEART_H as usize] = [
@@ -546,10 +693,8 @@ fn draw_heart(fb: &mut FrameBuf, x: i32, y: i32, color: Abgr2222) {
     }
 }
 
-/// Red when the beat came from the chest strap, white from the wrist, dim when
-/// there is no beat at all. The colour is the whole legend: a wearer who put a
-/// strap on wants to know at a glance that it is the one being believed, and
-/// nothing else on any screen is red.
+/// Red from the strap, white from the wrist, dim with no beat -- the colour is
+/// the whole legend, and nothing else on any screen is red.
 fn heart_color(hr_source: u8, has_beat: bool) -> Abgr2222 {
     if !has_beat {
         DIM
@@ -566,27 +711,24 @@ fn strap_text(strap: u8) -> &'static str {
     match strap {
         STRAP_CONNECTED => "STRAP READY",
         STRAP_SEARCHING => "FINDING STRAP",
-        // Not an error: the wrist sensor is a heart rate monitor too, and
-        // saying so is more use than saying what is missing.
+        // Not an error: the wrist sensor is a heart rate monitor too.
         _ => "WRIST SENSOR",
     }
 }
 
 fn draw_ready(fb: &mut FrameBuf, frame: &Frame) {
-    let title = FontRenderer::new::<TitleFont>();
-    let label = FontRenderer::new::<LabelFont>();
+    let title = bold_face(TITLE_H);
+    let label = label_face();
 
-    // The block is centred between the two hint rows, so it starts higher when
-    // there is a target line to fit in. Laying it out from a fixed top instead
-    // would leave the no-target case sitting high and the target case running
-    // into the EXIT hint -- which is what the first version did.
+    // Centred between the hint rows, so it starts higher when a target line has
+    // to fit; a fixed top runs the target case into the EXIT hint.
     let has_target = frame.target_minutes > 0;
     let top = if has_target { 70 } else { 84 };
 
     draw_centered(fb, &title, "SPIN", top, WHITE);
 
-    // A rule under the title, the width of the word. Nothing structural --
-    // it just stops the strap line reading as a subtitle of the app name.
+    // A rule the width of the word, so the strap line does not read as a
+    // subtitle of the app name.
     let w = text_width(&title, "SPIN") as i32;
     fill_rect(fb, CENTER_X - w / 2, top + 38, w, 2, DIM);
 
@@ -611,8 +753,8 @@ fn draw_ready(fb: &mut FrameBuf, frame: &Frame) {
         if connected { WHITE } else { DIM },
     );
 
-    // Only drawn when a target is set. A row saying "no target" would be a
-    // permanent line about a feature most rides do not use.
+    // Only when a target is set: a "no target" row would be a permanent line
+    // about a feature most rides do not use.
     if has_target {
         let y = top + 78;
         let mut buf = [0u8; 12];
@@ -632,26 +774,22 @@ fn draw_ready(fb: &mut FrameBuf, frame: &Frame) {
     draw_button_hint(fb, BUTTON_R2_DEG, "EXIT", DIM);
 }
 
-/// Draws the clock at the largest of the three faces that fits, and returns
-/// the height it drew at so the caller can place what comes after it.
+/// Draws the clock at the largest face that fits, returning the height it used.
 fn render_clock(fb: &mut FrameBuf, text: &str, y: i32, color: Abgr2222) -> i32 {
-    let xl = FontRenderer::new::<ClockXl>();
-    if text_width(&xl, text) <= CLOCK_MAX_W {
-        draw_centered(fb, &xl, text, y, color);
-        return CLOCK_H_XL;
+    for h in [CLOCK_XL_H, CLOCK_L_H] {
+        let face = number_face(h);
+        if text_width(&face, text) <= CLOCK_MAX_W {
+            draw_centered(fb, &face, text, y, color);
+            return h;
+        }
     }
-    let l = FontRenderer::new::<ClockL>();
-    if text_width(&l, text) <= CLOCK_MAX_W {
-        draw_centered(fb, &l, text, y, color);
-        return CLOCK_H_L;
-    }
-    let m = FontRenderer::new::<ClockM>();
-    draw_centered(fb, &m, text, y, color);
-    CLOCK_H_M
+    let face = number_face(CLOCK_M_H);
+    draw_centered(fb, &face, text, y, color);
+    CLOCK_M_H
 }
 
 fn draw_riding(fb: &mut FrameBuf, frame: &Frame) {
-    let label = FontRenderer::new::<LabelFont>();
+    let label = label_face();
     let paused = frame.screen == SCREEN_PAUSED;
 
     let mut buf = [0u8; 12];
@@ -676,74 +814,55 @@ fn draw_riding(fb: &mut FrameBuf, frame: &Frame) {
     draw_target_arc(fb, frame.elapsed_s, frame.target_minutes, frame.target_reached != 0);
 
     if paused {
-        // The two endings get words, because choosing between them is the
-        // whole reason this screen exists. Resume gets the mark alone: R1 was
-        // PAUSE a second ago, it is the only other thing that can happen here,
-        // and two words on this band do not fit -- "SAVE" and "RESUME" ran
-        // into each other with nothing left to trim.
+        // Resume gets the mark alone: "SAVE" and "RESUME" do not both fit on
+        // this band, with nothing left to trim.
         draw_button_hint(fb, BUTTON_L1_DEG, "SAVE", AMBER);
         draw_button_tick(fb, BUTTON_R1_DEG, WHITE);
         draw_button_hint(fb, BUTTON_L2_DEG, "DISCARD", RED);
     } else {
-        // Riding: one live button and one obvious thing for it to do. The mark
-        // alone. A word here sat over the clock and read as its caption.
         draw_button_tick(fb, BUTTON_R1_DEG, WHITE);
     }
 }
 
-/// Heart, then the number, then its unit -- centred as one group so the row
-/// stays put when the bpm goes from two digits to three.
 // -- The zone ring ----------------------------------------------------------
-// The zones drawn around the rim, as a speedometer rather than a bar. The panel
-// is a circle and this is the one piece of information that is naturally a
-// scale, so it gets the perimeter and the middle stays clear for the numbers.
 
-/// Centre of the panel, in the half-pixel sense: a 240-wide row has its middle
-/// between pixel 119 and 120, and a ring drawn about 120.0 sits a half pixel
-/// off and shows it as a lopsided rim.
+/// Centre in the half-pixel sense: a 240-wide row has its middle between pixel
+/// 119 and 120, and a ring drawn about 120.0 shows a half-pixel lopsided rim.
 const RING_CX: f32 = (PANEL_W as f32 - 1.0) / 2.0;
 const RING_CY: f32 = (PANEL_H as f32 - 1.0) / 2.0;
 
 const RING_OUTER: f32 = 116.0;
-/// Inactive segments are thinner. The active one grows inward to RING_INNER_ON,
-/// so the zone you are in is the one with weight as well as brightness -- two
-/// signals, because on a reflective panel in bad light colour alone is thin.
+/// The active segment grows inward to RING_INNER_ON, giving the lit zone weight
+/// as well as brightness -- on a reflective panel in bad light colour alone is
+/// thin.
 const RING_INNER_OFF: f32 = 107.0;
 const RING_INNER_ON: f32 = 100.0;
 
-/// Where the scale starts and stops, measured clockwise from twelve o'clock.
-/// A 270-degree sweep with the gap at the bottom: the classic speedometer
-/// opening, and it is where the button labels live.
+/// Clockwise from twelve o'clock, leaving the bottom 90 degrees open -- which
+/// is where the button labels live.
 const RING_START_DEG: f32 = -135.0;
 const RING_SWEEP_DEG: f32 = 270.0;
 /// Gap between segments, in degrees, so five arcs read as five.
 const RING_GAP_DEG: f32 = 3.0;
 
-/// The 90 degrees the zone scale leaves open at the bottom, minus a margin at
-/// each end so the target arc does not touch the zone arcs it sits between.
+/// The scale's open bottom, less a margin so the target arc never touches the
+/// zone arcs it sits between.
 const TARGET_START_DEG: f32 = 223.0;
 const TARGET_SWEEP_DEG: f32 = 86.0;
-/// Thinner than the zone arcs and set inside them: a second reading, not a
-/// competing one.
+/// Thinner than the zone arcs and inside them: a second reading, not a rival.
 const TARGET_OUTER: f32 = 114.0;
 const TARGET_INNER: f32 = 108.0;
 
 const DEG_TO_RAD: f32 = core::f32::consts::PI / 180.0;
 
-/// How far apart consecutive samples are, in pixels, along the arc and along
-/// the radius. The samples form a grid of this pitch laid over the pixel grid
-/// at an arbitrary rotation, so the limit is not 1.0 but the diagonal: past
-/// 1/sqrt(2) ~= 0.707 a pixel can fall between four samples and never be
-/// painted.
+/// Sample pitch along the arc and along the radius. The samples are a grid of
+/// this pitch over the pixel grid at an arbitrary rotation, so the limit is the
+/// diagonal, not 1.0: past 1/sqrt(2) ~= 0.707 a pixel can fall between four
+/// samples and never be painted.
 ///
-/// Measured rather than reasoned: 0.85 leaves 95 unpainted pixels in the ring,
-/// 0.75 leaves 4, and 0.70 is clean -- which lands on the geometry exactly.
-/// 0.65 is that with a little margin.
-///
-/// These were 0.4 and 0.5, which painted every pixel of the ring three to nine
-/// times over. `the_confirm_ring_has_no_gaps` is what makes tuning them safe:
-/// it asserts the ring is solid, not merely present, which is the one thing
-/// that goes wrong here and the one thing no other test would notice.
+/// MEASURED: 0.85 leaves 95 unpainted pixels in the ring, 0.75 leaves 4, 0.70
+/// is clean -- the geometry, exactly. 0.65 is that with margin. Re-measure by
+/// filling an arc and counting unpainted pixels inside it.
 const ARC_ANGULAR_PX: f32 = 0.65;
 const ARC_RADIAL_PX: f32 = 0.65;
 
@@ -765,16 +884,15 @@ fn fill_arc(
     if sweep_deg <= 0.0 || r_outer <= r_inner {
         return;
     }
-    // Radians per step, sized so the outer edge -- where consecutive runs are
-    // furthest apart -- moves by ARC_ANGULAR_PX.
+    // Sized so the outer edge, where runs are furthest apart, moves by
+    // ARC_ANGULAR_PX.
     let step = ARC_ANGULAR_PX / r_outer;
     let start = start_deg * DEG_TO_RAD;
     let end = start + sweep_deg * DEG_TO_RAD;
 
     let mut a = start;
     while a <= end {
-        // 0 degrees is twelve o'clock and angles run clockwise, which is how
-        // the constants above read; the panel's y grows downward, hence -cos.
+        // Zero is twelve o'clock, clockwise; panel y grows downward, hence -cos.
         let (sa, ca) = (a.sin(), a.cos());
         let mut r = r_inner;
         while r <= r_outer {
@@ -787,26 +905,19 @@ fn fill_arc(
     }
 }
 
-/// The needle: where the heart rate sits on the scale, not merely which zone it
-/// is in. Without it a 93 and a 109 light the same segment and look identical.
+/// Longer than the ring is thick so most of it lies over black whatever colour
+/// the segment under it is, and outboard of TICK_OUTER so it can never share
+/// pixels with a button mark -- zone 4's arc runs through R1's corner.
 ///
-/// Drawn longer than the ring is thick, poking out past both edges, so that
-/// most of its length lies over black however the segment under it is coloured
-/// -- a white marker sitting entirely inside a grey zone-1 arc would be nearly
-/// invisible. The black slot underneath separates it from the arc it crosses.
-/// Kept outboard of TICK_OUTER so the needle and a button mark can never
-/// occupy the same pixels: zone 4's arc runs straight through R1's corner, and
-/// two white marks at the same radius there read as one confusing smudge.
-/// 119, not 120: the bezel is the circle of radius 120 and a needle drawn to
-/// it loses its tip to the glass. nothing_is_drawn_outside_the_bezel catches it.
+/// 119, not 120: the bezel is the circle of radius 120, and a needle drawn to
+/// it loses its tip to the glass.
 const NEEDLE_INNER: f32 = 106.0;
 const NEEDLE_OUTER: f32 = 119.0;
 const NEEDLE_SWEEP_DEG: f32 = 2.2;
 const NEEDLE_SLOT_DEG: f32 = 5.4;
 
-/// Position within the lit segment, from the zone and the fraction across it.
-/// Computed here rather than sent as a position along the whole ring, so the
-/// needle cannot drift into the gap between two segments.
+/// Position within the lit segment, so the needle cannot drift into the gap
+/// between two of them the way a whole-ring position does.
 fn zone_needle_deg(zone: u8, fraction: u8, count: u8) -> f32 {
     let n = count as f32;
     let segment = (RING_SWEEP_DEG - RING_GAP_DEG * (n - 1.0)) / n;
@@ -815,12 +926,8 @@ fn zone_needle_deg(zone: u8, fraction: u8, count: u8) -> f32 {
 }
 
 fn draw_zone_needle(fb: &mut FrameBuf, zone: u8, fraction: u8, count: u8, has_zones: bool) {
-    // Below zone 1 there is nowhere on the scale to point: the bottom of zone 1
-    // is a threshold the wearer set, but there is no defined bottom to the
-    // scale itself. The ring says "you are not on it yet" by lighting nothing,
-    // and the needle says the same by being absent.
-    // The same bounds the ring uses, including the upper one: without it a
-    // nonsense count draws a needle on a dial that was never drawn.
+    // The same bounds draw_zone_ring uses, so a needle can never appear on a
+    // dial that was not drawn. Below zone 1 there is nowhere honest to point.
     if !has_zones || count < 2 || count as usize > MAX_ZONES || zone < 1 || zone > count {
         return;
     }
@@ -831,12 +938,8 @@ fn draw_zone_needle(fb: &mut FrameBuf, zone: u8, fraction: u8, count: u8, has_zo
              NEEDLE_SWEEP_DEG, WHITE);
 }
 
-/// The five zone arcs. Drawn whenever the wearer has thresholds set, whatever
-/// zone they are in -- the scale is the point, and a ring that appeared only
-/// once you reached zone 1 would be a ring that vanished when you eased off.
-///
-/// Zone 0 (below zone 1) lights nothing, which is the honest rendering of
-/// warming up: the scale is there, you are not on it yet.
+/// The zone arcs, `count` of them. Drawn whenever thresholds are set, whatever
+/// zone the wearer is in; zone 0 lights none of them.
 fn draw_zone_ring(fb: &mut FrameBuf, zone: u8, count: u8, has_zones: bool) {
     if !has_zones || count < 2 || count as usize > MAX_ZONES {
         return;
@@ -855,14 +958,9 @@ fn draw_zone_ring(fb: &mut FrameBuf, zone: u8, count: u8, has_zones: bool) {
     }
 }
 
-/// Progress toward the configured target, drawn in the opening the zone scale
-/// leaves at the bottom. Only when a target is set -- with none, the gap stays
-/// empty, which is what makes the ring read as a speedometer rather than a
-/// closed circle.
-///
-/// It grows from the bottom-left toward the bottom-right, so the two arcs read
-/// as one continuous sweep: the zones run clockwise over the top and finish at
-/// the lower right, and this picks up at the lower left and runs to meet them.
+/// Progress toward the target, in the opening the zone scale leaves at the
+/// bottom, growing left to right to meet where the zones end. Nothing is drawn
+/// without a target, which is what keeps the ring a speedometer.
 fn draw_target_arc(fb: &mut FrameBuf, elapsed_s: u32, target_minutes: u16, reached: bool) {
     if target_minutes == 0 {
         return;
@@ -880,21 +978,21 @@ fn draw_target_arc(fb: &mut FrameBuf, elapsed_s: u32, target_minutes: u16, reach
         fill_arc(fb, TARGET_INNER, TARGET_OUTER, TARGET_START_DEG - TARGET_SWEEP_DEG,
                  remaining, dim(HUE_GREY));
     }
-    // Anchored at the bottom-left end and advancing toward the bottom-right, so
-    // the filled part always starts in the same place.
     if swept > 0.0 {
         fill_arc(fb, TARGET_INNER, TARGET_OUTER, TARGET_START_DEG - swept, swept, WHITE);
     }
 }
 
+/// Heart, number, unit, centred as one group so the row stays put when the bpm
+/// goes from two digits to three.
 fn draw_hr_row(fb: &mut FrameBuf, bpm: u16, hr_source: u8, y: i32) {
-    let number = FontRenderer::new::<NumberFont>();
-    let label = FontRenderer::new::<LabelFont>();
+    let number = number_face(NUMBER_H);
+    let label = label_face();
 
     let has_beat = bpm > 0;
     let mut buf = [0u8; 12];
-    // Three dashes, not a stale number and not a zero: "no reading" and "a
-    // reading of zero" have to look different, and only one of them can happen.
+    // Dashes, not a zero: only one of "no reading" and "a reading of zero" can
+    // happen, and they must not look alike.
     let text = if has_beat {
         u32_to_str(bpm as u32, &mut buf)
     } else {
@@ -930,12 +1028,12 @@ fn draw_hr_row(fb: &mut FrameBuf, bpm: u16, hr_source: u8, y: i32) {
 }
 
 fn draw_saved(fb: &mut FrameBuf, frame: &Frame) {
-    let heading = FontRenderer::new::<HeadingFont>();
-    let label = FontRenderer::new::<LabelFont>();
+    let heading = bold_face(HEADING_H);
+    let label = label_face();
 
+    // saved_ok is ActivityWriter::stop()'s durability contract, so this word is
+    // a fact about the filesystem rather than a reassurance.
     let ok = frame.saved_ok != 0;
-    // The Service only claims this once the .fit is flushed and closed, so
-    // "SAVED" here is a fact about the filesystem rather than a reassurance.
     draw_centered(
         fb,
         &heading,
@@ -948,39 +1046,35 @@ fn draw_saved(fb: &mut FrameBuf, frame: &Frame) {
     let text = format_duration(frame.elapsed_s, &mut buf);
     render_clock(fb, text, CLOCK_Y, WHITE);
 
-    // Average heart rate, then energy. Two rows rather than one crowded one:
-    // three digits and a unit each, and at this size they do not share a line.
+    // Two rows: three digits and a unit each do not share a line at this size.
     if frame.avg_hr_bpm > 0 {
         let mut hr_buf = [0u8; 12];
         let hr = u32_to_str(frame.avg_hr_bpm as u32, &mut hr_buf);
-        draw_value_row(fb, &label, "AVG", hr, "BPM", 132);
+        draw_value_row(fb, &label, "AVG", hr, "BPM", 132, WHITE);
     } else {
         draw_centered(fb, &label, "NO HEART RATE", 132, DIM);
     }
 
-    // 0 is a real answer for a ride too short to have burned a whole unit, so
-    // the row is always drawn: an absent one would read as a broken estimate
-    // rather than a small one.
+    // Always drawn: 0 is a real answer for a very short ride, and an absent row
+    // would read as a broken estimate rather than a small one.
     let mut energy_buf = [0u8; 12];
     let energy = u32_to_str(frame.energy as u32, &mut energy_buf);
     let unit = if frame.energy_is_kj != 0 { "KJ" } else { "KCAL" };
-    draw_value_row(fb, &label, "", energy, unit, 156);
+    draw_value_row(fb, &label, "", energy, unit, 156, WHITE);
 
-    // Bottom right, where leaving lives on every screen that offers it.
     draw_button_hint(fb, BUTTON_R2_DEG, "DONE", WHITE);
 }
 
-/// `prefix value unit`, centred as one group, the value in white and the words
-/// around it dim. Spaced with explicit gaps rather than spaces inside the
-/// strings: the renderer measures a string by its ink, so a leading or trailing
-/// space contributes nothing to the width and the parts run together.
+/// `prefix value unit`, centred as one group, the words around the value dim.
+/// Gaps are explicit because the renderer measures ink, not advance.
 fn draw_value_row(
     fb: &mut FrameBuf,
-    label: &FontRenderer,
+    label: &Face,
     prefix: &str,
     value: &str,
     unit: &str,
     y: i32,
+    value_color: Abgr2222,
 ) {
     let prefix_w = if prefix.is_empty() { 0 } else { text_width(label, prefix) as i32 };
     let value_w = text_width(label, value) as i32;
@@ -993,47 +1087,80 @@ fn draw_value_row(
         draw_text(fb, label, prefix, left, y, HorizontalAlignment::Left, DIM);
     }
     let value_x = left + lead;
-    draw_text(fb, label, value, value_x, y, HorizontalAlignment::Left, WHITE);
+    draw_text(fb, label, value, value_x, y, HorizontalAlignment::Left, value_color);
     draw_text(fb, label, unit, value_x + value_w + WORD_GAP, y,
               HorizontalAlignment::Left, DIM);
 }
 
-/// Asks before destroying a ride. Two presses on two screens rather than one
-/// tap, and every button that does anything is labelled, including the one that
-/// backs out.
+/// Asks before destroying a ride, with both answers on labelled buttons.
 ///
-/// WHY THIS IS NOT A PRESS-AND-HOLD
-///
-/// It was, briefly, the way the SDK's own activity apps gate Discard. On the
-/// watch it did not work at all: this app enables the music-control overlay in
-/// setCapabilities(), the system claims the long press to open it, and the app
-/// never saw the HOLD_1S it was waiting for. The SDK's own port notes say
-/// LONG_PRESS and HOLD_* are not forwarded to screens in the first place.
-///
-/// So the confirmation is two ordinary clicks, which nothing intercepts. That
-/// is also why the wearer can always leave: the previous version could only be
-/// exited by an event that never arrived, which left the screen stuck with no
-/// way out at all.
+/// HARDWARE, and why this is not a press-and-hold: Spin sets
+/// `enMusicControl = true` in `Service::setCapabilities()`, the system claims
+/// the long press to open its overlay, and `HOLD_1S` never reaches the app. The
+/// first version of this screen could only be left by that event, so it could
+/// not be left at all. Falsified by that setting changing, and only re-testable
+/// on the watch.
 fn draw_confirm_discard(fb: &mut FrameBuf) {
-    let heading = FontRenderer::new::<HeadingFont>();
-    let label = FontRenderer::new::<LabelFont>();
+    let heading = bold_face(HEADING_H);
+    let label = label_face();
 
-    // A full red ring, unbroken: this screen is not the zone dial and should
-    // not be mistaken for it even out of the corner of an eye.
+    // Unbroken, so it cannot be mistaken for the zone dial at a glance.
     fill_arc(fb, RING_INNER_OFF, RING_OUTER, 0.0, 360.0, RED);
 
     draw_centered(fb, &heading, "DISCARD", 92, WHITE);
     draw_centered(fb, &label, "THIS RIDE?", 122, DIM);
 
-    draw_button_hint(fb, BUTTON_R1_DEG, "YES", RED);
-    draw_button_hint(fb, BUTTON_R2_DEG, "NO", WHITE);
+    draw_button_answer(fb, BUTTON_R1_DEG, "YES", RED);
+    draw_button_answer(fb, BUTTON_R2_DEG, "NO", WHITE);
 }
 
-/// What happened, said plainly. Not "saved" and not an error: the wearer asked
-/// for this, and the screen should agree with them rather than apologise.
+/// "+100" / "+10", built from the step the button adds, so the glass cannot
+/// drift from the arithmetic.
+fn plus_label(step: u16, buf: &mut [u8; 12]) -> &str {
+    let mut digits = [0u8; 12];
+    let d = u32_to_str(step as u32, &mut digits);
+    buf[0] = b'+';
+    let n = if d.len() < buf.len() - 1 { d.len() } else { buf.len() - 1 };
+    buf[1..1 + n].copy_from_slice(&d.as_bytes()[..n]);
+    core::str::from_utf8(&buf[..1 + n]).unwrap_or("+")
+}
+
+/// The bike console's kilojoules, built with two buttons on the way to saving.
+/// SKIP is as bright as SAVE, and the estimate is beside the field and never in
+/// it; both are argued in `Spin/README.md` and `work.rs`.
+fn draw_enter_work(fb: &mut FrameBuf, frame: &Frame) {
+    let heading = bold_face(HEADING_H);
+    let label = label_face();
+    let value_font = number_face(CLOCK_XL_H);
+
+    // Named for where the number comes from, so it cannot be confused with the
+    // app's own calorie figure.
+    draw_centered(fb, &heading, "BIKE KJ", ENTER_WORK_HEADING_Y, WHITE);
+
+    let mut buf = [0u8; 12];
+    let value = u32_to_str(frame.work_kj as u32, &mut buf);
+    draw_centered(fb, &value_font, value, ENTER_WORK_VALUE_Y, WHITE);
+
+    if frame.work_estimate_kj > 0 {
+        let mut est_buf = [0u8; 12];
+        let est = u32_to_str(frame.work_estimate_kj as u32, &mut est_buf);
+        draw_value_row(fb, &label, "ESTIMATE", est, "KJ", ENTER_WORK_ESTIMATE_Y, DIM);
+    }
+
+    let mut hundreds_buf = [0u8; 12];
+    draw_button_hint(fb, BUTTON_L1_DEG, plus_label(work::HUNDREDS_STEP, &mut hundreds_buf),
+                     WHITE);
+    let mut tens_buf = [0u8; 12];
+    draw_button_hint(fb, BUTTON_L2_DEG, plus_label(work::TENS_STEP, &mut tens_buf), WHITE);
+
+    draw_button_hint(fb, BUTTON_R1_DEG, "SAVE", WHITE);
+    draw_button_hint(fb, BUTTON_R2_DEG, "SKIP", WHITE);
+}
+
+/// Not "saved" and not an error: the wearer asked for this.
 fn draw_discarded(fb: &mut FrameBuf) {
-    let heading = FontRenderer::new::<HeadingFont>();
-    let label = FontRenderer::new::<LabelFont>();
+    let heading = bold_face(HEADING_H);
+    let label = label_face();
 
     draw_centered(fb, &heading, "DISCARDED", 96, AMBER);
     draw_centered(fb, &label, "NOTHING WAS SAVED", 126, DIM);
@@ -1059,9 +1186,9 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, frame: &Frame) {
         SCREEN_SAVED => draw_saved(&mut fb, frame),
         SCREEN_CONFIRM_DISCARD => draw_confirm_discard(&mut fb),
         SCREEN_DISCARDED => draw_discarded(&mut fb),
-        // READY is the default rather than a fourth arm: an out-of-range
-        // screen byte is a bug somewhere upstream, and the pre-ride screen is
-        // the one that loses the wearer the least.
+        SCREEN_ENTER_WORK => draw_enter_work(&mut fb, frame),
+        // Default rather than an arm of its own: an out-of-range screen byte is
+        // a bug upstream, and READY loses the wearer the least.
         _ => draw_ready(&mut fb, frame),
     }
 
@@ -1115,8 +1242,7 @@ mod tests {
         assert_eq!(format_duration(60, &mut buf), "1:00");
         assert_eq!(format_duration(600, &mut buf), "10:00");
         assert_eq!(format_duration(3599, &mut buf), "59:59");
-        // The hour boundary is where the minute field starts being padded --
-        // "1:0:05" would be unreadable and "1:00:05" is the point of the split.
+        // The hour boundary, where the minute field starts being padded.
         assert_eq!(format_duration(3600, &mut buf), "1:00:00");
         assert_eq!(format_duration(3605, &mut buf), "1:00:05");
         assert_eq!(format_duration(3665, &mut buf), "1:01:05");
@@ -1131,30 +1257,24 @@ mod tests {
 
     #[test]
     fn the_clock_never_exceeds_the_panel() {
-        // Every clock string this app can produce, at the face render_clock
-        // would pick for it, has to fit inside CLOCK_MAX_W -- otherwise the
-        // longest ride of the year is the one that draws off the edge.
-        let faces = [
-            (FontRenderer::new::<ClockXl>(), "xl"),
-            (FontRenderer::new::<ClockL>(), "l"),
-            (FontRenderer::new::<ClockM>(), "m"),
-        ];
+        // Otherwise the longest ride of the year is the one that draws off the
+        // edge.
+        let heights = [CLOCK_XL_H, CLOCK_L_H, CLOCK_M_H];
         for seconds in [0u32, 59, 60, 3599, 3600, 35999, 36000, 359_999, u32::MAX] {
             let mut buf = [0u8; 12];
             let text = format_duration(seconds, &mut buf);
-            let chosen = faces
+            let chosen = heights
                 .iter()
-                .find(|(f, _)| text_width(f, text) <= CLOCK_MAX_W)
-                .unwrap_or(&faces[2]);
+                .find(|h| text_width(&number_face(**h), text) <= CLOCK_MAX_W)
+                .unwrap_or(&CLOCK_M_H);
             assert!(
-                text_width(&chosen.0, text) <= CLOCK_MAX_W,
-                "{text} does not fit even at the smallest face"
+                text_width(&number_face(*chosen), text) <= CLOCK_MAX_W,
+                "{text} does not fit even at the smallest height"
             );
         }
     }
 
-    /// The panel is a circle inscribed in the 240x240 buffer -- the same test
-    /// the preview binary applies when it blacks out the corners.
+    /// The panel is a circle inscribed in the 240x240 buffer.
     fn inside_bezel(x: u32, y: u32) -> bool {
         let dx = 2 * x as i32 - (W as i32 - 1);
         let dy = 2 * y as i32 - (H as i32 - 1);
@@ -1164,9 +1284,8 @@ mod tests {
     #[test]
     fn nothing_is_drawn_outside_the_bezel() {
         // Every scene, because this is a layout invariant and the scenes are
-        // the layouts. The first version of the button hints failed this: they
-        // were inset from the buffer's edge rather than the glass's, so the
-        // last glyph of "START" and "PAUSE" was cut off by the bezel.
+        // the layouts. Button hints inset from the buffer's edge rather than
+        // the glass's lost their last glyph on the watch.
         for (name, frame) in scenes::scenes() {
             let buf = draw(&frame);
             for y in 0..H {
@@ -1206,8 +1325,6 @@ mod tests {
 
     #[test]
     fn a_missing_beat_is_not_drawn_as_a_number() {
-        // The two have to be visibly different: "---" against a dim heart, not
-        // a zero and not whatever the last beat was.
         let mut none = frame(SCREEN_RIDING);
         none.elapsed_s = 300;
         let mut zero_bpm = none;
@@ -1221,9 +1338,7 @@ mod tests {
 
     #[test]
     fn the_strap_changes_the_heart_rather_than_the_layout() {
-        // Same bpm from the strap and from the wrist: the number sits in the
-        // same place, only the heart's colour differs. A layout that shifted
-        // would make a dropout look like a different reading.
+        // A layout that shifted would make a dropout look like a new reading.
         let mut wrist = frame(SCREEN_RIDING);
         wrist.hr_bpm = 140;
         wrist.hr_source = HR_OPTICAL;
@@ -1241,10 +1356,8 @@ mod tests {
         );
     }
 
-    /// Just the rows the one banner slot occupies. The banner tests compare
-    /// this rather than the whole frame: the target arc at the bottom of the
-    /// ring legitimately differs between these cases, and a whole-frame
-    /// comparison would call that a banner change.
+    /// Just the rows the banner occupies: the target arc legitimately differs
+    /// between these cases, and a whole-frame compare would call that a banner.
     fn rows(buf: &[u8], y0: u32, y1: u32) -> Vec<u8> {
         buf[(y0 * W) as usize..(y1 * W) as usize].to_vec()
     }
@@ -1255,8 +1368,8 @@ mod tests {
 
     #[test]
     fn a_pause_outranks_the_target_for_the_one_banner_slot() {
-        // Both want the same row. A wearer who pauses after passing the target
-        // needs to be told the clock is stopped, not congratulated again.
+        // A wearer who pauses after passing the target needs to be told the
+        // clock is stopped, not congratulated again.
         let mut riding_met = frame(SCREEN_RIDING);
         riding_met.elapsed_s = 1801;
         riding_met.target_minutes = 30;
@@ -1273,9 +1386,8 @@ mod tests {
 
     #[test]
     fn the_banner_never_infers_that_the_target_was_met() {
-        // The Service owns "reached" -- it is the flag that fired the buzz --
-        // so the renderer must not conclude it from the clock passing the
-        // target. Same elapsed, same target, different flag.
+        // The renderer must not conclude "reached" from the clock passing the
+        // target: same elapsed, same target, different flag.
         let mut past_it = frame(SCREEN_RIDING);
         past_it.elapsed_s = 4000; // well past 30 minutes
         past_it.target_minutes = 30;
@@ -1293,8 +1405,6 @@ mod tests {
 
     #[test]
     fn the_target_arc_tracks_progress() {
-        // The arc in the ring's opening is the only thing that changes here, so
-        // a whole-frame comparison is the right one.
         let base = {
             let mut f = frame(SCREEN_RIDING);
             f.target_minutes = 30;
@@ -1314,17 +1424,13 @@ mod tests {
         let lit = |f: &Frame| draw(f).iter().filter(|&&b| b != BLACK.0).count();
         assert!(lit(&none) < lit(&part) && lit(&part) < lit(&full));
 
-        // Past the target it stops growing rather than wrapping round. Compared
-        // over the arc's own rows only: elapsed_s also drives the clock, and
-        // 30:00 and 2:46:39 are legitimately different pictures.
+        // Over the arc's rows only: elapsed_s also drives the clock.
         let over = Frame { elapsed_s: 9999, target_reached: 1, ..base };
         assert_eq!(rows(&draw(&full), 200, 240), rows(&draw(&over), 200, 240));
     }
 
     #[test]
     fn no_target_leaves_the_ring_open() {
-        // The gap at the bottom is what makes it read as a speedometer rather
-        // than a closed circle, so nothing draws there without a target.
         let mut f = frame(SCREEN_RIDING);
         f.has_zones = 1;
         f.zone_count = 5;
@@ -1336,8 +1442,8 @@ mod tests {
 
     #[test]
     fn no_zones_set_draws_no_dial_at_all() {
-        // "Below zone 1" and "you have set no zones" are different states. A
-        // dial with nothing lit would say the first when it means the second.
+        // A dial with nothing lit would say "below zone 1" when it means
+        // "no zones set".
         let none = Frame { elapsed_s: 300, hr_bpm: 120, ..frame(SCREEN_RIDING) };
         let below_zone_1 = Frame { has_zones: 1, zone_count: 5, hr_zone: 0, ..none };
         assert_ne!(draw(&none), draw(&below_zone_1),
@@ -1358,9 +1464,7 @@ mod tests {
 
     #[test]
     fn every_dial_size_draws_and_reads_bottom_to_top() {
-        // Two through eight. Each count a different picture, and within each
-        // the bottom zone lit differently from the top -- a ladder that ran
-        // cool to cool would lose "red means hard" whatever its length.
+        // A ladder running cool to cool loses "red means hard" at any length.
         let mut seen: Vec<Vec<u8>> = Vec::new();
         for count in 2..=MAX_ZONES as u8 {
             let base = Frame { has_zones: 1, zone_count: count, hr_zone_fraction: 128,
@@ -1376,7 +1480,7 @@ mod tests {
 
     #[test]
     fn a_count_outside_the_supported_range_draws_no_dial() {
-        // Rather than indexing off the end of the hue table.
+        // Rather than indexing off the end of ZONE_HUES.
         for count in [1u8, 9, 200] {
             let f = Frame { has_zones: 1, zone_count: count, hr_zone: 1,
                             ..frame(SCREEN_RIDING) };
@@ -1387,9 +1491,8 @@ mod tests {
 
     #[test]
     fn the_needle_stays_inside_its_own_segment_at_any_count() {
-        // Why the fraction is sent per-zone rather than across the whole ring:
-        // equal slices with gaps between them, so a position measured over the
-        // whole scale drifts out of its own segment by the last one.
+        // Why the fraction is per-zone: equal slices with gaps between them, so
+        // a whole-scale position drifts out of its segment by the last one.
         for count in 2..=MAX_ZONES as u8 {
             let segment =
                 (RING_SWEEP_DEG - RING_GAP_DEG * (count as f32 - 1.0)) / count as f32;
@@ -1413,8 +1516,6 @@ mod tests {
 
     #[test]
     fn zero_energy_is_still_drawn() {
-        // A ride too short to burn a whole unit is a real ride. An absent row
-        // would read as a broken estimate rather than a small one.
         let zero = Frame { elapsed_s: 12, saved_ok: 1, ..frame(SCREEN_SAVED) };
         assert_ne!(draw(&zero), draw(&Frame { energy: 5, ..zero }));
         assert!(lit_pixels(&draw(&zero)) > 500);
@@ -1433,13 +1534,11 @@ mod tests {
 
     #[test]
     fn the_confirm_screen_offers_a_way_out() {
-        // The bug this replaced: the screen could only be left by an event that
-        // the system was intercepting, so it could not be left at all. Both
-        // answers must be on screen.
+        // The bug this replaced: the screen could only be left by an event the
+        // system was intercepting, so it could not be left at all.
         let buf = draw(&frame(SCREEN_CONFIRM_DISCARD));
         assert!(lit_pixels(&buf) > 500);
 
-        // It must not be mistakable for the zone dial behind it.
         let mut riding = frame(SCREEN_RIDING);
         riding.has_zones = 1;
         riding.zone_count = 5;
@@ -1449,13 +1548,55 @@ mod tests {
 
     #[test]
     fn a_discarded_ride_does_not_read_as_a_failed_save() {
-        // The wearer asked for one of these and not the other, and the screen
-        // has to agree with them rather than apologise.
         let discarded = frame(SCREEN_DISCARDED);
         let mut failed = frame(SCREEN_SAVED);
         failed.elapsed_s = 2712;
         failed.saved_ok = 0;
         assert_ne!(draw(&discarded), draw(&failed));
+    }
+
+    #[test]
+    fn the_entry_screen_offers_both_ways_off_it() {
+        // Both endings are CLICKs on labelled buttons, and both are drawn.
+        let buf = draw(&frame(SCREEN_ENTER_WORK));
+        assert!(lit_pixels(&buf) > 500);
+
+        assert_ne!(buf, draw(&frame(SCREEN_CONFIRM_DISCARD)));
+        assert_ne!(buf, draw(&frame(SCREEN_SAVED)));
+    }
+
+    #[test]
+    fn the_entry_screen_shows_the_number_being_built() {
+        // Or the wearer cannot tell that a click landed.
+        let mut seen: Vec<Vec<u8>> = Vec::new();
+        let mut v = 0u16;
+        for _ in 0..work::TENS_PLACES {
+            let drawn = draw(&Frame { work_kj: v, ..frame(SCREEN_ENTER_WORK) });
+            assert!(!seen.contains(&drawn), "{v} kJ draws like another value");
+            seen.push(drawn);
+            v = work::add_tens(v);
+        }
+    }
+
+    #[test]
+    fn the_button_labels_are_the_steps_the_buttons_take() {
+        // What the wearer is currently promised on the glass.
+        let mut buf = [0u8; 12];
+        assert_eq!(plus_label(work::HUNDREDS_STEP, &mut buf), "+100");
+        let mut buf = [0u8; 12];
+        assert_eq!(plus_label(work::TENS_STEP, &mut buf), "+10");
+    }
+
+    #[test]
+    fn the_estimate_is_drawn_beside_the_value_and_never_as_it() {
+        // The reference must not be mistakable for the field.
+        let none = Frame { work_kj: 0, work_estimate_kj: 0, ..frame(SCREEN_ENTER_WORK) };
+        let with_ref = Frame { work_estimate_kj: 390, ..none };
+        assert_ne!(draw(&none), draw(&with_ref), "the reference should be drawn");
+
+        let entered = Frame { work_kj: 390, work_estimate_kj: 0, ..none };
+        assert_ne!(draw(&entered), draw(&with_ref),
+                   "390 entered and 390 suggested must not look the same");
     }
 
     #[test]
@@ -1472,14 +1613,30 @@ mod tests {
 
     #[test]
     fn every_pixel_is_a_colour_the_panel_can_hold() {
-        // ABGR2222 with an opaque alpha: anything else would be quantised on
-        // the way to the glass and would not look like what the test saw.
-        let mut f = frame(SCREEN_RIDING);
-        f.elapsed_s = 3661;
-        f.hr_bpm = 155;
-        f.hr_source = HR_EXTERNAL;
-        for byte in draw(&f) {
-            assert_eq!(byte >> 6, 0b11, "pixel 0x{byte:02X} is not opaque");
+        // Every scene, not one frame: the discard answers are drawn with a
+        // hand-made halo one level down, and a colour that missed the panel's
+        // levels would be quantised on the way to the glass -- so the test
+        // would not be looking at what the watch draws.
+        for (name, frame) in scenes::scenes() {
+            for byte in draw(&frame) {
+                assert_eq!(byte >> 6, 0b11, "{name}: pixel 0x{byte:02X} is not opaque");
+            }
         }
+    }
+
+    #[test]
+    fn the_discard_answers_are_bolder_than_an_ordinary_hint() {
+        // They are the one place a misread costs the wearer their ride.
+        assert!(text_width(&bold_face(ANSWER_H), "YES") > text_width(&label_face(), "YES"),
+                "the answers should be drawn larger than an ordinary label");
+
+        // Part-covered RED appears nowhere else on this screen -- the ring and
+        // the mark are both full red -- so any shade of it is the smoothing or
+        // nothing. A part-covered white would prove nothing here, since
+        // "THIS RIDE?" is drawn in DIM already.
+        let buf = draw(&frame(SCREEN_CONFIRM_DISCARD));
+        let partial: Vec<u8> = [1, 2].iter().filter_map(|l| shade(RED, *l)).map(|c| c.0).collect();
+        assert!(buf.iter().any(|b| partial.contains(b)),
+                "no part-covered red: the discard answers are not being smoothed");
     }
 }

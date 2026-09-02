@@ -8,49 +8,39 @@
 extern "C" {
 #endif
 
-/* One render-time struct describes any screen this app draws. Gui.cpp builds
-   it fresh from the last Track::Data / Track::State / accessory status the
-   Service published, so the renderer is a pure function of it: the same frame
-   always draws the same pixels, on the watch and in the host simulator. */
+/* One render-time struct describes any screen this app draws, so the renderer
+   is a pure function of it. */
 
 #define SPIN_GUI_SCREEN_READY  0u  /* pre-ride: strap status, waiting to start */
 #define SPIN_GUI_SCREEN_RIDING 1u  /* clock running */
 #define SPIN_GUI_SCREEN_PAUSED 2u  /* clock held */
 #define SPIN_GUI_SCREEN_SAVED  3u  /* finished: what was written */
-/* Asking before throwing a ride away, and the acknowledgement after. Two
-   deliberate presses on two screens, not one tap -- this is the one action
-   here that destroys data. See Gui.cpp for why it is not a press-and-hold. */
 #define SPIN_GUI_SCREEN_CONFIRM_DISCARD 4u
 #define SPIN_GUI_SCREEN_DISCARDED       5u
+#define SPIN_GUI_SCREEN_ENTER_WORK      6u
 
-/* The strap's BLE link, collapsed from SDK::Accessory::State the same way
-   SDK::Gui::SensorStatusRow::hrState() collapses it. */
+/* The strap's BLE link, collapsed from SDK::Accessory::State. */
 #define SPIN_GUI_STRAP_ABSENT    0u  /* UNAVAILABLE / IDLE */
 #define SPIN_GUI_STRAP_SEARCHING 1u  /* SEARCHING / CONNECTING / LOST */
 #define SPIN_GUI_STRAP_CONNECTED 2u  /* CONNECTED */
 
-/* Which source the kernel's arbiter actually believed this second --
-   SDK::SensorDataParser::HeartRateEx::Source, carried through unchanged. */
+/* SDK::SensorDataParser::HeartRateEx::Source, carried through unchanged. */
 #define SPIN_GUI_HR_NONE     0u
 #define SPIN_GUI_HR_OPTICAL  1u
 #define SPIN_GUI_HR_EXTERNAL 2u
 
-/* Heart-rate zones. hr_zone 0 means below zone 1 -- or that no zones are set
-   at all, in which case there are none to be in and the dial is not drawn.
-   How many there are is zone_count, which comes from the app's configuration
-   or the watch's own settings; this is only the ceiling. */
 #define SPIN_GUI_MAX_ZONES 8u
 
-/* Field order puts the 32-bit field first and the 16-bit pair next, so every
-   field lands on its natural alignment with no padding. Not load-bearing --
-   the ABI fingerprint below checks whatever the compiler actually produced --
-   but there is no reason to pay for padding that is easy to avoid. */
+/* Widest fields first, so nothing pays for padding. Not load-bearing: the
+   fingerprint below checks whatever the compiler actually produced. */
 typedef struct {
     uint32_t elapsed_s;      /* active ride seconds; the number on the screen */
     uint16_t hr_bpm;         /* current bpm, 0 = nothing believable right now */
     uint16_t avg_hr_bpm;     /* SAVED only: bpm over the whole ride, 0 = never measured */
     uint16_t target_minutes; /* the configured target, 0 = none set */
     uint16_t energy;         /* already in the display unit below, rounded */
+    uint16_t work_kj;          /* kJ built so far, 0 = nothing said */
+    uint16_t work_estimate_kj; /* kJ the calorie model suggests, 0 = no row */
     uint8_t  screen;         /* one of the SPIN_GUI_SCREEN_* values above */
     uint8_t  strap;          /* one of the SPIN_GUI_STRAP_* values above */
     uint8_t  hr_source;      /* one of the SPIN_GUI_HR_* values above */
@@ -70,6 +60,14 @@ typedef struct {
 } spin_gui_frame;
 
 uint32_t spin_gui_abi_fingerprint(void);
+
+/* The kilojoule entry model, as pure functions of the current value: Gui.cpp
+   holds one uint16_t, so there is no entry state on the C++ side. See work.rs. */
+uint16_t spin_gui_work_add_hundreds(uint16_t kj);   /* L1 */
+uint16_t spin_gui_work_add_tens(uint16_t kj);       /* L2 */
+/* A reference to draw beside the field, never a value to pre-fill it with.
+   0 = nothing worth showing. */
+uint16_t spin_gui_work_estimate_kj(float active_kcal);
 void     spin_gui_host_panic(const uint8_t *msg, uint32_t len);
 void     spin_gui_render(uint8_t *buf, uint32_t buf_len,
                          uint16_t width, uint16_t height,
@@ -88,11 +86,9 @@ constexpr uint32_t fnv1a(uint32_t hash, size_t byte)
     return (hash ^ (static_cast<uint32_t>(byte) & 0xFFu)) * kFnvPrime;
 }
 
-/// The same walk over the same values in the same order as `abi_fingerprint()`
-/// in lib.rs. Two implementations that have to agree -- but a disagreement
-/// reports itself at startup, which is the direction an ABI check should fail in:
-/// a stale libspin_gui.a linked against a changed struct is otherwise silent
-/// until it draws garbage.
+/// The same walk in the same order as `abi_fingerprint()` in lib.rs. Gui::run()
+/// refuses to start on a disagreement, which is the direction this should fail
+/// in: a stale libspin_gui.a is otherwise silent until it draws garbage.
 constexpr uint32_t fingerprint()
 {
     uint32_t h = kFnvOffsetBasis;
@@ -103,6 +99,8 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(spin_gui_frame, avg_hr_bpm));
     h = fnv1a(h, offsetof(spin_gui_frame, target_minutes));
     h = fnv1a(h, offsetof(spin_gui_frame, energy));
+    h = fnv1a(h, offsetof(spin_gui_frame, work_kj));
+    h = fnv1a(h, offsetof(spin_gui_frame, work_estimate_kj));
     h = fnv1a(h, offsetof(spin_gui_frame, screen));
     h = fnv1a(h, offsetof(spin_gui_frame, strap));
     h = fnv1a(h, offsetof(spin_gui_frame, hr_source));
@@ -117,23 +115,25 @@ constexpr uint32_t fingerprint()
 
 } // namespace spin_gui_abi
 
-static_assert(sizeof(spin_gui_frame) == 24, "spin_gui_frame size changed");
+static_assert(sizeof(spin_gui_frame) == 28, "spin_gui_frame size changed");
 static_assert(alignof(spin_gui_frame) == 4, "spin_gui_frame alignment changed");
 static_assert(offsetof(spin_gui_frame, elapsed_s) == 0, "elapsed_s moved");
 static_assert(offsetof(spin_gui_frame, hr_bpm) == 4, "hr_bpm moved");
 static_assert(offsetof(spin_gui_frame, avg_hr_bpm) == 6, "avg_hr_bpm moved");
 static_assert(offsetof(spin_gui_frame, target_minutes) == 8, "target_minutes moved");
 static_assert(offsetof(spin_gui_frame, energy) == 10, "energy moved");
-static_assert(offsetof(spin_gui_frame, screen) == 12, "screen moved");
-static_assert(offsetof(spin_gui_frame, strap) == 13, "strap moved");
-static_assert(offsetof(spin_gui_frame, hr_source) == 14, "hr_source moved");
-static_assert(offsetof(spin_gui_frame, saved_ok) == 15, "saved_ok moved");
-static_assert(offsetof(spin_gui_frame, target_reached) == 16, "target_reached moved");
-static_assert(offsetof(spin_gui_frame, hr_zone) == 17, "hr_zone moved");
-static_assert(offsetof(spin_gui_frame, zone_count) == 18, "zone_count moved");
-static_assert(offsetof(spin_gui_frame, has_zones) == 19, "has_zones moved");
-static_assert(offsetof(spin_gui_frame, energy_is_kj) == 20, "energy_is_kj moved");
-static_assert(offsetof(spin_gui_frame, hr_zone_fraction) == 21, "hr_zone_fraction moved");
+static_assert(offsetof(spin_gui_frame, work_kj) == 12, "work_kj moved");
+static_assert(offsetof(spin_gui_frame, work_estimate_kj) == 14, "work_estimate_kj moved");
+static_assert(offsetof(spin_gui_frame, screen) == 16, "screen moved");
+static_assert(offsetof(spin_gui_frame, strap) == 17, "strap moved");
+static_assert(offsetof(spin_gui_frame, hr_source) == 18, "hr_source moved");
+static_assert(offsetof(spin_gui_frame, saved_ok) == 19, "saved_ok moved");
+static_assert(offsetof(spin_gui_frame, target_reached) == 20, "target_reached moved");
+static_assert(offsetof(spin_gui_frame, hr_zone) == 21, "hr_zone moved");
+static_assert(offsetof(spin_gui_frame, zone_count) == 22, "zone_count moved");
+static_assert(offsetof(spin_gui_frame, has_zones) == 23, "has_zones moved");
+static_assert(offsetof(spin_gui_frame, energy_is_kj) == 24, "energy_is_kj moved");
+static_assert(offsetof(spin_gui_frame, hr_zone_fraction) == 25, "hr_zone_fraction moved");
 #endif
 
 #endif // SPIN_GUI_H

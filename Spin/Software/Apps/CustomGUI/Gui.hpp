@@ -11,10 +11,9 @@
 #include "Track.hpp"
 #include "spin_gui.h"
 
-/// The GUI process: a message loop, a framebuffer, and a translation from the
-/// Service's snapshots into one `spin_gui_frame`. It owns no clock and no
-/// sensor -- see Commands.hpp. Every pixel is drawn by the Rust crate under
-/// `rust/`, which is handed the frame and nothing else.
+/// A message loop, a framebuffer, and a translation from the Service's
+/// snapshots into one `spin_gui_frame`; every pixel is drawn by the crate under
+/// `rust/`. Owns no clock and no sensor -- see Commands.hpp.
 class Gui
 {
 public:
@@ -49,22 +48,16 @@ private:
     Track::Data  mTrackData{};
     uint8_t      mStrap = SPIN_GUI_STRAP_ABSENT;
 
-    /// From the app's configuration, via the Service. 0 means no target, which
-    /// is the default and what an app with no config file on the watch shows.
-    uint16_t mTargetMinutes = 0;
+    uint16_t mTargetMinutes = 0;      ///< minutes; 0 = no target
 
-    /// Display unit for energy. The Service always sends kcal; this decides
-    /// what the screen turns it into.
+    /// Display unit only; the Service always sends kcal.
     bool mEnergyInKilojoules = false;
 
-    /// How many segments the dial has. From the app's configuration, or the
-    /// watch's own zones when it declares none.
-    uint8_t mZoneCount = 0;
+    uint8_t mZoneCount = 0;           ///< dial segments; 0 = no zones set
 
-    /// A finished ride is not a state the Service tracks -- it goes back to
-    /// INACTIVE, which is also what "never started" looks like. This is the
-    /// one bit that tells those two apart, set by RIDE_SAVED and cleared when
-    /// the next ride starts.
+    /// The Service has no "finished" state -- it returns to INACTIVE, which is
+    /// also what "never started" looks like. This is the bit that tells them
+    /// apart.
     bool        mShowSaved    = false;
     std::time_t mSavedSeconds = 0;
     float       mSavedAvgHr   = 0.0f;
@@ -72,10 +65,17 @@ private:
     bool        mSavedOk      = false;
     bool        mDiscarded    = false;
 
-    /// On the "discard this ride?" screen. Left by answering either way, and
-    /// by the GUI being suspended -- a wearer who walked away from the question
-    /// has not answered it.
+    /// Both questions are dropped when the GUI is suspended: one the wearer
+    /// walked away from is not one they answered, and the ride underneath is
+    /// still PAUSED and unsaved either way.
     bool mConfirmingDiscard = false;
+    bool mEnteringWork = false;
+
+    /// kJ; 0 = nothing said. The only entry state anywhere -- what each button
+    /// does to it lives in work.rs, as pure functions of this number.
+    uint16_t mWorkKilojoules = 0;
+
+    bool mAskForKilojoules = true;    ///< from the app's configuration
 
     uint8_t mFrameBuf[kMaxPixels * kBytesPerPixel];
 };
