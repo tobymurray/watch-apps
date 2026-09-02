@@ -244,8 +244,30 @@ jobs:
                 "$(echo "${{ inputs.app }}" | tr '[:upper:]' '[:lower:]')" "$version" "$bump" \
                 "${last_tag:-the beginning}" "$notes")
               git -C apps commit --quiet -m "$commit_msg"
-              git -C apps tag "$tag"
-              git -C apps push --quiet "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:main "$tag"
+
+              # One push can touch several apps (a shared crate, this file),
+              # and each app's job then races to land its own bump on main;
+              # the losers were rejected as non-fast-forward the first time it
+              # happened. The bump touches only this app's manifest, so it
+              # rebases cleanly onto whatever the others landed, and the tag is
+              # made after the rebase so it points at the commit that is pushed.
+              remote="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+              pushed=no
+              for attempt in 1 2 3 4 5; do
+                git -C apps fetch --quiet "$remote" main
+                git -C apps rebase --quiet FETCH_HEAD
+                git -C apps tag -f "$tag" > /dev/null
+                if git -C apps push --quiet "$remote" HEAD:main "$tag"; then
+                  pushed=yes
+                  break
+                fi
+                echo "push attempt $attempt rejected, main moved; rebasing and retrying"
+                sleep $((attempt * 5))
+              done
+              if [ "$pushed" != yes ]; then
+                echo "::error::could not land the version bump after 5 attempts"
+                exit 1
+              fi
             fi
           fi
 
