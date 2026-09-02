@@ -352,7 +352,7 @@ fn hint_anchor(deg: f32) -> (i32, HorizontalAlignment, i32) {
 
 fn draw_button_hint(fb: &mut FrameBuf, deg: f32, text: &str, color: Abgr2222) {
     draw_button_tick(fb, deg, color);
-    let label = FontRenderer::new::<LabelFont>();
+    let label = label_face();
     let (x, align, ty) = hint_anchor(deg);
     // Lifted half a line so the word straddles the mark.
     draw_text(fb, &label, text, x, ty - 6, align, color);
@@ -361,9 +361,9 @@ fn draw_button_hint(fb: &mut FrameBuf, deg: f32, text: &str, color: Abgr2222) {
 /// A hint in the answer face, smoothed. Only the discard screen uses it.
 fn draw_button_answer(fb: &mut FrameBuf, deg: f32, text: &str, color: Abgr2222) {
     draw_button_tick(fb, deg, color);
-    let answer = FontRenderer::new::<AnswerFont>();
+    let answer = bold_face(ANSWER_H);
     let (x, align, ty) = hint_anchor(deg);
-    draw_text_smoothed(fb, &answer, text, x, ty - 9, align, color);
+    draw_text(fb, &answer, text, x, ty - 9, align, color);
 }
 
 const CLOCK_Y: i32 = 70;
@@ -380,87 +380,236 @@ const ENTER_WORK_ESTIMATE_Y: i32 = 148;
 /// label, and "PAUSED"/"RESUME" are the pair that do it.
 const PAUSED_BANNER_Y: i32 = 116;
 
-// -- Fonts -------------------------------------------------------------------
+// -- Fonts and smoothing -----------------------------------------------------
 // FONT ASSETS: `_tn` faces carry DIGITS ONLY -- no letters -- and `_tr` is the
-// reduced ASCII tier. Anything with words needs a `_tr` face. Falsified by
-// changing a face; a `_tn` face given a letter silently draws nothing.
+// reduced ASCII tier. A `_tn` face given a letter silently draws nothing.
+//
+// u8g2 faces are fixed-resolution 1bpp bitmaps with no alpha and no "render
+// bigger" option, so there is no antialiasing to ask for -- text drawn straight
+// from one has a hard staircase on every diagonal. The way round it is
+// Barcode's: render from a face a size class LARGER than the target, then
+// area-average down to the panel's four levels. See render_smoothed().
+//
+// That means the small faces are not needed at all -- only their heights are.
+// Three glyph sets replace the eight this app used to ship.
 
-/// Largest to smallest; `render_clock` takes the first that fits.
-type ClockXl = fonts::u8g2_font_fub42_tn;
-type ClockL = fonts::u8g2_font_fub35_tn;
-type ClockM = fonts::u8g2_font_fub25_tn;
+type NumberSrc = fonts::u8g2_font_fub49_tn;    // 63 tall: every digit on screen
+type BoldSrc = fonts::u8g2_font_helvB24_tr;    // 32 tall: titles, headings, answers
+type LabelSrc = fonts::u8g2_font_helvR24_tr;   // 32 tall: every label
 
-type NumberFont = fonts::u8g2_font_fub20_tn;
-type TitleFont = fonts::u8g2_font_helvB24_tr;
-type HeadingFont = fonts::u8g2_font_helvB14_tr;
-type LabelFont = fonts::u8g2_font_helvR12_tr;
-/// The two answers on the discard screen, and only those. Bold and half again
-/// the label size, because they are the one place in the app where a misread
-/// costs the wearer their ride.
-type AnswerFont = fonts::u8g2_font_helvB18_tr;
-
-/// Ascent-descent span of each face above, used to place the clock by its top.
-const CLOCK_H_XL: i32 = 42;
-const CLOCK_H_L: i32 = 35;
-const CLOCK_H_M: i32 = 25;
+// On-screen heights, each the ascent-descent span of the face that used to draw
+// it, so nothing moves: fub42/35/25/20 and helvB24/18/14, helvR12.
+const CLOCK_XL_H: i32 = 54;
+const CLOCK_L_H: i32 = 44;
+const CLOCK_M_H: i32 = 32;
+const NUMBER_H: i32 = 25;
+const TITLE_H: i32 = 32;
+const HEADING_H: i32 = 18;
+const LABEL_H: i32 = 16;
+/// The discard answers, and only those. Bold and half again the label size,
+/// because they are the one place where a misread costs the wearer their ride.
+const ANSWER_H: i32 = 24;
 
 /// Widest the clock may draw: the round panel's chord at the clock's own rows,
 /// not the full 240.
 const CLOCK_MAX_W: u32 = 218;
 
-fn text_width(renderer: &FontRenderer, s: &str) -> u32 {
-    renderer
+/// A face to render from and the height to shrink it to.
+struct Face {
+    font: FontRenderer,
+    src_h: i32,
+    dst_h: i32,
+}
+
+impl Face {
+    fn new(font: FontRenderer, dst_h: i32) -> Self {
+        let src_h = font.get_ascent() as i32 - font.get_descent() as i32;
+        Face { font, src_h, dst_h }
+    }
+
+    /// The on-screen width: the source's own width, scaled by the same ratio
+    /// the glyphs are. Measured on the source and scaled rather than measured
+    /// on a face this app no longer ships.
+    fn width(&self, s: &str) -> i32 {
+        let w = self
+            .font
+            .get_rendered_dimensions(s, Point::zero(), VerticalPosition::Top)
+            .ok()
+            .and_then(|d| d.bounding_box)
+            .map(|b| b.size.width as i32)
+            .unwrap_or(0);
+        if self.src_h <= 0 { 0 } else { w * self.dst_h / self.src_h }
+    }
+}
+
+fn number_face(dst_h: i32) -> Face { Face::new(FontRenderer::new::<NumberSrc>(), dst_h) }
+fn bold_face(dst_h: i32) -> Face { Face::new(FontRenderer::new::<BoldSrc>(), dst_h) }
+fn label_face() -> Face { Face::new(FontRenderer::new::<LabelSrc>(), LABEL_H) }
+
+fn text_width(face: &Face, s: &str) -> u32 {
+    face.width(s).max(0) as u32
+}
+
+// -- The scratch buffer ------------------------------------------------------
+// Sized from measurement, not guessed. Every string this app can draw was
+// rendered at its source face: the widest is "NOTHING WAS SAVED" at 351 px on
+// helvR24, and the tallest source is fub49 at 63. ~9% margin on each. A buffer
+// guessed in advance would either waste RAM or silently clip, and the clamps
+// below would hide the clipping rather than flag it.
+const SS_MAX_W: usize = 384;
+const SS_MAX_H: usize = 70;
+
+/// One scratch buffer, reused for every string. Safe on the watch because the
+/// GUI process is single-threaded: Gui.cpp runs spin_gui_render() to completion
+/// before it does anything else, so there is never a second render in flight.
+/// `cargo test` does not honour that -- its runner uses threads -- so SS_LOCK
+/// exists to make the test binary honest. The no_std build has no threads and
+/// pays nothing for it.
+static mut SS_BUF: [u8; SS_MAX_W * SS_MAX_H] = [0; SS_MAX_W * SS_MAX_H];
+
+#[cfg(feature = "std")]
+static SS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Records coverage only: which source pixels the glyph lit.
+struct SuperSample {
+    w: i32,
+    h: i32,
+}
+
+impl OriginDimensions for SuperSample {
+    fn size(&self) -> Size {
+        Size::new(self.w.max(0) as u32, self.h.max(0) as u32)
+    }
+}
+
+impl DrawTarget for SuperSample {
+    type Color = Abgr2222;
+    type Error = core::convert::Infallible;
+
+    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Pixel<Self::Color>>,
+    {
+        for Pixel(coord, _) in pixels {
+            if coord.x >= 0 && coord.y >= 0 && coord.x < self.w && coord.y < self.h {
+                let idx = coord.y as usize * SS_MAX_W + coord.x as usize;
+                unsafe { SS_BUF[idx] = 1 };
+            }
+        }
+        Ok(())
+    }
+}
+
+/// `color` at `level` of 3 coverage, on the panel's own levels. Level 0 is
+/// nothing at all, so the background shows through rather than being painted
+/// over in the darkest shade.
+fn shade(color: Abgr2222, level: i32) -> Option<Abgr2222> {
+    if level <= 0 {
+        return None;
+    }
+    let ch = |shift: u8| {
+        let v = ((color.0 >> shift) & CHANNEL_MASK) as i32;
+        (((v * level) + 1) / 3).clamp(0, CHANNEL_MASK as i32) as u8
+    };
+    Some(Abgr2222::from_levels(ch(RED_SHIFT), ch(GREEN_SHIFT), ch(BLUE_SHIFT)))
+}
+
+/// Renders `s` from `face`'s source into the scratch buffer, then shrinks it to
+/// the face's target height by area-averaging each destination pixel's source
+/// block and mapping the coverage onto the panel's four levels.
+fn render_smoothed(
+    fb: &mut FrameBuf,
+    face: &Face,
+    s: &str,
+    dst_x: i32,
+    dst_y: i32,
+    color: Abgr2222,
+) {
+    let dst_w = face.width(s);
+    let dst_h = face.dst_h;
+    if dst_w <= 0 || dst_h <= 0 {
+        return;
+    }
+
+    #[cfg(feature = "std")]
+    let _guard = SS_LOCK.lock().unwrap();
+
+    // A glyph's own left bearing is not always 0. Drawing at a flat x=1 and
+    // assuming it away shifts the ink right by (bearing - 1) with no matching
+    // right margin, dropping that many columns off the last glyph -- silently,
+    // through the bounds check in SuperSample::draw_iter.
+    let bbox = face
+        .font
         .get_rendered_dimensions(s, Point::zero(), VerticalPosition::Top)
-        .map(|d| d.bounding_box.map(|b| b.size.width).unwrap_or(0))
-        .unwrap_or(0)
+        .ok()
+        .and_then(|d| d.bounding_box);
+    let left = bbox.map(|b| b.top_left.x).unwrap_or(0);
+    let measured_w = bbox.map(|b| b.size.width as i32).unwrap_or(0);
+    let src_w = (measured_w + 2).clamp(1, SS_MAX_W as i32);
+    let src_h = (face.src_h + 2).clamp(1, SS_MAX_H as i32);
+
+    for y in 0..src_h {
+        let row = y as usize * SS_MAX_W;
+        unsafe { SS_BUF[row..row + src_w as usize].fill(0) };
+    }
+
+    let mut target = SuperSample { w: src_w, h: src_h };
+    let _ = face.font.render_aligned(
+        s,
+        Point::new(1 - left, 0),
+        VerticalPosition::Top,
+        HorizontalAlignment::Left,
+        FontColor::Transparent(Abgr2222::WHITE),
+        &mut target,
+    );
+
+    for dy in 0..dst_h {
+        let sy0 = dy * src_h / dst_h;
+        let sy1 = ((dy + 1) * src_h / dst_h).max(sy0 + 1).min(src_h);
+        for dx in 0..dst_w {
+            let sx0 = dx * src_w / dst_w;
+            let sx1 = ((dx + 1) * src_w / dst_w).max(sx0 + 1).min(src_w);
+            let mut lit = 0i32;
+            let mut total = 0i32;
+            for sy in sy0..sy1 {
+                let row = sy as usize * SS_MAX_W;
+                for sx in sx0..sx1 {
+                    total += 1;
+                    if unsafe { SS_BUF[row + sx as usize] } != 0 {
+                        lit += 1;
+                    }
+                }
+            }
+            if total == 0 {
+                continue;
+            }
+            if let Some(c) = shade(color, (lit * 3 + total / 2) / total) {
+                fill_rect(fb, dst_x + dx, dst_y + dy, 1, 1, c);
+            }
+        }
+    }
 }
 
 fn draw_text(
     fb: &mut FrameBuf,
-    renderer: &FontRenderer,
+    face: &Face,
     s: &str,
     x: i32,
     y: i32,
     align: HorizontalAlignment,
     color: Abgr2222,
 ) {
-    let _ = renderer.render_aligned(
-        s,
-        Point::new(x, y),
-        VerticalPosition::Top,
-        align,
-        FontColor::Transparent(color),
-        fb,
-    );
+    let w = face.width(s);
+    let dst_x = match align {
+        HorizontalAlignment::Left => x,
+        HorizontalAlignment::Center => x - w / 2,
+        HorizontalAlignment::Right => x - w,
+    };
+    render_smoothed(fb, face, s, dst_x, y, color);
 }
 
-fn draw_centered(fb: &mut FrameBuf, renderer: &FontRenderer, s: &str, y: i32, color: Abgr2222) {
-    draw_text(fb, renderer, s, CENTER_X, y, HorizontalAlignment::Center, color);
-}
-
-/// The same text drawn a pixel out in each direction one colour down, then the
-/// glyph itself on top.
-///
-/// u8g2 faces are 1-bit bitmaps and carry no alpha, so there is no antialiasing
-/// to ask for; the staircase on a diagonal stroke is the roughest thing on the
-/// glass. Four levels a channel is enough to soften that edge by hand, and
-/// `dim()` is exactly one level down -- so white gets a 170 skirt and red a
-/// (170,0,0) one. Costs five glyph renders, which is why only the discard
-/// answers use it.
-fn draw_text_smoothed(
-    fb: &mut FrameBuf,
-    renderer: &FontRenderer,
-    s: &str,
-    x: i32,
-    y: i32,
-    align: HorizontalAlignment,
-    color: Abgr2222,
-) {
-    let halo = dim(color);
-    for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-        draw_text(fb, renderer, s, x + dx, y + dy, align, halo);
-    }
-    draw_text(fb, renderer, s, x, y, align, color);
+fn draw_centered(fb: &mut FrameBuf, face: &Face, s: &str, y: i32, color: Abgr2222) {
+    draw_text(fb, face, s, CENTER_X, y, HorizontalAlignment::Center, color);
 }
 
 // -- Number formatting -------------------------------------------------------
@@ -568,8 +717,8 @@ fn strap_text(strap: u8) -> &'static str {
 }
 
 fn draw_ready(fb: &mut FrameBuf, frame: &Frame) {
-    let title = FontRenderer::new::<TitleFont>();
-    let label = FontRenderer::new::<LabelFont>();
+    let title = bold_face(TITLE_H);
+    let label = label_face();
 
     // Centred between the hint rows, so it starts higher when a target line has
     // to fit; a fixed top runs the target case into the EXIT hint.
@@ -627,23 +776,20 @@ fn draw_ready(fb: &mut FrameBuf, frame: &Frame) {
 
 /// Draws the clock at the largest face that fits, returning the height it used.
 fn render_clock(fb: &mut FrameBuf, text: &str, y: i32, color: Abgr2222) -> i32 {
-    let xl = FontRenderer::new::<ClockXl>();
-    if text_width(&xl, text) <= CLOCK_MAX_W {
-        draw_centered(fb, &xl, text, y, color);
-        return CLOCK_H_XL;
+    for h in [CLOCK_XL_H, CLOCK_L_H] {
+        let face = number_face(h);
+        if text_width(&face, text) <= CLOCK_MAX_W {
+            draw_centered(fb, &face, text, y, color);
+            return h;
+        }
     }
-    let l = FontRenderer::new::<ClockL>();
-    if text_width(&l, text) <= CLOCK_MAX_W {
-        draw_centered(fb, &l, text, y, color);
-        return CLOCK_H_L;
-    }
-    let m = FontRenderer::new::<ClockM>();
-    draw_centered(fb, &m, text, y, color);
-    CLOCK_H_M
+    let face = number_face(CLOCK_M_H);
+    draw_centered(fb, &face, text, y, color);
+    CLOCK_M_H
 }
 
 fn draw_riding(fb: &mut FrameBuf, frame: &Frame) {
-    let label = FontRenderer::new::<LabelFont>();
+    let label = label_face();
     let paused = frame.screen == SCREEN_PAUSED;
 
     let mut buf = [0u8; 12];
@@ -840,8 +986,8 @@ fn draw_target_arc(fb: &mut FrameBuf, elapsed_s: u32, target_minutes: u16, reach
 /// Heart, number, unit, centred as one group so the row stays put when the bpm
 /// goes from two digits to three.
 fn draw_hr_row(fb: &mut FrameBuf, bpm: u16, hr_source: u8, y: i32) {
-    let number = FontRenderer::new::<NumberFont>();
-    let label = FontRenderer::new::<LabelFont>();
+    let number = number_face(NUMBER_H);
+    let label = label_face();
 
     let has_beat = bpm > 0;
     let mut buf = [0u8; 12];
@@ -882,8 +1028,8 @@ fn draw_hr_row(fb: &mut FrameBuf, bpm: u16, hr_source: u8, y: i32) {
 }
 
 fn draw_saved(fb: &mut FrameBuf, frame: &Frame) {
-    let heading = FontRenderer::new::<HeadingFont>();
-    let label = FontRenderer::new::<LabelFont>();
+    let heading = bold_face(HEADING_H);
+    let label = label_face();
 
     // saved_ok is ActivityWriter::stop()'s durability contract, so this word is
     // a fact about the filesystem rather than a reassurance.
@@ -923,7 +1069,7 @@ fn draw_saved(fb: &mut FrameBuf, frame: &Frame) {
 /// Gaps are explicit because the renderer measures ink, not advance.
 fn draw_value_row(
     fb: &mut FrameBuf,
-    label: &FontRenderer,
+    label: &Face,
     prefix: &str,
     value: &str,
     unit: &str,
@@ -955,8 +1101,8 @@ fn draw_value_row(
 /// not be left at all. Falsified by that setting changing, and only re-testable
 /// on the watch.
 fn draw_confirm_discard(fb: &mut FrameBuf) {
-    let heading = FontRenderer::new::<HeadingFont>();
-    let label = FontRenderer::new::<LabelFont>();
+    let heading = bold_face(HEADING_H);
+    let label = label_face();
 
     // Unbroken, so it cannot be mistaken for the zone dial at a glance.
     fill_arc(fb, RING_INNER_OFF, RING_OUTER, 0.0, 360.0, RED);
@@ -983,9 +1129,9 @@ fn plus_label(step: u16, buf: &mut [u8; 12]) -> &str {
 /// SKIP is as bright as SAVE, and the estimate is beside the field and never in
 /// it; both are argued in `Spin/README.md` and `work.rs`.
 fn draw_enter_work(fb: &mut FrameBuf, frame: &Frame) {
-    let heading = FontRenderer::new::<HeadingFont>();
-    let label = FontRenderer::new::<LabelFont>();
-    let value_font = FontRenderer::new::<ClockXl>();
+    let heading = bold_face(HEADING_H);
+    let label = label_face();
+    let value_font = number_face(CLOCK_XL_H);
 
     // Named for where the number comes from, so it cannot be confused with the
     // app's own calorie figure.
@@ -1013,8 +1159,8 @@ fn draw_enter_work(fb: &mut FrameBuf, frame: &Frame) {
 
 /// Not "saved" and not an error: the wearer asked for this.
 fn draw_discarded(fb: &mut FrameBuf) {
-    let heading = FontRenderer::new::<HeadingFont>();
-    let label = FontRenderer::new::<LabelFont>();
+    let heading = bold_face(HEADING_H);
+    let label = label_face();
 
     draw_centered(fb, &heading, "DISCARDED", 96, AMBER);
     draw_centered(fb, &label, "NOTHING WAS SAVED", 126, DIM);
@@ -1113,21 +1259,17 @@ mod tests {
     fn the_clock_never_exceeds_the_panel() {
         // Otherwise the longest ride of the year is the one that draws off the
         // edge.
-        let faces = [
-            (FontRenderer::new::<ClockXl>(), "xl"),
-            (FontRenderer::new::<ClockL>(), "l"),
-            (FontRenderer::new::<ClockM>(), "m"),
-        ];
+        let heights = [CLOCK_XL_H, CLOCK_L_H, CLOCK_M_H];
         for seconds in [0u32, 59, 60, 3599, 3600, 35999, 36000, 359_999, u32::MAX] {
             let mut buf = [0u8; 12];
             let text = format_duration(seconds, &mut buf);
-            let chosen = faces
+            let chosen = heights
                 .iter()
-                .find(|(f, _)| text_width(f, text) <= CLOCK_MAX_W)
-                .unwrap_or(&faces[2]);
+                .find(|h| text_width(&number_face(**h), text) <= CLOCK_MAX_W)
+                .unwrap_or(&CLOCK_M_H);
             assert!(
-                text_width(&chosen.0, text) <= CLOCK_MAX_W,
-                "{text} does not fit even at the smallest face"
+                text_width(&number_face(*chosen), text) <= CLOCK_MAX_W,
+                "{text} does not fit even at the smallest height"
             );
         }
     }
@@ -1484,18 +1626,17 @@ mod tests {
 
     #[test]
     fn the_discard_answers_are_bolder_than_an_ordinary_hint() {
-        // They are the one place a misread costs the wearer their ride, so they
-        // get the bold face and the halo rather than the label font.
-        let label = FontRenderer::new::<LabelFont>();
-        let answer = FontRenderer::new::<AnswerFont>();
-        assert!(text_width(&answer, "YES") > text_width(&label, "YES"),
-                "the answer face should be larger than the label face");
+        // They are the one place a misread costs the wearer their ride.
+        assert!(text_width(&bold_face(ANSWER_H), "YES") > text_width(&label_face(), "YES"),
+                "the answers should be drawn larger than an ordinary label");
 
-        // Dimmed RED appears nowhere else on this screen -- the ring and the
-        // mark are both full red -- so it is the halo or nothing. Dimmed white
-        // would prove nothing here, since "THIS RIDE?" is already drawn in it.
+        // Part-covered RED appears nowhere else on this screen -- the ring and
+        // the mark are both full red -- so any shade of it is the smoothing or
+        // nothing. A part-covered white would prove nothing here, since
+        // "THIS RIDE?" is drawn in DIM already.
         let buf = draw(&frame(SCREEN_CONFIRM_DISCARD));
-        assert!(buf.iter().any(|&b| b == dim(RED).0),
-                "no dimmed red on the discard screen: the YES halo is missing");
+        let partial: Vec<u8> = [1, 2].iter().filter_map(|l| shade(RED, *l)).map(|c| c.0).collect();
+        assert!(buf.iter().any(|b| partial.contains(b)),
+                "no part-covered red: the discard answers are not being smoothed");
     }
 }

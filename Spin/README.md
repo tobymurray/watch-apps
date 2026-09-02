@@ -480,9 +480,36 @@ The two endings of a ride sit at opposite corners on purpose. Finish is the
 button you reach for every time; discard destroys the ride, and it should not be
 the neighbour of the one you press without looking.
 
-The clock picks the largest of three faces that fits, so `12:34` gets the big
+The clock picks the largest of three sizes that fits, so `12:34` gets the big
 one and `10:00:00` is not clipped, and it drops to `M:SS` under an hour rather
 than padding an hour field nobody is riding into.
+
+## Text, and why it is not as rough as it should be
+
+u8g2 faces are fixed-resolution 1bpp bitmaps with no alpha, so drawing straight
+from one leaves a hard staircase on every diagonal — and there is no
+antialiasing to switch on. The way round it is
+[`Barcode`](../Barcode/README.md)'s: render from a face a size class **larger**
+than the wanted size, then area-average each destination pixel's block of source
+pixels and map the coverage onto the panel's four levels. Partial coverage
+becomes a real intermediate shade rather than an on-or-off pixel.
+
+The pleasing part is that it costs nothing. Once the app renders from the large
+faces, **the small ones are not needed at all — only their heights are**, so
+eight glyph sets became three: `fub49` for every digit, `helvB24` for titles,
+headings and the discard answers, `helvR24` for every label. The packed app got
+*smaller* by about 2.9 KB even with the smoothing code added.
+
+The scratch buffer it renders through is sized from measurement, not guessed:
+every string this app can draw was rendered at its source face, and the widest
+came to 351 px (`NOTHING WAS SAVED` at `helvR24`) against a tallest source of
+63 px (`fub49`). It is 384×70, about 9% over each — a buffer guessed in advance
+would either waste RAM or silently clip, and the clamps inside would hide the
+clipping rather than report it.
+
+One exception, and it is a limit rather than a choice: `SPIN` on the pre-ride
+screen is drawn at `helvB24`'s own size, because `helvB24` is the largest bold
+ASCII face u8g2 ships and there is nothing bigger to shrink from.
 
 Edge cases, all of them scenes in the preview binary — no strap, a mid-ride
 dropout, past the hour, and a save that failed:
