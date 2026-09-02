@@ -87,6 +87,9 @@ jobs:
           [ "$missing" -eq 0 ]
           echo "rust targets:"
           docker run --rm --entrypoint rustup "$image" target list --installed
+          echo "font tools:"
+          docker run --rm --entrypoint python3 "$image" -c \
+            'import freetype, fontTools, numpy; print("freetype", ".".join(map(str, freetype.version())), "fonttools", fontTools.version, "numpy", numpy.__version__)'
 
       # This is the fix for the failure mode that cost a whole investigation to
       # diagnose: this repository depended on kira-toolchain's pin, kira moved

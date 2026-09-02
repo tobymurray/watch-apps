@@ -29,6 +29,14 @@ RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) \
       python3-pyelftools python3-pil \
  && rm -rf /var/lib/apt/lists/*
 
+# TextKit/Tools/atlas.py rasterizes the fonts every Rust GUI draws with, and
+# its output is checked in; CI reruns it with --check so a stale atlas fails
+# the build. Pinned to the versions the TouchGFX parity oracle was proven
+# against (TextKit/Tools/requirements.txt): freetype-py bundles its own
+# FreeType, and a different autohinter would change every glyph.
+RUN pip3 install --no-cache-dir --break-system-packages \
+      freetype-py==2.5.1 fonttools==4.60.2 numpy==2.0.2
+
 # The image ships these unexecutable, and every job had to fix that itself.
 RUN for tool in arm-none-eabi-gcc arm-none-eabi-g++ arm-none-eabi-objcopy arm-none-eabi-size; do \
       path="$(find /opt/st/stm32cubeide_* -type f -name "$tool" | head -n 1)"; \
