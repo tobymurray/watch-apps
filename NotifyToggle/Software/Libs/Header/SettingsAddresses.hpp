@@ -55,6 +55,15 @@ struct AddressSet {
     uintptr_t fileReleaseAddr;
     uintptr_t setPathAddr;
 
+    // --- SettingsPersist: general-purpose kernel file utilities, used for
+    // the tmp-file + backup-rotate + rename atomic commit pattern. Each
+    // takes a plain path string, not a File object -- these delegate
+    // through a filesystem singleton the kernel resolves internally on
+    // every call, not something this app has to manage. ---
+    uintptr_t fileExistsAddr;
+    uintptr_t fileDeleteAddr;
+    uintptr_t fileRenameAddr;
+
     // File object layout (may differ across builds even if the functions
     // above land at different addresses but keep the same shape -- kept
     // explicit rather than assumed constant).

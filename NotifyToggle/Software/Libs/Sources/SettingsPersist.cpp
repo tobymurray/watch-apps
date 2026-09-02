@@ -17,6 +17,9 @@ using FileWriteFn   = int (*)(void *self, const void *buf, uint32_t len, uint32_
 using FileCloseFn   = void (*)(void *self);
 using FileReleaseFn = void (*)(void *self);
 using SetPathFn     = char *(*)(char *dst, const char *src, unsigned maxlen);
+using FileExistsFn  = int (*)(const char *path);
+using FileDeleteFn  = int (*)(const char *path);
+using FileRenameFn  = int (*)(const char *oldPath, const char *newPath);
 
 // open()'s (flag1, flag2) -> FatFs mode, confirmed on kernel 1.4.0 (see
 // SettingsAddresses.hpp/.cpp -- this part of the calling convention, unlike
@@ -28,7 +31,9 @@ using SetPathFn     = char *(*)(char *dst, const char *src, unsigned maxlen);
 constexpr int kOpenReadOnly        = 0;
 constexpr int kOpenCreateOrReplace = 1;
 
-constexpr const char *kSettingsPath = "2:/settings.json";
+constexpr const char *kSettingsPath    = "2:/settings.json";
+constexpr const char *kSettingsTmpPath = "2:/settings.json.tmp";
+constexpr const char *kSettingsBakPath = "2:/settings.json.bak";
 
 // Sane upper bound on the settings file this app will read/write. The real
 // file is 245 bytes today; this leaves generous headroom for the firmware
@@ -72,11 +77,11 @@ bool objectSizeInRange(const SettingsAddresses::AddressSet &addrs)
            addrs.fileSizeFieldOffset + sizeof(uint64_t) <= addrs.fileObjectSize;
 }
 
-void resetFile(RawFile &file, const SettingsAddresses::AddressSet &addrs)
+void resetFile(RawFile &file, const SettingsAddresses::AddressSet &addrs, const char *path)
 {
     std::memset(file.bytes, 0, addrs.fileObjectSize);
     reinterpret_cast<SetPathFn>(addrs.setPathAddr)(
-        reinterpret_cast<char *>(file.bytes + addrs.pathBufferOffset), kSettingsPath,
+        reinterpret_cast<char *>(file.bytes + addrs.pathBufferOffset), path,
         static_cast<unsigned>(addrs.pathBufferSize));
 }
 
@@ -87,7 +92,7 @@ Status readCurrentFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses:
                         char *outBuf, size_t &outLen)
 {
     RawFile file{};
-    resetFile(file, addrs);
+    resetFile(file, addrs, kSettingsPath);
 
     const auto fileOpen = reinterpret_cast<FileOpenFn>(addrs.fileOpenAddr);
     const auto fileRead = reinterpret_cast<FileReadFn>(addrs.fileReadAddr);
@@ -168,19 +173,24 @@ Status spliceNotificationsField(char *buf, size_t &len, bool newEnabled)
     return Status::Ok;
 }
 
-Status writeWholeFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
-                       const char *buf, size_t len)
+/// Writes `buf`/`len` to a brand-new `2:/settings.json.tmp`, never touching
+/// the real file. On any failure, best-effort deletes the tmp file so a
+/// half-written leftover doesn't confuse the next attempt.
+Status writeTmpFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                     const char *buf, size_t len)
 {
     RawFile file{};
-    resetFile(file, addrs);
+    resetFile(file, addrs, kSettingsTmpPath);
 
     const auto fileOpen = reinterpret_cast<FileOpenFn>(addrs.fileOpenAddr);
     const auto fileWrite = reinterpret_cast<FileWriteFn>(addrs.fileWriteAddr);
     const auto fileClose = reinterpret_cast<FileCloseFn>(addrs.fileCloseAddr);
     const auto fileRelease = reinterpret_cast<FileReleaseFn>(addrs.fileReleaseAddr);
+    const auto fileExists = reinterpret_cast<FileExistsFn>(addrs.fileExistsAddr);
+    const auto fileDelete = reinterpret_cast<FileDeleteFn>(addrs.fileDeleteAddr);
 
     if (fileOpen(file.self(), kOpenCreateOrReplace, 1) == 0) {
-        DebugLog::append(fs, "SettingsPersist: write-open failed");
+        DebugLog::append(fs, "SettingsPersist: tmp-open failed");
         return Status::WriteOpenFailed;
     }
 
@@ -190,12 +200,61 @@ Status writeWholeFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::
     fileRelease(file.self());
 
     if (!writeOk || bytesWritten != len) {
-        DebugLog::appendf(fs, "SettingsPersist: write failed or short (ok=%d bytesWritten=%u expected=%zu)",
+        DebugLog::appendf(fs, "SettingsPersist: tmp-write failed or short (ok=%d bytesWritten=%u expected=%zu)",
                            writeOk, bytesWritten, len);
+        if (fileExists(kSettingsTmpPath)) {
+            fileDelete(kSettingsTmpPath);
+        }
         return Status::WriteFailed;
     }
 
     return Status::Ok;
+}
+
+/// Commits an already-written `2:/settings.json.tmp` into place, replicating
+/// the firmware's own tmp-file + backup-rotate + rename pattern (see
+/// SettingsPersist.hpp for why this calls exists/delete/rename directly
+/// instead of the firmware's own atomic-write functions, which turned out
+/// to be tightly coupled to the live Settings object's internal state
+/// rather than a portable (path, buf, len) primitive). The backup rotation
+/// is best-effort, same as the firmware's own algorithm -- losing the .bak
+/// does not block the commit, since the commit is a rename that does not
+/// depend on it. If the final commit rename itself fails, the tmp file is
+/// deliberately left in place rather than deleted: the new content is not
+/// lost, just not live yet, and recovering it is the same
+/// DeviceBackups/-plus-USB path this investigation has used throughout,
+/// not something this app tries to automate.
+Status commitTmpFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs)
+{
+    const auto fileExists = reinterpret_cast<FileExistsFn>(addrs.fileExistsAddr);
+    const auto fileDelete = reinterpret_cast<FileDeleteFn>(addrs.fileDeleteAddr);
+    const auto fileRename = reinterpret_cast<FileRenameFn>(addrs.fileRenameAddr);
+
+    if (fileExists(kSettingsPath)) {
+        if (fileExists(kSettingsBakPath) && !fileDelete(kSettingsBakPath)) {
+            DebugLog::append(fs, "SettingsPersist: could not delete stale .bak (continuing)");
+        }
+        if (!fileRename(kSettingsPath, kSettingsBakPath)) {
+            DebugLog::append(fs, "SettingsPersist: could not rotate real file to .bak (continuing)");
+        }
+    }
+
+    if (!fileRename(kSettingsTmpPath, kSettingsPath)) {
+        DebugLog::append(fs, "SettingsPersist: commit rename (.tmp -> real) FAILED");
+        return Status::CommitFailed;
+    }
+
+    return Status::Ok;
+}
+
+Status writeWholeFileAtomic(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                             const char *buf, size_t len)
+{
+    Status status = writeTmpFile(fs, addrs, buf, len);
+    if (status != Status::Ok) {
+        return status;
+    }
+    return commitTmpFile(fs, addrs);
 }
 
 } // namespace
@@ -224,7 +283,7 @@ Status persistNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsA
     }
     DebugLog::appendBytes(fs, "SettingsPersist: about to write", buf, len);
 
-    status = writeWholeFile(fs, addrs, buf, len);
+    status = writeWholeFileAtomic(fs, addrs, buf, len);
     if (status != Status::Ok) {
         return status;
     }

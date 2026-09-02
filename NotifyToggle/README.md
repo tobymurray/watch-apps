@@ -42,9 +42,20 @@ version:
   instead calls the kernel's internal, non-virtual `File` class directly
   (the same open/read/write/close primitives the firmware's own
   settings-backup logic already uses for this exact file) to read the real
-  current file content, splice in only the `notifications` field, and write
-  the whole file back — verified with an immediate readback, and confirmed
-  live on the real device to survive a full power cycle.
+  current file content and splice in only the `notifications` field —
+  verified with an immediate readback, and confirmed live on the real
+  device to survive a full power cycle.
+- **The commit itself is crash-atomic**, replicating (not calling — see
+  below) the firmware's own tmp-file + backup-rotate + rename pattern:
+  write to `2:/settings.json.tmp`, best-effort rotate any existing real file
+  to `.bak`, then rename `.tmp` over the real path as the actual commit. The
+  firmware's own atomic-write functions (`0x0806dd54`/`0x0806de64`) turned
+  out to be tightly coupled to the live Settings object's own internal
+  state, not a portable primitive — register-evidenced and refused for
+  direct reuse, the same standard `Settings::save()` was refused by. The
+  general-purpose `exists`/`delete`/`rename` kernel utilities underneath it
+  (55/41/21 real callers found across the firmware image) are used directly
+  instead.
 
 Everything above is specific to kernel 1.4.0 on this one unit — addresses
 that would need re-deriving, not assuming, on another watch or firmware

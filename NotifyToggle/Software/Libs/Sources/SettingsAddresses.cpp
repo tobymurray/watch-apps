@@ -27,6 +27,15 @@ constexpr AddressSet kFirmware_1_4_0 = {
     /* pathBufferOffset         */ 0x04u,
     /* pathBufferSize           */ 0x100u,
     /* fileSizeFieldOffset      */ 0x118u,
+    // General-purpose kernel file utilities (real-caller counts across the
+    // full 4MB image: exists 55, delete 41, rename 21 -- not Settings-
+    // specific, confirmed general kernel primitives). Each takes plain
+    // path string(s); the filesystem singleton they delegate through is
+    // resolved internally on every call, so no singleton address is needed
+    // here.
+    /* fileExistsAddr           */ 0x0809b5a0u | 1u,
+    /* fileDeleteAddr           */ 0x0809b648u | 1u,
+    /* fileRenameAddr           */ 0x0809b5d8u | 1u,
 };
 
 struct Entry {
