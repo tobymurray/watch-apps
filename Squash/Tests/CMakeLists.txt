@@ -1,13 +1,9 @@
 # Host tests for the Squash recorder path, built out of tree like the app.
 #
-# Split into three executables because they need very different things:
+# Split into two executables because they need very different things:
 #
 #   * ImuCsvRecorder is plain C++ over a caller-supplied sink — no SDK headers
 #     at all — so its tests build against nothing but GoogleTest.
-#   * InputConfig reads the provisioning file that decides whether recording
-#     happens. It needs the kernel doubles and the SDK's JSON reader, which is
-#     built on coreJSON — a submodule, so the suite is skipped when it has not
-#     been initialized rather than failing configure.
 #   * ImuFileSink writes through SDK::Kernel, and its test asserts the round
 #     trip by replaying what landed in storage through the simulator's
 #     ImuFusionSource. That needs an SDK checkout, and specifically one
@@ -52,35 +48,6 @@ add_executable(squash-recorder-tests
 target_include_directories(squash-recorder-tests PRIVATE "${APP_LIBS}/Header")
 target_link_libraries(squash-recorder-tests PRIVATE GTest::gtest_main)
 add_test(NAME squash-recorder-tests COMMAND squash-recorder-tests)
-
-set(COREJSON_DIR "${UNA_SDK_ROOT}/ThirdParty/coreJSON/source")
-
-if(EXISTS "${COREJSON_DIR}/core_json.c")
-    add_executable(squash-inputconfig-tests
-        InputConfig_test.cpp
-        "${APP_LIBS}/Sources/InputConfig.cpp"
-        "${UNA_SDK_ROOT}/Tests/Host/support/KernelTestDoubles.cpp"
-        "${UNA_SDK_ROOT}/Libs/Source/JSON/JsonStreamReader.cpp"
-        "${UNA_SDK_ROOT}/Libs/Source/UnaLogger/Logger.cpp"
-        "${UNA_SDK_ROOT}/Libs/Source/Wrappers/StdLibWrappers.c"
-        "${COREJSON_DIR}/core_json.c"
-    )
-
-    target_include_directories(squash-inputconfig-tests PRIVATE
-        "${APP_LIBS}/Header"
-        "${UNA_SDK_ROOT}/Libs/Header"
-        "${UNA_SDK_ROOT}/Tests/Host/support"
-        "${COREJSON_DIR}/include"
-    )
-
-    target_link_libraries(squash-inputconfig-tests PRIVATE GTest::gtest_main)
-    add_test(NAME squash-inputconfig-tests COMMAND squash-inputconfig-tests)
-else()
-    message(STATUS
-        "Squash: skipping squash-inputconfig-tests — no coreJSON at "
-        "${COREJSON_DIR}. Run: git submodule update --init --recursive in the SDK."
-    )
-endif()
 
 set(IMU_FUSION_SOURCE
     "${UNA_SDK_ROOT}/Libs/Source/Simulator/Components/Sensors/Imu/ImuFusionSource.cpp"

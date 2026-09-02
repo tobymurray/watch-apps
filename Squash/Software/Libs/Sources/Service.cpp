@@ -16,7 +16,6 @@
 #include "SDK/Utils/Utils.hpp"
 #include "SDK/Timer/Timer.hpp"
 
-#include "SDK/SensorLayer/DataParsers/SensorDataParserPressure.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserHeartRateEx.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserBatteryLevel.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserBatteryMetrics.hpp"
@@ -41,17 +40,13 @@ Service::Service(SDK::Kernel &kernel)
         , mSummary{}
         , mActivitySummarySerializer(mKernel, "Activity/summary.json")
         , mActivityWriter(mKernel, "Activity")
-        , mInputConfig(mKernel)
         , mImuSink(mKernel, "Imu")
-        , mSensorPressure(SDK::Sensor::Type::PRESSURE, skSamplePeriod, skSampleLatency)
         , mSensorHr(SDK::Sensor::Type::HEART_RATE_EX, skSamplePeriod, skSampleLatency)
         , mSensorBatteryLevel(SDK::Sensor::Type::BATTERY_LEVEL)
         , mSensorBatteryMetrics(SDK::Sensor::Type::BATTERY_METRICS, skSamplePeriod, skSampleLatency)
         , mSensorWristMotion(SDK::Sensor::Type::WRIST_MOTION)
         , mSensorFusion(SDK::Sensor::Type::FUSION_RAW, 1000.0f / skFusionSampleRateHz, 100)
         , mTimeTracker(kernel.sys)
-        , mAltitudeFilter(0.8f)
-        , mAltitudeCounter()
         , mBatterySoc(kernel.sys)
         , mBatteryVoltage(kernel.sys)
         , mWristTiltDetector()
@@ -61,7 +56,6 @@ Service::Service(SDK::Kernel &kernel)
     mDistanceCounter.init();
     mSpeedCounter.init(0.5f, 300.0f);
     mHrCounter.init(20.0f, 300.0f);
-    mAltitudeCounter.init(2.0f);
 
     WristTiltDetector::Config config{};
     config.sampleRateHz = skFusionSampleRateHz;
@@ -222,7 +216,6 @@ void Service::connectSensors()
 
         mSensorBatteryLevel.connect();
         mSensorBatteryMetrics.connect();
-        mSensorPressure.connect();
         mSensorHr.connect();
         mSensorFusion.connect();
 
@@ -242,7 +235,6 @@ void Service::disconnect()
 
         mSensorFusion.disconnect();
         mSensorHr.disconnect();
-        mSensorPressure.disconnect();
         mSensorBatteryLevel.disconnect();
         mSensorBatteryMetrics.disconnect();
 
@@ -256,19 +248,7 @@ void Service::disconnect()
 
 void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
 {
-    if (mSensorPressure.matchesDriver(handle)) {
-        SDK::SensorDataParser::Pressure parser(data[0]);
-        if (parser.isDataValid()) {
-            if (!mAltitudeCounter.isValid()) {
-                mSeaLevelPressure = parser.getP0();
-            }
-            float altitude = parser.getAltitude(parser.getPressure(), mSeaLevelPressure);
-            float filtered = mAltitudeFilter.execute(altitude);
-            mAltitudeCounter.add(filtered);
-
-            LOG_DEBUG("Altitude %.2f (Filtered %.2f) (P0 %f, Pa %f)\n", altitude, filtered, mSeaLevelPressure, parser.getPressure());
-        }
-    } else if (mSensorHr.matchesDriver(handle)) {
+    if (mSensorHr.matchesDriver(handle)) {
         SDK::SensorDataParser::HeartRateEx parser(data[0]);
         if (parser.isDataValid()) {
             mHrCounter.add(parser.getBpm());           // arbitrated (kernel's choice)
@@ -414,9 +394,10 @@ void Service::handleEvent(const CustomMessage::TrackResume& /*event*/)
 
 void Service::handleEvent(const CustomMessage::ManualLap& /*event*/)
 {
+    // No screen sends this, and a squash session is one lap; kept only because
+    // the message is part of the GUI/service command set.
     saveLap();
     mGuiSender.lapEnd(mTrackData.lapNum);
-    notifyLapEnd();
 }
 
 void Service::setCapabilities()
@@ -454,13 +435,6 @@ void Service::requestAccessoryRelease()
     }
 }
 
-
-void Service::notifyLapEnd()
-{
-    backlightOn();
-    playBuzzerPattern(150, 3);
-    playVibroPattern(SDK::Message::RequestVibroPlay::Effect::ALERT_750MS_100);
-}
 
 void Service::notifyNewActivity()
 {
@@ -621,6 +595,30 @@ void Service::sendInitialInfoToGui()
     mGuiSender.battery(static_cast<uint8_t>(mBatterySoc.get()));
 }
 
+void Service::loadConfig()
+{
+    // Destroy the previous instance before building the next one: SDK::AppConfig
+    // is documented as one instance per app, and two alive at once would
+    // briefly share the same temporary file.
+    mConfig.reset();
+    mConfig.reset(new (std::nothrow) SDK::AppConfig(
+        mKernel, SquashConfig::kConfigFile,
+        SquashConfig::kFields, SquashConfig::kFieldCount));
+
+    if (!mConfig) {
+        // Out of memory, which nothing here can fix. The declared default is
+        // off, and off is the safe direction for a flag whose only effect is
+        // to start filling flash.
+        LOG_ERROR("Could not read configuration; not recording raw IMU\n");
+        mRecordImu = false;
+        return;
+    }
+
+    mRecordImu = mConfig->getBool(SquashConfig::field(SquashConfig::kRecordImu));
+
+    LOG_INFO("Config: record raw IMU %u\n", static_cast<unsigned>(mRecordImu));
+}
+
 void Service::startTrack(std::time_t utc)
 {
     // Reset data
@@ -635,8 +633,6 @@ void Service::startTrack(std::time_t utc)
     mHrSource = 0;  // don't carry a prior track's HR source/readings into the new session
     mHrOpticalBpm = 0;
     mHrExternalBpm = 0;
-    mAltitudeFilter.reset();
-    mAltitudeCounter.reset();
     mBatterySoc.reset(skBatteryLogPeriodMs);
     mBatteryVoltage.reset(skBatteryLogPeriodMs);
     mSessionNotEmpty = false;
@@ -644,9 +640,6 @@ void Service::startTrack(std::time_t utc)
 
     mSummary = ActivitySummary{};
     mSummary.laps.reserve(10);
-
-    // Determine lap split source
-    mLapDivSource = getLapDivSource();
 
     mWristTiltDetector.reset();
 
@@ -656,11 +649,11 @@ void Service::startTrack(std::time_t utc)
     // logged at start, but leave the recorder's clock unstarted until the first
     // sample arrives, so t=0 is a real sample and not this call.
     //
-    // input.json is re-read here rather than once at boot, so flipping the flag
-    // over USB takes effect on the next session instead of the next restart.
-    // Costs one stat when the file has not changed.
-    mInputConfig.refresh();
-    if (mInputConfig.getFlag(InputConfig::kQueryRecordImu)) {
+    // The values file is re-read here rather than once at boot, so a change
+    // made on the phone takes effect on the next session instead of the next
+    // restart. Costs one file read per session.
+    loadConfig();
+    if (mRecordImu) {
         mImuArmed = mImuSink.create(utc);
         if (!mImuArmed) {
             LOG_ERROR("Research recording enabled but the file could not be opened\n");
@@ -707,25 +700,6 @@ void Service::processTrack()
 
         mSessionNotEmpty = true;    // Session has at least one record
         mLapNotEmpty = true;        // Lap has at least one record
-
-        // Next lap
-        bool switchLap = false;
-        switch (mLapDivSource) {
-        case LapDivSource::TIME:
-            switchLap = static_cast<uint32_t>(mTimeCounter.getLapValueActive()) >= Settings::Alerts::Time::toSeconds(mSettings.alertTimeId);
-            break;
-
-        case LapDivSource::OFF:
-        default:
-            break;
-        }
-
-        if (switchLap) {
-            saveLap();
-            mGuiSender.lapEnd(mTrackData.lapNum);
-            notifyLapEnd();
-        }
-
     }
 
 }
@@ -791,7 +765,6 @@ void Service::saveLap()
     mDistanceCounter.resetLap();
     mSpeedCounter.resetLap();
     mHrCounter.resetLap();
-    mAltitudeCounter.resetLap();
 
     // Clear track data
     mTrackData.lapTime = 0;
@@ -912,7 +885,6 @@ void Service::pauseTrack(bool pause)
         mDistanceCounter.pause();
         mSpeedCounter.pause();
         mHrCounter.pause();
-        mAltitudeCounter.pause();
 
         mActivityWriter.pause(mTimeCounter.getCurrent());
 
@@ -927,7 +899,6 @@ void Service::pauseTrack(bool pause)
         mDistanceCounter.resume();
         mSpeedCounter.resume();
         mHrCounter.resume();
-        mAltitudeCounter.resume();
 
         mActivityWriter.resume(mTimeCounter.getCurrent());
 
@@ -935,15 +906,6 @@ void Service::pauseTrack(bool pause)
         LOG_INFO("Track resumed. UTC: %u\n", static_cast<uint32_t>(mTimeCounter.getCurrent()));
         mGuiSender.trackState(mTrackState);
     }
-}
-
-Service::LapDivSource Service::getLapDivSource()
-{
-    if (mSettings.alertTimeId != Settings::Alerts::Time::ID_OFF) {
-        return LapDivSource::TIME;
-    }
-
-    return LapDivSource::OFF;
 }
 
 uint8_t Service::getHrZone(float hr) const

@@ -44,8 +44,7 @@ void TrackView::setPositionId(uint16_t id)
 
     switch (id) {
         case FaceId::ID_TRACK1:     trackFaceTotal.setVisible(true);      break;
-        case FaceId::ID_TRACK2:     trackFaceLap.setVisible(true);        break;
-        case FaceId::ID_TRACK3:     trackFaceStatus.setVisible(true);     break;
+        case FaceId::ID_TRACK2:     trackFaceStatus.setVisible(true);     break;
         default: break;
     }
 

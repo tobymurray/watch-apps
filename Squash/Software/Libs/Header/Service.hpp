@@ -7,9 +7,7 @@
 #include "SDK/Metrics/MonotonicTime.hpp"
 #include "SDK/Metrics/MonotonicCounter.hpp"
 #include "SDK/Metrics/VariableCounter.hpp"
-#include "SDK/Metrics/DeltaCounter.hpp"
 #include "SDK/Metrics/ThrottledSample.hpp"
-#include "SDK/Filters/SimpleLPF.hpp"
 
 #include "SettingsSerializer.hpp"
 #include "ActivitySummarySerializer.hpp"
@@ -18,8 +16,9 @@
 #include "WristTiltDetector.hpp"
 #include "ImuCsvRecorder.hpp"
 #include "ImuFileSink.hpp"
-#include "InputConfig.hpp"
+#include "AppConfigFields.hpp"
 #include <array>
+#include <memory>
 
 class Service : public WristTiltDetector::IListener
 {
@@ -57,10 +56,12 @@ private:
     ActivitySummarySerializer mActivitySummarySerializer;
     ActivityWriter            mActivityWriter;
 
-    // Research mode, off unless input.json turns it on. Re-read at the start of
-    // every session, so the flag can be flipped over USB without reinstalling
-    // and without restarting the app.
-    InputConfig::Reader       mInputConfig;
+    // Research mode, off unless the wearer turned it on from their phone. The
+    // values file is re-read at the start of every session, so a change takes
+    // effect on the next session rather than the next reinstall; the cost is
+    // one file read per session.
+    std::unique_ptr<SDK::AppConfig> mConfig;
+    bool                      mRecordImu = false;
     ImuFileSink               mImuSink;
     ImuCsvRecorder            mImuRecorder;
     /// Sink is open and waiting for the first IMU sample to start the clock.
@@ -69,7 +70,6 @@ private:
 
     // -- Sensors --------------------------------------------------------------
 
-    SDK::Sensor::Connection mSensorPressure;
     SDK::Sensor::Connection mSensorHr;
     SDK::Sensor::Connection mSensorBatteryLevel;
     SDK::Sensor::Connection mSensorBatteryMetrics;
@@ -84,15 +84,12 @@ private:
     SDK::Metric::MonotonicCounter<float>                mDistanceCounter;
     SDK::Metric::VariableCounter                        mSpeedCounter;
     SDK::Metric::VariableCounter                        mHrCounter;
-    SDK::Filter::SimpleLPF                              mAltitudeFilter;
-    SDK::Metric::DeltaCounter                           mAltitudeCounter;
 
     // Battery SoC and voltage are sampled independently;
     // a FIT record is written only when both are due.
     SDK::Metric::ThrottledSample<float, SDK::Interface::ISystem> mBatterySoc;     ///< State of charge, percent
     SDK::Metric::ThrottledSample<float, SDK::Interface::ISystem> mBatteryVoltage; ///< Voltage, volts
 
-    float mSeaLevelPressure = 0.0f; // Pa
     float mWeightKg = skDefaultWeightKg;  ///< From system profile; falls back to skDefaultWeightKg.
     std::array<uint8_t, CustomMessage::kHrThresholdsCount> mHrThresholds = {};
     uint8_t mHrThresholdCount = 0;
@@ -102,12 +99,6 @@ private:
 
     // -- Track state ----------------------------------------------------------
 
-    enum class LapDivSource {
-        OFF = 0,
-        TIME,
-    };
-
-    LapDivSource mLapDivSource        = LapDivSource::OFF;
     Track::State mTrackState          = Track::State::INACTIVE;
     bool         mSessionNotEmpty     = false;
     bool         mLapNotEmpty         = false;
@@ -137,6 +128,14 @@ private:
     void handleEvent(const CustomMessage::TrackResume& event);
     void handleEvent(const CustomMessage::ManualLap& event);
 
+    /**
+     * @brief (Re)read the values file by building a fresh SDK::AppConfig.
+     *
+     * SDK::AppConfig reads its file once, in its constructor, and exposes no
+     * reload, so picking up a change made on the phone means a new instance.
+     */
+    void loadConfig();
+
     // -- Track control --------------------------------------------------------
 
     void sendInitialInfoToGui();
@@ -148,7 +147,6 @@ private:
     void pauseTrack(bool pause);
     void buildPartialSummary();
     ActivityWriter::RecordData prepareRecordData();
-    LapDivSource getLapDivSource();
     uint8_t getHrZone(float hr) const;
     float getZoneMet(uint8_t zone) const;
 
@@ -157,7 +155,6 @@ private:
     void setCapabilities();
     void requestAccessoryPrepare();   // opt in to external HR (pre-warm at GUI start)
     void requestAccessoryRelease();
-    void notifyLapEnd();
     void notifyNewActivity();
     void backlightOn(uint32_t timeoutMs = skBacklightTimeout);
     void playBuzzerPattern(uint16_t beepMs, uint8_t count = 1, uint16_t silenceMs = 100);
