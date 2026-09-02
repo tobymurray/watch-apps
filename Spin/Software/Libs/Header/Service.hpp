@@ -26,6 +26,7 @@
 #include "ActivityWriter.hpp"
 #include "AppConfigFields.hpp"
 #include "HrHold.hpp"
+#include "SecondsAccrual.hpp"
 #include "ZoneLadder.hpp"
 #include "Commands.hpp"
 
@@ -158,6 +159,11 @@ private:
     /// only be shown one it could not explain.
     float       mLapCalories        = 0.0f;
     float       mLapRestingCalories = 0.0f;
+
+    /// Turns a tick into the span of active time it is responsible for, so
+    /// zone seconds and calories total the ride rather than exceeding it by
+    /// one. See SecondsAccrual.hpp.
+    SecondsAccrual mAccrual;
     std::time_t mLapZoneSeconds[skZoneBuckets] = {};
 
     // -- Lifecycle ------------------------------------------------------------

@@ -37,6 +37,7 @@ enable_testing()
 add_executable(spin-hrhold-tests
     HrHold_test.cpp
     ZoneLadder_test.cpp
+    SecondsAccrual_test.cpp
 )
 target_include_directories(spin-hrhold-tests PRIVATE "${APP_LIBS}/Header")
 target_link_libraries(spin-hrhold-tests PRIVATE GTest::gtest_main)

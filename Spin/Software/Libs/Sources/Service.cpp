@@ -371,26 +371,32 @@ void Service::updateHrDerivedMetrics()
         return;
     }
 
+    // What this tick is responsible for, which is not a flat second: N ticks
+    // span N-1 seconds. See SecondsAccrual.hpp for the rides that measured it.
+    const std::time_t seconds = mAccrual.take(mTimeCounter.getValueActive());
+    if (seconds <= 0) {
+        return;
+    }
+    const float elapsed = static_cast<float>(seconds);
+
     // Basal rate accrues every active second whatever the heart is doing, and
     // is reported separately so the two can be told apart afterwards.
     static constexpr float kRestingMet = 1.0f;
     static constexpr float kPerSecond  = 1.0f / 3600.0f;
 
-    const float restingKcal = kRestingMet * mWeightKg * kPerSecond;
+    const float restingKcal = kRestingMet * mWeightKg * kPerSecond * elapsed;
     mTrackData.restingCalories += restingKcal;
     mLapRestingCalories        += restingKcal;
 
     // Below zone 1, or with no zones set, the resting rate is the only honest
     // answer: a MET plucked for "some effort" is a guess on top of a guess.
     const float met = (mTrackData.hrZone == 0) ? kRestingMet : zoneMet(mTrackData.hrZone);
-    const float activeKcal = met * mWeightKg * kPerSecond;
+    const float activeKcal = met * mWeightKg * kPerSecond * elapsed;
     mTrackData.calories += activeKcal;
     mLapCalories        += activeKcal;
 
-    // Every second lands in exactly one bucket, so they sum to the ride's
-    // active time and a consumer can check it.
-    mTrackData.zoneSeconds[mTrackData.hrZone] += 1;
-    mLapZoneSeconds[mTrackData.hrZone]        += 1;
+    mTrackData.zoneSeconds[mTrackData.hrZone] += seconds;
+    mLapZoneSeconds[mTrackData.hrZone]        += seconds;
 }
 
 void Service::loadConfig()
@@ -452,6 +458,7 @@ void Service::startTrack(std::time_t utc)
     mHrHold.reset();
     mLapCalories        = 0.0f;
     mLapRestingCalories = 0.0f;
+    mAccrual.reset();
     for (size_t i = 0; i < skZoneBuckets; ++i) {
         mLapZoneSeconds[i] = 0;
     }
