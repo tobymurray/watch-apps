@@ -7,7 +7,7 @@ set(APP_NAME "Squash")
 set(APP_USER_NAME "Squash")
 set(APP_TYPE "Activity")
 set(DEV_ID "UNA")
-set(APP_ID "A1E5C38B7D2F9046")
+set(APP_ID "9E526672EAFB61B6")   # assigned by UNA; not derived from anything local
 set(RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Resources")
 set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")
 set(LIBS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../Libs")
