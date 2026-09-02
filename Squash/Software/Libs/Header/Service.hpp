@@ -16,6 +16,7 @@
 #include "WristTiltDetector.hpp"
 #include "ImuCsvRecorder.hpp"
 #include "ImuFileSink.hpp"
+#include "ImuMarkerLog.hpp"
 #include "AppConfigFields.hpp"
 #include <array>
 #include <memory>
@@ -67,6 +68,15 @@ private:
     /// Sink is open and waiting for the first IMU sample to start the clock.
     /// Cleared once begun, so a run stopped by a cap is never restarted.
     bool                      mImuArmed = false;
+
+    // Markers share the recording's clock, so they are begun from the same
+    // sensor tick as the sample recorder and stamped from the last sample seen.
+    ImuFileSink               mMarkerSink;
+    ImuMarkerLog              mMarkerLog;
+    /// Sensor tick of the most recent IMU sample, which is the only clock a
+    /// marker can be placed on: a key event carries no sensor timestamp, and
+    /// the two clocks are unrelated. At 100 Hz this is at most 10 ms stale.
+    uint32_t                  mLastImuTs = 0;
 
     // -- Sensors --------------------------------------------------------------
 

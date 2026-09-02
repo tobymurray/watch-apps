@@ -34,8 +34,12 @@ public:
     /**
      * @param kernel    Kernel, for its file system.
      * @param pathToDir Directory to create recordings under, e.g. "Imu".
+     * @param nameSuffix Appended to the stem, before ".csv"; nullptr for none.
+     *        The marker sidecar uses "_events" so it lands beside the samples
+     *        with the same stamp, which is what pairs the two files.
      */
-    ImuFileSink(const SDK::Kernel& kernel, const char* pathToDir);
+    ImuFileSink(const SDK::Kernel& kernel, const char* pathToDir,
+                const char* nameSuffix = nullptr);
 
     ~ImuFileSink() override;
 
@@ -70,6 +74,7 @@ public:
 private:
     const SDK::Kernel& mKernel;
     const char*        mDir = nullptr;
+    const char*        mSuffix = nullptr;
 
     std::unique_ptr<SDK::Interface::IFile> mFile;
 };

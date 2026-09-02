@@ -87,6 +87,7 @@ Libs/Source/Fit/RecordingMarker.cpp\
 ../../Libs/Sources/AppConfigFields.cpp\
 ../../Libs/Sources/ImuCsvRecorder.cpp\
 ../../Libs/Sources/ImuFileSink.cpp\
+../../Libs/Sources/ImuMarkerLog.cpp\
 ../../Libs/Sources/Service.cpp\
 ../../Libs/Sources/SettingsSerializer.cpp\
 ../../Libs/Sources/WristTiltDetector.cpp\

@@ -1,9 +1,10 @@
 # Host tests for the Squash recorder path, built out of tree like the app.
 #
-# Split into two executables because they need very different things:
+# Split into three executables because they need very different things:
 #
-#   * ImuCsvRecorder is plain C++ over a caller-supplied sink — no SDK headers
-#     at all — so its tests build against nothing but GoogleTest.
+#   * ImuCsvRecorder and ImuMarkerLog are plain C++ over a caller-supplied sink
+#     — no SDK headers at all — so their tests build against nothing but
+#     GoogleTest.
 #   * ImuFileSink writes through SDK::Kernel, and its test asserts the round
 #     trip by replaying what landed in storage through the simulator's
 #     ImuFusionSource. That needs an SDK checkout, and specifically one
@@ -48,6 +49,15 @@ add_executable(squash-recorder-tests
 target_include_directories(squash-recorder-tests PRIVATE "${APP_LIBS}/Header")
 target_link_libraries(squash-recorder-tests PRIVATE GTest::gtest_main)
 add_test(NAME squash-recorder-tests COMMAND squash-recorder-tests)
+
+add_executable(squash-marker-tests
+    ImuMarkerLog_test.cpp
+    "${APP_LIBS}/Sources/ImuMarkerLog.cpp"
+)
+
+target_include_directories(squash-marker-tests PRIVATE "${APP_LIBS}/Header")
+target_link_libraries(squash-marker-tests PRIVATE GTest::gtest_main)
+add_test(NAME squash-marker-tests COMMAND squash-marker-tests)
 
 set(IMU_FUSION_SOURCE
     "${UNA_SDK_ROOT}/Libs/Source/Simulator/Components/Sensors/Imu/ImuFusionSource.cpp"

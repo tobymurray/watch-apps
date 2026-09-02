@@ -41,6 +41,7 @@ Service::Service(SDK::Kernel &kernel)
         , mActivitySummarySerializer(mKernel, "Activity/summary.json")
         , mActivityWriter(mKernel, "Activity")
         , mImuSink(mKernel, "Imu")
+        , mMarkerSink(mKernel, "Imu", "_events")
         , mSensorHr(SDK::Sensor::Type::HEART_RATE_EX, skSamplePeriod, skSampleLatency)
         , mSensorBatteryLevel(SDK::Sensor::Type::BATTERY_LEVEL)
         , mSensorBatteryMetrics(SDK::Sensor::Type::BATTERY_METRICS, skSamplePeriod, skSampleLatency)
@@ -300,7 +301,13 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
                         if (!mImuRecorder.begin(mImuSink, ts)) {
                             LOG_ERROR("Failed to start research recording\n");
                         }
+                        // Same tick as the sample recorder, so a marker row and
+                        // a sample row with the same t_ms are the same instant.
+                        if (mMarkerSink.isOpen() && !mMarkerLog.begin(mMarkerSink, ts)) {
+                            LOG_ERROR("Failed to start the marker log\n");
+                        }
                     }
+                    mLastImuTs = ts;
                     if (mImuRecorder.isRecording()) {
                         ImuCsvRecorder::Sample raw{};
                         raw.ax = sample.accel.x;
@@ -394,10 +401,17 @@ void Service::handleEvent(const CustomMessage::TrackResume& /*event*/)
 
 void Service::handleEvent(const CustomMessage::ManualLap& /*event*/)
 {
-    // No screen sends this, and a squash session is one lap; kept only because
-    // the message is part of the GUI/service command set.
+    // R2 on the track screen. A lap and a research marker are the same gesture
+    // -- "note this instant" -- recorded at whatever layers are running, so one
+    // press does both rather than competing for a button the watch has not got.
     saveLap();
     mGuiSender.lapEnd(mTrackData.lapNum);
+
+    if (mMarkerLog.isRecording() && !mMarkerLog.mark(mLastImuTs)) {
+        LOG_INFO("Marker log ended: reason %u, %u markers\n",
+                 static_cast<unsigned>(mMarkerLog.stopReason()),
+                 static_cast<unsigned>(mMarkerLog.markerCount()));
+    }
 }
 
 void Service::setCapabilities()
@@ -657,8 +671,14 @@ void Service::startTrack(std::time_t utc)
         mImuArmed = mImuSink.create(utc);
         if (!mImuArmed) {
             LOG_ERROR("Research recording enabled but the file could not be opened\n");
+        } else if (!mMarkerSink.create(utc)) {
+            // The samples are the recording; markers are labels on it. Losing
+            // the sidecar costs the labels, not the session, so this does not
+            // disarm the recorder.
+            LOG_ERROR("Research recording started without a marker log\n");
         }
     }
+    mLastImuTs = 0;
 
     ActivityWriter::AppInfo info{};
     info.timestamp = utc;
@@ -852,12 +872,16 @@ void Service::stopTrack(bool discard)
         const bool intact = mImuRecorder.end();
         const uint32_t samples = mImuRecorder.sampleCount();
         const uint32_t bytes   = mImuRecorder.bytesWritten();
+        const uint16_t markers = mMarkerLog.markerCount();
         mImuSink.close();
         mImuArmed = false;
+        mMarkerLog.end();
+        mMarkerSink.close();
 
         if (intact) {
-            LOG_INFO("Research recording saved: %u samples, %u bytes\n",
-                     static_cast<unsigned>(samples), static_cast<unsigned>(bytes));
+            LOG_INFO("Research recording saved: %u samples, %u bytes, %u markers\n",
+                     static_cast<unsigned>(samples), static_cast<unsigned>(bytes),
+                     static_cast<unsigned>(markers));
         } else {
             LOG_ERROR("Research recording is torn and should not be trusted\n");
         }

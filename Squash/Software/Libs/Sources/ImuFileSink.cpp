@@ -14,8 +14,9 @@
 
 #include "SDK/UnaLogger/Logger.h"
 
-ImuFileSink::ImuFileSink(const SDK::Kernel& kernel, const char* pathToDir)
-    : mKernel(kernel), mDir(pathToDir)
+ImuFileSink::ImuFileSink(const SDK::Kernel& kernel, const char* pathToDir,
+                         const char* nameSuffix)
+    : mKernel(kernel), mDir(pathToDir), mSuffix(nameSuffix)
 {
     assert(pathToDir != nullptr);
 }
@@ -61,13 +62,14 @@ bool ImuFileSink::create(std::time_t utc)
     }
 
     snprintf(&buff[len], sizeof(buff) - static_cast<size_t>(len),
-             "imu_%04u%02u%02uT%02u%02u%02u.csv",
+             "imu_%04u%02u%02uT%02u%02u%02u%s.csv",
              static_cast<unsigned>(localTime.tm_year) + 1900u,
              static_cast<unsigned>(localTime.tm_mon) + 1u,
              static_cast<unsigned>(localTime.tm_mday),
              static_cast<unsigned>(localTime.tm_hour),
              static_cast<unsigned>(localTime.tm_min),
-             static_cast<unsigned>(localTime.tm_sec));
+             static_cast<unsigned>(localTime.tm_sec),
+             mSuffix ? mSuffix : "");
 
     mFile = mKernel.fs.file(buff);
     if (!mFile || !mFile->open(/*wMode=*/true, /*override=*/true)) {
