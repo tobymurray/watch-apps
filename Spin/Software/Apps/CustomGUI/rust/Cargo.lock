@@ -342,7 +342,7 @@ dependencies = [
  "embedded-graphics-simulator",
  "micromath",
  "png 0.17.16",
- "u8g2-fonts",
+ "textkit",
 ]
 
 [[package]]
@@ -363,13 +363,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "u8g2-fonts"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ce3199e4c7d98a0a47ddd5ae9cde5a4e944d316319e3208527de504f4e76032"
-dependencies = [
- "embedded-graphics-core",
-]
+name = "textkit"
+version = "0.1.0"
 
 [[package]]
 name = "unicode-ident"

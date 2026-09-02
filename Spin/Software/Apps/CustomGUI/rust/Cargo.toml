@@ -32,7 +32,9 @@ micromath = "2.1"
 embedded-graphics = "0.8"
 embedded-graphics-simulator = { version = "0.7", optional = true }
 png = { version = "0.17", optional = true }
-u8g2-fonts = "0.8"
+# A dependency, never a second staticlib: two archives each carrying a
+# #[panic_handler] collide at link time.
+textkit = { path = "../../../../../TextKit" }
 
 [profile.release]
 panic = "abort"

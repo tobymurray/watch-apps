@@ -14,11 +14,7 @@
 use embedded_graphics::{pixelcolor::raw::RawU8, pixelcolor::PixelColor, prelude::*};
 #[cfg(not(feature = "std"))]
 use micromath::F32Ext;
-use u8g2_fonts::{
-    fonts,
-    types::{FontColor, HorizontalAlignment, VerticalPosition},
-    FontRenderer,
-};
+use textkit::{faces, Align, Canvas, Face};
 
 #[cfg(not(feature = "std"))]
 extern "C" {
@@ -339,14 +335,14 @@ fn draw_button_tick(fb: &mut FrameBuf, deg: f32, color: Abgr2222) {
 ///
 /// Both ends of the arc are evaluated, because which one is nearer depends on
 /// the quadrant; assuming it runs the word straight through the mark.
-fn hint_anchor(deg: f32) -> (i32, HorizontalAlignment, i32) {
+fn hint_anchor(deg: f32) -> (i32, Align, i32) {
     let (ax, _) = polar(TICK_INNER, deg - TICK_SWEEP_DEG / 2.0);
     let (bx, _) = polar(TICK_INNER, deg + TICK_SWEEP_DEG / 2.0);
     let (_, ty) = polar(TICK_INNER, deg);
     if (deg * DEG_TO_RAD).sin() > 0.0 {
-        (ax.min(bx) - LABEL_GAP, HorizontalAlignment::Right, ty)
+        (ax.min(bx) - LABEL_GAP, Align::Right, ty)
     } else {
-        (ax.max(bx) + LABEL_GAP, HorizontalAlignment::Left, ty)
+        (ax.max(bx) + LABEL_GAP, Align::Left, ty)
     }
 }
 
@@ -358,7 +354,7 @@ fn draw_button_hint(fb: &mut FrameBuf, deg: f32, text: &str, color: Abgr2222) {
     draw_text(fb, &label, text, x, ty - 6, align, color);
 }
 
-/// A hint in the answer face, smoothed. Only the discard screen uses it.
+/// A hint in the answer face. Only the discard screen uses it.
 fn draw_button_answer(fb: &mut FrameBuf, deg: f32, text: &str, color: Abgr2222) {
     draw_button_tick(fb, deg, color);
     let answer = bold_face(ANSWER_H);
@@ -380,32 +376,27 @@ const ENTER_WORK_ESTIMATE_Y: i32 = 148;
 /// label, and "PAUSED"/"RESUME" are the pair that do it.
 const PAUSED_BANNER_Y: i32 = 116;
 
-// -- Fonts and smoothing -----------------------------------------------------
-// FONT ASSETS: `_tn` faces carry DIGITS ONLY -- no letters -- and `_tr` is the
-// reduced ASCII tier. A `_tn` face given a letter silently draws nothing.
-//
-// u8g2 faces are fixed-resolution 1bpp bitmaps with no alpha and no "render
-// bigger" option, so there is no antialiasing to ask for -- text drawn straight
-// from one has a hard staircase on every diagonal. The way round it is
-// Barcode's: render from a face a size class LARGER than the target, then
-// area-average down to the panel's four levels. See render_smoothed().
-//
-// That means the small faces are not needed at all -- only their heights are.
-// Three glyph sets replace the eight this app used to ship.
+// -- Fonts -------------------------------------------------------------------
+// TextKit's pre-rendered Poppins atlases. Which faces and why: Spin/README.md
+// "Text", and Docs/TEXT.md at the repo root for the measurements.
 
-type NumberSrc = fonts::u8g2_font_fub49_tn;    // 63 tall: every digit on screen
-type BoldSrc = fonts::u8g2_font_helvB24_tr;    // 32 tall: titles, headings, answers
-type LabelSrc = fonts::u8g2_font_helvR24_tr;   // 32 tall: every label
+static LABEL: &Face = &faces::REGULAR_16_LATIN;
+static HEADING: &Face = &faces::SEMIBOLD_18_ASCII;
+static ANSWER: &Face = &faces::SEMIBOLD_24_ANSWERS;
+static TITLE: &Face = &faces::SEMIBOLD_32_TITLE;
+static NUMBER: &Face = &faces::SEMIBOLD_27_CLOCK;
+static CLOCK_M: &Face = &faces::SEMIBOLD_36_CLOCK;
+static CLOCK_L: &Face = &faces::SEMIBOLD_49_CLOCK;
+static CLOCK_XL: &Face = &faces::SEMIBOLD_60_CLOCK;
 
-// On-screen heights, each the ascent-descent span of the face that used to draw
-// it, so nothing moves: fub42/35/25/20 and helvB24/18/14, helvR12.
+/// The heights the screens ask for, as the u8g2 build named them; each picks
+/// the Poppins face whose capital height matches, so no layout constant moved.
 const CLOCK_XL_H: i32 = 54;
 const CLOCK_L_H: i32 = 44;
 const CLOCK_M_H: i32 = 32;
 const NUMBER_H: i32 = 25;
 const TITLE_H: i32 = 32;
 const HEADING_H: i32 = 18;
-const LABEL_H: i32 = 16;
 /// The discard answers, and only those. Bold and half again the label size,
 /// because they are the one place where a misread costs the wearer their ride.
 const ANSWER_H: i32 = 24;
@@ -414,202 +405,44 @@ const ANSWER_H: i32 = 24;
 /// not the full 240.
 const CLOCK_MAX_W: u32 = 218;
 
-/// A face to render from and the height to shrink it to.
-struct Face {
-    font: FontRenderer,
-    src_h: i32,
-    dst_h: i32,
-}
-
-impl Face {
-    fn new(font: FontRenderer, dst_h: i32) -> Self {
-        let src_h = font.get_ascent() as i32 - font.get_descent() as i32;
-        Face { font, src_h, dst_h }
-    }
-
-    /// The on-screen width: the source's own width, scaled by the same ratio
-    /// the glyphs are. Measured on the source and scaled rather than measured
-    /// on a face this app no longer ships.
-    fn width(&self, s: &str) -> i32 {
-        let w = self
-            .font
-            .get_rendered_dimensions(s, Point::zero(), VerticalPosition::Top)
-            .ok()
-            .and_then(|d| d.bounding_box)
-            .map(|b| b.size.width as i32)
-            .unwrap_or(0);
-        if self.src_h <= 0 { 0 } else { w * self.dst_h / self.src_h }
+fn number_face(dst_h: i32) -> &'static Face {
+    match dst_h {
+        CLOCK_XL_H => CLOCK_XL,
+        CLOCK_L_H => CLOCK_L,
+        CLOCK_M_H => CLOCK_M,
+        _ => NUMBER,
     }
 }
 
-fn number_face(dst_h: i32) -> Face { Face::new(FontRenderer::new::<NumberSrc>(), dst_h) }
-fn bold_face(dst_h: i32) -> Face { Face::new(FontRenderer::new::<BoldSrc>(), dst_h) }
-fn label_face() -> Face { Face::new(FontRenderer::new::<LabelSrc>(), LABEL_H) }
+fn bold_face(dst_h: i32) -> &'static Face {
+    match dst_h {
+        TITLE_H => TITLE,
+        ANSWER_H => ANSWER,
+        _ => HEADING,
+    }
+}
+
+fn label_face() -> &'static Face {
+    LABEL
+}
+
+/// Poppins' capital height is 0.7 em, so a screen that names a top gets its
+/// capitals starting there, as they did when the u8g2 faces were placed by top.
+fn cap_height(face: &Face) -> i32 {
+    (face.px as i32 * 7 + 5) / 10
+}
 
 fn text_width(face: &Face, s: &str) -> u32 {
-    face.width(s).max(0) as u32
+    face.measure(s).advance.max(0) as u32
 }
 
-// -- The scratch buffer ------------------------------------------------------
-// Sized from measurement, not guessed. Every string this app can draw was
-// rendered at its source face: the widest is "NOTHING WAS SAVED" at 351 px on
-// helvR24, and the tallest source is fub49 at 63. ~9% margin on each. A buffer
-// guessed in advance would either waste RAM or silently clip, and the clamps
-// below would hide the clipping rather than flag it.
-const SS_MAX_W: usize = 384;
-const SS_MAX_H: usize = 70;
-
-/// One scratch buffer, reused for every string. Safe on the watch because the
-/// GUI process is single-threaded: Gui.cpp runs spin_gui_render() to completion
-/// before it does anything else, so there is never a second render in flight.
-/// `cargo test` does not honour that -- its runner uses threads -- so SS_LOCK
-/// exists to make the test binary honest. The no_std build has no threads and
-/// pays nothing for it.
-static mut SS_BUF: [u8; SS_MAX_W * SS_MAX_H] = [0; SS_MAX_W * SS_MAX_H];
-
-#[cfg(feature = "std")]
-static SS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// Records coverage only: which source pixels the glyph lit.
-struct SuperSample {
-    w: i32,
-    h: i32,
-}
-
-impl OriginDimensions for SuperSample {
-    fn size(&self) -> Size {
-        Size::new(self.w.max(0) as u32, self.h.max(0) as u32)
-    }
-}
-
-impl DrawTarget for SuperSample {
-    type Color = Abgr2222;
-    type Error = core::convert::Infallible;
-
-    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Pixel<Self::Color>>,
-    {
-        for Pixel(coord, _) in pixels {
-            if coord.x >= 0 && coord.y >= 0 && coord.x < self.w && coord.y < self.h {
-                let idx = coord.y as usize * SS_MAX_W + coord.x as usize;
-                unsafe { SS_BUF[idx] = 1 };
-            }
-        }
-        Ok(())
-    }
-}
-
-/// `color` at `level` of 3 coverage, on the panel's own levels. Level 0 is
-/// nothing at all, so the background shows through rather than being painted
-/// over in the darkest shade.
-fn shade(color: Abgr2222, level: i32) -> Option<Abgr2222> {
-    if level <= 0 {
-        return None;
-    }
-    let ch = |shift: u8| {
-        let v = ((color.0 >> shift) & CHANNEL_MASK) as i32;
-        (((v * level) + 1) / 3).clamp(0, CHANNEL_MASK as i32) as u8
-    };
-    Some(Abgr2222::from_levels(ch(RED_SHIFT), ch(GREEN_SHIFT), ch(BLUE_SHIFT)))
-}
-
-/// Renders `s` from `face`'s source into the scratch buffer, then shrinks it to
-/// the face's target height by area-averaging each destination pixel's source
-/// block and mapping the coverage onto the panel's four levels.
-fn render_smoothed(
-    fb: &mut FrameBuf,
-    face: &Face,
-    s: &str,
-    dst_x: i32,
-    dst_y: i32,
-    color: Abgr2222,
-) {
-    let dst_w = face.width(s);
-    let dst_h = face.dst_h;
-    if dst_w <= 0 || dst_h <= 0 {
-        return;
-    }
-
-    #[cfg(feature = "std")]
-    let _guard = SS_LOCK.lock().unwrap();
-
-    // A glyph's own left bearing is not always 0. Drawing at a flat x=1 and
-    // assuming it away shifts the ink right by (bearing - 1) with no matching
-    // right margin, dropping that many columns off the last glyph -- silently,
-    // through the bounds check in SuperSample::draw_iter.
-    let bbox = face
-        .font
-        .get_rendered_dimensions(s, Point::zero(), VerticalPosition::Top)
-        .ok()
-        .and_then(|d| d.bounding_box);
-    let left = bbox.map(|b| b.top_left.x).unwrap_or(0);
-    let measured_w = bbox.map(|b| b.size.width as i32).unwrap_or(0);
-    let src_w = (measured_w + 2).clamp(1, SS_MAX_W as i32);
-    let src_h = (face.src_h + 2).clamp(1, SS_MAX_H as i32);
-
-    for y in 0..src_h {
-        let row = y as usize * SS_MAX_W;
-        unsafe { SS_BUF[row..row + src_w as usize].fill(0) };
-    }
-
-    let mut target = SuperSample { w: src_w, h: src_h };
-    let _ = face.font.render_aligned(
-        s,
-        Point::new(1 - left, 0),
-        VerticalPosition::Top,
-        HorizontalAlignment::Left,
-        FontColor::Transparent(Abgr2222::WHITE),
-        &mut target,
-    );
-
-    for dy in 0..dst_h {
-        let sy0 = dy * src_h / dst_h;
-        let sy1 = ((dy + 1) * src_h / dst_h).max(sy0 + 1).min(src_h);
-        for dx in 0..dst_w {
-            let sx0 = dx * src_w / dst_w;
-            let sx1 = ((dx + 1) * src_w / dst_w).max(sx0 + 1).min(src_w);
-            let mut lit = 0i32;
-            let mut total = 0i32;
-            for sy in sy0..sy1 {
-                let row = sy as usize * SS_MAX_W;
-                for sx in sx0..sx1 {
-                    total += 1;
-                    if unsafe { SS_BUF[row + sx as usize] } != 0 {
-                        lit += 1;
-                    }
-                }
-            }
-            if total == 0 {
-                continue;
-            }
-            if let Some(c) = shade(color, (lit * 3 + total / 2) / total) {
-                fill_rect(fb, dst_x + dx, dst_y + dy, 1, 1, c);
-            }
-        }
-    }
-}
-
-fn draw_text(
-    fb: &mut FrameBuf,
-    face: &Face,
-    s: &str,
-    x: i32,
-    y: i32,
-    align: HorizontalAlignment,
-    color: Abgr2222,
-) {
-    let w = face.width(s);
-    let dst_x = match align {
-        HorizontalAlignment::Left => x,
-        HorizontalAlignment::Center => x - w / 2,
-        HorizontalAlignment::Right => x - w,
-    };
-    render_smoothed(fb, face, s, dst_x, y, color);
+fn draw_text(fb: &mut FrameBuf, face: &Face, s: &str, x: i32, top: i32, align: Align, color: Abgr2222) {
+    let mut canvas = Canvas::round(fb.buf, fb.w, fb.h);
+    face.draw(&mut canvas, s, x, top + cap_height(face), align, color.0);
 }
 
 fn draw_centered(fb: &mut FrameBuf, face: &Face, s: &str, y: i32, color: Abgr2222) {
-    draw_text(fb, face, s, CENTER_X, y, HorizontalAlignment::Center, color);
+    draw_text(fb, face, s, CENTER_X, y, Align::Center, color);
 }
 
 // -- Number formatting -------------------------------------------------------
@@ -749,7 +582,7 @@ fn draw_ready(fb: &mut FrameBuf, frame: &Frame) {
         text,
         left + HEART_W + HEART_GAP,
         top + 52,
-        HorizontalAlignment::Left,
+        Align::Left,
         if connected { WHITE } else { DIM },
     );
 
@@ -764,10 +597,10 @@ fn draw_ready(fb: &mut FrameBuf, frame: &Frame) {
         let unit_w = text_width(&label, "MIN") as i32;
         let left = CENTER_X - (label_w + WORD_GAP + value_w + WORD_GAP + unit_w) / 2;
         let value_x = left + label_w + WORD_GAP;
-        draw_text(fb, &label, "TARGET", left, y, HorizontalAlignment::Left, DIM);
-        draw_text(fb, &label, minutes, value_x, y, HorizontalAlignment::Left, WHITE);
+        draw_text(fb, &label, "TARGET", left, y, Align::Left, DIM);
+        draw_text(fb, &label, minutes, value_x, y, Align::Left, WHITE);
         draw_text(fb, &label, "MIN", value_x + value_w + WORD_GAP, y,
-                  HorizontalAlignment::Left, DIM);
+                  Align::Left, DIM);
     }
 
     draw_button_hint(fb, BUTTON_R1_DEG, "START", WHITE);
@@ -1012,9 +845,9 @@ fn draw_hr_row(fb: &mut FrameBuf, bpm: u16, hr_source: u8, y: i32) {
 
     let text_x = left + HEART_W + HEART_GAP;
     if has_beat {
-        draw_text(fb, &number, text, text_x, y - 2, HorizontalAlignment::Left, WHITE);
+        draw_text(fb, &number, text, text_x, y - 2, Align::Left, WHITE);
     } else {
-        draw_text(fb, &label, text, text_x, y + 4, HorizontalAlignment::Left, DIM);
+        draw_text(fb, &label, text, text_x, y + 4, Align::Left, DIM);
     }
     draw_text(
         fb,
@@ -1022,7 +855,7 @@ fn draw_hr_row(fb: &mut FrameBuf, bpm: u16, hr_source: u8, y: i32) {
         "BPM",
         text_x + number_w + WORD_GAP,
         y + 8,
-        HorizontalAlignment::Left,
+        Align::Left,
         DIM,
     );
 }
@@ -1084,12 +917,12 @@ fn draw_value_row(
     let left = CENTER_X - (lead + value_w + WORD_GAP + unit_w) / 2;
 
     if !prefix.is_empty() {
-        draw_text(fb, label, prefix, left, y, HorizontalAlignment::Left, DIM);
+        draw_text(fb, label, prefix, left, y, Align::Left, DIM);
     }
     let value_x = left + lead;
-    draw_text(fb, label, value, value_x, y, HorizontalAlignment::Left, value_color);
+    draw_text(fb, label, value, value_x, y, Align::Left, value_color);
     draw_text(fb, label, unit, value_x + value_w + WORD_GAP, y,
-              HorizontalAlignment::Left, DIM);
+              Align::Left, DIM);
 }
 
 /// Asks before destroying a ride, with both answers on labelled buttons.
@@ -1635,7 +1468,7 @@ mod tests {
         // nothing. A part-covered white would prove nothing here, since
         // "THIS RIDE?" is drawn in DIM already.
         let buf = draw(&frame(SCREEN_CONFIRM_DISCARD));
-        let partial: Vec<u8> = [1, 2].iter().filter_map(|l| shade(RED, *l)).map(|c| c.0).collect();
+        let partial: Vec<u8> = [1u8, 2].iter().map(|l| textkit::shade(RED.0, BLACK.0, *l)).collect();
         assert!(buf.iter().any(|b| partial.contains(b)),
                 "no part-covered red: the discard answers are not being smoothed");
     }

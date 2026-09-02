@@ -484,32 +484,38 @@ The clock picks the largest of three sizes that fits, so `12:34` gets the big
 one and `10:00:00` is not clipped, and it drops to `M:SS` under an hour rather
 than padding an hour field nobody is riding into.
 
-## Text, and why it is not as rough as it should be
+## Text
 
-u8g2 faces are fixed-resolution 1bpp bitmaps with no alpha, so drawing straight
-from one leaves a hard staircase on every diagonal — and there is no
-antialiasing to switch on. The way round it is
-[`Barcode`](../Barcode/README.md)'s: render from a face a size class **larger**
-than the wanted size, then area-average each destination pixel's block of source
-pixels and map the coverage onto the panel's four levels. Partial coverage
-becomes a real intermediate shade rather than an on-or-off pixel.
+Every word and digit is Poppins, pre-rendered at build time into 2bpp atlases
+by [`TextKit`](../TextKit) and blitted through the bezel: SemiBold 60, 49 and
+36 for the clock's three sizes, SemiBold 27 for the heart rate, SemiBold 32
+for `SPIN`, 24 for the discard answers and 18 for headings, and Regular 16
+with Latin-1 and Latin Extended-A for every label. The clock and title faces
+carry only the characters they draw (thirteen glyphs a clock size, five for
+the title), so seven sizes cost 25 KB of glyph data in all. Before and after
+the port, through the bezel mask the preview applies:
 
-The pleasing part is that it costs nothing. Once the app renders from the large
-faces, **the small ones are not needed at all — only their heights are**, so
-eight glyph sets became three: `fub49` for every digit, `helvB24` for titles,
-headings and the discard answers, `helvR24` for every label. The packed app got
-*smaller* by about 2.9 KB even with the smoothing code added.
+![Before and after the TextKit port](Docs/text-before-after.png)
 
-The scratch buffer it renders through is sized from measurement, not guessed:
-every string this app can draw was rendered at its source face, and the widest
-came to 351 px (`NOTHING WAS SAVED` at `helvR24`) against a tallest source of
-63 px (`fub49`). It is 384×70, about 9% over each — a buffer guessed in advance
-would either waste RAM or silently clip, and the clamps inside would hide the
-clipping rather than report it.
+The first Rust build drew from u8g2's 1bpp Helvetica faces one size class
+up and area-averaged them down to the panel's four levels, through a
+26,880-byte scratch buffer sized by hand from the widest string. That was a
+stand-in for anti-aliasing rather than the thing itself: at 54 px the source
+had 63 rows, so the digits were nearly hard-edged, and the widths were the
+source face's scaled by a height ratio. The atlases are the glyphs TouchGFX
+Designer would have produced for the same faces, pixel for pixel, with real
+metrics, and no scratch buffer at all; the GUI is 19 KB smaller in RAM and
+7 KB larger on disk for it. The screens ask for text by the heights the old
+build used, and each height names the Poppins face whose capital height
+matches, so no layout constant moved. Why atlases rather than a runtime
+rasterizer is measured in [`Docs/TEXT.md`](../Docs/TEXT.md).
 
-One exception, and it is a limit rather than a choice: `SPIN` on the pre-ride
-screen is drawn at `helvB24`'s own size, because `helvB24` is the largest bold
-ASCII face u8g2 ships and there is nothing bigger to shrink from.
+Footprint of the GUI, from CI's toolchain image:
+
+```
+TextKit  .text 44,804   .bss 58,320   .stack 10,240   .uapp 121,060
+u8g2     .text 36,984   .bss 85,200   .stack 10,240   .uapp 113,612
+```
 
 Edge cases, all of them scenes in the preview binary — no strap, a mid-ride
 dropout, past the hour, and a save that failed:

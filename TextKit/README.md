@@ -213,3 +213,34 @@ the preferred id tier and `REGULAR_18_LATIN` for the rest.
   Regular 18 as it did in every build before; the crate clips it to the
   disc rather than to the box. Not new, not fixed here, and worth a ladder
   or an ellipsis if a real name ever does it.
+
+### Spin
+
+The most faces of the three: seven on-screen sizes from three u8g2 sources,
+a 26,880-byte scratch buffer, and a `Face` type of its own (source plus
+destination height). Ported to eight atlases, four of them thirteen glyphs
+each for the clock.
+
+- **Per-size character sets are where the savings are.** A SemiBold 60 face
+  over ASCII would be 30 KB; over `0123456789:` it is 3.6 KB. The whole
+  clock ladder, 27 / 36 / 49 / 60, is 8.3 KB. The manifest makes that a
+  one-word choice per face, and the coverage test is what keeps a screen
+  from asking a digit face for a letter, which u8g2's `_tn` faces used to
+  answer by silently drawing nothing.
+- **Keep the app's own names.** The screens asked for text by the heights
+  the u8g2 build drew at (`CLOCK_XL_H`, `LABEL_H`, …). Rather than rewrite
+  forty call sites, each height now selects the Poppins face whose capital
+  matches, and the draw call places the capitals where the old top was
+  (top + 0.7 em). Every layout constant stayed; the sheet shows nothing
+  moving more than a pixel.
+- **`&'static Face` through the old helpers.** `label_face()`,
+  `bold_face(h)` and `number_face(h)` kept their signatures and return
+  references into the atlases; `&label` at a call site coerces from
+  `&&Face`, so the port touched the fonts section and one test.
+- **Footprint.** `.text` 36,984 → 44,804, `.bss` 85,200 → 58,320, `.uapp`
+  113,612 → 121,060: 25,201 bytes of atlases in, 7,266 of faces and 26,880
+  of scratch out, 19 KB less RAM. TextKit in situ 1,530 bytes of code,
+  since nothing here wraps.
+- **The one test that knew the renderer** asserted part-covered red on the
+  discard screen through the old `shade`; it now asks the crate's `shade`
+  for the same two levels and passes unchanged in intent.
