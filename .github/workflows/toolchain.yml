@@ -103,6 +103,8 @@ jobs:
       # describes, so the two cannot disagree for longer than one commit.
       - name: Keep app-build.yml's pin in sync
         if: github.event_name != 'pull_request'
+        env:
+          WORKFLOWS_TOKEN: ${{ secrets.WORKFLOWS_TOKEN }}
         run: |
           set -euo pipefail
           digest="${{ steps.build.outputs.digest }}"
@@ -128,12 +130,36 @@ jobs:
             exit 1
           fi
 
+          # GITHUB_TOKEN may not push a change to anything under
+          # .github/workflows: GitHub rejects it with "refusing to allow a
+          # GitHub App to create or update workflow ... without `workflows`
+          # permission", and that permission is not one this token can be
+          # given. The first run that had a digest to write hit exactly that,
+          # after the image was already published. Without a token that can,
+          # this step hands the repin to a person instead of failing a run
+          # whose real work succeeded.
+          if [ -z "${WORKFLOWS_TOKEN:-}" ]; then
+            echo "::warning::$file needs repinning to $image by hand (GITHUB_TOKEN cannot push workflow files; set a WORKFLOWS_TOKEN secret with the workflow scope to automate it)"
+            {
+              echo "### Toolchain image published"
+              echo
+              echo "\`$image\`"
+              echo
+              echo "**\`$file\` still pins the previous digest.** Repin it by hand:"
+              echo
+              echo '```sh'
+              echo "sed -i -E 's#watch-apps-toolchain@sha256:[0-9a-f]{64}#watch-apps-toolchain@${digest}#g' $file"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$file"
           commit_msg=$(printf 'ci: repin app-build.yml to the toolchain image just published\n\n%s\n\nWritten by toolchain.yml, not by hand: the failure this replaces was two\ncopies of a digest that only a human kept in step, and the human missed\none. There is still only one copy after this commit; this is just the\nstep that copies it, promptly and every time.' "$image")
           git commit -m "$commit_msg"
-          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:main
+          git push "https://x-access-token:${WORKFLOWS_TOKEN}@github.com/${{ github.repository }}.git" HEAD:main
 
           {
             echo "### Toolchain image published"
