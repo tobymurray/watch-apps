@@ -8,9 +8,10 @@ the scripts that produced them and the contact sheets are in
 watch was available to this pass, and the section "What only the watch can
 settle" lists what that leaves open.
 
-**Status: a proposal, to be agreed before any crate is written.** Three apps
-draw text in Rust today, two of them through the same trick, and the decision
-below keeps what they got right and replaces what they only assumed.
+**Status: agreed and built.** The crate is [`TextKit/`](../TextKit), and
+NotifyToggle, Barcode and Spin draw with it; "As built" at the end has the
+measured rows against the ones predicted here, and what the ports taught.
+The body below is the proposal as agreed, left as written.
 
 ## The short version
 
@@ -559,3 +560,50 @@ the Windows-only Designer; and there is no kernel font service.
 - Parity with TouchGFX: `measurements/parity.py` against Squash's generated
   fonts. FreeType 2.13.2 via `freetype-py 2.5.1`.
 - Subsets: `pyftsubset Poppins-Regular.ttf --unicodes=U+0020-007E --no-hinting --layout-features= --drop-tables+=DSIG,GSUB,GDEF,name --name-IDs= --notdef-outline --desubroutinize`.
+
+## As built
+
+The crate is `TextKit/` (`textkit`), its README the design record. The
+generator reproduces TouchGFX's glyphs and the crate's parity test holds it
+to them. Ports, one commit each, each built in CI's toolchain image:
+
+| app | before `.text` / `.bss` / `.uapp` | after `.text` / `.bss` / `.uapp` | RAM | predicted atlas data | actual TextKit data |
+|---|---|---|---|---|---|
+| NotifyToggle | 31,980 / 58,432 / 41,188 | 33,608 / 58,432 / 42,820 | +1.6 KB | 5,500 or 7,100 | 7,271 (SemiBold 18 + Regular 12 + composition) |
+| Barcode | 42,176 / 73,712 / 72,004 | 46,780 / 58,352 / 76,176 | −10.8 KB | ≈ 18,200 | 18,743 |
+| Spin | 36,984 / 85,200 / 113,612 | 44,804 / 58,320 / 121,060 | −19.0 KB | ≈ 25,300 | 25,201 |
+
+The predictions held to within a kilobyte. Two things the document had
+wrong: the blitter's 610 bytes was the blit alone, and the crate an app
+links is 1,530 bytes (2,248 with `wrap`), because `measure`, `covers` and
+composition come with it; and NotifyToggle's hint went to Regular 12, not 14,
+because the bezel test found 143 px would not fit the 122 px chord at its
+row. Every `.uapp` grew, by the atlas data; every GUI that had a scratch
+buffer shrank in RAM by more than it gained in glyphs.
+
+What the ports taught, in the order it was learned (each app's entry in
+`TextKit/README.md` has the detail):
+
+- **Per-size character sets are the lever.** SemiBold 60 over ASCII is 30 KB;
+  over the eleven characters a clock draws it is 3.6 KB. The manifest makes
+  the choice explicit and the coverage test makes asking a digit face for a
+  letter a failing test instead of a silent blank.
+- **Bezel tests on every state find real things.** NotifyToggle's footer,
+  Barcode's id tiers and every Spin scene now render under the disc rule in
+  tests; the one layout change in three ports came from one of them.
+- **Baselines, not box tops, and say which.** u8g2 placed text by the top of
+  its ascent box; atlases place by baseline. Both ports that kept their
+  layout constants did so by naming the old top-to-baseline offset once.
+- **The linker does the subsetting across apps.** One `faces.rs` with twelve
+  faces; each map shows only the faces that app names.
+- **The toolchain image needed the font tools.** Added and pinned; the
+  `atlas.py --check` step belongs in `app-build.yml` once `toolchain.yml` has
+  repinned it to an image that carries them, and is not there yet.
+- **Every app should have a preview binary.** Spin's `preview` wrote its
+  captures; Barcode's and NotifyToggle's came from a throwaway host tool in a
+  scratch directory. A `preview` bin per CustomGUI app, writing PNGs through
+  the disc mask, is the cheap thing that makes before/after sheets routine.
+
+Still only the watch can settle: the photograph of the three anti-aliasing
+conditions, the panel's thresholds, dark-on-light, and render time with the
+kernel clock. The frames for the first are in `text-design/`.
