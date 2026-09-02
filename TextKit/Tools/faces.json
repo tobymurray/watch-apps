@@ -1,0 +1,17 @@
+{
+  "_comment": "One entry per (weight, px, charset) an app draws or an oracle test holds against; the linker drops what an app does not reference. A face not listed here does not exist; the generator emits src/faces.rs from this file. Charsets: ascii = U+0020-007E; latin = ascii + Latin-1 Supplement + Latin Extended-A + U+2026 U+2013 U+2014 U+2018 U+2019 U+201C U+201D U+20AC U+2022; a string = exactly those characters plus space.",
+  "faces": [
+    {"name": "SEMIBOLD_18_ASCII", "font": "Poppins-SemiBold.ttf", "px": 18, "charset": "ascii"},
+    {"name": "REGULAR_14_ASCII",  "font": "Poppins-Regular.ttf",  "px": 14, "charset": "ascii"},
+    {"name": "REGULAR_12_ASCII",  "font": "Poppins-Regular.ttf",  "px": 12, "charset": "ascii"},
+    {"name": "SEMIBOLD_20_ASCII", "font": "Poppins-SemiBold.ttf", "px": 20, "charset": "ascii"},
+    {"name": "REGULAR_18_LATIN",  "font": "Poppins-Regular.ttf",  "px": 18, "charset": "latin"},
+    {"name": "REGULAR_16_LATIN",  "font": "Poppins-Regular.ttf",  "px": 16, "charset": "latin"},
+    {"name": "SEMIBOLD_24_ANSWERS", "font": "Poppins-SemiBold.ttf", "px": 24, "charset": "YESNO"},
+    {"name": "SEMIBOLD_32_TITLE", "font": "Poppins-SemiBold.ttf", "px": 32, "charset": "SPIN"},
+    {"name": "SEMIBOLD_27_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 27, "charset": "0123456789:"},
+    {"name": "SEMIBOLD_36_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 36, "charset": "0123456789:"},
+    {"name": "SEMIBOLD_49_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 49, "charset": "0123456789:"},
+    {"name": "SEMIBOLD_60_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 60, "charset": "0123456789:"}
+  ]
+}

@@ -1,0 +1,14 @@
+[package]
+name = "textkit"
+version = "0.1.0"
+edition = "2021"
+description = "Text for the UNA Watch's Rust GUIs: pre-rendered 2bpp Poppins atlases, measurement, alignment, wrapping and a lit-disc clip, no_std and allocation-free. Design record: README.md and Docs/TEXT.md."
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["lib"]
+
+[features]
+std = []
+
+[dependencies]
