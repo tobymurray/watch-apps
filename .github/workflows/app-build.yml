@@ -249,15 +249,19 @@ jobs:
               # and each app's job then races to land its own bump on main;
               # the losers were rejected as non-fast-forward the first time it
               # happened. The bump touches only this app's manifest, so it
-              # rebases cleanly onto whatever the others landed, and the tag is
-              # made after the rebase so it points at the commit that is pushed.
+              # rebases cleanly onto whatever the others landed. The branch
+              # goes first and alone: a push of branch and tag together is not
+              # atomic, and the second time this ran the tag was accepted while
+              # the branch was rejected, leaving a tag on a commit main never
+              # had and every retry refused for the tag it had already pushed.
+              # The tag follows only once the branch is in, and is forced so a
+              # retry after a partial failure cannot be refused for it.
               remote="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
               pushed=no
               for attempt in 1 2 3 4 5; do
                 git -C apps fetch --quiet "$remote" main
                 git -C apps rebase --quiet FETCH_HEAD
-                git -C apps tag -f "$tag" > /dev/null
-                if git -C apps push --quiet "$remote" HEAD:main "$tag"; then
+                if git -C apps push --quiet "$remote" HEAD:main; then
                   pushed=yes
                   break
                 fi
@@ -268,6 +272,8 @@ jobs:
                 echo "::error::could not land the version bump after 5 attempts"
                 exit 1
               fi
+              git -C apps tag -f "$tag" > /dev/null
+              git -C apps push --quiet --force "$remote" "refs/tags/$tag"
             fi
           fi
 
