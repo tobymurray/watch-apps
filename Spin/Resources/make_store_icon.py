@@ -17,7 +17,7 @@ conventionally want, full-bleed and square so it looks right whether or not the
 store applies its own rounded mask.
 
 What it shows is the app on the watch it runs on: the round black panel, the
-flywheel that is the watch icon, and the one red heart that is the app's only
+flywheel from the watch icon, and the one red heart that is the app's only
 accent. No text -- the two things this app draws are a clock and a heart rate,
 and neither is legible at the size a phone shows an app list at.
 

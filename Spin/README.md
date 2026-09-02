@@ -698,15 +698,25 @@ as art nobody can regenerate:
 ![The watch icon at 60 and 30 px, both enlarged](Docs/icon.png)
 
 - [`make_icon.py`](Resources/make_icon.py) draws the watch icon at 30 and 60 px:
-  a spin bike in side view, because a flywheel alone could be any wheel. The
-  watch stores it as ABGR2222 — four alpha levels, four shades — and a stroke
-  thinner than a pixel downsamples to grey, which decides the whole design.
-  Ordinary line-art bike icons use a uniform hairline and a dozen separate
-  parts; at 30 px every one of those is sub-pixel and what comes out is a grey
-  smudge shaped like a bike. So the two sizes are **not the same drawing
-  scaled**: 60 px gets the top tube and the hub, 30 px keeps only what survives
-  at two pixels wide. One big wheel and a base are what say *stationary* bike,
-  so they get the space and the frame is what is left over.
+  a spin bike in side view, in the SDK's own two tones — teal for the subject,
+  grey for the apparatus, the same split the SDK's Cycling icon uses. Both
+  survive the panel's truncation exactly, teal landing on `(0,170,170)` and
+  grey on white, so nothing dithers.
+
+  The two tones are what make it legible small. The frame crosses in front of
+  the flywheel, and separating them by colour costs no pixels where separating
+  them by geometry would cost several. The script also quantises its own output
+  rather than leaving it to the ABGR2222 converter: an antialiased edge on a
+  four-level alpha channel becomes a dashed line, which is why the previous icon
+  carried 335 distinct pixel values and speckled on the glass. This one carries
+  nine, and 30 px differs from 60 px only by dropping the belt.
+
+  **What makes it a spin bike is the crank**, its own circle at the bottom
+  bracket, level with the flywheel and driven by a belt. An earlier version put
+  the crank at the flywheel's hub and grew the handlebars out of the wheel,
+  which is a penny-farthing — and it shipped that way for several releases. The
+  flywheel is low and forward, the frame reaches the floor at both ends, and the
+  bars turn up at the front.
 - [`make_store_icon.py`](Resources/make_store_icon.py) draws the 512 px icon the
   phone shows. None of the watch's constraints apply, so it gets the round
   panel, the flywheel and the app's one red heart.
