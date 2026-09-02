@@ -10,7 +10,6 @@ MenuSettingsPresenter::MenuSettingsPresenter(MenuSettingsView& v)
 void MenuSettingsPresenter::activate()
 {
     view.setPositionId(model->menu().settings.get());
-    model->menu().settings.resetChildren();
     model->resetIdleTimer();
 
     view.setAccessoryStatus(model->getAccessoryState(), "");

@@ -40,6 +40,7 @@ Libs/Source/Wrappers/StdLibWrappers.c\
 ThirdParty/coreJSON/source/core_json.c\
 Libs/Source/JSON/JsonStreamReader.cpp\
 Libs/Source/JSON/JsonStreamWriter.cpp\
+Libs/Source/AppConfig/AppConfig.cpp\
 Libs/Source/TrackMap/TrackMapBuilder.cpp\
 Libs/Source/Kernel/KernelBuilder.cpp\
 Libs/Source/Timer/Timer.cpp\
@@ -83,9 +84,9 @@ Libs/Source/Fit/FitRecordCadence.cpp\
 Libs/Source/Fit/RecordingMarker.cpp\
 ../../Libs/Sources/ActivitySummarySerializer.cpp\
 ../../Libs/Sources/ActivityWriter.cpp\
+../../Libs/Sources/AppConfigFields.cpp\
 ../../Libs/Sources/ImuCsvRecorder.cpp\
 ../../Libs/Sources/ImuFileSink.cpp\
-../../Libs/Sources/InputConfig.cpp\
 ../../Libs/Sources/Service.cpp\
 ../../Libs/Sources/SettingsSerializer.cpp\
 ../../Libs/Sources/WristTiltDetector.cpp\

@@ -16,12 +16,6 @@
 #include <gui/main_screen/MainPresenter.hpp>
 #include <gui/menusettings_screen/MenuSettingsView.hpp>
 #include <gui/menusettings_screen/MenuSettingsPresenter.hpp>
-#include <gui/menualerts_screen/MenuAlertsView.hpp>
-#include <gui/menualerts_screen/MenuAlertsPresenter.hpp>
-#include <gui/menutime_screen/MenuTimeView.hpp>
-#include <gui/menutime_screen/MenuTimePresenter.hpp>
-#include <gui/menutimesaved_screen/MenuTimeSavedView.hpp>
-#include <gui/menutimesaved_screen/MenuTimeSavedPresenter.hpp>
 #include <gui/trackstartconfirmation_screen/TrackStartConfirmationView.hpp>
 #include <gui/trackstartconfirmation_screen/TrackStartConfirmationPresenter.hpp>
 #include <gui/track_screen/TrackView.hpp>
@@ -62,9 +56,6 @@ public:
      */
     typedef touchgfx::meta::TypeList< MainView,
             touchgfx::meta::TypeList< MenuSettingsView,
-            touchgfx::meta::TypeList< MenuAlertsView,
-            touchgfx::meta::TypeList< MenuTimeView,
-            touchgfx::meta::TypeList< MenuTimeSavedView,
             touchgfx::meta::TypeList< TrackStartConfirmationView,
             touchgfx::meta::TypeList< TrackView,
             touchgfx::meta::TypeList< TrackLapView,
@@ -73,7 +64,7 @@ public:
             touchgfx::meta::TypeList< TrackDiscardedView,
             touchgfx::meta::TypeList< TrackSavedView,
             touchgfx::meta::TypeList< TrackSummaryView,
-            touchgfx::meta::Nil > > > > > > > > > > > >
+            touchgfx::meta::Nil > > > > > > > > > 
             > GeneratedViewTypes;
 
     /**
@@ -87,9 +78,6 @@ public:
      */
     typedef touchgfx::meta::TypeList< MainPresenter,
             touchgfx::meta::TypeList< MenuSettingsPresenter,
-            touchgfx::meta::TypeList< MenuAlertsPresenter,
-            touchgfx::meta::TypeList< MenuTimePresenter,
-            touchgfx::meta::TypeList< MenuTimeSavedPresenter,
             touchgfx::meta::TypeList< TrackStartConfirmationPresenter,
             touchgfx::meta::TypeList< TrackPresenter,
             touchgfx::meta::TypeList< TrackLapPresenter,
@@ -98,7 +86,7 @@ public:
             touchgfx::meta::TypeList< TrackDiscardedPresenter,
             touchgfx::meta::TypeList< TrackSavedPresenter,
             touchgfx::meta::TypeList< TrackSummaryPresenter,
-            touchgfx::meta::Nil > > > > > > > > > > > >
+            touchgfx::meta::Nil > > > > > > > > > 
             > GeneratedPresenterTypes;
 
     /**
@@ -110,8 +98,17 @@ public:
      * A list of all transition types. Must end with meta::Nil.
      * @note All transition types used in the application MUST be added to this list!
      */
-    typedef touchgfx::meta::TypeList< touchgfx::NoTransition,
-            touchgfx::meta::Nil
+    typedef touchgfx::meta::TypeList< MainPresenter,
+            touchgfx::meta::TypeList< MenuSettingsPresenter,
+            touchgfx::meta::TypeList< TrackStartConfirmationPresenter,
+            touchgfx::meta::TypeList< TrackPresenter,
+            touchgfx::meta::TypeList< TrackLapPresenter,
+            touchgfx::meta::TypeList< TrackActionPresenter,
+            touchgfx::meta::TypeList< TrackHoldConfirmationPresenter,
+            touchgfx::meta::TypeList< TrackDiscardedPresenter,
+            touchgfx::meta::TypeList< TrackSavedPresenter,
+            touchgfx::meta::TypeList< TrackSummaryPresenter,
+            touchgfx::meta::Nil > > > > > > > > > 
             > GeneratedTransitionTypes;
 
     /**

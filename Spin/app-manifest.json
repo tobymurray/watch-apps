@@ -5,8 +5,8 @@
   ],
   "name": "Spin",
   "icon": "icon.png",
-  "binary": "Spin_0.5.3.uapp",
-  "appVersion": "0.5.3",
+  "binary": "Spin_0.6.0.uapp",
+  "appVersion": "0.6.0",
   "minKernelVersion": "1.4.0",
   "requiredHardware": [],
   "description": "A stationary bike ride: the clock, your heart rate, and a FIT file that says indoor cycling rather than a bike ride that covered no ground. Uses a paired chest strap when one is connected and the wrist sensor when it is not.",
@@ -19,7 +19,77 @@
   "supportsElevation": false,
   "supportsStep": false,
   "supportsSpeed": "none",
-  "customMeasures": [],
+  "customMeasures": [
+    {
+      "id": "total_work",
+      "title": "Work",
+      "icon": "icon.png",
+      "unitMetric": "kJ",
+      "unitImperial": "kJ",
+      "unitScalingFactor": 1.0,
+      "isTimeBased": false,
+      "visualisation": "number",
+      "preview": true
+    },
+    {
+      "id": "avg_power",
+      "title": "Average power",
+      "icon": "icon.png",
+      "unitMetric": "W",
+      "unitImperial": "W",
+      "unitScalingFactor": 1.0,
+      "isTimeBased": false,
+      "visualisation": "number",
+      "preview": true
+    },
+    {
+      "id": "resting_calories",
+      "title": "Resting energy",
+      "icon": "icon.png",
+      "unitMetric": "kcal",
+      "unitImperial": "kcal",
+      "unitScalingFactor": 1.0,
+      "isTimeBased": false,
+      "visualisation": "number",
+      "preview": false
+    },
+    {
+      "id": "hr_source",
+      "title": "Heart rate source",
+      "icon": "icon.png",
+      "unitMetric": "",
+      "unitImperial": "",
+      "unitScalingFactor": 1.0,
+      "isTimeBased": true,
+      "visualisation": "line-chart",
+      "preview": false,
+      "previewAggregation": "average"
+    },
+    {
+      "id": "hr_optical",
+      "title": "Wrist heart rate",
+      "icon": "icon.png",
+      "unitMetric": "bpm",
+      "unitImperial": "bpm",
+      "unitScalingFactor": 1.0,
+      "isTimeBased": true,
+      "visualisation": "line-chart",
+      "preview": false,
+      "previewAggregation": "average"
+    },
+    {
+      "id": "hr_external",
+      "title": "Strap heart rate",
+      "icon": "icon.png",
+      "unitMetric": "bpm",
+      "unitImperial": "bpm",
+      "unitScalingFactor": 1.0,
+      "isTimeBased": true,
+      "visualisation": "line-chart",
+      "preview": false,
+      "previewAggregation": "average"
+    }
+  ],
   "configFile": "app_config.json",
   "configFields": [
     {
@@ -55,6 +125,13 @@
       "label": "Energy in kJ",
       "description": "Show energy as kilojoules instead of calories. This is dietary energy (1 kcal = 4.184 kJ), not the kJ of work a power meter reports — the watch cannot measure that. The saved file always records kcal.",
       "default": false
+    },
+    {
+      "id": "askForKilojoules",
+      "type": "bool",
+      "label": "Ask for bike kJ",
+      "description": "After a ride, ask for the kilojoules your bike's console reports, and save them as work and average power. Skipping takes one press. Turn this off if your bike has no console.",
+      "default": true
     },
     {
       "id": "hrZoneCount",

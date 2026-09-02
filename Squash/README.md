@@ -35,14 +35,15 @@ saturation rather than hiding it behind a conversion.
 
 ## Turning the recorder on
 
-There is no on-watch toggle — adding one means a TouchGFX Designer change. The
-flag comes from `input.json` in the app's own folder, which is either written
-for you by Kira's install page or by hand over USB.
+There is no on-watch toggle — adding one means a TouchGFX Designer change.
+`recordImu` is a **declared configuration field**: the app names it in
+[`app-manifest.json`](app-manifest.json), the phone renders a switch for it, and
+the answer is written to `input.json` in the app's own folder. Tick **Record raw
+IMU** on the app's card and that is the whole of it.
 
-If you installed from Kira, tick **Record raw IMU** on the app's card and it
-writes the file. Otherwise:
+Over USB instead:
 
-1. Connect the watch by USB and wait for the drive to mount.
+1. Connect the watch and wait for the drive to mount.
 2. Open `Apps/Squash/` on it — the same folder the `.uapp` lives in.
 3. Create `input.json`:
 
@@ -50,30 +51,34 @@ writes the file. Otherwise:
    {
      "schema": 1,
      "values": {
-       "record_imu": "on"
+       "recordImu": true
      }
    }
    ```
 
 [`input.example.json`](input.example.json) is that file, ready to copy.
 
-`on`, `yes`, `true`, `1` and `enabled` all mean on, in any case. Anything else
-means off, including a word that is neither — the file is written by hand, and
-off is the safe direction for a flag whose only effect is to start filling
-flash. It is re-read at the start of every session, so flipping it takes effect
-on your next activity without reinstalling or even restarting the app.
+A JSON `true` or `false`, not a word: the field is declared `bool`, and
+`SDK::AppConfig` treats a value of the wrong type as absent, so `"on"` reads as
+off. Off is the default and the safe direction for a flag whose only effect is
+to start filling flash. The file is re-read at the start of every session, so
+flipping it takes effect on your next activity without reinstalling or even
+restarting the app.
 
 **Not `settings.json`.** That file is the app's own and is rewritten whole every
 time a setting changes on the watch, so a key the app did not put there would not
-survive. Version 1.0.0 shipped the flag there and was unusable for exactly that
-reason: an install had no such file, and nothing but hand-editing could make one.
-Keeping externally-written data in its own file also makes "this came from
+survive. An early version shipped the flag there and was unusable for exactly
+that reason: an install had no such file, and nothing but hand-editing could make
+one. Keeping externally-written data in its own file also makes "this came from
 outside, validate it" a property of the filename.
 
-The reader is bounded on purpose — a size ceiling checked before anything is
-allocated, a `schema` major that must match exactly, and a fall back to off on
-every failure. A config file somebody else wrote must never stop the app
-starting.
+Reading it is `SDK::AppConfig`'s job, not this app's. It is bounded on purpose —
+a size ceiling, a `schema` that must match exactly, per-field type checking and
+clamping, and a fall back to the declared default on every failure. A config
+file somebody else wrote must never stop the app starting. The binary carries
+its own copy of the field table in
+[`AppConfigFields.cpp`](Software/Libs/Sources/AppConfigFields.cpp), because
+`app-manifest.json` never reaches the watch; CI checks the two agree.
 
 ## What you get
 
@@ -144,12 +149,9 @@ cd Tests/build && ctest --output-on-failure
 `squash-recorder-tests` covers `ImuCsvRecorder`'s byte format and its size and
 duration caps against an in-memory sink, and needs nothing but GoogleTest.
 
-`squash-inputconfig-tests` covers the provisioning file that decides whether
-recording happens at all — the accepted vocabulary, and every way the file can be
-absent, malformed, oversized or of an unknown schema. Mostly negative paths,
-because 1.0.0's failure was silent: the app started, recorded a good activity,
-and wrote no IMU, with nothing observable saying why. Needs coreJSON, so it is
-skipped if the SDK's submodules are not initialized.
+There is no suite here for reading the config file. That is `SDK::AppConfig`,
+which the SDK tests in `Tests/Host/appconfig/`; a copy of those assertions in
+this tree would only test the SDK twice and rot separately.
 
 `squash-filesink-tests` asserts the round trip — recorder to storage through
 `SDK::Kernel`, then back out through the simulator's `ImuFusionSource` playback

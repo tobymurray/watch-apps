@@ -1,0 +1,49 @@
+name: Squash
+
+# One caller per app. All it does is say which directory it is and when to run,
+# because everything else lives in app-build.yml -- so adding the next app is
+# this file with two names changed.
+#
+# The paths filter is what makes "each directory triggers its own build" true:
+# a change under Barcode does not rebuild Squash. It deliberately includes the
+# shared files as well, since a change to the reusable workflow or to the pinned
+# SDK revision changes what this app builds into.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Squash/**'
+      - '.github/workflows/squash.yml'
+      - '.github/workflows/app-build.yml'
+  pull_request:
+    paths:
+      - 'Squash/**'
+      - '.github/workflows/squash.yml'
+      - '.github/workflows/app-build.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to stamp, overriding the manifest'
+        required: false
+        type: string
+
+# A second push supersedes the first: these builds take minutes and nobody reads
+# the older one. Not applied to main, where every commit's result is worth having.
+concurrency:
+  group: squash-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    uses: ./.github/workflows/app-build.yml
+    with:
+      app: Squash
+      version: ${{ inputs.version || '' }}
+    permissions:
+      # write, not read: a caller's grant caps what the called workflow can
+      # use regardless of what app-build.yml asks for itself, and its version
+      # bump now needs to commit, tag and push. Both write actions stay gated
+      # to real pushes inside app-build.yml itself.
+      contents: write
+      packages: read

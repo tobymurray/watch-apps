@@ -13,12 +13,6 @@
 #include <gui/main_screen/MainPresenter.hpp>
 #include <gui/menusettings_screen/MenuSettingsView.hpp>
 #include <gui/menusettings_screen/MenuSettingsPresenter.hpp>
-#include <gui/menualerts_screen/MenuAlertsView.hpp>
-#include <gui/menualerts_screen/MenuAlertsPresenter.hpp>
-#include <gui/menutime_screen/MenuTimeView.hpp>
-#include <gui/menutime_screen/MenuTimePresenter.hpp>
-#include <gui/menutimesaved_screen/MenuTimeSavedView.hpp>
-#include <gui/menutimesaved_screen/MenuTimeSavedPresenter.hpp>
 #include <gui/trackstartconfirmation_screen/TrackStartConfirmationView.hpp>
 #include <gui/trackstartconfirmation_screen/TrackStartConfirmationPresenter.hpp>
 #include <gui/track_screen/TrackView.hpp>
@@ -81,42 +75,9 @@ void FrontendApplicationBase::gotoMenuSettingsScreenNoTransitionImpl()
 
 // MenuAlerts
 
-void FrontendApplicationBase::gotoMenuAlertsScreenNoTransition()
-{
-    transitionCallback = touchgfx::Callback<FrontendApplicationBase>(this, &FrontendApplicationBase::gotoMenuAlertsScreenNoTransitionImpl);
-    pendingScreenTransitionCallback = &transitionCallback;
-}
-
-void FrontendApplicationBase::gotoMenuAlertsScreenNoTransitionImpl()
-{
-    touchgfx::makeTransition<MenuAlertsView, MenuAlertsPresenter, touchgfx::NoTransition, Model >(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
-}
-
 // MenuTime
 
-void FrontendApplicationBase::gotoMenuTimeScreenNoTransition()
-{
-    transitionCallback = touchgfx::Callback<FrontendApplicationBase>(this, &FrontendApplicationBase::gotoMenuTimeScreenNoTransitionImpl);
-    pendingScreenTransitionCallback = &transitionCallback;
-}
-
-void FrontendApplicationBase::gotoMenuTimeScreenNoTransitionImpl()
-{
-    touchgfx::makeTransition<MenuTimeView, MenuTimePresenter, touchgfx::NoTransition, Model >(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
-}
-
 // MenuTimeSaved
-
-void FrontendApplicationBase::gotoMenuTimeSavedScreenNoTransition()
-{
-    transitionCallback = touchgfx::Callback<FrontendApplicationBase>(this, &FrontendApplicationBase::gotoMenuTimeSavedScreenNoTransitionImpl);
-    pendingScreenTransitionCallback = &transitionCallback;
-}
-
-void FrontendApplicationBase::gotoMenuTimeSavedScreenNoTransitionImpl()
-{
-    touchgfx::makeTransition<MenuTimeSavedView, MenuTimeSavedPresenter, touchgfx::NoTransition, Model >(&currentScreen, &currentPresenter, frontendHeap, &currentTransition, &model);
-}
 
 // TrackStartConfirmation
 

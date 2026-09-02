@@ -97,6 +97,9 @@ private:
     std::time_t mTargetSeconds  = 0;  ///< 0 = no target
     bool        mKeepScreenLit  = false;
     bool        mEnergyInKilojoules = false;  ///< display unit only
+    /// Offer the post-ride kilojoule screen. Forwarded to the GUI, which owns
+    /// the screen; the Service only has to know whether to promise it.
+    bool        mAskForKilojoules = true;
 
     // -- Sensors --------------------------------------------------------------
 
@@ -178,7 +181,10 @@ private:
     uint8_t hrZoneFor(float hr) const;
     uint8_t hrZoneFractionFor(float hr, uint8_t zone) const;
     static float zoneMet(uint8_t zone);
-    void stopTrack(bool discard);
+    /// @param workKilojoules  the bike console's figure as the wearer entered
+    ///        it, or 0 for "nobody said" -- which is a normal ride, not a
+    ///        failure, and reaches the file as absent fields rather than zeros.
+    void stopTrack(bool discard, uint16_t workKilojoules);
     void pauseTrack(bool pause);
     ActivityWriter::RecordData prepareRecordData() const;
 

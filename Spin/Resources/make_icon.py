@@ -1,42 +1,45 @@
 #!/usr/bin/env python3
-"""Draw the Spin app icon at both sizes the watch wants.
+"""Draw the watch icon at 30 and 60 px.
 
     python3 Spin/Resources/make_icon.py Spin/Resources
 
-A spin bike in side view. A flywheel alone could be any wheel; the whole
-machine says stationary bike and nothing else.
+PANEL: the watch stores these as ABGR2222 -- two bits a channel, so four
+shades and four alpha levels. Every decision below is a concession to that, and
+the output is quantised here rather than left for the converter, because an
+antialiased edge on a four-level alpha channel becomes a dashed line. The
+previous icon carried 335 distinct pixel values and speckled on the glass; this
+one carries nine. Falsified by a different panel format; re-measure by counting
+distinct values in the PNG.
 
-WHY THIS IS A SCRIPT AND NOT A PNG SOMEBODY DREW
+COLOUR follows the SDK's own Cycling icon: teal for the subject, light grey for
+the apparatus. Both survive truncation exactly -- 128 >> 6 is 2, so teal lands
+on (0,170,170), and 192 >> 6 is 3, so grey lands on white. Nothing dithers.
 
-The watch does not store the PNG. `app_merging.py` converts it to ABGR2222 --
-two bits per channel, taken by truncating the top two bits -- so the icon has
-four alpha levels and four shades and nothing else. Two consequences drive the
-whole construction:
+The two tones are also what makes the drawing legible at 30 px: the frame
+crosses in front of the flywheel, and separating them by colour costs no pixels
+where separating them by geometry would cost several.
 
-  * **A stroke thinner than a pixel downsamples to grey, and grey truncates to
-    a muddy mid-tone.** This is the failure that decides the design. Ordinary
-    line-art icons of a spin bike are drawn with a uniform hairline and a lot
-    of separate parts -- crank arm, pedal, seat rails, the gap between the
-    frame's two tubes. At 30 px every one of those is sub-pixel, and what comes
-    out is a grey smudge in the shape of a bike.
-  * So the two sizes are **not the same drawing scaled**. 60 px can afford the
-    frame's diagonals, the crank and a suggestion of pedal. 30 px keeps only
-    what survives at two pixels wide: flywheel, base, the two posts, seat and
-    bars. Both are drawn at 8x and downsampled so the curves have some shape.
-
-Everything is stroked in one weight per size and nothing is left open, because
-a shape that reads at 30 px is a silhouette, not a diagram.
-
-Needs Pillow. The repository's toolchain image has it:
-
-    docker run --rm -v "$PWD:/apps" -w /apps <toolchain-image> \\
-        python3 Spin/Resources/make_icon.py Spin/Resources
+WHAT MAKES IT A SPIN BIKE, since an earlier version lost it: the crank is its
+own circle at the bottom bracket, level with the flywheel and driven by a belt.
+Pedals at a big front wheel's hub is a penny-farthing, which is what this drew
+for several releases. The flywheel is low and forward, the frame reaches the
+floor at both ends, and the bars turn up at the front.
 """
 from PIL import Image, ImageDraw
 import sys
 
 TEAL = (0, 128, 128, 255)
+GREY = (192, 192, 192, 255)
 SS = 8  # supersample; the curves need it, the straight runs do not care
+
+# Normalised geometry, 0..1 across the icon, y downward.
+FLOOR = 0.900
+AXLE_Y = 0.700   # the crank and the flywheel share it, as on a real bike
+BB = (0.355, AXLE_Y)
+WHEEL = (0.635, AXLE_Y)
+WHEEL_R = 0.158
+CRANK_R = 0.060
+BAR_Y = 0.215
 
 # Per size: stroke weight, and whether the fiddly bits are drawn at all.
 DESIGNS = {
@@ -56,53 +59,66 @@ def draw(size):
         """Normalised (0..1) to supersampled pixels."""
         return (x * S, y * S)
 
-    def line(a, b, width=None):
-        g.line([px(*a), px(*b)], fill=TEAL, width=width or w)
+    def line(a, b, colour, width=None):
+        ww = width or w
+        g.line([px(*a), px(*b)], fill=colour, width=ww)
+        for p in (a, b):   # round the ends, so diagonals meet cleanly
+            r = ww / 2.0
+            cx, cy = px(*p)
+            g.ellipse([cx - r, cy - r, cx + r, cy + r], fill=colour)
 
-    def circle(centre, r, width=None, fill=None):
+    def disc(centre, r, colour):
         cx, cy = px(*centre)
         rr = r * S
-        box = [cx - rr, cy - rr, cx + rr, cy + rr]
-        if fill:
-            g.ellipse(box, fill=TEAL)
-        else:
-            g.ellipse(box, outline=TEAL, width=width or w)
+        g.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], fill=colour)
 
-    # WHAT MAKES A SPIN BIKE A SPIN BIKE, at a glance and at this size: one
-    # big wheel where a road bike has two, and a base where it has a back
-    # wheel. Those two carry the recognition, so they get the space; the frame
-    # is what is left over.
-
-    # The flywheel, front and dominant.
-    circle((0.62, 0.56), 0.235)
-
-    # The base, foot to foot.
-    line((0.10, 0.91), (0.90, 0.91))
-
-    # Seat post, leaning back to the base, with the saddle across its top.
-    line((0.31, 0.91), (0.22, 0.33))
-    line((0.11, 0.31), (0.33, 0.31))
-
-    # Handlebar post. It rises out of the flywheel rather than from the base,
-    # which is both where it sits on the machine and one less line crossing
-    # the wheel.
-    line((0.66, 0.62), (0.71, 0.19))
-    line((0.58, 0.17), (0.84, 0.17))
-
+    # The belt, drawn first so the crank and flywheel sit on top of it.
     if d["detail"]:
-        # 60 px can afford the top tube and the crank. At 30 px both land
-        # between pixels and fill the middle of the bike with grey.
-        line((0.245, 0.44), (0.69, 0.36), width=int(w * 0.75))
-        # The hub, at the wheel's centre. It was a crank down at the frame,
-        # which at this size read as a blob stuck to the rim.
-        circle((0.62, 0.56), 0.045, fill=True)
+        line(BB, WHEEL, TEAL, width=int(w * 0.45))
 
-    return img.resize((size, size), Image.LANCZOS)
+    disc(WHEEL, WHEEL_R, TEAL)
+
+    # Two feet with floor between them: one continuous bar reads as the ground
+    # rather than as something the machine stands on.
+    line((0.05, FLOOR), (0.40, FLOOR), GREY)
+    line((0.60, FLOOR), (0.95, FLOOR), GREY)
+
+    line(BB, (0.665, 0.265), GREY)              # top tube, up to the stem
+    line((0.67, 0.265), (0.815, FLOOR), GREY)   # front leg, down to its foot
+    line(BB, (0.225, FLOOR), GREY)              # rear leg, down to its foot
+    line((0.35, AXLE_Y), (0.245, 0.395), GREY)  # seat tube
+    line((0.115, 0.375), (0.355, 0.375), GREY)  # saddle
+    line((0.505, BAR_Y), (0.815, BAR_Y), GREY)  # bars
+    line((0.80, BAR_Y), (0.845, 0.105), GREY)   # the forward grip, turning up
+
+    disc(BB, CRANK_R, TEAL)
+
+    return quantise(img.resize((size, size), Image.LANCZOS))
+
+
+def quantise(im):
+    """Snap to the two colours and the panel's four alpha levels.
+
+    Doing it here rather than letting the ABGR2222 converter do it is what
+    keeps the edges solid: the converter has to guess at an antialiased pixel,
+    and half its guesses land on a level that reads as a hole.
+    """
+    out = []
+    for r, g_, b, a in im.getdata():
+        if a < 32:
+            out.append((0, 0, 0, 0))
+            continue
+        a = min(range(4), key=lambda i: abs(a - i * 85)) * 85
+        colour = TEAL if (g_ - r) > 40 and b > 60 and r < 120 else GREY
+        out.append((colour[0], colour[1], colour[2], a))
+    im.putdata(out)
+    return im
 
 
 if __name__ == "__main__":
     out = sys.argv[1] if len(sys.argv) > 1 else "."
     for size in DESIGNS:
         path = "%s/icon_%dx%d.png" % (out, size, size)
-        draw(size).save(path)
-        print("wrote %s" % path)
+        icon = draw(size)
+        icon.save(path)
+        print("wrote %s (%d distinct pixel values)" % (path, len(set(icon.getdata()))))

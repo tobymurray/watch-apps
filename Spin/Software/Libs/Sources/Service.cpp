@@ -19,9 +19,8 @@
 
 namespace {
 
-/// How long to wait for the GUI before concluding nobody opened the app. An
-/// Activity service is started alongside its GUI, so if none arrives there is
-/// no ride to record and staying resident would only cost battery.
+/// An Activity service starts alongside its GUI, so if none arrives there is no
+/// ride to record and staying resident only costs battery.
 constexpr uint32_t kGuiInitTimeoutSec = 5;
 
 } // namespace
@@ -49,17 +48,14 @@ void Service::run()
 
     mTimeTracker.init();
 
-    // Read here and not in the constructor: reading can log, and the simulator
-    // constructs the app's objects before its logger is usable, so the first
-    // log line out of a constructor takes the process down. The SDK documents
-    // that trap for SDK::AppConfig specifically.
+    // Not in the constructor: the simulator builds the app's objects before its
+    // logger is usable, and reading can log. The SDK documents that trap.
     loadConfig();
     loadSystemSettings();
     applyZoneConfig();
 
-    // Recover an activity a previous boot left unfinished (power loss or crash
-    // mid-recording) before any new ride can start — the recovery marker names
-    // exactly one torn .fit, so a second start would overwrite the evidence.
+    // Before any new ride can start: the marker names exactly one torn .fit, so
+    // a second start would overwrite the evidence.
     if (mActivityWriter.recoverInterrupted()) {
         LOG_INFO("Recovered an interrupted ride\n");
         notifyNewActivity();
@@ -78,10 +74,9 @@ void Service::run()
                 case SDK::MessageType::COMMAND_APP_STOP:
                     LOG_INFO("Force exit from the application\n");
                     // Save rather than discard: the wearer did not ask to throw
-                    // the ride away, and a finished .fit is recoverable evidence
-                    // where a discarded one is nothing.
+                    // the ride away. No work figure, because nobody was asked.
                     if (mTrackState != Track::State::INACTIVE) {
-                        stopTrack(false);
+                        stopTrack(false, 0);
                     }
                     disconnect();
                     mKernel.comm.releaseMessage(msg);
@@ -99,17 +94,17 @@ void Service::run()
 
                 case CustomMessage::TRACK_START:
                     LOG_DEBUG("TRACK_START\n");
-                    // Re-synchronise before the clock starts, never during: a
-                    // step correction mid-ride would move seconds that have
-                    // already been written into the FIT file.
+                    // Never mid-ride: a step correction would move seconds
+                    // already written into the FIT file.
                     mTimeTracker.init();
                     startTrack(mTimeTracker.getExpectedUTC());
                     break;
 
-                case CustomMessage::TRACK_STOP:
+                case CustomMessage::TRACK_STOP: {
                     LOG_DEBUG("TRACK_STOP\n");
-                    stopTrack(static_cast<CustomMessage::TrackStop*>(msg)->discard);
-                    break;
+                    const auto *stop = static_cast<CustomMessage::TrackStop*>(msg);
+                    stopTrack(stop->discard, stop->workKilojoules);
+                } break;
 
                 case CustomMessage::TRACK_PAUSE:
                     LOG_DEBUG("TRACK_PAUSE\n");
@@ -127,9 +122,8 @@ void Service::run()
                     handleSensorsData(event->handle, batch);
                 } break;
 
-                // The strap's BLE link state. Remembered as well as forwarded,
-                // because the GUI can start after the strap has already
-                // connected and the kernel does not repeat itself.
+                // Remembered as well as forwarded: the GUI can start after the
+                // strap connected, and the kernel does not repeat itself.
                 case SDK::MessageType::EVENT_ACCESSORY_STATUS: {
                     auto *evt = static_cast<SDK::Message::Accessory::EventStatus*>(msg);
                     LOG_INFO("Accessory status: state %u\n", evt->state);
@@ -167,10 +161,8 @@ void Service::connectSensors()
     }
     LOG_DEBUG("Connect to sensors...\n");
 
-    // One sensor, because a stationary bike moves the watch nowhere: there is
-    // no position to fix, no speed to integrate and no altitude to filter. An
-    // external strap arrives through this same connection — the kernel
-    // arbitrates strap against wrist optical and reports which it chose.
+    // One sensor: a stationary bike moves the watch nowhere. An external strap
+    // arrives through this same connection, arbitrated by the kernel.
     mSensorHr.connect();
 
     mIsSensorsConnected = true;
@@ -185,7 +177,7 @@ void Service::disconnect()
 
     mSensorHr.disconnect();
 
-    // The external HR accessory is released by the kernel when the app stops
+    // The kernel releases the HR accessory on app stop
     // (AccessoryManager::onAppStopped), so there is nothing to release here.
 
     mIsSensorsConnected = false;
@@ -224,12 +216,11 @@ void Service::onStartGUI()
     mSensorWristMotion.connect();
 
     // The GUI has no state of its own to fall back on, so hand it the current
-    // one immediately. On a fresh start this is INACTIVE and an UNAVAILABLE
-    // strap, which is exactly what the pre-ride screen should draw.
+    // one immediately.
     mGuiSender.trackState(mTrackState);
     mGuiSender.accessoryStatus(mAccessoryState, mAccessoryName);
     mGuiSender.rideConfig(static_cast<uint16_t>(mTargetSeconds / skSecondsPerMinute),
-                          mEnergyInKilojoules, mZoneCount);
+                          mEnergyInKilojoules, mZoneCount, mAskForKilojoules);
 }
 
 void Service::onStopGUI()
@@ -242,10 +233,8 @@ void Service::onStopGUI()
 
 void Service::loadSystemSettings()
 {
-    // The wearer's weight and the watch's own zone floors. Both are watch-wide
-    // settings shared by every activity app, so asking for them here is right;
-    // this app's own config can override the zones, but should not have to
-    // restate them just to exist.
+    // Watch-wide settings shared by every activity app; this app's own config
+    // can override the zones but should not have to restate them to exist.
     auto msg = SDK::make_msg<SDK::Message::RequestSystemSettings>(mKernel);
     if (!msg || !msg.send(100) || !msg.ok()) {
         LOG_WARNING("No system settings; using %0.f kg and no zones\n",
@@ -257,10 +246,9 @@ void Service::loadSystemSettings()
         mWeightKg = msg->weightKg;
     }
 
-    // The watch reports N thresholds as the boundaries of N-1 zones: its own
-    // ladder is 50/60/70/80/90/100% of maximum heart rate, so the last one is
-    // the maximum rather than a floor. Dropping it turns the list into floors,
-    // which is what this app works in.
+    // FIRMWARE: the watch reports N thresholds as the boundaries of N-1 zones,
+    // its ladder being 50/60/70/80/90/100% of maximum -- so the last is the
+    // maximum, not a floor. Dropping it turns the list into floors.
     uint8_t count = msg->heartRateCount;
     if (count > 0) {
         mSystemMaxHr = msg->heartRateTh[count - 1];
@@ -280,9 +268,8 @@ void Service::loadSystemSettings()
 
 void Service::applyZoneConfig()
 {
-    // This app's own zones win when it declares a count, because the reason to
-    // set one is a model the watch cannot express -- a three-zone polarised
-    // split, or a seven- or eight-zone ladder.
+    // This app's zones win when it declares a count: the reason to set one is a
+    // model the watch cannot express.
     const int32_t configured = mConfig
         ? mConfig->getInt(SpinConfig::field(SpinConfig::kHrZoneCount))
         : 0;
@@ -313,19 +300,13 @@ void Service::applyZoneConfig()
         }
 
         if (!ordered) {
-            // A ladder that does not climb describes nothing. Falling through
-            // is better than a dial whose segments correspond to no heart rate.
+            // A dial whose segments correspond to no heart rate is worse than
+            // one that is merely not what was asked for.
             LOG_WARNING("Zone floors are not increasing; ignoring them\n");
         }
 
-        // A count with no floors of its own is the common case: the wearer
-        // picked how many zones they want and left the numbers alone. Spread
-        // them over the same range the watch uses -- its ladder is
-        // 50/60/70/80/90/100% of maximum heart rate, so evenly from half the
-        // maximum to the maximum. At five zones this reproduces the watch's own
-        // floors exactly, which is the reason to trust it at three or eight:
-        // it is the watch's rule at a different count, not a training model
-        // invented here.
+        // A count with no floors is the common case; ZoneLadder.hpp owns the
+        // rule they are spread by.
         if (ZoneLadder::floors(mSystemMaxHr, static_cast<uint8_t>(configured),
                                mZoneFloor, skMaxZones)) {
             mZoneCount = static_cast<uint8_t>(configured);
@@ -348,10 +329,8 @@ void Service::applyZoneConfig()
 
 uint8_t Service::hrZoneFor(float hr) const
 {
-    // Zone N is "at or above the Nth floor". No floors means no zones -- not
-    // zone 1 -- because a wearer who has set none has no zones to be in, and
-    // inventing a ladder would put a number on the screen that means nothing
-    // about them.
+    // Zone N is "at or above the Nth floor". No floors means no zones, not
+    // zone 1: a wearer who set none has no zones to be in.
     if (mZoneCount == 0 || hr <= 0.0f) {
         return 0;
     }
@@ -367,17 +346,14 @@ uint8_t Service::hrZoneFor(float hr) const
 
 uint8_t Service::hrZoneFractionFor(float hr, uint8_t zone) const
 {
-    // The maximum is handed over for the top zone only: membership there is
-    // open-ended, but the needle needs somewhere to go. See ZoneLadder.hpp.
+    // The maximum is for the top zone's needle only; see ZoneLadder.hpp.
     return ZoneLadder::fraction(hr, zone, mZoneFloor, mZoneCount, mSystemMaxHr);
 }
 
 float Service::zoneMet(uint8_t zone)
 {
-    // Metabolic equivalents per zone, the same ladder the Squash app uses.
-    // A coarse model: it maps a heart rate to an effort, and effort times body
-    // mass times time is the estimate. It is not calorimetry and the README
-    // says so.
+    // Metabolic equivalents per zone: effort times body mass times time. A
+    // coarse model, not calorimetry.
     static constexpr float kMetByZone[5] = {2.5f, 4.5f, 7.0f, 10.0f, 12.5f};
     if (zone < 1 || zone > 5) {
         return 0.0f;
@@ -395,9 +371,8 @@ void Service::updateHrDerivedMetrics()
         return;
     }
 
-    // Basal metabolic rate accrues every active second whatever the heart is
-    // doing: a rider coasting is still a body running. Reported separately from
-    // the active figure so the two can be told apart afterwards.
+    // Basal rate accrues every active second whatever the heart is doing, and
+    // is reported separately so the two can be told apart afterwards.
     static constexpr float kRestingMet = 1.0f;
     static constexpr float kPerSecond  = 1.0f / 3600.0f;
 
@@ -405,49 +380,49 @@ void Service::updateHrDerivedMetrics()
     mTrackData.restingCalories += restingKcal;
     mLapRestingCalories        += restingKcal;
 
-    // Below zone 1, or with no zones set at all, the resting rate is the only
-    // honest answer -- a MET plucked for "some effort" would be a guess on top
-    // of a guess.
+    // Below zone 1, or with no zones set, the resting rate is the only honest
+    // answer: a MET plucked for "some effort" is a guess on top of a guess.
     const float met = (mTrackData.hrZone == 0) ? kRestingMet : zoneMet(mTrackData.hrZone);
     const float activeKcal = met * mWeightKg * kPerSecond;
     mTrackData.calories += activeKcal;
     mLapCalories        += activeKcal;
 
-    // Every second lands in exactly one bucket, including the below-zone-1 one,
-    // so the buckets sum to the ride's active time and a consumer can check it.
+    // Every second lands in exactly one bucket, so they sum to the ride's
+    // active time and a consumer can check it.
     mTrackData.zoneSeconds[mTrackData.hrZone] += 1;
     mLapZoneSeconds[mTrackData.hrZone]        += 1;
 }
 
 void Service::loadConfig()
 {
-    // Destroy the previous instance before building the next one: SDK::AppConfig
-    // is documented as one instance per app, and two alive at once would
-    // briefly share the same temporary file.
+    // One instance per app, per the SDK: two alive at once would briefly share
+    // the same temporary file.
     mConfig.reset();
     mConfig.reset(new (std::nothrow) SDK::AppConfig(
         mKernel, SpinConfig::kConfigFile,
         SpinConfig::kFields, SpinConfig::kFieldCount));
 
     if (!mConfig) {
-        // Out of memory, which nothing here can fix. The declared defaults are
-        // all "off", so the app is exactly what it is without a config file.
+        // Out of memory, which nothing here can fix. These must be the declared
+        // defaults, which are all "off" bar the one below.
         LOG_ERROR("Could not read configuration; using defaults\n");
         mAutoLapSeconds     = 0;
         mTargetSeconds      = 0;
         mKeepScreenLit      = false;
         mEnergyInKilojoules = false;
+        mAskForKilojoules   = true;
         return;
     }
 
-    // getInt() clamps to the bounds in the field table, so these cannot be
-    // negative and cannot overflow the multiplication below.
+    // getInt() clamps to the field table's bounds, so these cannot be negative
+    // or overflow the multiplication.
     mAutoLapSeconds = mConfig->getInt(SpinConfig::field(SpinConfig::kAutoLapMinutes)) *
                       skSecondsPerMinute;
     mTargetSeconds  = mConfig->getInt(SpinConfig::field(SpinConfig::kTargetMinutes)) *
                       skSecondsPerMinute;
     mKeepScreenLit      = mConfig->getBool(SpinConfig::field(SpinConfig::kKeepScreenLit));
     mEnergyInKilojoules = mConfig->getBool(SpinConfig::field(SpinConfig::kEnergyInKilojoules));
+    mAskForKilojoules   = mConfig->getBool(SpinConfig::field(SpinConfig::kAskForKilojoules));
 
     LOG_INFO("Config: auto lap %us, target %us, keep screen lit %u\n",
              static_cast<unsigned>(mAutoLapSeconds),
@@ -469,7 +444,7 @@ void Service::startTrack(std::time_t utc)
     loadConfig();
     applyZoneConfig();
     mGuiSender.rideConfig(static_cast<uint16_t>(mTargetSeconds / skSecondsPerMinute),
-                          mEnergyInKilojoules, mZoneCount);
+                          mEnergyInKilojoules, mZoneCount, mAskForKilojoules);
 
     mTimeCounter.reset();
     mHrCounter.reset();
@@ -522,9 +497,8 @@ void Service::processTrack()
         mActivityWriter.addRecord(prepareRecordData());
         mSessionNotEmpty = true;
 
-        // The target first: crossing it and closing a lap on the same second is
-        // possible, and two alerts in a row is one buzz the wrist reads as
-        // both. Checked before the lap so the target keeps the distinct pattern.
+        // Before the lap: crossing both on the same second is possible, and two
+        // alerts in a row is one buzz to the wrist.
         if (mTargetSeconds > 0 && !mTrackData.targetReached &&
             mTrackData.totalTime >= mTargetSeconds) {
             mTrackData.targetReached = true;
@@ -533,9 +507,8 @@ void Service::processTrack()
             notifyTargetReached();
         }
 
-        // Auto lap. Measured on active time, not wall clock, so a ride paused
-        // for two minutes does not come back to an immediate lap it did not
-        // pedal for.
+        // On active time, not wall clock, so a ride paused for two minutes does
+        // not come back to an immediate lap.
         if (mAutoLapSeconds > 0 && mTimeCounter.getLapValueActive() >= mAutoLapSeconds) {
             saveLap();
             notifyLapEnd();
@@ -570,8 +543,8 @@ void Service::saveLap()
              static_cast<uint32_t>(mTimeCounter.getLapValueTotal()),
              mHrCounter.getLapAverage(), mHrCounter.getLapMaximum());
 
-    // Both counters restart their lap window together, or the next lap's
-    // average heart rate would be taken over a different span than its time.
+    // Together, or the next lap's average heart rate covers a different span
+    // than its time.
     mTimeCounter.resetLap();
     mHrCounter.resetLap();
     mLapCalories        = 0.0f;
@@ -594,10 +567,8 @@ ActivityWriter::RecordData Service::prepareRecordData() const
     fitRecord.set(ActivityWriter::RecordData::Field::HEART_RATE, hasHeartRate);
     fitRecord.heartRate = mHrCounter.getCurrent();
 
-    // Tag each record with where the beat came from, and keep both raw per-source
-    // readings alongside the arbitrated one. Which source was believed is not
-    // recoverable from the arbitrated number afterwards, and for a ride whose
-    // whole point is the strap it is the first thing worth checking.
+    // Which source was believed is not recoverable from the arbitrated number
+    // afterwards, and on a ride whose point is the strap it is worth checking.
     fitRecord.hrSource      = hasHeartRate ? mHrSource : 0;
     fitRecord.hrOpticalBpm  = mHrOpticalBpm;
     fitRecord.hrExternalBpm = mHrExternalBpm;
@@ -630,7 +601,7 @@ void Service::pauseTrack(bool pause)
     mGuiSender.trackState(mTrackState);
 }
 
-void Service::stopTrack(bool discard)
+void Service::stopTrack(bool discard, uint16_t workKilojoules)
 {
     if (mTrackState == Track::State::INACTIVE) {
         return;
@@ -639,18 +610,14 @@ void Service::stopTrack(bool discard)
     bool saved = false;
 
     if (!discard && mSessionNotEmpty) {
-        // A FIT activity ends with the timer stopped. Only emit that event when
-        // the ride was still running: a pause has already written one, and two
+        // Only when still running: a pause has already written one, and two
         // stops in a row is a malformed event sequence.
         if (mTrackState != Track::State::PAUSED) {
             mActivityWriter.pause(mTimeCounter.getCurrent());
         }
 
-        // Close the final lap. With auto-lap off that is the whole ride, which
-        // is the point: the FIT profile expects at least one lap per session
-        // and many consumers quietly drop a session without one, so a ride with
-        // no lap button is still a ride with a lap. With auto-lap on it is
-        // whatever is left since the last split, however short.
+        // Close the final lap: many FIT consumers quietly drop a session with
+        // no lap at all, and this app has no lap button.
         saveLap();
 
         ActivityWriter::TrackData fitTrack{};
@@ -662,6 +629,9 @@ void Service::stopTrack(bool discard)
         fitTrack.hrMax             = mHrCounter.getMaximum();
         fitTrack.calories          = mTrackData.calories;
         fitTrack.metabolicCalories = mTrackData.restingCalories;
+        // Straight through: the watch has no measurement of its own to check
+        // this against. 0 means nobody said, and the writer omits the fields.
+        fitTrack.workKilojoules    = workKilojoules;
         for (size_t i = 0; i < skZoneBuckets; ++i) {
             fitTrack.zoneSeconds[i] = mTrackData.zoneSeconds[i];
         }
@@ -671,23 +641,20 @@ void Service::stopTrack(bool discard)
             notifyNewActivity();
         } else {
             LOG_ERROR("Ride save failed\n");
-            // Deliberately no notification: the .fit is unfinished, so the
-            // recovery marker stays for the next boot to finalize.
+            // No notification: the .fit is unfinished, so the marker stays for
+            // the next boot to finalize.
         }
     } else {
-        // Either the wearer discarded it, or there was never a record in it to
-        // keep. Both leave nothing behind: discard() removes the part-written
-        // .fit and the recovery marker with it, so the next boot does not
-        // finalize a ride that was thrown away.
+        // Discarded, or never had a record in it. discard() removes the
+        // part-written .fit and the marker with it.
         mActivityWriter.discard();
         LOG_INFO("Ride %s\n", discard ? "discarded" : "was empty; nothing saved");
     }
 
     mTrackState = Track::State::INACTIVE;
 
-    // Unconditionally, not only when mKeepScreenLit: the setting can have been
-    // turned off between the ride starting and ending, and a backlight left on
-    // with no auto-off would stay on until the battery ran out.
+    // Unconditionally: the setting can have been turned off mid-ride, and a
+    // backlight with no auto-off stays on until the battery runs out.
     backlightHold(false);
 
     LOG_INFO("Ride stopped. UTC: %u\n", static_cast<uint32_t>(mTimeCounter.getCurrent()));
@@ -699,6 +666,9 @@ void Service::stopTrack(bool discard)
     LOG_INFO("Energy: %.0f kcal active, %.0f kcal resting\n",
              static_cast<double>(mTrackData.calories),
              static_cast<double>(mTrackData.restingCalories));
+    if (workKilojoules > 0) {
+        LOG_INFO("Work: %u kJ from the bike\n", static_cast<unsigned>(workKilojoules));
+    }
 
     mGuiSender.trackState(mTrackState);
     mGuiSender.rideSaved(mTimeCounter.getValueActive(), mHrCounter.getAverage(),
@@ -711,9 +681,8 @@ void Service::setCapabilities()
 {
     auto msg = SDK::make_msg<SDK::Message::RequestSetCapabilities>(mKernel);
     if (msg) {
-        // Notifications stay off for the length of a ride. There is no settings
-        // screen to turn them back on, and a phone alert over the ride timer is
-        // the one interruption an indoor session does not need.
+        // A phone alert over the ride timer is the one interruption an indoor
+        // session does not need.
         msg->enPhoneNotification = false;
         msg->enUsbChargingScreen = false;
         msg->enMusicControl      = true;
@@ -723,9 +692,8 @@ void Service::setCapabilities()
 
 void Service::requestAccessoryPrepare()
 {
-    // Ask for the strap as soon as the GUI is up, not when the ride starts, so
-    // the BLE link has the pre-ride screen's worth of time to come up. No-op
-    // kernel-side unless external HR is enabled in the watch's own settings.
+    // As soon as the GUI is up, not when the ride starts, so the BLE link has
+    // the pre-ride screen's worth of time to come up.
     auto msg = SDK::make_msg<SDK::Message::Accessory::RequestPrepare>(mKernel);
     if (msg) {
         msg->kinds = SDK::Accessory::Kind::HRM;
@@ -752,9 +720,8 @@ void Service::notifyNewActivity()
 
 void Service::notifyLapEnd()
 {
-    // Two short beeps. Deliberately not the target's three: a lap is a marker
-    // you can ignore and the target is the thing you were riding for, so they
-    // have to be tellable apart without looking down.
+    // Two short beeps, not the target's three: they have to be tellable apart
+    // without looking down.
     backlightOn();
     playBuzzerPattern(120, 2);
     playVibroPattern(SDK::Message::RequestVibroPlay::Effect::ALERT_750MS_100);
@@ -781,10 +748,8 @@ void Service::backlightHold(bool on)
 {
     auto bl = SDK::make_msg<SDK::Message::RequestBacklightSet>(mKernel);
     if (bl) {
-        // autoOffTimeoutMs == 0 disables the auto-off entirely, so holding the
-        // light needs one message rather than a timer re-arming itself for the
-        // length of the ride. Releasing hands it back to the ordinary
-        // wrist-tilt behaviour by turning it off with the usual timeout.
+        // autoOffTimeoutMs == 0 disables the auto-off, so holding the light is
+        // one message rather than a timer re-arming for the whole ride.
         bl->brightness       = on ? 100 : 0;
         bl->autoOffTimeoutMs = on ? 0 : skBacklightTimeout;
         bl.send();
@@ -797,8 +762,7 @@ void Service::playBuzzerPattern(uint16_t beepMs, uint8_t count, uint16_t silence
         return;
     }
 
-    // A series of N beeps needs 2*N-1 notes (beeps plus the silences between
-    // them). Cap to what fits: max count = (skMaxNotes + 1) / 2.
+    // N beeps needs 2*N-1 notes, so the cap is (skMaxNotes + 1) / 2.
     const uint8_t maxCount = (SDK::Message::RequestBuzzerPlay::skMaxNotes + 1u) / 2u;
     if (count > maxCount) {
         count = maxCount;
@@ -839,9 +803,8 @@ void Service::playVibroPattern(SDK::Message::RequestVibroPlay::Effect effect,
     if (msg) {
         uint8_t n = 0;
         for (uint8_t i = 0; i < count; ++i) {
-            // A pause is a note with no effect and a duration; an effect is a
-            // note with no duration. Setting both would be a note that is
-            // neither.
+            // A pause is a duration with no effect; an effect is a note with
+            // no duration. Both set is neither.
             msg->notes[n].effect = static_cast<uint8_t>(effect);
             msg->notes[n].pause  = 0;
             ++n;

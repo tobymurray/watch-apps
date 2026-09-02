@@ -25,7 +25,7 @@
 // Usage in Presenter:
 //   activate()   -- view.setPositionId(model->menu().get());           // root level
 //                  view.setPositionId(model->menu().settings.get());   // sub-level
-//                  model->menu().settings.resetChildren();
+//                  model->menu().track.resetChildren();                // node with children
 //   deactivate() -- model->menu().set(view.getPositionId());
 //                  model->menu().reset(); // full tree reset (e.g. on idle timeout)
 // =============================================================================
@@ -60,17 +60,8 @@ struct Root {
 
     struct Settings {
         enum Id {
-            ID_ALERTS = 0, ID_PHONE_NOTIF,
-            ID_COUNT, ID_DEFAULT = ID_ALERTS
-        };
-
-        struct Alerts {
-            enum Id {
-                ID_TIME = 0,
-                ID_COUNT, ID_DEFAULT = ID_TIME
-            };
-
-            using Time = ::Settings::Alerts::Time;
+            ID_PHONE_NOTIF = 0,
+            ID_COUNT, ID_DEFAULT = ID_PHONE_NOTIF
         };
     };
 };
@@ -80,7 +71,7 @@ struct Root {
 // inside Root because TrackAction is always an overlay of TrackView.
 // TrackAction is always an overlay of TrackView, so it lives inside it.
 struct TrackView {
-    enum Id { ID_TRACK1 = 0, ID_TRACK2, ID_TRACK3,
+    enum Id { ID_TRACK1 = 0, ID_TRACK2,
               ID_COUNT, ID_DEFAULT = ID_TRACK1 };
 
     struct Action {
@@ -110,16 +101,10 @@ struct Nav : Position<Root> {
         void reset()         { Position<TrackView>::reset(); resetChildren(); }
     };
 
-    // Settings node -- alerts picker is a child
-    struct SettingsNav : Position<Root::Settings> {
-        Position<Root::Settings::Alerts> alerts;
-
-        void resetChildren() { alerts.reset(); }
-        void reset()         { Position<Root::Settings>::reset(); resetChildren(); }
-    };
+    using SettingsNav = Position<Root::Settings>;
 
     TrackViewNav  track;      // TrackView page + nested TrackAction
-    SettingsNav   settings;   // Settings menu + nested alerts
+    SettingsNav   settings;   // Settings menu
 
     void resetChildren() { track.reset(); settings.reset(); }
     void reset()         { Position<Root>::reset(); resetChildren(); }

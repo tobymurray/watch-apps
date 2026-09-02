@@ -56,7 +56,6 @@ bool SettingsSerializer::save(const Settings &settings)
 
     writer.add("version",        settings.version);
     writer.add("phone_notif_en", settings.phoneNotifEn);
-    writer.add("alert_time_id",  static_cast<uint8_t>(settings.alertTimeId));
 
     writer.endMap();
 
@@ -119,11 +118,6 @@ bool SettingsSerializer::load(Settings &settings)
 
     reader.get("version",        settings.version);
     reader.get("phone_notif_en", settings.phoneNotifEn);
-    uint8_t timeId = static_cast<uint8_t>(Settings::Alerts::Time::ID_OFF);
-    reader.get("alert_time_id", timeId);
-    settings.alertTimeId = timeId < Settings::Alerts::Time::ID_COUNT
-        ? static_cast<Settings::Alerts::Time::Id>(timeId)
-        : Settings::Alerts::Time::ID_OFF;
 
     delete[] buffer;
 

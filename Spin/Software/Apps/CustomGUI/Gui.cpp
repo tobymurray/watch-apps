@@ -18,10 +18,9 @@ namespace
 {
 constexpr uint32_t kWaitForever = 0xFFFFFFFF;
 
-/// 1 kcal = 4.184 kJ. This converts *dietary* energy between its two units --
-/// it is not, and must never be presented as, the kilojoules of mechanical work
-/// a power meter reports. Those need power, which this watch cannot measure,
-/// and would be roughly a quarter of this number for the same ride.
+/// 1 kcal = 4.184 kJ. DIETARY energy between its two units -- not the kJ of
+/// mechanical work a bike console reports, which is roughly a quarter of this
+/// for the same ride and is entered by the wearer. See work.rs.
 constexpr float kKilojoulesPerKilocalorie = 4.184f;
 
 uint16_t displayEnergy(float kcal, bool asKilojoules)
@@ -30,8 +29,8 @@ uint16_t displayEnergy(float kcal, bool asKilojoules)
     if (value <= 0.0f) {
         return 0u;
     }
-    // The frame carries a uint16; a ride big enough to overflow it has gone
-    // wrong somewhere else, but clamping beats wrapping to a small number.
+    // The frame carries a uint16, and clamping beats wrapping to a small
+    // number.
     constexpr float kMax = 65535.0f;
     return static_cast<uint16_t>((value > kMax ? kMax : value) + 0.5f);
 }
@@ -54,10 +53,8 @@ Gui::Gui(SDK::Kernel &kernel)
 
 uint8_t Gui::strapFromAccessoryState(uint8_t accessoryState)
 {
-    // Mirrors SDK::Gui::SensorStatusRow::hrState(): UNAVAILABLE(0)/IDLE(1) ->
-    // absent, SEARCHING(2)/CONNECTING(3)/LOST(5) -> searching, CONNECTED(4) ->
-    // connected. That header is TouchGFX-only, so the mapping is repeated here
-    // rather than included -- it is three cases and one comment.
+    // Mirrors SDK::Gui::SensorStatusRow::hrState(), whose header is
+    // TouchGFX-only and cannot be included here.
     switch (accessoryState) {
         case 2: case 3: case 5: return SPIN_GUI_STRAP_SEARCHING;
         case 4:                 return SPIN_GUI_STRAP_CONNECTED;
@@ -105,6 +102,14 @@ void Gui::buildFrame(spin_gui_frame &out) const
         return;
     }
 
+    if (mEnteringWork) {
+        out.screen  = SPIN_GUI_SCREEN_ENTER_WORK;
+        out.work_kj = mWorkKilojoules;
+        // A reference beside the field, never a value in it -- see work.rs.
+        out.work_estimate_kj = spin_gui_work_estimate_kj(mTrackData.calories);
+        return;
+    }
+
     if (mShowSaved && mDiscarded) {
         out.screen = SPIN_GUI_SCREEN_DISCARDED;
         return;
@@ -127,17 +132,13 @@ void Gui::buildFrame(spin_gui_frame &out) const
 
     out.elapsed_s = static_cast<uint32_t>(mTrackData.totalTime);
 
-    // Taken as published, not re-judged here. The Service already decided what
-    // the screen should believe -- including holding a reading through a
-    // momentary dip in the arbiter's confidence -- and 0 already means "no
-    // heart rate". Re-applying the trust gate here was what blanked the number
-    // for a single second at a time on a signal that was not actually moving.
+    // Taken as published: the Service already decided what the screen should
+    // believe, and 0 already means "no heart rate". Re-applying the trust gate
+    // here is what blanked the number a second at a time. See HrHold.hpp.
     out.hr_bpm    = static_cast<uint16_t>(mTrackData.hr + 0.5f);
     out.hr_source = (mTrackData.hr > 0.0f) ? mTrackData.hrSource : SPIN_GUI_HR_NONE;
 
-    // Passed through, never recomputed here from elapsed_s against the target:
-    // this is the same flag that fired the buzz, so the screen cannot announce
-    // the target a second before or after the wrist felt it.
+    // Never recomputed from elapsed_s: this is the flag that fired the buzz.
     out.target_reached = mTrackData.targetReached ? 1u : 0u;
 
     out.hr_zone          = mTrackData.hrZone;
@@ -174,15 +175,12 @@ void Gui::handleButton(SDK::Message::EventButton::Id id,
     using Event = SDK::Message::EventButton::Event;
     CustomMessage::Sender sender(mKernel);
 
-    // Discard asks first, on a screen of its own, and both answers are
-    // buttons. It was a press-and-hold on L2, matching the SDK's own activity
-    // apps -- and on the watch it never fired once: this app turns on the
-    // music-control overlay in setCapabilities(), the system claims the long
-    // press to open it, and HOLD_1S never reached here. Worse, the screen it
-    // put the wearer on could only be left by that same event, so there was no
-    // way out of it at all.
-    //
-    // Two ordinary clicks, which nothing intercepts, and a labelled way back.
+    // HARDWARE, and why every screen here is CLICK-only: Service::
+    // setCapabilities() sets enMusicControl = true, the system claims the long
+    // press for its overlay, and HOLD_1S never reaches this app. Discard was a
+    // press-and-hold once and never fired on the watch -- and the screen it
+    // stranded the wearer on could only be left by that same event. Falsified
+    // by that setting changing, and only re-testable on the watch.
     if (mConfirmingDiscard) {
         if (event != Event::CLICK) {
             return;
@@ -190,7 +188,8 @@ void Gui::handleButton(SDK::Message::EventButton::Id id,
         if (id == Id::SW2) {            // R1: yes
             LOG_INFO("Discard confirmed\n");
             mConfirmingDiscard = false;
-            sender.trackStop(true);
+            // A ride being thrown away has no work worth asking about.
+            sender.trackStop(true, 0);
         } else if (id == Id::SW4) {     // R2: no
             LOG_INFO("Discard cancelled\n");
             mConfirmingDiscard = false;
@@ -203,6 +202,29 @@ void Gui::handleButton(SDK::Message::EventButton::Id id,
         return;
     }
 
+    // Both ways off this screen are labelled on it. The arithmetic is not here:
+    // spin_gui_work_add_*() are pure functions of the current value, so what a
+    // button does and what its label says come from the same constants.
+    if (mEnteringWork) {
+        if (id == Id::SW1) {            // L1: +100
+            mWorkKilojoules = spin_gui_work_add_hundreds(mWorkKilojoules);
+            renderAndPush();
+        } else if (id == Id::SW3) {     // L2: +10
+            mWorkKilojoules = spin_gui_work_add_tens(mWorkKilojoules);
+            renderAndPush();
+        } else if (id == Id::SW2) {     // R1: save, with whatever was entered
+            LOG_INFO("Saving with %u kJ of work\n",
+                     static_cast<unsigned>(mWorkKilojoules));
+            mEnteringWork = false;
+            sender.trackStop(false, mWorkKilojoules);
+        } else if (id == Id::SW4) {     // R2: skip -- save the ride, say nothing
+            LOG_INFO("Saving without a work figure\n");
+            mEnteringWork = false;
+            sender.trackStop(false, 0);
+        }
+        return;
+    }
+
     // Only PAUSED offers it: a ride you are still riding is not one you are
     // deciding about, and one already saved is on disk.
     if (id == Id::SW3 && !mShowSaved && mTrackState == Track::State::PAUSED) {
@@ -211,9 +233,8 @@ void Gui::handleButton(SDK::Message::EventButton::Id id,
         return;
     }
 
-    // R1 is the one button that does the obvious thing on every screen, so it
-    // is the only one a wearer has to find mid-ride. R2 leaves, but never while
-    // the clock is running -- an accidental exit there costs the whole ride.
+    // R1 acts on every screen and R2 leaves, but never while the clock is
+    // running: an accidental exit there costs the whole ride.
     if (mShowSaved) {
         if (id == Id::SW2 || id == Id::SW4) {
             LOG_INFO("Leaving after a finished ride\n");
@@ -242,7 +263,15 @@ void Gui::handleButton(SDK::Message::EventButton::Id id,
             if (id == Id::SW2) {            // R1: resume
                 sender.trackResume();
             } else if (id == Id::SW1) {     // L1: finish and save
-                sender.trackStop(false);
+                if (mAskForKilojoules) {
+                    // Ask before stopping: the file is finalised when the
+                    // Service handles TRACK_STOP. See Commands.hpp.
+                    mEnteringWork   = true;
+                    mWorkKilojoules = 0;
+                    renderAndPush();
+                } else {
+                    sender.trackStop(false, 0);
+                }
             }
             break;
     }
@@ -252,6 +281,7 @@ void Gui::run()
 {
     LOG_INFO("Started\n");
 
+    // A stale libspin_gui.a is otherwise silent until it draws garbage.
     if (spin_gui_abi_fingerprint() != spin_gui_abi::fingerprint()) {
         LOG_ERROR("ABI mismatch: Rust 0x%08X, C++ 0x%08X -- stale libspin_gui.a\n",
                   static_cast<unsigned>(spin_gui_abi_fingerprint()),
@@ -285,20 +315,16 @@ void Gui::run()
 
             case SDK::MessageType::COMMAND_APP_GUI_SUSPEND:
                 mResumed = false;
-                // A question the wearer walked away from is not one they
-                // answered, and coming back to a modal screen they did not ask
-                // for is how the previous version stranded them.
+                // A question walked away from is not one they answered. The
+                // ride is still PAUSED under both, so nothing is lost.
                 mConfirmingDiscard = false;
+                mEnteringWork      = false;
+                mWorkKilojoules    = 0;
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 break;
 
-            // Nothing on any screen animates, and the Service publishes a
-            // snapshot every second while a ride is running, so a redraw per
-            // tick would be the same pixels at the tick rate. Ticks are
-            // acknowledged and dropped; the messages below are what redraw.
-            // Nothing animates. The Service publishes a snapshot every second
-            // while a ride runs, so a redraw per tick would be the same pixels
-            // at the tick rate.
+            // Nothing animates, and the Service publishes a snapshot a second,
+            // so a redraw per tick would be the same pixels at the tick rate.
             case SDK::MessageType::EVENT_GUI_TICK:
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 break;
@@ -306,9 +332,7 @@ void Gui::run()
             case CustomMessage::TRACK_STATE_UPDATE: {
                 const Track::State state =
                     static_cast<CustomMessage::TrackStateUpd *>(msg)->state;
-                // A ride starting clears the last one's summary. Doing it here
-                // rather than on the button press means it is the Service's
-                // acknowledgement that clears the screen, so a start that was
+                // Here rather than on the button press, so a start the Service
                 // refused leaves the summary up instead of blanking it.
                 if (state == Track::State::ACTIVE && mTrackState == Track::State::INACTIVE) {
                     mShowSaved = false;
@@ -342,6 +366,7 @@ void Gui::run()
                 mTargetMinutes       = cfg->targetMinutes;
                 mEnergyInKilojoules  = cfg->energyInKilojoules;
                 mZoneCount           = cfg->zoneCount;
+                mAskForKilojoules    = cfg->askForKilojoules;
             }
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 mKernel.comm.releaseMessage(msg);

@@ -26,15 +26,6 @@ public:
     // MenuSettings
     void gotoMenuSettingsScreenNoTransition();
 
-    // MenuAlerts
-    void gotoMenuAlertsScreenNoTransition();
-
-    // MenuTime
-    void gotoMenuTimeScreenNoTransition();
-
-    // MenuTimeSaved
-    void gotoMenuTimeSavedScreenNoTransition();
-
     // TrackStartConfirmation
     void gotoTrackStartConfirmationScreenNoTransition();
 
@@ -69,15 +60,6 @@ protected:
 
     // MenuSettings
     void gotoMenuSettingsScreenNoTransitionImpl();
-
-    // MenuAlerts
-    void gotoMenuAlertsScreenNoTransitionImpl();
-
-    // MenuTime
-    void gotoMenuTimeScreenNoTransitionImpl();
-
-    // MenuTimeSaved
-    void gotoMenuTimeSavedScreenNoTransitionImpl();
 
     // TrackStartConfirmation
     void gotoTrackStartConfirmationScreenNoTransitionImpl();

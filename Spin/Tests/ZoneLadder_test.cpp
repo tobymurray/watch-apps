@@ -11,12 +11,9 @@
 
 TEST(ZoneLadder, MatchesTheWatchAtFiveZones)
 {
-    // THE test. The watch's own ladder for a 184 bpm maximum is
-    // 92/110/129/147/166/184 -- 50/60/70/80/90/100% -- and the first five of
-    // those are its zone floors. If this rule reproduces them exactly, then
-    // using it at three or eight zones is the watch's rule at a different
-    // count rather than a training model invented here. If it ever stops
-    // matching, that argument is gone and so is the reason to trust it.
+    // THE test. The watch's ladder for a 184 bpm maximum is
+    // 92/110/129/147/166/184, and the first five are its floors. If this stops
+    // matching, the reason to trust the rule at three or eight zones is gone.
     uint8_t out[8] = {};
     ASSERT_TRUE(ZoneLadder::floors(184, 5, out, 8));
     EXPECT_EQ(out[0], 92);
@@ -79,9 +76,8 @@ TEST(ZoneLadder, PlacesTheNeedleAcrossAClosedZone)
 
 TEST(ZoneLadder, TheTopZoneUsesTheMaximumSoTheNeedleStillMoves)
 {
-    // The bug this exists to prevent: with the top zone treated as unbounded,
-    // every heart rate in it pinned to the end of the segment and 167 looked
-    // the same as 200 on a dial whose whole job is telling them apart.
+    // The bug this prevents: with the top zone unbounded, 167 and 200 both
+    // pinned to the end of the segment.
     const uint8_t low  = ZoneLadder::fraction(167.0f, 5, kFloors, 5, 184);
     const uint8_t mid  = ZoneLadder::fraction(175.0f, 5, kFloors, 5, 184);
     const uint8_t high = ZoneLadder::fraction(183.0f, 5, kFloors, 5, 184);

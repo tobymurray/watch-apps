@@ -1,6 +1,6 @@
 {
   "schema": 1,
   "values": {
-    "record_imu": "on"
+    "recordImu": true
   }
 }

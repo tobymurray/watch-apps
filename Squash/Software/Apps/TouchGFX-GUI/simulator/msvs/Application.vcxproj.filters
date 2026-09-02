@@ -193,18 +193,6 @@
     <Filter Include="Header Files\gui\trackaction_screen">
       <UniqueIdentifier>1CD958FF-460B-F0CF-4E8D-1ACD034A0985</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files\gui\menutime_screen">
-      <UniqueIdentifier>DA4AF7E8-045C-E12E-AF49-D1157352A111</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Source Files\gui\menutime_screen">
-      <UniqueIdentifier>49C7ADC4-5B49-9AEA-51F3-923D9850915F</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Header Files\gui\menutimesaved_screen">
-      <UniqueIdentifier>7D707D9D-016A-FE9D-BF26-F98BFEF1B254</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Source Files\gui\menutimesaved_screen">
-      <UniqueIdentifier>1443DA36-AD14-E305-12B1-E8F5AE08B1EA</UniqueIdentifier>
-    </Filter>
     <Filter Include="Source Files\gui\trackdiscarded_screen">
       <UniqueIdentifier>67FCC8FC-684F-55AE-7394-74C7AEC2F48A</UniqueIdentifier>
     </Filter>
@@ -229,26 +217,14 @@
     <Filter Include="Source Files\gui\tracksaved_screen">
       <UniqueIdentifier>B6AC79BC-115B-AC38-59B5-4FF14F75BDF3</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files\gui\menualerts_screen">
-      <UniqueIdentifier>2E8D7AA3-2A6A-37B7-1728-3F0020B2144F</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Source Files\gui\menualerts_screen">
-      <UniqueIdentifier>491236B9-E2F7-DDD8-3D34-905890DB7050</UniqueIdentifier>
-    </Filter>
     <Filter Include="Header Files\generated\gui_generated\tracklap_screen">
       <UniqueIdentifier>DC31D8A2-2EDD-F2CB-5C04-D88AA289F48E</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Source Files\generated\gui_generated\menualerts_screen">
-      <UniqueIdentifier>C57D9EF1-C75C-2A33-F1E6-E7652A303D62</UniqueIdentifier>
     </Filter>
     <Filter Include="Header Files\generated\gui_generated\containers">
       <UniqueIdentifier>C2997098-7E94-A266-E8DF-D8B1E2799DF7</UniqueIdentifier>
     </Filter>
     <Filter Include="Source Files\generated\gui_generated\tracklap_screen">
       <UniqueIdentifier>2D0A9746-AAC7-33C7-35FA-197B32FB46A9</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Header Files\generated\gui_generated\menualerts_screen">
-      <UniqueIdentifier>DE048CCF-CC2A-ECB4-86A1-3D44245B2189</UniqueIdentifier>
     </Filter>
     <Filter Include="Source Files\generated\gui_generated\containers">
       <UniqueIdentifier>92F8F0D7-3074-439B-DAD7-A5D1F4006260</UniqueIdentifier>
@@ -274,23 +250,11 @@
     <Filter Include="Source Files\generated\gui_generated\track_screen">
       <UniqueIdentifier>3DD4BBDC-556C-B93D-B8A4-962324E79328</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\generated\gui_generated\menutimesaved_screen">
-      <UniqueIdentifier>D57051EE-BE11-BA3D-5877-12A17F376257</UniqueIdentifier>
-    </Filter>
     <Filter Include="Header Files\generated\gui_generated\trackaction_screen">
       <UniqueIdentifier>A538AE7E-B75F-0A5A-F047-F1DDC192DFFD</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files\generated\gui_generated\menutimesaved_screen">
-      <UniqueIdentifier>6AFCECD8-F005-A2D5-61C5-E8A1A9AD0937</UniqueIdentifier>
-    </Filter>
     <Filter Include="Source Files\generated\gui_generated\trackaction_screen">
       <UniqueIdentifier>301B3006-8E1A-1DA8-E16F-60C13834A5F2</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Source Files\generated\gui_generated\menutime_screen">
-      <UniqueIdentifier>7E3CD9CC-E491-C872-B219-3EB15B80A218</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Header Files\generated\gui_generated\menutime_screen">
-      <UniqueIdentifier>A45E60F6-D83E-E468-2F76-0D15F3A678BB</UniqueIdentifier>
     </Filter>
     <Filter Include="Source Files\generated\gui_generated\tracksummary_screen">
       <UniqueIdentifier>D72D0EAB-548E-E4FC-8427-AD0208EC185F</UniqueIdentifier>
@@ -384,6 +348,12 @@
     </Filter>
     <Filter Include="SDK\Libs\Source\JSON">
       <UniqueIdentifier>{681f519e-2619-415d-b28b-2f31e2279e24}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="SDK\Libs\Header\AppConfig">
+      <UniqueIdentifier>{883f3927-5139-4d64-b1b7-a554f4175eb4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="SDK\Libs\Source\AppConfig">
+      <UniqueIdentifier>{505d9b85-ee22-4860-9318-890697be260f}</UniqueIdentifier>
     </Filter>
     <Filter Include="SDK\Libs\Header\TrackMap">
       <UniqueIdentifier>{d3f5dab6-09b9-4f3a-a091-e23f8bbbf5ea}</UniqueIdentifier>
@@ -537,15 +507,6 @@
     <ClCompile Include="..\..\generated\gui_generated\src\containers\ButtonsBase.cpp">
       <Filter>Source Files\generated\gui_generated\containers</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\gui\src\menualerts_screen\MenuAlertsPresenter.cpp">
-      <Filter>Source Files\gui\menualerts_screen</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\gui\src\menualerts_screen\MenuAlertsView.cpp">
-      <Filter>Source Files\gui\menualerts_screen</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\generated\gui_generated\src\menualerts_screen\MenuAlertsViewBase.cpp">
-      <Filter>Source Files\generated\gui_generated\menualerts_screen</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\gui\src\menusettings_screen\MenuSettingsPresenter.cpp">
       <Filter>Source Files\gui\menusettings_screen</Filter>
     </ClCompile>
@@ -554,24 +515,6 @@
     </ClCompile>
     <ClCompile Include="..\..\generated\gui_generated\src\menusettings_screen\MenuSettingsViewBase.cpp">
       <Filter>Source Files\generated\gui_generated\menusettings_screen</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\gui\src\menutime_screen\MenuTimePresenter.cpp">
-      <Filter>Source Files\gui\menutime_screen</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\gui\src\menutimesaved_screen\MenuTimeSavedPresenter.cpp">
-      <Filter>Source Files\gui\menutimesaved_screen</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\gui\src\menutimesaved_screen\MenuTimeSavedView.cpp">
-      <Filter>Source Files\gui\menutimesaved_screen</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\generated\gui_generated\src\menutimesaved_screen\MenuTimeSavedViewBase.cpp">
-      <Filter>Source Files\generated\gui_generated\menutimesaved_screen</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\gui\src\menutime_screen\MenuTimeView.cpp">
-      <Filter>Source Files\gui\menutime_screen</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\generated\gui_generated\src\menutime_screen\MenuTimeViewBase.cpp">
-      <Filter>Source Files\generated\gui_generated\menutime_screen</Filter>
     </ClCompile>
     <ClCompile Include="..\..\gui\src\containers\Title.cpp">
       <Filter>Source Files\gui\containers</Filter>
@@ -663,6 +606,9 @@
     <ClCompile Include="..\..\..\..\Libs\Sources\ActivityWriter.cpp">
       <Filter>Libs\Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\..\Libs\Sources\AppConfigFields.cpp">
+      <Filter>Libs\Source</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\..\Libs\Sources\Service.cpp">
       <Filter>Libs\Source</Filter>
     </ClCompile>
@@ -680,6 +626,9 @@
     </ClCompile>
     <ClCompile Include="$(SdkPath)\Libs\Source\JSON\JsonStreamWriter.cpp">
       <Filter>SDK\Libs\Source\JSON</Filter>
+    </ClCompile>
+    <ClCompile Include="$(SdkPath)\Libs\Source\AppConfig\AppConfig.cpp">
+      <Filter>SDK\Libs\Source\AppConfig</Filter>
     </ClCompile>
     <ClCompile Include="$(SdkPath)\Libs\Source\TrackMap\TrackMapBuilder.cpp">
       <Filter>SDK\Libs\Source\TrackMap</Filter>
@@ -708,15 +657,6 @@
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\common\FrontendHeapBase.hpp">
       <Filter>Header Files\generated\gui_generated\common</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\gui\include\gui\menualerts_screen\MenuAlertsPresenter.hpp">
-      <Filter>Header Files\gui\menualerts_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\gui\include\gui\menualerts_screen\MenuAlertsView.hpp">
-      <Filter>Header Files\gui\menualerts_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\menualerts_screen\MenuAlertsViewBase.hpp">
-      <Filter>Header Files\generated\gui_generated\menualerts_screen</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\gui\include\gui\menusettings_screen\MenuSettingsPresenter.hpp">
       <Filter>Header Files\gui\menusettings_screen</Filter>
     </ClInclude>
@@ -725,24 +665,6 @@
     </ClInclude>
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\menusettings_screen\MenuSettingsViewBase.hpp">
       <Filter>Header Files\generated\gui_generated\menusettings_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\gui\include\gui\menutime_screen\MenuTimePresenter.hpp">
-      <Filter>Header Files\gui\menutime_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\gui\include\gui\menutimesaved_screen\MenuTimeSavedPresenter.hpp">
-      <Filter>Header Files\gui\menutimesaved_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\gui\include\gui\menutimesaved_screen\MenuTimeSavedView.hpp">
-      <Filter>Header Files\gui\menutimesaved_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\menutimesaved_screen\MenuTimeSavedViewBase.hpp">
-      <Filter>Header Files\generated\gui_generated\menutimesaved_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\gui\include\gui\menutime_screen\MenuTimeView.hpp">
-      <Filter>Header Files\gui\menutime_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\menutime_screen\MenuTimeViewBase.hpp">
-      <Filter>Header Files\generated\gui_generated\menutime_screen</Filter>
     </ClInclude>
     <ClInclude Include="..\..\generated\simulator\include\simulator\video\MJPEGDecoder.hpp">
       <Filter>Header Files\generated\simulator\include\simulator\video</Filter>
@@ -1681,15 +1603,6 @@
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\containers\ButtonsBase.hpp">
       <Filter>Header Files\generated\gui_generated\containers</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\gui\include\gui\menualerts_screen\MenuAlertsPresenter.hpp">
-      <Filter>Header Files\gui\menualerts_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\gui\include\gui\menualerts_screen\MenuAlertsView.hpp">
-      <Filter>Header Files\gui\menualerts_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\menualerts_screen\MenuAlertsViewBase.hpp">
-      <Filter>Header Files\generated\gui_generated\menualerts_screen</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\gui\include\gui\menusettings_screen\MenuSettingsPresenter.hpp">
       <Filter>Header Files\gui\menusettings_screen</Filter>
     </ClInclude>
@@ -1698,24 +1611,6 @@
     </ClInclude>
     <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\menusettings_screen\MenuSettingsViewBase.hpp">
       <Filter>Header Files\generated\gui_generated\menusettings_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\gui\include\gui\menutime_screen\MenuTimePresenter.hpp">
-      <Filter>Header Files\gui\menutime_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\gui\include\gui\menutimesaved_screen\MenuTimeSavedPresenter.hpp">
-      <Filter>Header Files\gui\menutimesaved_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\gui\include\gui\menutimesaved_screen\MenuTimeSavedView.hpp">
-      <Filter>Header Files\gui\menutimesaved_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\menutimesaved_screen\MenuTimeSavedViewBase.hpp">
-      <Filter>Header Files\generated\gui_generated\menutimesaved_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\gui\include\gui\menutime_screen\MenuTimeView.hpp">
-      <Filter>Header Files\gui\menutime_screen</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\generated\gui_generated\include\gui_generated\menutime_screen\MenuTimeViewBase.hpp">
-      <Filter>Header Files\generated\gui_generated\menutime_screen</Filter>
     </ClInclude>
     <ClInclude Include="..\..\gui\include\gui\containers\Title.hpp">
       <Filter>Header Files\gui\containers</Filter>
@@ -1894,6 +1789,9 @@
     <ClInclude Include="..\..\..\..\Libs\Header\ActivityWriter.hpp">
       <Filter>Libs\Header</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\..\Libs\Header\AppConfigFields.hpp">
+      <Filter>Libs\Header</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\..\Libs\Header\Service.hpp">
       <Filter>Libs\Header</Filter>
     </ClInclude>
@@ -1917,6 +1815,9 @@
     </ClInclude>
     <ClInclude Include="$(SdkPath)\Libs\Header\SDK\JSON\JsonStreamWriter.hpp">
       <Filter>SDK\Libs\Header\JSON</Filter>
+    </ClInclude>
+    <ClInclude Include="$(SdkPath)\Libs\Header\SDK\AppConfig\AppConfig.hpp">
+      <Filter>SDK\Libs\Header\AppConfig</Filter>
     </ClInclude>
     <ClInclude Include="$(SdkPath)\Libs\Header\SDK\Kernel\Kernel.hpp">
       <Filter>SDK\Libs\Header\Kernel</Filter>
@@ -1965,9 +1866,6 @@
     </ClInclude>
     <ClInclude Include="..\..\..\..\Libs\Header\WristTiltDetector.hpp">
       <Filter>Libs\Header</Filter>
-    </ClInclude>
-    <ClInclude Include="$(SdkPath)\Libs\Header\SDK\Metrics\DeltaCounter.hpp">
-      <Filter>SDK\Libs\Header\Metrics</Filter>
     </ClInclude>
     <ClInclude Include="$(SdkPath)\Libs\Header\SDK\Metrics\MonotonicCounter.hpp">
       <Filter>SDK\Libs\Header\Metrics</Filter>

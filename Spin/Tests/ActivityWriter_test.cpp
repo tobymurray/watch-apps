@@ -3,11 +3,8 @@
  * @file    ActivityWriter_test.cpp
  * @brief   What Spin actually writes, decoded back out of the .fit.
  *
- * The point of this app is a file: a ride on a stationary bike that some other
- * piece of software files as an indoor ride rather than as a bike ride that
- * covered no ground. That claim lives in two bytes of one message, and it is
- * not observable from the watch — so it is asserted here, by encoding a whole
- * ride and decoding it with an independent reader.
+ * Encodes a whole ride with the real writer and decodes it with an independent
+ * reader, because none of these claims is observable from the watch.
  ******************************************************************************
  */
 
@@ -39,10 +36,10 @@ constexpr uint16_t kMesgEvent   = 21;
 constexpr uint8_t kFieldSport         = 5;   // session.sport
 constexpr uint8_t kFieldSubSport      = 6;   // session.sub_sport
 constexpr uint8_t kFieldNumLaps       = 26;  // session.num_laps
-// Lap and session number these differently -- lap is 15/16, session is 16/17 --
-// so lap.max_heart_rate and session.avg_heart_rate share the number 16. Reading
-// a lap with the session's constants silently returns max where avg was meant,
-// which is a wrong number rather than a missing one.
+// lap is 15/16, session 16/17, so lap.max_heart_rate and
+// session.avg_heart_rate share the number 16: the session's constants read
+// on a lap return max where avg was meant -- a wrong number, not a missing
+// one.
 constexpr uint8_t kSessionAvgHeartRate = 16;
 constexpr uint8_t kSessionMaxHeartRate = 17;
 constexpr uint8_t kLapAvgHeartRate     = 15;
@@ -63,13 +60,21 @@ constexpr uint8_t kDevLapRestingCal = 7;
 constexpr uint8_t kFieldTotalCalories      = 11;   // session/lap total_calories
 constexpr uint8_t kFieldMetabolicCalories  = 196;  // session.metabolic_calories
 
-// time_in_hr_zone, and the two messages do NOT share a number. Checked against
-// the Garmin FIT SDK profile 21.214.0 and python-fitparse's independent copy.
-// Session field 57 is avg_temperature, so using the lap number on the session
-// would write this array into a temperature field.
+// The neighbours each session field would land on if the lap's number were
+// used by mistake. Spin measures no temperature, strokes or cadence, so none
+// would look wrong from the writing end. See ActivityWriter.cpp.
 constexpr uint8_t kFieldLapTimeInHrZone     = 57;
 constexpr uint8_t kFieldSessionTimeInHrZone = 65;
 constexpr uint8_t kFieldSessionAvgTemperature = 57;
+
+constexpr uint8_t kFieldSessionTotalWork = 48;
+constexpr uint8_t kFieldSessionAvgPower  = 20;
+constexpr uint8_t kFieldSessionAvgStrokeCount = 41;   // where lap.total_work would land
+constexpr uint8_t kFieldSessionMaxCadence     = 19;   // where lap.avg_power would land
+constexpr uint8_t kFieldSessionMaxPower       = 21;   // the neighbour above avg_power
+
+/// The file holds joules; the wearer enters kilojoules.
+constexpr uint32_t kJoulesPerKilojoule = 1000;
 
 /// Stored value is milliseconds; the app holds seconds.
 constexpr uint32_t kTimeInHrZoneScale = 1000;
@@ -115,15 +120,15 @@ std::vector<uint8_t> readFit(const SDK::TestSupport::InMemoryFileSystem& fs)
     return std::vector<uint8_t>(s.begin(), s.end());
 }
 
-/// One complete ride: start, `seconds` of one-per-second records, a lap
-/// covering the whole thing, and a session. Mirrors what Service.cpp does, so
-/// the file under test is the file the watch would produce.
+/// One complete ride, in the order Service.cpp writes one, so the file under
+/// test is the file the watch would produce.
 struct Ride {
     SDK::TestSupport::KernelFixture fx;
     ActivityWriter writer{fx.kernel, "Activity"};
     bool stopped = false;
 
-    void run(uint32_t seconds, const std::vector<uint8_t>& bpm, uint8_t hrSource)
+    void run(uint32_t seconds, const std::vector<uint8_t>& bpm, uint8_t hrSource,
+             uint16_t workKilojoules = 0)
     {
         ActivityWriter::AppInfo info;
         info.timestamp  = kStartUtc;
@@ -171,6 +176,7 @@ struct Ride {
         track.elapsed   = seconds;
         track.hrAvg     = avg;
         track.hrMax     = max;
+        track.workKilojoules = workKilojoules;
         stopped = writer.stop(track);
     }
 };
@@ -191,17 +197,14 @@ TEST(SpinActivityWriter, SessionSaysIndoorCycling)
     const auto sessions = reader.withGlobal(kMesgSession);
     ASSERT_EQ(sessions.size(), 1u);
 
-    // sport=cycling is what a consumer aggregates the ride under; sub_sport=
-    // indoor_cycling is what stops it asking where the ride went. Both, or the
-    // file reads as an outdoor ride that recorded no distance.
+    // Both, or the file reads as an outdoor ride that recorded no distance.
     EXPECT_EQ(sessions[0]->fields.at(kFieldSport).u(),
               static_cast<uint64_t>(fit::Sport::Cycling));
     EXPECT_EQ(sessions[0]->fields.at(kFieldSubSport).u(),
               static_cast<uint64_t>(fit::SubSport::IndoorCycling));
 
-    // The literal wire values, not just the enum names: these are interop
-    // constants, so a test that only compares them to the enum it took them
-    // from would pass just as happily if the enum were wrong.
+    // The literal wire values: comparing only against the enum they came from
+    // would pass just as happily if the enum were wrong.
     EXPECT_EQ(sessions[0]->fields.at(kFieldSport).u(), 2u);
     EXPECT_EQ(sessions[0]->fields.at(kFieldSubSport).u(), 6u);
 }
@@ -249,9 +252,8 @@ TEST(SpinActivityWriter, CarriesExactlyOneLapCoveringTheRide)
 
 TEST(SpinActivityWriter, AutoLapProducesOneLapPerSplitAndCountsThemInTheSession)
 {
-    // The shape "autoLapMinutes" produces: N whole laps plus whatever is left
-    // when the ride ends. Each lap's total_timer_time is its own split, not a
-    // running total, and session.num_laps counts every one of them.
+    // N whole laps plus the remainder. Each lap's total_timer_time is its own
+    // split, not a running total.
     SDK::TestSupport::KernelFixture fx;
     ActivityWriter w(fx.kernel, "Activity");
 
@@ -331,9 +333,7 @@ TEST(SpinActivityWriter, RecordsHeartRateAndWhereItCameFrom)
 
     for (const auto* r : records) {
         EXPECT_EQ(r->fields.at(kFieldRecordHr).u(), 150u);
-        // Which source the kernel believed is not recoverable from the
-        // arbitrated number afterwards, and for a ride whose point is the
-        // strap it is the first thing worth checking.
+        // Not recoverable from the arbitrated number afterwards.
         EXPECT_EQ(r->devFields.at(kDevHrSource).u(), 2u);
         EXPECT_EQ(r->devFields.at(kDevHrExternal).u(), 150u);
         EXPECT_EQ(r->devFields.at(kDevHrOptical).u(), 0u);
@@ -447,9 +447,8 @@ TEST(SpinActivityWriter, RecordsTimeInEachHeartRateZone)
     r.timestamp = kStartUtc;
     w.addRecord(r);
 
-    // [0] is below zone 1; [1..N] are the zones. A real ride warms up, works
-    // and eases off, so every bucket has something in it. The array is sized
-    // for the most zones the app supports; only kZones + 1 are written.
+    // A real ride warms up, works and eases off, so every bucket has something
+    // in it; only kZones + 1 of them are written.
     std::time_t zones[ActivityWriter::kZoneBuckets] = {};
     const std::time_t used[] = {90, 240, 600, 900, 300, 60};
     for (size_t i = 0; i < sizeof(used) / sizeof(used[0]); ++i) {
@@ -513,18 +512,16 @@ TEST(SpinActivityWriter, RecordsTimeInEachHeartRateZone)
             << "the buckets should account for every active second";
     }
 
-    // The session must NOT have picked up the lap's field number: 57 there is
-    // avg_temperature, and this app measures no temperature. This is the
-    // assertion that would have caught the bug the FIT profile lookup found.
+    // The assertion that would have caught the bug the profile lookup found:
+    // 57 on the session is avg_temperature.
     EXPECT_EQ(sessions[0]->fields.count(kFieldSessionAvgTemperature), 0u)
         << "the session wrote something into avg_temperature";
 }
 
 TEST(SpinActivityWriter, TheZoneArrayIsAsLongAsTheRideHasZones)
 {
-    // The point of sizing it per ride: a reader sees exactly the zones that
-    // existed, rather than a fixed array padded with zeros it would have to
-    // read as time spent nowhere near a zone.
+    // So a reader sees exactly the zones that existed, rather than a fixed
+    // array padded with zeros.
     for (uint8_t zoneCount : {0, 3, 5, 8}) {
         SDK::TestSupport::KernelFixture fx;
         ActivityWriter w(fx.kernel, "Activity");
@@ -593,9 +590,8 @@ TEST(SpinActivityWriter, RecordsActiveAndRestingCalories)
     ASSERT_EQ(sessions.size(), 1u);
     ASSERT_EQ(laps.size(), 1u);
 
-    // The Ride harness leaves calories at zero, so this asserts the fields are
-    // present and readable rather than any particular figure -- the estimate
-    // itself belongs to the Service, not the writer.
+    // The harness leaves calories at zero, so this asserts the fields are
+    // present rather than any particular figure.
     EXPECT_EQ(sessions[0]->fields.count(kFieldTotalCalories), 1u);
     EXPECT_EQ(sessions[0]->fields.count(kFieldMetabolicCalories), 1u);
     EXPECT_EQ(laps[0]->fields.count(kFieldTotalCalories), 1u);
@@ -645,6 +641,143 @@ TEST(SpinActivityWriter, CaloriesRoundRatherThanTruncate)
     EXPECT_EQ(sessions[0]->fields.at(kFieldMetabolicCalories).u(), 12u);
     EXPECT_EQ(laps[0]->fields.at(kFieldTotalCalories).u(), 402u);
     EXPECT_EQ(laps[0]->devFields.at(kDevLapRestingCal).u(), 12u);
+}
+
+// -- The kilojoules the wearer read off the bike -----------------------------
+
+TEST(SpinActivityWriter, SessionCarriesTheEnteredWorkAndThePowerItImplies)
+{
+    // The file holds joules, so 430 kJ is 430000 -- the factor of a thousand
+    // between what the wearer types and what the field is defined in.
+    Ride ride;
+    ride.run(2700, {138}, /*external=*/2, /*workKilojoules=*/430);
+    ASSERT_TRUE(ride.stopped);
+
+    FitReader reader(readFit(ride.fx.fileSystem));
+    ASSERT_TRUE(reader.ok());
+
+    const auto sessions = reader.withGlobal(kMesgSession);
+    ASSERT_EQ(sessions.size(), 1u);
+
+    EXPECT_EQ(sessions[0]->fields.at(kFieldSessionTotalWork).u(), 430u * kJoulesPerKilojoule);
+    // 430000 J / 2700 s = 159.26 W.
+    EXPECT_EQ(sessions[0]->fields.at(kFieldSessionAvgPower).u(), 159u);
+}
+
+TEST(SpinActivityWriter, ARideWithNoWorkFigureOmitsBothFieldsRatherThanWritingZeros)
+{
+    // `total_work = 0` is a MEASUREMENT saying the wearer produced nothing,
+    // which a platform downstream would average into a season.
+    Ride ride;
+    ride.run(2700, {138}, /*external=*/2);   // nobody was asked
+    ASSERT_TRUE(ride.stopped);
+
+    FitReader reader(readFit(ride.fx.fileSystem));
+    ASSERT_TRUE(reader.ok());
+
+    const auto sessions = reader.withGlobal(kMesgSession);
+    ASSERT_EQ(sessions.size(), 1u);
+
+    EXPECT_EQ(sessions[0]->fields.count(kFieldSessionTotalWork), 0u)
+        << "an absent work figure was written as a value";
+    EXPECT_EQ(sessions[0]->fields.count(kFieldSessionAvgPower), 0u)
+        << "an absent power figure was written as a value";
+
+    // ...and the rest of the ride is untouched by the question not being
+    // answered: this is the same file the app wrote before the screen existed.
+    EXPECT_EQ(sessions[0]->fields.at(kFieldSport).u(),
+              static_cast<uint64_t>(fit::Sport::Cycling));
+    EXPECT_EQ(sessions[0]->fields.at(kFieldTotalTimer).u(), 2700u * 1000u);
+    EXPECT_EQ(reader.withGlobal(kMesgLap).size(), 1u);
+    EXPECT_TRUE(reader.crcValid());
+}
+
+TEST(SpinActivityWriter, TheWorkFieldsDoNotLandOnTheirNeighbours)
+{
+    // lap.total_work is 41 and lap.avg_power is 19; on the session those are
+    // avg_stroke_count and max_cadence.
+    Ride ride;
+    ride.run(1800, {140}, /*external=*/2, /*workKilojoules=*/600);
+    ASSERT_TRUE(ride.stopped);
+
+    FitReader reader(readFit(ride.fx.fileSystem));
+    ASSERT_TRUE(reader.ok());
+    const auto sessions = reader.withGlobal(kMesgSession);
+    ASSERT_EQ(sessions.size(), 1u);
+
+    EXPECT_EQ(sessions[0]->fields.count(kFieldSessionAvgStrokeCount), 0u)
+        << "the session wrote something into avg_stroke_count (lap.total_work's number)";
+    EXPECT_EQ(sessions[0]->fields.count(kFieldSessionMaxCadence), 0u)
+        << "the session wrote something into max_cadence (lap.avg_power's number)";
+    EXPECT_EQ(sessions[0]->fields.count(kFieldSessionMaxPower), 0u)
+        << "the session wrote the average into max_power";
+
+    // One number covers the whole ride and cannot be honestly divided between
+    // splits.
+    const auto laps = reader.withGlobal(kMesgLap);
+    ASSERT_FALSE(laps.empty());
+    for (const auto* lap : laps) {
+        EXPECT_EQ(lap->fields.count(41), 0u) << "a lap carried total_work";
+        EXPECT_EQ(lap->fields.count(19), 0u) << "a lap carried avg_power";
+    }
+}
+
+TEST(SpinActivityWriter, AveragePowerRoundsRatherThanTruncating)
+{
+    // 100 kJ over 199 s is 502.51 W. Truncating loses the half watt in the same
+    // direction every ride: a bias, and a trend is why this exists.
+    Ride ride;
+    ride.run(199, {150}, /*external=*/2, /*workKilojoules=*/100);
+    ASSERT_TRUE(ride.stopped);
+
+    FitReader reader(readFit(ride.fx.fileSystem));
+    ASSERT_TRUE(reader.ok());
+    const auto sessions = reader.withGlobal(kMesgSession);
+    ASSERT_EQ(sessions.size(), 1u);
+    EXPECT_EQ(sessions[0]->fields.at(kFieldSessionAvgPower).u(), 503u);
+}
+
+TEST(SpinActivityWriter, WorkAndTimeInZoneCoexistOnTheSameSession)
+{
+    // The session definition has four shapes; this exercises the one with both
+    // optional groups present.
+    SDK::TestSupport::KernelFixture fx;
+    ActivityWriter w(fx.kernel, "Activity");
+
+    constexpr uint8_t kZones = 5;
+    ActivityWriter::AppInfo info;
+    info.timestamp = kStartUtc;
+    info.devID     = "UNA";
+    info.appID     = "spin";
+    info.zoneCount = kZones;
+    w.start(info);
+
+    ActivityWriter::RecordData r;
+    r.timestamp = kStartUtc;
+    w.addRecord(r);
+
+    ActivityWriter::TrackData t;
+    t.timestamp = kStartUtc + 600;
+    t.timeStart = kStartUtc;
+    t.duration  = 600;
+    t.elapsed   = 600;
+    t.workKilojoules = 120;
+    for (size_t i = 0; i <= kZones; ++i) {
+        t.zoneSeconds[i] = 100;
+    }
+    ASSERT_TRUE(w.stop(t));
+
+    FitReader reader(readFit(fx.fileSystem));
+    ASSERT_TRUE(reader.ok());
+    EXPECT_TRUE(reader.crcValid());
+    const auto sessions = reader.withGlobal(kMesgSession);
+    ASSERT_EQ(sessions.size(), 1u);
+
+    EXPECT_EQ(zoneMillis(*sessions[0], kFieldSessionTimeInHrZone).size(),
+              static_cast<size_t>(kZones) + 1u);
+    EXPECT_EQ(sessions[0]->fields.at(kFieldSessionTotalWork).u(), 120u * kJoulesPerKilojoule);
+    EXPECT_EQ(sessions[0]->fields.at(kFieldSessionAvgPower).u(), 200u);   // 120000/600
+    EXPECT_EQ(sessions[0]->fields.count(kFieldSessionAvgTemperature), 0u);
 }
 
 TEST(SpinActivityWriter, WritesAJsonSidecarThatAlsoSaysCycling)
