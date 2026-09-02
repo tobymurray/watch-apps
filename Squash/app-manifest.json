@@ -12,7 +12,7 @@
   "description": "A squash session: the clock, your heart rate, laps, and a FIT file that says squash rather than a workout that covered no ground. Uses a paired chest strap when one is connected and the wrist sensor when it is not. It does not count shots — turn on the raw motion recording below and it collects the data that would make counting them possible.",
   "id": "9E526672EAFB61B6",
   "stravaExport": true,
-  "supportsLaps": false,
+  "supportsLaps": true,
   "supportsDistance": false,
   "supportsTrack": false,
   "supportsHeartbeat": true,
