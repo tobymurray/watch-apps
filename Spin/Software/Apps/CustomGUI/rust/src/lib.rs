@@ -335,24 +335,35 @@ fn draw_button_tick(fb: &mut FrameBuf, deg: f32, color: Abgr2222) {
 /// The mark plus what it does. The word grows away from its own edge -- right
 /// buttons right-aligned, left buttons left-aligned -- so it always reads as
 /// hanging off that side rather than floating in the middle.
-fn draw_button_hint(fb: &mut FrameBuf, deg: f32, text: &str, color: Abgr2222) {
-    draw_button_tick(fb, deg, color);
-
-    let label = FontRenderer::new::<LabelFont>();
-    let right_hand = (deg * DEG_TO_RAD).sin() > 0.0;
-
-    // Both ends of the arc, because which one is nearer depends on the
-    // quadrant; assuming it runs the word straight through the mark.
+/// Where a word hangs off its mark: x, the alignment, and the mark's own row.
+///
+/// Both ends of the arc are evaluated, because which one is nearer depends on
+/// the quadrant; assuming it runs the word straight through the mark.
+fn hint_anchor(deg: f32) -> (i32, HorizontalAlignment, i32) {
     let (ax, _) = polar(TICK_INNER, deg - TICK_SWEEP_DEG / 2.0);
     let (bx, _) = polar(TICK_INNER, deg + TICK_SWEEP_DEG / 2.0);
     let (_, ty) = polar(TICK_INNER, deg);
-    let (x, align) = if right_hand {
-        (ax.min(bx) - LABEL_GAP, HorizontalAlignment::Right)
+    if (deg * DEG_TO_RAD).sin() > 0.0 {
+        (ax.min(bx) - LABEL_GAP, HorizontalAlignment::Right, ty)
     } else {
-        (ax.max(bx) + LABEL_GAP, HorizontalAlignment::Left)
-    };
+        (ax.max(bx) + LABEL_GAP, HorizontalAlignment::Left, ty)
+    }
+}
+
+fn draw_button_hint(fb: &mut FrameBuf, deg: f32, text: &str, color: Abgr2222) {
+    draw_button_tick(fb, deg, color);
+    let label = FontRenderer::new::<LabelFont>();
+    let (x, align, ty) = hint_anchor(deg);
     // Lifted half a line so the word straddles the mark.
     draw_text(fb, &label, text, x, ty - 6, align, color);
+}
+
+/// A hint in the answer face, smoothed. Only the discard screen uses it.
+fn draw_button_answer(fb: &mut FrameBuf, deg: f32, text: &str, color: Abgr2222) {
+    draw_button_tick(fb, deg, color);
+    let answer = FontRenderer::new::<AnswerFont>();
+    let (x, align, ty) = hint_anchor(deg);
+    draw_text_smoothed(fb, &answer, text, x, ty - 9, align, color);
 }
 
 const CLOCK_Y: i32 = 70;
@@ -383,6 +394,10 @@ type NumberFont = fonts::u8g2_font_fub20_tn;
 type TitleFont = fonts::u8g2_font_helvB24_tr;
 type HeadingFont = fonts::u8g2_font_helvB14_tr;
 type LabelFont = fonts::u8g2_font_helvR12_tr;
+/// The two answers on the discard screen, and only those. Bold and half again
+/// the label size, because they are the one place in the app where a misread
+/// costs the wearer their ride.
+type AnswerFont = fonts::u8g2_font_helvB18_tr;
 
 /// Ascent-descent span of each face above, used to place the clock by its top.
 const CLOCK_H_XL: i32 = 42;
@@ -421,6 +436,31 @@ fn draw_text(
 
 fn draw_centered(fb: &mut FrameBuf, renderer: &FontRenderer, s: &str, y: i32, color: Abgr2222) {
     draw_text(fb, renderer, s, CENTER_X, y, HorizontalAlignment::Center, color);
+}
+
+/// The same text drawn a pixel out in each direction one colour down, then the
+/// glyph itself on top.
+///
+/// u8g2 faces are 1-bit bitmaps and carry no alpha, so there is no antialiasing
+/// to ask for; the staircase on a diagonal stroke is the roughest thing on the
+/// glass. Four levels a channel is enough to soften that edge by hand, and
+/// `dim()` is exactly one level down -- so white gets a 170 skirt and red a
+/// (170,0,0) one. Costs five glyph renders, which is why only the discard
+/// answers use it.
+fn draw_text_smoothed(
+    fb: &mut FrameBuf,
+    renderer: &FontRenderer,
+    s: &str,
+    x: i32,
+    y: i32,
+    align: HorizontalAlignment,
+    color: Abgr2222,
+) {
+    let halo = dim(color);
+    for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+        draw_text(fb, renderer, s, x + dx, y + dy, align, halo);
+    }
+    draw_text(fb, renderer, s, x, y, align, color);
 }
 
 // -- Number formatting -------------------------------------------------------
@@ -924,8 +964,8 @@ fn draw_confirm_discard(fb: &mut FrameBuf) {
     draw_centered(fb, &heading, "DISCARD", 92, WHITE);
     draw_centered(fb, &label, "THIS RIDE?", 122, DIM);
 
-    draw_button_hint(fb, BUTTON_R1_DEG, "YES", RED);
-    draw_button_hint(fb, BUTTON_R2_DEG, "NO", WHITE);
+    draw_button_answer(fb, BUTTON_R1_DEG, "YES", RED);
+    draw_button_answer(fb, BUTTON_R2_DEG, "NO", WHITE);
 }
 
 /// "+100" / "+10", built from the step the button adds, so the glass cannot
@@ -1431,14 +1471,31 @@ mod tests {
 
     #[test]
     fn every_pixel_is_a_colour_the_panel_can_hold() {
-        // Anything else is quantised on the way to the glass, so the test would
-        // not be looking at what the watch draws.
-        let mut f = frame(SCREEN_RIDING);
-        f.elapsed_s = 3661;
-        f.hr_bpm = 155;
-        f.hr_source = HR_EXTERNAL;
-        for byte in draw(&f) {
-            assert_eq!(byte >> 6, 0b11, "pixel 0x{byte:02X} is not opaque");
+        // Every scene, not one frame: the discard answers are drawn with a
+        // hand-made halo one level down, and a colour that missed the panel's
+        // levels would be quantised on the way to the glass -- so the test
+        // would not be looking at what the watch draws.
+        for (name, frame) in scenes::scenes() {
+            for byte in draw(&frame) {
+                assert_eq!(byte >> 6, 0b11, "{name}: pixel 0x{byte:02X} is not opaque");
+            }
         }
+    }
+
+    #[test]
+    fn the_discard_answers_are_bolder_than_an_ordinary_hint() {
+        // They are the one place a misread costs the wearer their ride, so they
+        // get the bold face and the halo rather than the label font.
+        let label = FontRenderer::new::<LabelFont>();
+        let answer = FontRenderer::new::<AnswerFont>();
+        assert!(text_width(&answer, "YES") > text_width(&label, "YES"),
+                "the answer face should be larger than the label face");
+
+        // Dimmed RED appears nowhere else on this screen -- the ring and the
+        // mark are both full red -- so it is the halo or nothing. Dimmed white
+        // would prove nothing here, since "THIS RIDE?" is already drawn in it.
+        let buf = draw(&frame(SCREEN_CONFIRM_DISCARD));
+        assert!(buf.iter().any(|&b| b == dim(RED).0),
+                "no dimmed red on the discard screen: the YES halo is missing");
     }
 }
