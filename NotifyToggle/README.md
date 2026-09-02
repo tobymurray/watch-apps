@@ -76,6 +76,17 @@ neighboring one.
 One screen: the word `NOTIFICATIONS`, a pill switch (green and right when on,
 grey and left when off), the current state as text, and a button hint.
 
+The words are Poppins SemiBold 18 and the hint Poppins Regular 12, drawn from
+[`TextKit`](../TextKit)'s pre-rendered atlases rather than
+`embedded-graphics`' fixed-width bitmap fonts. Before and after, through the
+bezel mask the watch applies:
+
+![Before and after the TextKit port](Docs/text-before-after.png)
+
+The hint sits two rows higher than it did: at Regular 12 it is 117 px wide,
+and the lit chord is 122 px at row 222 against 129 at row 220. The bezel test
+in the crate is what found that, not a wrist.
+
 | Button | Does |
 |---|---|
 | R1 (`SW2`) | Toggle. Flips the live value, persists it to `settings.json`, and re-reads to confirm. |
@@ -101,13 +112,19 @@ The `.uapp` lands in `Output/`; deploy it per the SDK's `Docs/deploy.md`.
 
 ### Footprint
 
-From a real build against `apps-v1.4.0` (`arm-none-eabi-size`, 600 KiB GUI
-RAM window, code executing from RAM):
+From real builds against `apps-v1.4.0` in CI's toolchain image (linker map
+section headers, 600 KiB GUI RAM window, code executing from RAM):
 
 ```
-GUI     .text 30,320   .data 188   .bss 68,668   total 99,176 of 614,400  =  16.1%
-Service .text  3,724   .data 176   .bss 11,324   (a near-empty stub — see below)
+GUI, TextKit        .text 33,608   .data 148   .bss 58,432   .stack 10,240   .uapp 42,820
+GUI, MonoTextStyle  .text 31,980   .data 148   .bss 58,432   .stack 10,240   .uapp 41,188
+Service             .text  3,724   .data 176   .bss 11,324   (a near-empty stub — see below)
 ```
+
+The text port cost 1,628 bytes: 1,530 of TextKit code and 6,137 of two
+Poppins faces, less the `embedded-graphics` text path and mono fonts that
+left with it. Of the twelve faces TextKit generates, the linker kept the two
+this app names.
 
 `.bss` is mostly the 57,600-byte framebuffer, as on every CustomGUI app in
 this repo. There's no `SDK::AppConfig`/JSON dependency linked in at all —

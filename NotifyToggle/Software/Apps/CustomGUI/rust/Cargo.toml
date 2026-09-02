@@ -18,6 +18,9 @@ sim = ["std", "dep:embedded-graphics-simulator"]
 
 [dependencies]
 embedded-graphics = "0.8"
+# A dependency, never a second staticlib: two archives each carrying a
+# #[panic_handler] collide at link time.
+textkit = { path = "../../../../../TextKit" }
 embedded-graphics-simulator = { version = "0.7", optional = true }
 
 [profile.release]

@@ -4,15 +4,11 @@
 use core::fmt::Write as _;
 
 use embedded_graphics::{
-    mono_font::{
-        ascii::{FONT_6X10, FONT_9X15_BOLD},
-        MonoTextStyle,
-    },
     pixelcolor::{raw::RawU8, PixelColor},
     prelude::*,
     primitives::{Circle, CornerRadii, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, RoundedRectangle},
-    text::{Alignment, Text},
 };
+use textkit::{faces, Align, Canvas, Face};
 
 #[cfg(not(feature = "std"))]
 extern "C" {
@@ -197,7 +193,15 @@ const KNOB_ON_CX: i32 = PILL_X + PILL_W - KNOB_INSET - KNOB_RADIUS;
 const KNOB_UNKNOWN_CX: i32 = PANEL_CX;
 
 const LABEL_BASELINE_Y: i32 = PILL_Y + PILL_H + 32;
-const FOOTER_BASELINE_Y: i32 = 222;
+/// MEASURED: the lit chord is 129 px wide at row 220 and 122 at row 222, and the
+/// footer is 117 px in its face; two rows up buys it six pixels of bezel each
+/// side. Re-measure with `textkit`'s `measure` example if the string or face changes.
+const FOOTER_BASELINE_Y: i32 = 220;
+
+/// Poppins SemiBold for every word, Regular for the button hint, from the atlases
+/// TextKit generates; `Docs/TEXT.md` at the repo root is why these and not others.
+static WORD_FACE: &Face = &faces::SEMIBOLD_18_ASCII;
+static HINT_FACE: &Face = &faces::REGULAR_12_ASCII;
 
 fn draw_circle(fb: &mut FrameBuf, cx: i32, cy: i32, radius: i32, style: PrimitiveStyle<Abgr2222>) {
     Circle::new(Point::new(cx - radius, cy - radius), (radius as u32) * 2)
@@ -206,16 +210,9 @@ fn draw_circle(fb: &mut FrameBuf, cx: i32, cy: i32, radius: i32, style: Primitiv
         .ok();
 }
 
-fn text(fb: &mut FrameBuf, s: &str, at: Point, color: Abgr2222, align: Alignment) {
-    Text::with_alignment(s, at, MonoTextStyle::new(&FONT_9X15_BOLD, color), align)
-        .draw(fb)
-        .ok();
-}
-
-fn small_text(fb: &mut FrameBuf, s: &str, at: Point, color: Abgr2222, align: Alignment) {
-    Text::with_alignment(s, at, MonoTextStyle::new(&FONT_6X10, color), align)
-        .draw(fb)
-        .ok();
+fn text(fb: &mut FrameBuf, face: &Face, s: &str, x: i32, baseline: i32, color: Abgr2222) {
+    let mut canvas = Canvas::round(fb.buf, fb.w, fb.h);
+    face.draw(&mut canvas, s, x, baseline, Align::Center, color.0);
 }
 
 fn draw_toggle(fb: &mut FrameBuf, state: &State) {
@@ -242,30 +239,30 @@ fn draw_toggle(fb: &mut FrameBuf, state: &State) {
 }
 
 fn draw(fb: &mut FrameBuf, state: &State) {
-    text(fb, "NOTIFICATIONS", Point::new(PANEL_CX, TITLE_BASELINE_Y), HEADING, Alignment::Center);
+    text(fb, WORD_FACE, TITLE, PANEL_CX, TITLE_BASELINE_Y, HEADING);
 
     draw_toggle(fb, state);
 
     let (label, label_color) = if !state.is_known() {
-        ("?", UNKNOWN_ACCENT)
+        (LABEL_UNKNOWN, UNKNOWN_ACCENT)
     } else if state.is_enabled() {
-        ("ON", ON_ACCENT)
+        (LABEL_ON, ON_ACCENT)
     } else {
-        ("OFF", OFF_ACCENT)
+        (LABEL_OFF, OFF_ACCENT)
     };
-    text(fb, label, Point::new(PANEL_CX, LABEL_BASELINE_Y), label_color, Alignment::Center);
+    text(fb, WORD_FACE, label, PANEL_CX, LABEL_BASELINE_Y, label_color);
 
     // R1 always attempts a fresh read-and-toggle (Gui.cpp re-reads the real
     // file before deciding what to write), so the hint stays the same even
     // from the unknown state -- it is "try again", not "disabled".
-    small_text(
-        fb,
-        "R1 TOGGLE  R2 BACK",
-        Point::new(PANEL_CX, FOOTER_BASELINE_Y),
-        CHROME,
-        Alignment::Center,
-    );
+    text(fb, HINT_FACE, FOOTER, PANEL_CX, FOOTER_BASELINE_Y, CHROME);
 }
+
+const TITLE: &str = "NOTIFICATIONS";
+const LABEL_ON: &str = "ON";
+const LABEL_OFF: &str = "OFF";
+const LABEL_UNKNOWN: &str = "?";
+const FOOTER: &str = "R1 TOGGLE  R2 BACK";
 
 pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {
     if width == 0 || height == 0 {
@@ -381,6 +378,33 @@ mod tests {
         let mut buf = vec![0xAAu8; n + 64];
         render(&mut buf, W, H, &on());
         assert!(buf[n..].iter().all(|&b| b == 0xAA), "overran the framebuffer");
+    }
+
+    /// A missing glyph draws as a box rather than a letter, so the only way to
+    /// find one would be on a wrist; this finds it here instead.
+    #[test]
+    fn every_word_has_a_glyph_in_its_face() {
+        for s in [TITLE, LABEL_ON, LABEL_OFF, LABEL_UNKNOWN] {
+            assert!(WORD_FACE.covers(s), "{s:?} has a character the word face lacks");
+        }
+        assert!(HINT_FACE.covers(FOOTER));
+    }
+
+    /// The panel is round and the buffer is square; a footer that fits the buffer
+    /// can still lose its ends behind the bezel, and no simulator shows that.
+    #[test]
+    fn nothing_is_drawn_outside_the_bezel() {
+        let n = (W * H) as usize;
+        for state in [on(), off(), unknown()] {
+            let mut buf = vec![0u8; n];
+            render(&mut buf, W, H, &state);
+            for y in 0..H as i32 {
+                for x in 0..W as i32 {
+                    let lit = (2 * x - 239).pow(2) + (2 * y - 239).pow(2) <= 239 * 239;
+                    assert!(lit || buf[(y * W as i32 + x) as usize] == GROUND.0, "({x},{y}) lit behind the bezel");
+                }
+            }
+        }
     }
 
     #[test]

@@ -215,6 +215,7 @@ version = "0.1.0"
 dependencies = [
  "embedded-graphics",
  "embedded-graphics-simulator",
+ "textkit",
 ]
 
 [[package]]
@@ -345,6 +346,10 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "textkit"
+version = "0.1.0"
 
 [[package]]
 name = "unicode-ident"
