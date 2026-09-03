@@ -28,6 +28,64 @@ anyway; there are four hard minutes in it and a lot of sitting still.
 4. **Install this build**, then **delete `recovery.log`** from Spin's folder
    over USB if one is already there.
 
+## Before you leave the house
+
+Seventy minutes of riding is a lot to spend finding out that the log file was
+never created. Two checks first, and neither needs a bike.
+
+### On the desk: does the plumbing work? (3 minutes)
+
+Wear the watch, sit down, and do a ride that requires nothing of you:
+
+1. Open Spin, **R1 START**, and leave it alone for **60 seconds**.
+2. **Press R1** to pause. Wait **10 seconds**.
+3. **L1 SAVE**, put any number in with L1/L2, **R1 SAVE**.
+
+Now plug the watch in and look. All five of these must hold, and each one that
+does not is a different fault:
+
+| Check | If it fails |
+|---|---|
+| The app started at all | The `TrainKit ABI mismatch` guard in `Service::run()` fired and the Service returned immediately — a stale `libtrainkit.a` against a changed struct. Rebuild. |
+| **`recovery.log` exists in Spin's folder** | `IFile::open(write, no-override)` neither appends nor creates on this kernel, and the fallback in `EventLog::open()` missed it. **Stop here** — everything below is blind without it. |
+| Its first line reads `start max_hr=<n>` with **n > 0** | The watch has no maximum heart rate set. Rides A–C will produce nothing but `no_max_hr`. Go and set your zones. |
+| It contains `cease ... -> too_short` | The pause never reached the detector — `pauseTrack()` is not calling `trainkit_recovery_cease()`. |
+| `SharedData/spin_sessions.json` exists and ends `"kept":1` with `status=0` on the log's `session` line | The write path failed. The `status=` number says where: `1` refused, `2` out of memory, `3` commit rename failed, `4` write failed (`SharedLog.hpp`). |
+
+Then do it **once more**. The second run must give `"kept":2` and leave a
+`spin_sessions.json.bak` beside it — that is the rotate-and-rename commit
+working, which is the part a power cut would otherwise ruin.
+
+### Optional: force a real measurement without exercise (5 minutes)
+
+The gates need 80% of your maximum, which you cannot reach at a desk — unless
+you move the maximum. On the watch, **temporarily set your maximum heart rate to
+just below your resting rate** (if you sit at 65, set 75). Then:
+
+1. Start a ride and sit still for **4 minutes** — past the 180 s effort gate.
+2. **Press R1.** Sit still, not moving, for **90 seconds**.
+3. Save.
+
+You should get a real `recovery` line with a `curve`, and a session carrying one
+recovery. **The number is physiologically meaningless** — it is a resting heart
+rate drifting by a beat or two — but it proves the entire path end to end: the
+window, the curve, the struct across the C ABI, the JSON, and the commit.
+
+Afterwards: **put your real maximum back**, and delete both
+`spin_sessions.json` and `recovery.log` so the field test starts clean.
+
+### What is already checked without you
+
+`ctest --test-dir build` covers four suites, two of which are this feature:
+
+- **`spin-sharedlog-tests`** — the commit sequence, the `.bak` rotation, the
+  refusal to overwrite a newer schema, the rotation of an unreadable one, and
+  the diagnostic log's create/append/cap behaviour, against the SDK's in-memory
+  filesystem. That is evidence about *this code's logic*, not about the
+  kernel's `open()` and `rename()` mapping — which is why the desk check above
+  exists at all.
+- **`trainkit-tests`** — every gate, and the log's schema and bounds.
+
 ## Two different things, and the whole feature is the gap between them
 
 This document never says "pause" as an instruction, because the word means two

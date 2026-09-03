@@ -229,7 +229,7 @@ The file carries `"version"`. This build writes and reads **1**.
 | Field | Unit | Means |
 |---|---|---|
 | `version` | — | Schema version; 1 today. |
-| `app` | — | Which app wrote it. `[A-Za-z0-9_-]` only. |
+| `app` | — | Which app wrote it, as it spells itself. `[A-Za-z0-9_-]` only; the filename is the same slug lowercased. |
 | `sport` | — | What the entries are, for a reader merging several apps' logs. |
 | `kept` | count | Sessions in this file. |
 | `dropped` | count | Sessions evicted over the life of the file. |
