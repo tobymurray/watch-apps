@@ -8,7 +8,8 @@
 #   Tools/docker-build.sh app        # the .uapp
 #   Tools/docker-build.sh tests      # host tests, configure + build + ctest
 #   Tools/docker-build.sh sim        # build the TouchGFX simulator
-#   Tools/docker-build.sh rust       # EffortKit: tests, lint, and the watch target
+#   Tools/docker-build.sh rust       # both crates: tests, lint, and the watch target
+#   Tools/docker-build.sh roundtrip  # the C++ writers against the Rust reader
 #
 # THE SDK THIS NEEDS
 #
@@ -94,6 +95,28 @@ case "${1:-}" in
     run_arm "Squash/Software/Libs/rust" "cargo build --release"
     run_sim "make -f simulator/gcc/Makefile -j\$(nproc)"
     ;;
+  roundtrip)
+    need_sdk
+    # The one check that spans both languages. The watch writes three files in
+    # C++ and the analyser reads them in Rust; every other test checks one side.
+    # A disagreement here is invisible until a session has been played and the
+    # data turns out to be unreadable, which is a session nobody gets back.
+    out="$REPO/Squash/Tests/build/roundtrip"
+    rm -rf "$out" && mkdir -p "$out"
+    run_host \
+      "cmake -S Squash/Tests -B /tmp/sq -DCMAKE_BUILD_TYPE=Debug >/dev/null && cmake --build /tmp/sq --target recording-export -j\$(nproc) >/dev/null && /tmp/sq/recording-export /w/Squash/Tests/build/roundtrip"
+    ( cd "$REPO/EffortKit" \
+      && cargo run --quiet --features std --bin phase-a -- \
+             "$out"/imu_*.csv --report "$out/report.md" >/dev/null )
+    if grep -q "### Warnings" "$out/report.md"; then
+        echo "FAIL: the Rust reader could not read what the C++ writers wrote" >&2
+        grep -A12 "### Warnings" "$out/report.md" >&2
+        exit 1
+    fi
+    echo "OK: three files written in C++, read in Rust, no warnings"
+    grep -A4 "^### Distributions" -m1 "$out/report.md" >/dev/null && echo "     report: $out/report.md"
+    ;;
+
   rust)
     # No container: cargo is on the host. The watch target is the check that
     # matters -- it is what proves the crates are no_std and that nothing

@@ -44,6 +44,7 @@ fn main() -> ExitCode {
     let mut paths = Vec::new();
     let mut epoch_csv = None;
     let mut report_md = None;
+    let mut sidecars = 0usize;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -53,8 +54,22 @@ fn main() -> ExitCode {
                 eprintln!("usage: phase-a <imu_*.csv> [...] [--report out.md] [--epochs out.csv]");
                 return ExitCode::SUCCESS;
             }
+            // `imu_*.csv` is the natural glob and it catches the sidecars too.
+            // They are not recordings and `fixture::load` finds them by name
+            // anyway, so they are dropped here rather than parsed as samples --
+            // which produced one "not a sample row" per line and buried the
+            // report.
+            _ if is_sidecar(a) => sidecars += 1,
             _ => paths.push(a.clone()),
         }
+    }
+
+    if paths.is_empty() && sidecars > 0 {
+        eprintln!(
+            "every path given was a sidecar; pass the recordings themselves, and their \
+             sidecars are picked up by name"
+        );
+        return ExitCode::FAILURE;
     }
 
     if paths.is_empty() {
@@ -66,6 +81,10 @@ fn main() -> ExitCode {
              are needed and what each one settles."
         );
         return ExitCode::FAILURE;
+    }
+
+    if sidecars > 0 {
+        eprintln!("skipped {sidecars} sidecar(s); they are read from the recordings they belong to");
     }
 
     let mut recordings = Vec::new();
@@ -103,6 +122,11 @@ fn main() -> ExitCode {
         }
     }
     ExitCode::SUCCESS
+}
+
+/// True for a file `fixture::load` finds on its own from a recording's name.
+fn is_sidecar(path: &str) -> bool {
+    ["_events.csv", "_hr.csv", "_labels.txt"].iter().any(|s| path.ends_with(s))
 }
 
 fn inventory(rs: &[Recording]) {
