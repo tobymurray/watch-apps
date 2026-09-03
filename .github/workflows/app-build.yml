@@ -126,9 +126,23 @@ jobs:
           manifest="$dir/app-manifest.json"
           tests="$dir/Tests/CMakeLists.txt"
           cmake=$(find "$dir/Software/Apps" -maxdepth 2 -name CMakeLists.txt 2>/dev/null | head -n 1 || true)
-          # A CustomGUI app's renderer is a Rust crate with its own unit tests.
-          # They cover the drawing, which no host test in Tests/ can reach.
-          crate=$(find "$dir/Software/Apps" -maxdepth 3 -name Cargo.toml 2>/dev/null | head -n 1 || true)
+          # An app's Rust is a crate with its own unit tests, and they cover
+          # what no host test in Tests/ can reach: a CustomGUI app's drawing,
+          # and a Service-side engine's arithmetic. Searched across the whole
+          # app rather than under Software/Apps, because the engine crates live
+          # beside the C++ they are linked into, in Software/Libs.
+          crates=$(find "$dir" -name Cargo.toml -not -path '*/target/*' 2>/dev/null | sort || true)
+          # A shared crate an app links by path is exercised by its consumers,
+          # the way TextKit's atlases are: it has no workflow of its own, so a
+          # build of an app that depends on it is what runs its tests.
+          for shared in EffortKit TextKit; do
+            if [ -n "$crates" ] && echo "$crates" | xargs -r grep -l "$shared" >/dev/null 2>&1 \
+               && [ -f "apps/$shared/Cargo.toml" ]; then
+              crates=$(printf '%s\napps/%s/Cargo.toml\n' "$crates" "$shared")
+            fi
+          done
+          crates=$(echo "$crates" | grep . | sort -u || true)
+          crate=$(echo "$crates" | head -n 1)
           # A renderer that draws text does it through the shared TextKit
           # crate, whose atlases are generated files checked in beside their
           # generator; a build of this app is the only thing that exercises
@@ -141,13 +155,16 @@ jobs:
             echo "tests=$([ -f "$tests" ] && dirname "$tests" || echo '')"
             echo "cmake=$([ -n "$cmake" ] && dirname "$cmake" || echo '')"
             echo "crate=$([ -n "$crate" ] && dirname "$crate" || echo '')"
+            echo "crates<<EOF"
+            for c in $crates; do [ -n "$c" ] && dirname "$c"; done
+            echo "EOF"
             echo "textkit=$textkit"
           } >> "$GITHUB_OUTPUT"
 
           echo "app       $app"
           echo "manifest  ${manifest#apps/}$([ -f "$manifest" ] || echo ' (none)')"
           echo "tests     $([ -f "$tests" ] && echo yes || echo no)"
-          echo "crate     $([ -n "$crate" ] && echo yes || echo no)"
+          echo "crates    $(echo "$crates" | grep -c . || true)"
           echo "textkit   $textkit"
           echo "buildable $([ -n "$cmake" ] && echo yes || echo no)"
 
@@ -338,11 +355,19 @@ jobs:
       # watch, and a test binary cannot link a crate whose panics do not
       # unwind. Run before the .uapp build so a renderer regression fails here
       # rather than after several minutes of cross-compiling.
-      - name: Renderer tests
+      - name: Rust tests
         if: steps.app.outputs.crate != ''
         shell: bash
-        working-directory: ${{ steps.app.outputs.crate }}
-        run: cargo test --features std
+        run: |
+          set -euo pipefail
+          # Every crate the app carries, not just the first: an app can have a
+          # renderer and an engine, and running one of the two silently is
+          # worse than running neither.
+          while IFS= read -r crate; do
+            [ -n "$crate" ] || continue
+            echo "--- $crate"
+            ( cd "$crate" && cargo test --features std )
+          done <<< "${{ steps.app.outputs.crates }}"
 
       # TextKit's src/faces.rs is what Tools/atlas.py writes, checked in so an
       # app builds without FreeType; --check regenerates it in place and fails
