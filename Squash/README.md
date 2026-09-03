@@ -225,6 +225,32 @@ Baselines are derived from those stored sessions on load, never persisted, so
 changing how a figure is computed applies to the whole history instead of
 orphaning it.
 
+## When something went wrong
+
+`LOG_INFO` needs a UART capture and a dev tool attached to the watch, which
+nobody has on court. So two files are written to the volume instead, and they
+are the first place to look:
+
+| File | What it holds |
+| --- | --- |
+| `Debug/squash.log` | One line per event that changes what a session contains — the profile that loaded, whether the two languages agree about their shared structs, whether a calibration exists, and how the recording and its sidecars ended. |
+| `Debug/sessions.csv` | One row per saved session: every field the profile stores, plus the recorder's own counters. Load it into something else to ask whether a metric is behaving across sessions. |
+
+A fresh install's log reads:
+
+```
+0 1788409442 launch v<version> abi=3384192379 expect=3384192379 ok=1 calibration=0
+10 1788409442 profile load=1 sessions=0
+```
+
+`ok=1` is the two languages agreeing about `SquashSessionRecord`'s layout,
+`calibration=0` is there being no threshold in this build, and `load=1` is
+`Load::ABSENT` — no profile yet, which is what a first run should say.
+
+Both files restart at 64 KiB with a line saying they did. An unbounded
+diagnostic that fills the volume the recording then cannot be written to would
+be a poor trade.
+
 ## What it does not show, and why
 
 Nothing from the engine reaches the screen, the FIT file or the summary. Not
