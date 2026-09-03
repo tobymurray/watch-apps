@@ -141,6 +141,18 @@ private:
     bool     mHrExternalSeen   = false;
     uint32_t mHrLastExternalMs = 0;
     bool     mStrapLostAlerted = false;
+
+    /// How long to wait before asking the kernel to acquire the strap again.
+    ///
+    /// Deliberately past the point where a transient could resolve itself:
+    /// the SDK measured the BLE supervision timeout at ~30 s on hardware
+    /// (`6bc7d8f3`), so a link that was merely blipping has either recovered or
+    /// been reported LOST by then. Before that, releasing would interrupt a
+    /// recovery already in progress.
+    static constexpr uint32_t skStrapReacquireAfterMs = 30000;
+
+    /// True once the re-acquire has been attempted for the current drop.
+    bool mStrapReacquireTried = false;
     uint8_t mHrOpticalBpm = 0;  ///< Latest raw optical (PPG) bpm, for the FIT hr_optical series.
     uint8_t mHrExternalBpm = 0; ///< Latest raw external (strap) bpm, for the FIT hr_external series.
 
@@ -204,7 +216,8 @@ private:
     void requestAccessoryRelease();
     void notifyNewActivity();
     void backlightOn(uint32_t timeoutMs = skBacklightTimeout);
-    /// Tell the wearer, once, when a strap that was feeding heart rate stops.
+    /// Tell the wearer, once, when a strap that was feeding heart rate stops,
+    /// and one last-ditch attempt to get it back.
     void checkStrapStillFeeding();
 
     void playBuzzerPattern(uint16_t beepMs, uint8_t count = 1, uint16_t silenceMs = 100);

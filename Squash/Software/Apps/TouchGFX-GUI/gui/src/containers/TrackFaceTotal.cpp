@@ -7,6 +7,11 @@ TrackFaceTotal::TrackFaceTotal()
 void TrackFaceTotal::initialize()
 {
     TrackFaceTotalBase::initialize();
+
+    // Mirrors the `HR` label on the right at x=160, in the band left of the
+    // value, which is empty on this face.
+    mHrSource.configure(40, 50);
+    add(mHrSource);
 }
 
 void TrackFaceTotal::setHR(float hr, const uint8_t* thresholds, uint8_t thresholdCount)

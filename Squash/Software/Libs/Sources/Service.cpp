@@ -587,17 +587,43 @@ void Service::checkStrapStillFeeding()
     if (external) {
         mHrExternalSeen   = true;
         mHrLastExternalMs = now;
-        // Re-armed, so a strap that drops twice is reported twice.
-        mStrapLostAlerted = false;
+        // Re-armed, so a strap that drops twice is reported twice -- and, if the
+        // re-acquire below is what brought it back, that is what says so.
+        mStrapLostAlerted    = false;
+        mStrapReacquireTried = false;
         return;
     }
 
-    if (!mHrExternalSeen || mStrapLostAlerted) {
+    if (!mHrExternalSeen) {
         return;
     }
 
     // Unsigned subtraction, correct across the 32-bit tick wrap.
     const uint32_t without = now - mHrLastExternalMs;
+
+    // EXPERIMENT. The kernel is documented to report LOST and re-acquire on its
+    // own (Docs/ExternalSensors.md), and on this watch it did neither: two
+    // sessions lost the strap at ~120 s with the link still reported CONNECTED
+    // and no accessory event in the 660 s that followed. No app in the SDK does
+    // this -- none of the five strap-capable examples handles LOST at all -- so
+    // this is a deliberate departure, and whether it helps is what the next
+    // session is for. Once per drop: if it works the strap returns and re-arms
+    // it, and if it does not, repeating it would only churn the link.
+    if (!mStrapReacquireTried && without >= skStrapReacquireAfterMs) {
+        mStrapReacquireTried = true;
+        mLog.line("strap_reacquire", "after %us without external, t=%us",
+                  static_cast<unsigned>(without / 1000u),
+                  static_cast<unsigned>(mEngineStarted
+                                            ? (mLastImuTs - mEngineStartTs) / 1000u
+                                            : 0u));
+        LOG_INFO("Asking the kernel to re-acquire the HR strap\n");
+        requestAccessoryRelease();
+        requestAccessoryPrepare();
+    }
+
+    if (mStrapLostAlerted) {
+        return;
+    }
     if (without < skStrapLostAfterMs) {
         return;
     }
@@ -836,6 +862,7 @@ void Service::startTrack(std::time_t utc)
     mHrExternalSeen = false;
     mHrLastExternalMs = 0;
     mStrapLostAlerted = false;
+    mStrapReacquireTried = false;
     squash_engine_begin();
     mLog.line("start", "utc=%lld record_imu=%u armed=%u",
               static_cast<long long>(utc), mRecordImu ? 1u : 0u, mImuArmed ? 1u : 0u);
