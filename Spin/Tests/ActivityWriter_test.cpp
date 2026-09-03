@@ -360,6 +360,27 @@ TEST(SpinActivityWriter, SummarisesHeartRateOnTheSessionAndTheLap)
     EXPECT_EQ(laps[0]->fields.at(kLapMaxHeartRate).u(), 200u);
 }
 
+TEST(SpinActivityWriter, RoundsTheAverageHeartRateRatherThanTruncatingIt)
+{
+    // Pulled off the watch: a ride whose mean was 65.7159 bpm wrote 65 into
+    // the .fit while ../SharedData/spin_sessions.json rounded to 66, so the
+    // two records disagreed about the same ride.
+    Ride ride;
+    ride.run(4, {65, 66, 66, 66}, /*external=*/2);
+    ASSERT_TRUE(ride.stopped);
+
+    FitReader reader(readFit(ride.fx.fileSystem));
+    ASSERT_TRUE(reader.ok());
+
+    const auto sessions = reader.withGlobal(kMesgSession);
+    const auto laps     = reader.withGlobal(kMesgLap);
+    ASSERT_EQ(sessions.size(), 1u);
+    ASSERT_EQ(laps.size(), 1u);
+
+    EXPECT_EQ(sessions[0]->fields.at(kSessionAvgHeartRate).u(), 66u);   // 65.75
+    EXPECT_EQ(laps[0]->fields.at(kLapAvgHeartRate).u(), 66u);
+}
+
 TEST(SpinActivityWriter, BracketsTheRideWithTimerEvents)
 {
     Ride ride;
