@@ -151,7 +151,9 @@ pub struct SquashSessionRecord {
     pub started_utc: u32,
     /// Seconds the activity was running, pauses excluded.
     pub active_s: u32,
-    /// Seconds a trusted heart rate was available.
+    /// Seconds a trusted heart rate was available. Reported whatever the
+    /// sample count, unlike the means below, because it is what says whether
+    /// they are missing for want of data.
     pub hr_covered_s: u32,
     /// Rallies the segmenter found; zero when uncalibrated.
     pub rally_count: u32,
@@ -161,9 +163,9 @@ pub struct SquashSessionRecord {
     pub rest_s: u32,
     /// Seconds off court.
     pub off_court_s: u32,
-    /// Mean trusted heart rate, bpm.
+    /// Mean trusted heart rate, bpm; 0 below `MIN_TRUSTED_HR_SAMPLES`.
     pub hr_mean: f32,
-    /// Highest trusted heart rate, bpm.
+    /// Highest trusted heart rate, bpm; 0 below `MIN_TRUSTED_HR_SAMPLES`.
     pub hr_max: f32,
     /// Mean fall across qualifying rests between rallies, bpm.
     pub recovery_short_mean: f32,
@@ -286,6 +288,16 @@ pub extern "C" fn squash_engine_on_hr(t_ms: u32, bpm: f32, trust: u8, source: u8
     }
 }
 
+/// Fewest trusted readings before a heart rate is reported at all.
+///
+/// Matches the gate `Service.cpp` already applies before writing heart rate to
+/// the FIT file (`mHrCounter.getCurrent() > 20`), so the two numbers the same
+/// app produces about the same session agree. Without it a 5-second activity
+/// reported a mean of 68.00 bpm from five readings while the app's own summary
+/// said 0 -- measured on the 2026-09-03 smoke recording, and exactly the
+/// plausible-looking number this engine exists not to produce.
+const MIN_TRUSTED_HR_SAMPLES: u32 = 21;
+
 /// Longest gap a single reading is taken to have spoken for.
 ///
 /// The sensor delivers at 1 Hz, so five seconds is five missed readings — past
@@ -316,8 +328,9 @@ pub unsafe extern "C" fn squash_engine_finish(
             s.segmenter.push(&e, hr);
         }
         if s.hr_count > 0 {
-            r.hr_mean = s.hr_sum / s.hr_count as f32;
-            r.hr_max = s.hr_max;
+            // Coverage and source are reported whatever the count: they are what
+            // say whether a missing mean is missing for want of data, and which
+            // sensor was not providing it.
             r.hr_covered_s = s.hr_covered_ms / 1000;
             r.hr_source = if s.external >= s.optical && s.external > 0 {
                 2
@@ -326,6 +339,10 @@ pub unsafe extern "C" fn squash_engine_finish(
             } else {
                 0
             };
+        }
+        if s.hr_count >= MIN_TRUSTED_HR_SAMPLES {
+            r.hr_mean = s.hr_sum / s.hr_count as f32;
+            r.hr_max = s.hr_max;
         }
         if let Ok(seg) = s.segmenter.finish_in_place() {
             r.segmented = 1;
@@ -553,8 +570,8 @@ mod tests {
         for i in 0..600u32 {
             unsafe { squash_engine_on_imu(i * 10, imu(4096).as_ptr()) };
         }
-        for i in 0..6u32 {
-            squash_engine_on_hr(i * 1000, 140.0 + i as f32, 2, 2);
+        for i in 0..30u32 {
+            squash_engine_on_hr(i * 1000, 140.0 + (i % 6) as f32, 2, 2);
         }
         let r = finish(1_756_900_000, 600);
         assert_eq!(r.segmented, 0);
@@ -568,10 +585,27 @@ mod tests {
     fn untrusted_readings_are_left_out_of_the_mean() {
         let _alone = alone();
         squash_engine_begin();
-        squash_engine_on_hr(0, 140.0, 2, 2);
-        squash_engine_on_hr(1000, 40.0, 0, 2);
+        for i in 0..25u32 {
+            squash_engine_on_hr(i * 1000, 140.0, 2, 2);
+        }
+        squash_engine_on_hr(25_000, 40.0, 0, 2);
         let r = finish(1, 60);
         assert_eq!(r.hr_mean, 140.0);
+    }
+
+    /// The 2026-09-03 smoke recording: five trusted readings on wrist optical,
+    /// which the app's own summary reported as no heart rate at all.
+    #[test]
+    fn too_few_readings_report_no_heart_rate_rather_than_a_mean_of_five() {
+        let _alone = alone();
+        squash_engine_begin();
+        for (i, bpm) in [70.0f32, 68.0, 68.0, 67.0, 67.0].iter().enumerate() {
+            squash_engine_on_hr(i as u32 * 1005, *bpm, 2, 1);
+        }
+        let r = finish(1_788_447_336, 5);
+        assert_eq!(r.hr_mean, 0.0, "five readings is not a mean heart rate");
+        assert_eq!(r.hr_max, 0.0);
+        assert!(r.hr_covered_s > 0, "coverage still reported, so the gap is visible");
     }
 
     #[test]

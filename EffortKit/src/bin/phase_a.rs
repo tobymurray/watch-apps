@@ -318,11 +318,14 @@ fn a2(rs: &[Recording]) -> Vec<Labelled> {
         let mut acc = EpochAccumulator::new();
         let push = |e: EpochFeatures, out: &mut Vec<Labelled>| {
             // An epoch is labelled by its midpoint, so one straddling a marker
-            // is attributed to whichever state held it longer.
+            // is attributed to whichever state held it longer. An epoch with no
+            // label is still kept and still dumped: reading the features is how
+            // a recording gets inspected *before* it is labelled, and throwing
+            // them away made --epochs write an empty file for every recording
+            // that had no labels file.
             let mid = e.start_ms() + EPOCH_MS / 2;
-            if let Some(label) = r.label_at(mid) {
-                out.push(Labelled { file: file.clone(), features: e, label });
-            }
+            let label = r.label_at(mid).unwrap_or(Label::Unlabelled);
+            out.push(Labelled { file: file.clone(), features: e, label });
         };
         for (t, s) in &r.samples {
             if let Some(e) = acc.push(*t, s) {
@@ -334,7 +337,8 @@ fn a2(rs: &[Recording]) -> Vec<Labelled> {
         }
     }
 
-    if out.is_empty() {
+    if labelled_count(&out) == 0 {
+        say!("{} epochs computed, none labelled.\n", out.len());
         say!(
             "No labelled epochs. Either no recording carried a labels file, or none of its\n\
              stretches named a state this build knows. Nothing in A2 is answered, so the\n\
@@ -343,7 +347,8 @@ fn a2(rs: &[Recording]) -> Vec<Labelled> {
         return out;
     }
 
-    let labels = present_labels(&out);
+    let labels: Vec<Label> =
+        present_labels(&out).into_iter().filter(|l| *l != Label::Unlabelled).collect();
     say!("### Distributions\n");
     for f in ALL_FEATURES {
         say!("**{}**\n", f.name());
@@ -398,6 +403,10 @@ fn a2(rs: &[Recording]) -> Vec<Labelled> {
          result, not a failure: it says find a better feature before proceeding.\n"
     );
     out
+}
+
+fn labelled_count(v: &[Labelled]) -> usize {
+    v.iter().filter(|l| l.label != Label::Unlabelled).count()
 }
 
 fn present_labels(v: &[Labelled]) -> Vec<Label> {

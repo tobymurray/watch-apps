@@ -45,6 +45,8 @@ pub enum Label {
     Idle,
     /// Named in the labels file but not one this build knows.
     Unknown,
+    /// No labels file covered this stretch. Not a state — the absence of one.
+    Unlabelled,
 }
 
 impl Label {
@@ -71,6 +73,7 @@ impl Label {
             Label::Drill => "drill",
             Label::Idle => "idle",
             Label::Unknown => "unknown",
+            Label::Unlabelled => "unlabelled",
         }
     }
 }

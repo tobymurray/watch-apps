@@ -120,6 +120,52 @@ the evidence A1 exists to weigh.
 
 ---
 
+## First hardware numbers, from a 5-second smoke recording
+
+`Squash/Tests/pulled/20260903-v0.6.0-5s-smoke/`, off v0.6.0 with the launch line
+confirming `ok=1 calibration=0`. **Provenance is a bench smoke test, not squash**,
+so none of it validates a metric — but the signals themselves are the same
+signals, so what it says about cadence and quantisation is real.
+
+| Measurement | Value |
+| --- | --- |
+| IMU effective rate | **99.6 Hz** — 1 090 samples over 10 942 ms |
+| IMU interval jitter | 1 040 gaps at 10 ms, 48 at 11 ms, 1 at 14 ms |
+| IMU sample loss | 5 of 1 095 expected, **0.46%** |
+| Saturation | **none**, on either range. Gyro peaked at 1 949 LSB — 119 dps, two orders below the ±2000 dps rail, so this recording is nowhere near stroke intensity |
+| HR cadence | **~1005 ms**, not the nominal 1000; seven gaps at 1005 ± 4 ms and one dropout of 2 011 ms in nine samples |
+| HR acquisition | **four samples of `trust=0, bpm=0`** before the first reading — about four seconds of nothing at the start of a session |
+| HR trust, while stationary on optical | fluctuated 2, 2, 3, 1, 3 across five consecutive readings |
+| Epoch `accel_var`, wrist near-still | 306 – 1 060 |
+| Epoch `accel_var`, hand waved | 2 909 – 31 979 |
+
+### The quantisation finding, which changes A1's premise
+
+Every optical reading was a whole bpm: 70, 68, 68, 67, 67. **Zero sub-bpm steps
+in the sample.**
+
+`CLAUDE.md` records consecutive `HEART_RATE_EX` samples differing by **0.50 and
+0.18 bpm** across two real rides, and this document was written assuming that
+smoothing applies generally — which is why it warns that a slope over a rest
+could be the filter settling. On this recording it does not apply: wrist optical
+delivered integer bpm.
+
+The straightforward reading is that the sub-bpm behaviour is the **external
+strap** path and optical is quantised to whole bpm. That would mean the two
+sources need different `Formulation`s, not one policy. **Five samples is far too
+few to conclude it**, and no recording here has carried a strap yet, so this is
+recorded as the first evidence rather than as the answer. Group S1 settles it,
+because it records both channels at once.
+
+### What it says about a 5-second activity
+
+Nothing usable. Four seconds of acquisition plus five readings is not a heart
+rate, and the app's own summary said so — `"hr_avg":0`, because `Service.cpp`
+gates the FIT field on more than 20 samples. The engine disagreed and reported
+68.00 bpm from five readings, which is the defect this recording found; it now
+applies the same gate, so the two numbers the app produces about one session
+agree.
+
 ## A1 — the method, and the tables it fills
 
 `phase-a` reads every `imu_<stamp>_hr.csv` and reports four things.
