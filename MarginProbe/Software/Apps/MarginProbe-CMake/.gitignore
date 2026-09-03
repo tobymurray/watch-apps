@@ -1,0 +1,4 @@
+# One build directory per style and per inset -- see Tools/build_all.sh for why
+# they cannot share one. The repository's root ignore only covers `build/`, so
+# these need naming here.
+build-*/
