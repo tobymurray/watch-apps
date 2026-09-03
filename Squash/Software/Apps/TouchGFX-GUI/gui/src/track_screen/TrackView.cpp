@@ -156,7 +156,11 @@ void TrackView::updateHrIcon()
     // In-activity: icon follows the live HR source, not the raw link state.
     trackFaceStatus.setHr(SDK::Gui::SensorStatusRow::hrStateFromSource(
             mAccessoryState, mHrSource));
+    // Every face that shows a heart rate, not just the status face: that one
+    // is reached by pressing L1 and is not where a wearer spends the session.
     trackFaceStatus.setHrSource(mHrSource);
+    trackFaceTotal.setHrSource(mHrSource);
+    trackFaceLap.setHrSource(mHrSource);
 }
 
 void TrackView::handleKeyEvent(uint8_t key)

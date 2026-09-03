@@ -2,6 +2,7 @@
 #define TRACKFACELAP_HPP
 
 #include <gui_generated/containers/TrackFaceLapBase.hpp>
+#include <gui/containers/HrSourceLabel.hpp>
 
 /**
  * @brief Track face showing lap-focused metrics.
@@ -14,6 +15,9 @@ public:
 
     virtual void initialize();
 
+    /** @brief Name the sensor feeding heart rate (see HrSourceLabel). */
+    void setHrSource(uint8_t source) { mHrSource.set(source); }
+
     void setLapAvgHR(float hr);
     void setLapNumber(uint32_t lapNum);
 
@@ -21,6 +25,7 @@ public:
     void setTimer(std::time_t sec);
 
 protected:
+    HrSourceLabel mHrSource;
 };
 
 #endif // TRACKFACELAP_HPP

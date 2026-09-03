@@ -7,6 +7,10 @@ TrackFaceLap::TrackFaceLap()
 void TrackFaceLap::initialize()
 {
     TrackFaceLapBase::initialize();
+
+    // Right of the lap heart-rate value, which ends at x=182.
+    mHrSource.configure(186, 40);
+    add(mHrSource);
 }
 
 void TrackFaceLap::setLapAvgHR(float hr)
