@@ -71,7 +71,7 @@ uint16_t averageWatts(uint32_t joules, std::time_t activeSeconds)
     }
     const uint64_t seconds = static_cast<uint64_t>(activeSeconds);
     const uint64_t watts   = (static_cast<uint64_t>(joules) + seconds / 2) / seconds;
-    constexpr uint64_t kMaxWatts = 65535;   // the field is a uint16
+    constexpr uint64_t kMaxWatts = 65534;   // 65535 is the uint16 invalid value
     return static_cast<uint16_t>(watts > kMaxWatts ? kMaxWatts : watts);
 }
 
