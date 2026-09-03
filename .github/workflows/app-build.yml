@@ -63,7 +63,7 @@ env:
   # whatever day main moved. Bumping this is a one-line change that rebuilds
   # every app, which is the correct blast radius for changing the SDK.
   SDK_REPO: tobymurray/una-sdk
-  SDK_REF: 8cdb73140a3d97455b80c22d32e5012e26f72291
+  SDK_REF: c3a0bfb7547481ce261f4f0925783663a58b11c1
 
 jobs:
   build:
