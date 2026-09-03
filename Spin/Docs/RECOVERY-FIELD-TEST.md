@@ -9,9 +9,10 @@ shared log, and `recovery.log`.
 It is not a training session. Do it on a day you were going to ride easy
 anyway; there are four hard minutes in it and a lot of sitting still.
 
-> **Before you start**: nothing here has ever run on hardware. Treat a wrong
-> number as information, not as a failure — the point of the ride is to find
-> out. Every gate's threshold is written down in
+> **Before you start**: no gate here has ever fired on hardware — only the desk
+> check below has run, on [2026-09-03](#2026-09-03--the-desk-check). Treat a
+> wrong number as information, not as a failure — the point of the ride is to
+> find out. Every gate's threshold is written down in
 > [TrainKit's README](../../TrainKit/README.md#the-gates-and-what-each-one-is-for)
 > with the source it came from, so if one is wrong you can see what it was
 > derived from.
@@ -52,7 +53,8 @@ does not is a different fault:
 |---|---|
 | The app started at all | The `TrainKit ABI mismatch` guard in `Service::run()` fired and the Service returned immediately — a stale `libtrainkit.a` against a changed struct. Rebuild. |
 | **`recovery.log` exists in Spin's folder** | `IFile::open(write, no-override)` neither appends nor creates on this kernel, and the fallback in `EventLog::open()` missed it. **Stop here** — everything below is blind without it. |
-| Its first line reads `start version=<the build you installed> max_hr=<n>`, **n > 0** | A **wrong version** means a stale `.uapp` is still booting, which is the headline failure in [`Docs/INSTALLING.md`](../../Docs/INSTALLING.md) and announces itself in no other way. `max_hr=0` means the watch has no maximum set, and Rides A–C would produce nothing but `no_max_hr`. |
+| Its first line reads `start version=<the build you installed> max_hr=<n>`, **n > 0** | A **wrong version** means a stale `.uapp` is still booting, which is the headline failure in [`Docs/INSTALLING.md`](../../Docs/INSTALLING.md) and announces itself in no other way. **A missing `version=` means the same thing** — the field has been in the start line since this document existed, so a line without it is an older build. `max_hr=0` usually means the watch has no maximum set, and Rides A–C would produce nothing but `no_max_hr` — but check the next row before believing the watch. |
+| `zones=<n>` is one **fewer** than `heartRateZones` in the watch's own `settings.json` | Both numbers come from the same ladder, and the last threshold is the maximum rather than a floor. Equal counts, with `max_hr=0` beside them, is Spin misreading the message and not a watch with no zones — which is what happened on 2026-09-03, below. |
 | It contains `cease ... -> too_short` | The pause never reached the detector — `pauseTrack()` is not calling `trainkit_recovery_cease()`. |
 | `SharedData/spin_sessions.json` exists and ends `"kept":1` with `status=0` on the log's `session` line | The write path failed. The `status=` number says where: `1` refused, `2` out of memory, `3` commit rename failed, `4` write failed (`SharedLog.hpp`). |
 
@@ -291,3 +293,78 @@ answered it should come out.
 
 Record what happened here, in this file, under a dated heading. A field test
 whose results live only in a chat window has not been done.
+
+---
+
+## 2026-09-03 — the desk check
+
+Two desk runs, 11:11 and 19:35 local, on `Spin_0.8.0.uapp`. Rides A–E have not
+been done; nothing below is evidence about the gates, only about the plumbing
+under them.
+
+### The five checks
+
+| Check | |
+|---|---|
+| The app started at all | pass |
+| `recovery.log` exists in Spin's folder | pass |
+| First line `start version=… max_hr=<n>`, n > 0 | **fail, both halves** |
+| Contains `cease … -> too_short` | reason differed, but the path it tests works |
+| `spin_sessions.json`, `"kept":1`, `status=0` | pass, and `kept:2` with a `.bak` on the second run |
+
+The line, both runs:
+
+```
+1788448315 start max_hr=0 zones=6 weight=90
+```
+
+**No `version=` at all**, because the installed binary predated the commit that
+added it — the stale-`.uapp` failure this check exists to catch, caught on its
+first outing.
+
+**`max_hr=0` was not the watch.** Its own `settings.json` held
+`"heartRateZones":[92,110,129,147,166,184]`, which is 50/60/70/80/90/100% of
+184. Spin misread the message: `heartRateCount` counts zones rather than
+thresholds, so it came back as 7 for six values and
+`heartRateTh[count - 1]` read an unfilled slot. That put 0 in the maximum and
+left 184 standing as a sixth floor. Every window in both runs was discarded
+`no_max_hr`, and `pct=` was 0 on every line, so the 80% gate could never have
+armed on this watch — Rides A–E would all have produced nothing.
+`ZoneLadder::fromWatch` owns the split now and is tested against the ladder
+the watch actually sent.
+
+`cease hr=67 pct=0 active=178 -> no_max_hr` appeared in both runs with `P` lines
+behind it, so `pauseTrack()` does reach `trainkit_recovery_cease()`. The reason
+differed from the predicted `too_short` only because `no_max_hr` is gated ahead
+of it.
+
+### What the `.fit` got right
+
+Decoded with python-fitparse, which shares no code with the writer or the SDK's
+test reader: `sport=cycling` with `sub_sport=indoor_cycling`; `total_work` at
+48 in joules; `avg_power` at 20 and equal to work over active seconds; nothing
+in 19, 21 or 41; session `time_in_hr_zone` at 65 against the lap's 57; the laps
+summing to the session on timer, elapsed and every zone bucket; the four
+developer fields declared; and untrusted seconds carried as an invalid
+`heart_rate` rather than an invented one.
+
+### Three things it got wrong
+
+- **The two records disagreed about the same ride.** A mean of 65.7159 bpm went
+  into the `.fit` as 65 and into `spin_sessions.json` as 66, because one
+  truncated and the other rounded — check 7 of
+  [the eight](#the-eight-things-to-check), failing. The file rounds now.
+- **The `session` line carried the ride's start time** where every other line
+  carries the event's own, so it sorted before the `P` lines above it in a log
+  whose whole format is `<utc> <event>`.
+- **`avg_power` saturated at 65535**, which is the uint16 invalid value — a
+  reader would have seen the field as absent rather than pinned. It stops at
+  65534 now.
+
+### Still open
+
+- The desk check needs **repeating on a build carrying these fixes**, because no
+  recovery window has ever armed on hardware. Until one does, the gates are
+  untested and Rides A–E are premature.
+- `Docs/INSTALLING.md`, linked twice above and once from `Service.cpp`, does not
+  exist.
