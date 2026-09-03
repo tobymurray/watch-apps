@@ -71,16 +71,31 @@ installed `0.6.0`:
 BUILD_VERSION=0.7.0 Squash/Tools/docker-build.sh app
 ```
 
-**Install it, rather than copying it in.** Copying a `.uapp` into
-`Apps/Squash/` over USB and editing `Apps/app_list.json` to register it does not
-work: the kernel owns that file and rewrites it from its own app table, so the
-edit was gone by the next launch and the watch quietly went on running the build
-it already had. Ledger rows P7 to P10 record what was tried.
+**Install it in this order, which is `Utilities/Scripts/Update-Watch-Apps.ps1`'s
+and not negotiable.** Each step exists because of a specific silent failure:
 
-The failure mode is what makes this worth a paragraph. Nothing announces it —
-the app opens, an activity starts, and the only symptom is that the new build's
-output is missing, which looks exactly like the new build's logging being
-broken. **Check the version in `Debug/squash.log`'s `launch` line before
+1. **Check the `.uapp`'s CRC-32 footer before it touches the watch** —
+   `crc32(file[:-4])` must equal its last four bytes read little-endian, and the
+   app packer prints the same number. A file that fails CRC is dropped
+   *silently* by the kernel, so the app never appears and nothing says why.
+2. **Write the new `.uapp`** into `Apps/Squash/`.
+3. **Read it back and compare the length** to the source.
+4. **Only then delete every other `.uapp` in that folder.** Not tidiness: *the
+   watch loads whichever it finds first, so leaving two keeps booting the old
+   build.* Doing it in this order means a bad copy never leaves the folder
+   without a working binary. The app's `settings.json`, `input.json`,
+   `Activity/` and `Imu/` are untouched by all of this.
+5. **Eject, reconnect, and verify by hash.** Hashing straight after writing
+   reads the OS write cache and can report a false OK.
+6. **Reboot the watch.** The launcher list and the app registry are rebuilt only
+   at boot. Editing `Apps/app_list.json` by hand does nothing — the kernel
+   overwrites it from its own table.
+
+Step 4 is the one that has actually bitten: three successive builds sat inert in
+that folder for days beside an older one that kept booting. Nothing announces
+it — the app opens, an activity starts, and the only symptom is that the new
+build's output is missing, which looks exactly like the new build's logging being
+broken. **So read the version in `Debug/squash.log`'s `launch` line before
 trusting anything else**, which is why §0.4 reads it first.
 
 Then, on the watch: tick **Record raw IMU**, pair the strap, start an activity
