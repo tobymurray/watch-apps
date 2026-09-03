@@ -57,6 +57,21 @@ pub const DISCARD_NO_ENDPOINT: u8 = 8;
 pub const DISCARD_EFFORT_RESUMED: u8 = 9;
 /// The ride ended before the window closed.
 pub const DISCARD_RIDE_ENDED: u8 = 10;
+/// The kernel switched sensors part-way through the window.
+///
+/// MEASURED, over 34 minutes of `HEART_RATE_EX` pulled from this watch
+/// (`Squash/Tests/pulled`): 14% of 60 s windows begin and end on different
+/// sensors, and where both report at once the two disagree by a median of 2 bpm
+/// and a 95th percentile of 16. The falls being measured are 8 to 20 bpm, so a
+/// window spanning a switch is partly a difference between instruments -- those
+/// windows averaged -2.1 bpm, an apparent rise. Re-measure by differencing
+/// `optical_x100` against `external_x100` in any pulled `_hr.csv`.
+pub const DISCARD_SOURCE_CHANGED: u8 = 11;
+
+/// `HeartRateEx::Source`, carried through unchanged from the kernel.
+pub const HR_SOURCE_NONE: u8 = 0;
+pub const HR_SOURCE_OPTICAL: u8 = 1;
+pub const HR_SOURCE_EXTERNAL: u8 = 2;
 
 /// One heart-rate recovery measurement, with the context that makes it
 /// comparable to another one.
@@ -79,7 +94,11 @@ pub struct Recovery {
     pub trigger: u8,
     /// bpm at 0, 10, ... 60 s from `hr0`; 0 where no trusted reading landed.
     pub curve: [u8; CURVE_POINTS],
-    pub reserved: [u8; 3],
+    /// Which sensor every reading in the window came from; one of
+    /// `HR_SOURCE_*`. Constant across the window by construction -- a switch
+    /// discards it -- so one byte describes the whole measurement.
+    pub source: u8,
+    pub reserved: [u8; 2],
 }
 
 impl Recovery {

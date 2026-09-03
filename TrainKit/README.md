@@ -117,7 +117,8 @@ measurement. Every gate has a test named after it in
 | Heart rate not already falling | within **10 bpm** of the peak of the preceding 30 s | At Barak et al.'s 52.5 s time constant, a 70 bpm reserve falls **30 bpm** in the first 30 s. Spin measured **0.50** and **0.18 bpm** between consecutive readings over two real rides. 10 sits between the two with room on both sides. |
 | Trusted readings in that 30 s | ≥ **20 of 30** | Spin measured 5% of seconds untrusted over two rides, so about 1.5 of 30 is normal and 10 missing is not. |
 | A trusted baseline at cessation | within **2 s** | Past that the baseline is already down the curve and understates the fall. |
-| Trusted seconds inside the window | ≥ **90%** | At 5% untrusted this rejects roughly one window in a hundred, and it rejects any window with a real gap. **A dropout is a discarded measurement, never an interpolated one.** |
+| Trusted seconds inside the window | ≥ **90%** | Allows 6 untrusted seconds in 61. Measured across 34 minutes of pulled recordings: 5.3% of seconds untrusted, in 89 runs of median length 1 and **maximum 4** — no run has ever been long enough to trip this on its own. **A dropout is a discarded measurement, never an interpolated one.** |
+| The sensor did not change | — | **14%** of 60 s windows in those recordings begin and end on different sensors, and where both report at once they differ by a median of 2 bpm and a 95th-percentile **16**. The falls being measured are 8–20 bpm, so those windows are partly a comparison of instruments; they averaged **−2.1 bpm**, an apparent rise. |
 | A trusted endpoint | at 60 s, or within **2 s** after | `window_s` records the second actually used, so a stretched window is visible rather than rounded away. |
 | Nothing restarted effort | — | Resuming the ride, or ending it, closes the window with nothing. |
 
@@ -267,7 +268,8 @@ Each recovery:
 | `window_s` | s | Actually spanned. 60 normally, up to 62 when the endpoint was late. |
 | `hr0_pct_max` | % | `hr0` over `hr_max_setting`. |
 | `trusted_s` | s | Seconds inside the window the sensor was believed. |
-| `curve` | bpm | At 0, 10, … 60 s from `hr0`. **0 means no trusted reading landed there** — a hole, not a reading of zero. |
+| `source` | — | `"optical"` or `"external"`; the sensor every reading in the window came from. Constant by construction — a switch discards the window. |
+| `curve` | bpm | At 0, 10, … 60 s from `hr0`. **0 means no trusted reading landed there** — a hole, not a reading of zero. The stream is whole-bpm quantised, so this is evidence rather than a promise that a curve fit would mean anything. |
 
 **Inputs, not conclusions.** Everything a derived figure was derived from is
 stored beside it, so a later change to the derivation can be applied
@@ -328,6 +330,27 @@ one session; this is the record of the series.
 
 Everything numeric above traces to one of these. Where two disagree, both are
 named rather than one being picked.
+
+### What this repository's own recordings say
+
+Everything above that says "measured" now has a second, independent source:
+34 minutes of `HEART_RATE_EX` pulled off this watch by the Squash work
+(`Squash/Tests/pulled/*_hr.csv`, six sessions, 2,021 samples). It is squash
+rather than cycling and at 64–110 bpm, so it says nothing about the intensity
+gate — but the sensor is the same sensor, and it settles four things:
+
+| Measured | Value | What it means here |
+|---|---|---|
+| Untrusted seconds | **5.3%** | Confirms the 5% Spin measured over two rides, on different sessions and a different app. |
+| Untrusted run length | median **1**, max **4**, none ≥ 6 | The 90% gate cannot be tripped by one dropout, only by several. |
+| Sample interval | median **1005 ms** | The stream is slightly slower than 1 Hz and occasionally skips to ~2 s. Harmless: the detector is keyed on the Service's UTC tick, and a tick with no new sample repeats the previous reading rather than opening a gap. |
+| Consecutive change | mean **0.49 bpm**, median **0**, **65% of steps are zero**, and every value is a whole bpm | The stream is integer-quantised and mostly repeats. |
+
+That last row matters for the curve. A fall of 8–20 bpm over 60 s is 8–20
+quantisation steps, which is ample for a **difference** and marginal for a
+**fitted time constant** — so the curve is stored as evidence, not as a promise
+that a τ fitted from it would mean anything. EffortKit reaches the same caution
+from the other direction and carries `NotMeasurableOnThisHardware` for it.
 
 - Cole CR, Blackstone EH, Pashkow FJ, Snader CE, Lauer MS. "Heart-rate recovery
   immediately after exercise as a predictor of mortality." *N Engl J Med*

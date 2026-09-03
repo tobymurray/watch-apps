@@ -70,6 +70,7 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(Recovery, hr0_pct_max));
     let h = fnv1a(h, core::mem::offset_of!(Recovery, trigger));
     let h = fnv1a(h, core::mem::offset_of!(Recovery, curve));
+    let h = fnv1a(h, core::mem::offset_of!(Recovery, source));
     let h = fnv1a(h, core::mem::size_of::<Session>());
     let h = fnv1a(h, core::mem::align_of::<Session>());
     let h = fnv1a(h, core::mem::offset_of!(Session, start_utc));

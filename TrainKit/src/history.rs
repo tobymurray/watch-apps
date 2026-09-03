@@ -30,7 +30,7 @@ pub const SCHEMA_VERSION: u64 = 1;
 /// Entries kept: four or five weeks at four rides a week.
 ///
 /// MEASURED, by `the_widest_possible_log_fits_the_buffer`: 20 sessions with
-/// every field at its widest serialise to 13,420 bytes, so the entry cap is
+/// every field at its widest serialise to 14,220 bytes, so the entry cap is
 /// always reachable inside the byte cap with room to spare. 24 came to 16,084
 /// of the 16,384 available, which is a margin too thin to add a field to.
 pub const MAX_SESSIONS: usize = 20;
@@ -309,6 +309,8 @@ fn write_recovery(w: &mut Writer, r: &Recovery) {
     w.byte(b',');
     w.num("trusted_s", r.trusted_s as u64);
     w.byte(b',');
+    w.text("source", source_name(r.source));
+    w.byte(b',');
     w.key("curve").byte(b'[');
     for (i, v) in r.curve.iter().enumerate() {
         if i > 0 {
@@ -372,6 +374,7 @@ fn parse_recovery(obj: &[u8]) -> Recovery {
         trusted_s: json::as_u8_or(json::member(obj, "trusted_s"), 0),
         hr0_pct_max: json::as_u8_or(json::member(obj, "hr0_pct_max"), 0),
         trigger: json::member(obj, "trigger").map_or(0, trigger_value),
+        source: json::member(obj, "source").map_or(0, source_value),
         ..Recovery::default()
     };
     if let Some(list) = json::member(obj, "curve") {
@@ -388,6 +391,22 @@ fn trigger_name(t: u8) -> &'static [u8] {
         TRIGGER_LAP => b"lap",
         TRIGGER_STOP => b"stop",
         _ => b"unknown",
+    }
+}
+
+fn source_name(s: u8) -> &'static [u8] {
+    match s {
+        HR_SOURCE_OPTICAL => b"optical",
+        HR_SOURCE_EXTERNAL => b"external",
+        _ => b"unknown",
+    }
+}
+
+fn source_value(v: &[u8]) -> u8 {
+    match v {
+        b"\"optical\"" => HR_SOURCE_OPTICAL,
+        b"\"external\"" => HR_SOURCE_EXTERNAL,
+        _ => HR_SOURCE_NONE,
     }
 }
 

@@ -180,6 +180,12 @@ real state and the file must show it rather than omitting the session.
 | C3 | **R1**, hard 4 minutes, stop and **press R1**, sit 90 s **without touching the strap**. | a clean `recovery` |
 | C4 | Finish, but this time **SKIP** the kilojoule screen (R2). | `session … work_kj=0` |
 
+C2 also exercises the newest gate: taking the strap off makes the kernel fall
+back to the wrist, and a window that changes sensor is discarded as
+`source_changed` rather than reporting a fall that is partly the gap between two
+instruments. Expect that reason rather than `dropout` if the strap comes back
+before the window ends.
+
 C2 is a judgement call in the moment: fewer than about 6 untrusted seconds in
 the window survives, more does not. Either outcome is evidence — note how long
 you actually had it off.
@@ -228,7 +234,7 @@ Mount the watch over USB. Three files matter:
 1756800613 P hr=171 trust=3 zone=5 pct=90
 1756800614 P hr=170 trust=3 zone=5 pct=89
 ...
-1756800673 recovery hr0=171 hr_end=118 drop=53 window=60 trusted=61 pct=90 curve=171,158,147,138,131,124,118
+1756800673 recovery hr0=171 hr_end=118 drop=53 window=60 trusted=61 pct=90 src=2 curve=171,158,147,138,131,124,118
 1756800690 session status=0 recoveries=1 dropped=0 active=1500 hr_avg=142 work_kj=430 trimp=112
 ```
 

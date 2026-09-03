@@ -53,6 +53,14 @@ extern "C" {
 #define TRAINKIT_DISCARD_NO_ENDPOINT         8u
 #define TRAINKIT_DISCARD_EFFORT_RESUMED      9u
 #define TRAINKIT_DISCARD_RIDE_ENDED          10u
+/* The kernel switched sensors part-way through; see record.rs for the 14% of
+   windows this was measured to affect and the 16 bpm the two sensors differ by. */
+#define TRAINKIT_DISCARD_SOURCE_CHANGED      11u
+
+/* SDK::SensorDataParser::HeartRateEx::Source, carried through unchanged. */
+#define TRAINKIT_HR_SOURCE_NONE     0u
+#define TRAINKIT_HR_SOURCE_OPTICAL  1u
+#define TRAINKIT_HR_SOURCE_EXTERNAL 2u
 
 /* -- What one second did -------------------------------------------------- */
 
@@ -79,7 +87,10 @@ typedef struct {
        input any later curve fit would need, so a derivation can change without
        orphaning the history. */
     uint8_t  curve[TRAINKIT_CURVE_POINTS];
-    uint8_t  reserved[3];
+    /* Which sensor every reading came from; constant across the window by
+       construction, because a switch discards the measurement. */
+    uint8_t  source;
+    uint8_t  reserved[2];
 } trainkit_recovery;
 
 /* One session, as the shared log records it. */
@@ -127,7 +138,8 @@ void    trainkit_recovery_start(trainkit_detector *d, uint8_t max_hr);
 /* One second of the ride, keyed on UTC rather than on the number of calls: a
    tick the Service was too busy to serve is a second that still went past. */
 uint8_t trainkit_recovery_second(trainkit_detector *d, int64_t utc, float bpm,
-                                 uint8_t trusted, uint32_t active_s);
+                                 uint8_t trusted, uint8_t source,
+                                 uint32_t active_s);
 uint8_t trainkit_recovery_cease(trainkit_detector *d, uint8_t trigger);
 uint8_t trainkit_recovery_resume(trainkit_detector *d);
 uint8_t trainkit_recovery_end(trainkit_detector *d);
@@ -189,6 +201,7 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(trainkit_recovery, hr0_pct_max));
     h = fnv1a(h, offsetof(trainkit_recovery, trigger));
     h = fnv1a(h, offsetof(trainkit_recovery, curve));
+    h = fnv1a(h, offsetof(trainkit_recovery, source));
     h = fnv1a(h, sizeof(trainkit_session));
     h = fnv1a(h, alignof(trainkit_session));
     h = fnv1a(h, offsetof(trainkit_session, start_utc));
@@ -220,7 +233,8 @@ static_assert(offsetof(trainkit_recovery, trusted_s) == 7, "trusted_s moved");
 static_assert(offsetof(trainkit_recovery, hr0_pct_max) == 8, "hr0_pct_max moved");
 static_assert(offsetof(trainkit_recovery, trigger) == 9, "trigger moved");
 static_assert(offsetof(trainkit_recovery, curve) == 10, "curve moved");
-static_assert(offsetof(trainkit_recovery, reserved) == 17, "reserved moved");
+static_assert(offsetof(trainkit_recovery, source) == 17, "source moved");
+static_assert(offsetof(trainkit_recovery, reserved) == 18, "reserved moved");
 
 static_assert(sizeof(trainkit_session) == 92, "trainkit_session size changed");
 static_assert(alignof(trainkit_session) == 4, "trainkit_session alignment changed");

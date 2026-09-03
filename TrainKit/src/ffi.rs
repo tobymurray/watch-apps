@@ -82,10 +82,11 @@ pub unsafe extern "C" fn trainkit_recovery_second(
     utc: i64,
     bpm: f32,
     trusted: u8,
+    source: u8,
     active_s: u32,
 ) -> u8 {
     match (d as *mut Detector).as_mut() {
-        Some(det) => step_code(det.second(utc, bpm, trusted != 0, active_s)),
+        Some(det) => step_code(det.second(utc, bpm, trusted != 0, source, active_s)),
         None => STEP_NOTHING,
     }
 }
@@ -167,6 +168,7 @@ pub extern "C" fn trainkit_discard_name(reason: u8) -> *const core::ffi::c_char 
         DISCARD_NO_ENDPOINT => b"no_endpoint\0",
         DISCARD_EFFORT_RESUMED => b"effort_resumed\0",
         DISCARD_RIDE_ENDED => b"ride_ended\0",
+        DISCARD_SOURCE_CHANGED => b"source_changed\0",
         _ => b"unknown\0",
     };
     s.as_ptr() as *const core::ffi::c_char
