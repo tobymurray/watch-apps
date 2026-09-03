@@ -205,8 +205,10 @@ TEST(SquashLog, PastItsCapTheSessionCsvRestartsWithItsHeaderIntact)
     EXPECT_LT(text.size(), kSquashSessionsMaxBytes + 4096u);
     const auto l = lines(text);
     ASSERT_GE(l.size(), 2u);
-    EXPECT_EQ(l[0].compare(0, 1, "#"), 0) << "the rotation note, got: " << l[0];
-    EXPECT_EQ(l[1].compare(0, 4, "utc,"), 0) << "a rotated CSV without its header is unreadable, got: " << l[1];
+    EXPECT_EQ(l[0].compare(0, 4, "utc,"), 0)
+        << "a rotated CSV must start with its header, not a note: a reader takes "
+           "line one as the column names. Got: "
+        << l[0];
 }
 
 TEST(SquashLog, AStaleHeaderFromAnEarlierBuildRestartsTheFile)
@@ -223,16 +225,20 @@ TEST(SquashLog, AStaleHeaderFromAnEarlierBuildRestartsTheFile)
     log.session(sessionRow());
 
     const auto l = lines(read(fixture.fileSystem, kSquashSessionsPath));
-    ASSERT_GE(l.size(), 3u);
-    EXPECT_EQ(l[0].compare(0, 1, "#"), 0) << "a note saying why, got: " << l[0];
-    EXPECT_EQ(l[1], std::string(kSessionsHeaderForTest()))
-        << "this build's header, so the columns match the rows below it";
+    ASSERT_GE(l.size(), 2u);
+    EXPECT_EQ(l[0], std::string(kSessionsHeaderForTest()))
+        << "the header must be the FIRST line: a reader takes line one as the "
+           "column names, so a note there reports every field missing";
 
     const auto commas = [](const std::string& s) {
         return std::count(s.begin(), s.end(), ',');
     };
-    EXPECT_EQ(commas(l[1]), commas(l[2]))
+    EXPECT_EQ(commas(l[0]), commas(l[1]))
         << "header and row must agree, which is the whole point";
+
+    // The restart is still recorded -- in the log, where a note is readable.
+    EXPECT_NE(read(fixture.fileSystem, kSquashLogPath).find("sessions_csv"),
+              std::string::npos);
 }
 
 TEST(SquashLog, AMatchingHeaderIsAppendedToRatherThanRestarted)
@@ -244,8 +250,8 @@ TEST(SquashLog, AMatchingHeaderIsAppendedToRatherThanRestarted)
     log.session(sessionRow());
 
     const auto l = lines(read(fixture.fileSystem, kSquashSessionsPath));
-    ASSERT_EQ(l.size(), 3u) << "one header and two rows, with no rotation note";
-    EXPECT_NE(l[0].compare(0, 1, "#"), 0);
+    ASSERT_EQ(l.size(), 3u) << "one header and two rows";
+    EXPECT_EQ(l[0], std::string(kSessionsHeaderForTest()));
 }
 
 TEST(SquashLog, TheLogIsWrittenUnderTheSharedDebugDirectory)
