@@ -42,6 +42,7 @@ Service::Service(SDK::Kernel &kernel)
         , mActivityWriter(mKernel, "Activity")
         , mImuSink(mKernel, "Imu")
         , mMarkerSink(mKernel, "Imu", "_events")
+        , mHrSink(mKernel, "Imu", "_hr")
         , mSensorHr(SDK::Sensor::Type::HEART_RATE_EX, skSamplePeriod, skSampleLatency)
         , mSensorBatteryLevel(SDK::Sensor::Type::BATTERY_LEVEL)
         , mSensorBatteryMetrics(SDK::Sensor::Type::BATTERY_METRICS, skSamplePeriod, skSampleLatency)
@@ -260,6 +261,25 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
             LOG_DEBUG("HR %.1f trust %.1f src %u (opt %u ext %u)\n",
                       parser.getBpm(), parser.getTrustLevel(), mHrSource,
                       mHrOpticalBpm, mHrExternalBpm);
+
+            if (mHrLog.isRecording()) {
+                HrCsvLog::Sample hr{};
+                hr.bpm         = parser.getBpm();
+                hr.opticalBpm  = parser.getOpticalBpm();
+                hr.externalBpm = parser.getExternalBpm();
+                hr.trust       = static_cast<uint8_t>(parser.getTrustLevel());
+                hr.source      = static_cast<HrCsvLog::Source>(parser.getSource());
+                // Stamped from the last IMU sample, which is the only clock the
+                // recording is on. A heart-rate event carries no sensor
+                // timestamp, and the batch latency is 100 ms, so a reading sits
+                // within one batch of when it arrived -- three orders below the
+                // settling times this file exists to measure.
+                if (!mHrLog.onSample(mLastImuTs, hr)) {
+                    LOG_INFO("Heart-rate log ended: reason %u, %u samples\n",
+                             static_cast<unsigned>(mHrLog.stopReason()),
+                             static_cast<unsigned>(mHrLog.sampleCount()));
+                }
+            }
         }
     } else if (mSensorBatteryLevel.matchesDriver(handle)) {
         SDK::SensorDataParser::BatteryLevel parser(data[0]);
@@ -305,6 +325,9 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
                         // a sample row with the same t_ms are the same instant.
                         if (mMarkerSink.isOpen() && !mMarkerLog.begin(mMarkerSink, ts)) {
                             LOG_ERROR("Failed to start the marker log\n");
+                        }
+                        if (mHrSink.isOpen() && !mHrLog.begin(mHrSink, ts)) {
+                            LOG_ERROR("Failed to start the heart-rate log\n");
                         }
                     }
                     mLastImuTs = ts;
@@ -671,11 +694,16 @@ void Service::startTrack(std::time_t utc)
         mImuArmed = mImuSink.create(utc);
         if (!mImuArmed) {
             LOG_ERROR("Research recording enabled but the file could not be opened\n");
-        } else if (!mMarkerSink.create(utc)) {
-            // The samples are the recording; markers are labels on it. Losing
-            // the sidecar costs the labels, not the session, so this does not
-            // disarm the recorder.
-            LOG_ERROR("Research recording started without a marker log\n");
+        } else {
+            // The samples are the recording; the sidecars are labels on it and
+            // the heart rate beside it. Losing either costs that, not the
+            // session, so neither failure disarms the recorder.
+            if (!mMarkerSink.create(utc)) {
+                LOG_ERROR("Research recording started without a marker log\n");
+            }
+            if (!mHrSink.create(utc)) {
+                LOG_ERROR("Research recording started without a heart-rate log\n");
+            }
         }
     }
     mLastImuTs = 0;
@@ -873,15 +901,18 @@ void Service::stopTrack(bool discard)
         const uint32_t samples = mImuRecorder.sampleCount();
         const uint32_t bytes   = mImuRecorder.bytesWritten();
         const uint16_t markers = mMarkerLog.markerCount();
+        const uint16_t beats   = mHrLog.sampleCount();
         mImuSink.close();
         mImuArmed = false;
         mMarkerLog.end();
         mMarkerSink.close();
+        mHrLog.end();
+        mHrSink.close();
 
         if (intact) {
-            LOG_INFO("Research recording saved: %u samples, %u bytes, %u markers\n",
+            LOG_INFO("Research recording saved: %u samples, %u bytes, %u markers, %u beats\n",
                      static_cast<unsigned>(samples), static_cast<unsigned>(bytes),
-                     static_cast<unsigned>(markers));
+                     static_cast<unsigned>(markers), static_cast<unsigned>(beats));
         } else {
             LOG_ERROR("Research recording is torn and should not be trusted\n");
         }
