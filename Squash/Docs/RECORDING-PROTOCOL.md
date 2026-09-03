@@ -71,6 +71,20 @@ installed `0.6.0`:
 BUILD_VERSION=0.7.0 Squash/Tools/docker-build.sh app
 ```
 
+**Then power-cycle the watch, before launching anything.** The kernel rewrites
+`Apps/app_list.json` itself from its own app table, so a `.uapp` copied into the
+folder is not registered until it reboots and rescans — and hand-editing that
+file to register one does nothing at all, because the kernel overwrites it. This
+was learnt the direct way: an edited entry pointing at a locally built `0.6.99`
+had reverted to `0.2.1` by the time the next activity ran, and the activity ran
+the old build. `SleepLab/Docs/ROLLOUT.md` had already said it — "Eject, unplug,
+power-cycle" — for the same reason.
+
+If a power-cycle still does not register it, the APP_ID is the likely reason:
+it changed once in this app's history, so the phone sees a new app rather than
+an update, and the phone may be the only thing that can install one. Ledger rows
+P7 to P9 track that.
+
 Then, on the watch: tick **Record raw IMU**, pair the strap, start an activity
 and run a miniature of group S — three minutes standing, sixty seconds hard,
 three minutes standing — pressing R2 at each of the two transitions plus a
