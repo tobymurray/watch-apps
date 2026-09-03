@@ -16,9 +16,24 @@ how many, and what each one settles.
 
 ## The verdict, 2026-09-03
 
-**No recording exists.** Not in this repository, not on the machine this was
-written on, and not on a mounted watch. `find` for `imu_*.csv` and
-`imu_*_events.csv` returns nothing.
+**No usable recording exists.**
+
+Stated more carefully than it was on first writing, because the first version of
+this paragraph claimed none existed anywhere and had only checked the
+development machine with the watch unmounted. Mounting it found seven
+recordings and one marker sidecar under `Apps/Squash/Imu/`, about twelve minutes
+in total — five bench runs of seconds to a minute from 2026-08-03, two desk runs
+of five and six minutes, and a 33-second run with two markers that was testing
+the marker feature.
+
+**They are not to be used.** They were produced by a superseded build, so
+nothing about their contents can be attributed to the code that would read them,
+and none of them is court data or carries a labels file. A recording whose
+provenance is a version nobody can reconstruct is not evidence, and the point of
+this document is to not accept things that are not evidence.
+
+So the position is unchanged in substance: **no labelled court recording
+exists**, which is what both A1 and A2 need.
 
 So:
 
