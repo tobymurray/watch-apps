@@ -936,7 +936,8 @@ void Service::recordSession(bool saved, uint16_t workKilojoules)
     const int32_t trimp = trainkit_edwards_trimp(&entry);
     mEventLog.line("%u session status=%u recoveries=%u dropped=%u active=%u "
                    "hr_avg=%u work_kj=%u trimp=%d",
-                   entry.start_utc, static_cast<unsigned>(status),
+                   static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                   static_cast<unsigned>(status),
                    static_cast<unsigned>(mRecoveryCount),
                    static_cast<unsigned>(mRecoveriesDropped),
                    entry.active_s, static_cast<unsigned>(entry.hr_avg),
