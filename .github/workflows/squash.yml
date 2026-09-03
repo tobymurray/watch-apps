@@ -7,23 +7,21 @@ name: Squash
 # The paths filter is what makes "each directory triggers its own build" true:
 # a change under Barcode does not rebuild Squash. It deliberately includes the
 # shared files as well, since a change to the reusable workflow or to the pinned
-# SDK revision changes what this app builds into.
+# SDK revision changes what this app builds into -- and EffortKit, which is a
+# shared directory this app links, so a change there has to rebuild it the same
+# way a change under Squash/ does.
 
 on:
   push:
     branches: [main]
     paths:
       - 'Squash/**'
-      # The segmenter and the recovery detector come from the shared crate; a
-      # change there is a change to this app's binary.
       - 'EffortKit/**'
       - '.github/workflows/squash.yml'
       - '.github/workflows/app-build.yml'
   pull_request:
     paths:
       - 'Squash/**'
-      # The segmenter and the recovery detector come from the shared crate; a
-      # change there is a change to this app's binary.
       - 'EffortKit/**'
       - '.github/workflows/squash.yml'
       - '.github/workflows/app-build.yml'
