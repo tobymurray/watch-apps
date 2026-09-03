@@ -381,6 +381,22 @@ TEST(SpinActivityWriter, RoundsTheAverageHeartRateRatherThanTruncatingIt)
     EXPECT_EQ(laps[0]->fields.at(kLapAvgHeartRate).u(), 66u);
 }
 
+TEST(SpinActivityWriter, AnImpossibleAveragePowerSaturatesBelowTheInvalidValue)
+{
+    // 65535 is what a uint16 field carries to mean "no value", so a saturating
+    // avg_power must stop one short of it or a reader sees the field as absent.
+    Ride ride;
+    ride.run(10, {120}, /*external=*/2, /*workKilojoules=*/1990);
+    ASSERT_TRUE(ride.stopped);
+
+    FitReader reader(readFit(ride.fx.fileSystem));
+    ASSERT_TRUE(reader.ok());
+
+    const auto sessions = reader.withGlobal(kMesgSession);
+    ASSERT_EQ(sessions.size(), 1u);
+    EXPECT_EQ(sessions[0]->fields.at(kFieldSessionAvgPower).u(), 65534u);
+}
+
 TEST(SpinActivityWriter, BracketsTheRideWithTimerEvents)
 {
     Ride ride;
