@@ -287,7 +287,12 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
                       parser.getBpm(), parser.getTrustLevel(), mHrSource,
                       mHrOpticalBpm, mHrExternalBpm);
 
-            if (mEngineStarted) {
+            // Gated on ACTIVE like the sample feed above, and for a reason
+            // measured rather than guessed: processTrack() keeps running while
+            // PAUSED and heart rate keeps arriving, so an ungated feed counted
+            // paused time as covered. The 2026-09-03 8-minute recording
+            // reported 720 covered seconds against 498 active ones.
+            if (mEngineStarted && mTrackState == Track::State::ACTIVE) {
                 squash_engine_on_hr(mLastImuTs - mEngineStartTs,
                                     parser.getBpm(),
                                     static_cast<uint8_t>(parser.getTrustLevel()),

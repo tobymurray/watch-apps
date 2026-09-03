@@ -331,7 +331,12 @@ pub unsafe extern "C" fn squash_engine_finish(
             // Coverage and source are reported whatever the count: they are what
             // say whether a missing mean is missing for want of data, and which
             // sensor was not providing it.
-            r.hr_covered_s = s.hr_covered_ms / 1000;
+            // Clamped to the active time the caller reports, because coverage
+            // greater than the session is not a number: it means the feed was
+            // running when the activity was not. The Service gates on ACTIVE
+            // to prevent it; this makes the invariant hold even when a caller
+            // does not.
+            r.hr_covered_s = (s.hr_covered_ms / 1000).min(active_s);
             r.hr_source = if s.external >= s.optical && s.external > 0 {
                 2
             } else if s.optical > 0 {
@@ -591,6 +596,25 @@ mod tests {
         squash_engine_on_hr(25_000, 40.0, 0, 2);
         let r = finish(1, 60);
         assert_eq!(r.hr_mean, 140.0);
+    }
+
+    /// The 2026-09-03 8-minute recording reported 720 covered seconds against
+    /// 498 active ones, because heart rate was fed to the engine while the
+    /// activity was paused.
+    #[test]
+    fn coverage_can_never_exceed_the_active_time() {
+        let _alone = alone();
+        squash_engine_begin();
+        for i in 0..700u32 {
+            squash_engine_on_hr(i * 1000, 72.0, 2, 1);
+        }
+        let r = finish(1_788_450_473, 498);
+        assert!(
+            r.hr_covered_s <= r.active_s,
+            "covered {} s of a {} s session",
+            r.hr_covered_s,
+            r.active_s
+        );
     }
 
     /// The 2026-09-03 smoke recording: five trusted readings on wrist optical,

@@ -129,11 +129,10 @@ signals, so what it says about cadence and quantisation is real.
 
 | Measurement | Value |
 | --- | --- |
-| IMU effective rate | **99.6 Hz** — 1 090 samples over 10 942 ms |
-| IMU interval jitter | 1 040 gaps at 10 ms, 48 at 11 ms, 1 at 14 ms |
-| IMU sample loss | 5 of 1 095 expected, **0.46%** |
-| Saturation | **none**, on either range. Gyro peaked at 1 949 LSB — 119 dps, two orders below the ±2000 dps rail, so this recording is nowhere near stroke intensity |
-| HR cadence | **~1005 ms**, not the nominal 1000; seven gaps at 1005 ± 4 ms and one dropout of 2 011 ms in nine samples |
+| IMU effective rate | **99.53 Hz** over 722 s (71 900 samples); 99.6 Hz over the 11 s one |
+| IMU stream steadiness | 1 of 723 epochs under 90 samples |
+| Saturation | **none**, on either range, in either recording. Eight minutes of deliberate motion peaked at 690 dps against a 2 000 dps rail and 6.04 g against 8 g — so neither recording is near stroke intensity, and saturation looks like a usable discriminator between play and everything else |
+| HR cadence | 683 of 706 gaps in the 1000 ms bucket, 12 at 2000 (dropouts), 9 at 900, one duplicate timestamp |
 | HR acquisition | **four samples of `trust=0, bpm=0`** before the first reading — about four seconds of nothing at the start of a session |
 | HR trust, while stationary on optical | fluctuated 2, 2, 3, 1, 3 across five consecutive readings |
 | Epoch `accel_var`, wrist near-still | 306 – 1 060 |
@@ -141,8 +140,9 @@ signals, so what it says about cadence and quantisation is real.
 
 ### The quantisation finding, which changes A1's premise
 
-Every optical reading was a whole bpm: 70, 68, 68, 67, 67. **Zero sub-bpm steps
-in the sample.**
+**707 optical readings gave 215 non-zero steps and not one below 1 bpm.**
+Smallest step 1.0, median 1.0. First seen in five samples from the smoke
+recording and now settled for optical.
 
 `CLAUDE.md` records consecutive `HEART_RATE_EX` samples differing by **0.50 and
 0.18 bpm** across two real rides, and this document was written assuming that
@@ -150,12 +150,17 @@ smoothing applies generally — which is why it warns that a slope over a rest
 could be the filter settling. On this recording it does not apply: wrist optical
 delivered integer bpm.
 
-The straightforward reading is that the sub-bpm behaviour is the **external
-strap** path and optical is quantised to whole bpm. That would mean the two
-sources need different `Formulation`s, not one policy. **Five samples is far too
-few to conclude it**, and no recording here has carried a strap yet, so this is
-recorded as the first evidence rather than as the answer. Group S1 settles it,
-because it records both channels at once.
+So the sub-bpm behaviour is the **external strap** path, and optical is
+integer-quantised. Two consequences:
+
+- The two sources need different `Formulation`s, not one policy.
+- On optical, a fixed-window drop is **more** defensible than this document
+  assumed. An integer signal at 1 Hz is coarse — a 1 bpm floor on any
+  measurement — but it is not a filter settling, so the worry that a fall is the
+  kernel's smoothing does not apply to it.
+
+The strap side is still unmeasured: neither recording carried one, both report
+`hr_source=1`. S1 settles it, because it records both channels at once.
 
 ### What it says about a 5-second activity
 
