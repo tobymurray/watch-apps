@@ -51,7 +51,8 @@ bool headerMatches(const SDK::Kernel& kernel, const char* path, const char* head
 /// Append @p text, restarting the file first if it has reached @p cap.
 ///
 /// Failure is ignored throughout; see the header for why.
-void append(const SDK::Kernel& kernel,
+/// @return true when the file was restarted, so a caller can say so elsewhere.
+bool append(const SDK::Kernel& kernel,
             const char*        path,
             const char*        header,
             const char*        rotatedNote,
@@ -76,7 +77,7 @@ void append(const SDK::Kernel& kernel,
 
     std::unique_ptr<SDK::Interface::IFile> file = kernel.fs.file(path);
     if (!file || !file->open(true, over)) {
-        return;
+        return false;
     }
 
     // open(write, override=false) positions at offset 0, not at the end -- both
@@ -84,7 +85,7 @@ void append(const SDK::Kernel& kernel,
     // Without it the file keeps only its newest line.
     if (!over && !file->seek(file->size())) {
         file->close();
-        return;
+        return false;
     }
 
     size_t wrote = 0;
@@ -100,6 +101,7 @@ void append(const SDK::Kernel& kernel,
     file->write(text, len, wrote);
     file->flush();
     file->close();
+    return over;
 }
 
 } // namespace
@@ -154,7 +156,16 @@ void SquashLog::session(const Session& s)
         return;
     }
 
-    append(mKernel, kSquashSessionsPath, kSessionsHeader,
-           "# rotated: the cap was reached or the columns changed\n",
-           kSquashSessionsMaxBytes, row, static_cast<size_t>(n));
+    // No note in the CSV. A reader takes its first line as the header, so a
+    // comment there is worse than the misalignment it was added to explain --
+    // measured: `csv.DictReader` read the note as the header and reported every
+    // field missing. The restart is recorded in the log instead, which is where
+    // notes belong.
+    const bool restarted =
+        append(mKernel, kSquashSessionsPath, kSessionsHeader, nullptr,
+               kSquashSessionsMaxBytes, row, static_cast<size_t>(n));
+
+    if (restarted) {
+        line("sessions_csv", "restarted: the cap was reached or the columns changed");
+    }
 }
