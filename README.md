@@ -21,7 +21,7 @@ than living inside it.
 | [`RustGuiPoc`](RustGuiPoc) | A proof of concept: a watch app whose GUI is drawn by Rust and `embedded-graphics` through the SDK's CustomGUI entry point, instead of TouchGFX. It shows a live accelerometer reading, which a GUI process cannot read on its own, so the Service half feeds it over the message bus. |
 | [`SleepLab`](SleepLab) | A background, autostart `Utility` app that records a night of wrist data and scores it with a published actigraphy algorithm — and refuses to report sleep stages, an unworn night, or a heart-rate figure it has not earned a baseline for, because a sleep app's failures are silent. |
 | [`Spin`](Spin) | A stationary bike ride: the clock, your heart rate and the zone it puts you in, and a FIT file that says `indoor_cycling` rather than a bike ride that covered no ground. Its GUI is Rust through CustomGUI and its settings come from the phone, like `Barcode`. |
-| [`Squash`](Squash) | A squash activity app, and the raw 100 Hz IMU recorder it is being built out of — because tuning shot detection needs labelled court data that does not exist yet. |
+| [`Squash`](Squash) | A squash activity app, and the raw 100 Hz IMU recorder it is being built out of — because tuning shot detection needs labelled court data that does not exist yet. It carries an engine for rally structure, heart-rate recovery and per-user baselines, and displays none of it, for the same reason. |
 | [`SunGlance`](SunGlance) | A `Glance` card that says what the sun does next — sunrise or sunset, and how long until it — for a position written into the app's folder at install time, because a three-second card cannot afford a GNSS fix and does not need one. |
 
 Most of these started as example apps inside the SDK tree and came here with
@@ -83,7 +83,12 @@ the round-panel geometry that encoder is drawn into, and the service that turns
 `input.json` into a barcode, under [`Barcode/Tests`](Barcode/Tests), and the
 three map apps share one suite
 under [`MapKit/Tests`](MapKit/Tests), and `Spin` carries a decode-it-back test
-for the FIT file it writes under [`Spin/Tests`](Spin/Tests). `RustGuiPoc`,
+for the FIT file it writes under [`Spin/Tests`](Spin/Tests). `Squash` additionally carries a Rust engine
+in [`EffortKit`](EffortKit) and its Service-side C ABI in
+`Squash/Software/Libs/rust`, both tested with plain `cargo test --features std`
+and both built for `thumbv8m.main-none-eabihf` to prove they are `no_std` —
+[`Squash/Tools/docker-build.sh`](Squash/Tools/docker-build.sh) drives that
+alongside the host tests, the simulator and the `.uapp`. `RustGuiPoc`,
 `QrGuiPoc` and `NotifyToggle`'s tests live inside their own crates rather than
 in a `Tests/` directory — see [RustGuiPoc's README](RustGuiPoc/README.md#tests),
 [QrGuiPoc's](QrGuiPoc/README.md#tests) and
