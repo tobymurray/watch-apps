@@ -28,6 +28,35 @@ at once, so nothing is lost by splitting — but a state that straddles the spli
 is cut in two, which matters for the long off-court intervals in group T below.
 Plan the split for a moment you are on court, not off it.
 
+## 0.4 The first check, which takes thirty seconds
+
+Before the dry run, before a strap, before any recording: **open the app, back
+out, plug in, and read one line.**
+
+```sh
+cat "/Volumes/UNA WATCH/Apps/Squash/Debug/squash.log"
+```
+
+```
+0 <utc> launch v<version> abi=3384192379 expect=3384192379 ok=1 calibration=0
+```
+
+`Service::run()` writes that before it loads settings, before it reads the
+profile and before it touches a sensor, so merely opening the app produces it.
+Five things have to be true for it to appear as above, and each of them makes
+everything after it pointless if it is wrong:
+
+| What to read | What it proves |
+| --- | --- |
+| the file exists | The kernel launched the app — so it is registered, and its kernel interface version is one this firmware accepts |
+| `v<version>` | It is the build you just installed, not an older one still registered |
+| `ok=1` | The Rust engine linked and its struct layout matches the C++ side. `ok=0` means every session field would be misread, silently |
+| `calibration=0` | The honesty gate is in the state it should be, with no threshold pretending to exist |
+| any of it, at all | The log path works on FatFs, which no host test can show — they run against an in-memory fake |
+
+**If the file is absent, stop.** The app did not launch, and nothing below is
+worth trying until it does.
+
 ## 0.5 The ten-minute dry run, before you drive anywhere
 
 Do this once, at home, with the strap on. It costs ten minutes and it is the

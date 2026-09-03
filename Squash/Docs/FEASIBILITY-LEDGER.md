@@ -14,8 +14,11 @@ which established the convention here.
 
 Rows are dated. A row with no date has not been checked since it was written.
 
-**As of 2026-09-03 there is no VALIDATED row, and nothing is on screen.** There
-are no recordings — see [`PHASE-A.md`](PHASE-A.md) for the verdict and
+**As of 2026-09-03 no metric row says VALIDATED, and nothing is on screen.**
+There is no labelled court recording. The watch does carry about twelve minutes
+of bench and desk recordings from a superseded build; they are excluded rather
+than used, because a recording whose provenance is a version nobody can
+reconstruct is not evidence. See [`PHASE-A.md`](PHASE-A.md) for the verdict and
 [`RECORDING-PROTOCOL.md`](RECORDING-PROTOCOL.md) for what would change it.
 
 ---
