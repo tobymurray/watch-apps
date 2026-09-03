@@ -35,8 +35,27 @@ public:
     /** @brief Set the external-HR icon state (see SensorStatusRow). */
     void setHr(SDK::Gui::SensorStatusRow::State state) { mSensorRow.setHr(state); }
 
+    /**
+     * @brief Name the sensor actually feeding heart rate, beside the icon.
+     * @param source SDK::SensorDataParser::HeartRateEx::Source: 1 optical, 2 external.
+     *
+     * A letter rather than the icon's own steady-versus-flashing cue, because
+     * that cue was already correct and was still misread: a strap that linked
+     * before the session started and dropped two minutes in looked, to the
+     * wearer, like a strap that was working. `E` and `O` cannot be misread.
+     */
+    void setHrSource(uint8_t source);
+
 protected:
     SDK::Gui::SensorStatusRow mSensorRow;
+
+    /// Gap between the heart icon and the source letter, px.
+    static const int16_t kSourceGap = 6;
+    /// Width allowed for the letter; one glyph of T_TMP_MEDIUM_18_L plus slack.
+    static const int16_t kSourceW = 18;
+
+    touchgfx::TextAreaWithOneWildcard mHrSource;
+    touchgfx::Unicode::UnicodeChar    mHrSourceBuffer[2];
 
     // AM/PM suffix drawn next to the time in 12-hour format. Added here (rather
     // than in the generated base) so the layout stays in hand-written code; the

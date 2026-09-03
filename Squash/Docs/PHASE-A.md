@@ -140,9 +140,10 @@ signals, so what it says about cadence and quantisation is real.
 
 ### The quantisation finding, which changes A1's premise
 
-**707 optical readings gave 215 non-zero steps and not one below 1 bpm.**
-Smallest step 1.0, median 1.0. First seen in five samples from the smoke
-recording and now settled for optical.
+**Neither source steps by less than 1 bpm.** The 8-minute recording carried
+both: the strap fed 118 readings (32 non-zero steps) and optical fed 550 (179
+steps), and not one step below 1 bpm on either — smallest and median exactly
+1.0 for each, and the per-source columns agree.
 
 `CLAUDE.md` records consecutive `HEART_RATE_EX` samples differing by **0.50 and
 0.18 bpm** across two real rides, and this document was written assuming that
@@ -150,17 +151,34 @@ smoothing applies generally — which is why it warns that a slope over a rest
 could be the filter settling. On this recording it does not apply: wrist optical
 delivered integer bpm.
 
-So the sub-bpm behaviour is the **external strap** path, and optical is
-integer-quantised. Two consequences:
+This was first written up as "the sub-bpm steps must be the strap", before the
+source column had been separated. That was wrong, and the correction matters:
+**no smoothing has been observed on this watch in this app, on either source.**
 
-- The two sources need different `Formulation`s, not one policy.
-- On optical, a fixed-window drop is **more** defensible than this document
-  assumed. An integer signal at 1 Hz is coarse — a 1 bpm floor on any
-  measurement — but it is not a filter settling, so the worry that a fall is the
-  kernel's smoothing does not apply to it.
+- A fixed-window drop is therefore **more** defensible than this document
+  originally assumed. An integer signal at 1 Hz is coarse — a 1 bpm floor on any
+  measurement — but it is not a filter settling, so the central worry behind
+  `Formulation::NotMeasurableOnThisHardware` does not apply.
+- `CLAUDE.md`'s 0.50 and 0.18 bpm steps are now an **open contradiction**, not a
+  resolved one. Either those rides were a different app, firmware or sensor
+  configuration, or something else is at work. Do not design around a filter
+  nobody here has seen.
 
-The strap side is still unmeasured: neither recording carried one, both report
-`hr_source=1`. S1 settles it, because it records both channels at once.
+What A1 still owes Phase C is the **settling time**, which needs a labelled
+effort transition. Neither recording has one, so S1 remains the gate.
+
+### The strap dropped, and nothing said so
+
+The strap fed the first 118 readings and then stopped, once, permanently. The
+pre-start heart had gone steady, so it was reasonable to believe it worked
+throughout — and the session's `hr_source` reports the *majority* source, so a
+two-minute strap read as a plain optical session.
+
+Three things now make it visible: the record carries `hr_external_readings`, the
+in-activity face shows `E` or `O` beside the heart, and the Service writes an
+`hr_source 2 -> 1 at t=118s` line to `Debug/squash.log` on every change. For a
+recovery window the consequence is stronger — the source has to be recorded per
+window, not per session, because it can change inside one.
 
 ### What it says about a 5-second activity
 

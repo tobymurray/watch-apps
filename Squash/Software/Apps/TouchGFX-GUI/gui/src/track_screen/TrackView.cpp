@@ -106,6 +106,7 @@ void TrackView::updateHrIcon()
     // In-activity: icon follows the live HR source, not the raw link state.
     trackFaceStatus.setHr(SDK::Gui::SensorStatusRow::hrStateFromSource(
             mAccessoryState, mHrSource));
+    trackFaceStatus.setHrSource(mHrSource);
 }
 
 void TrackView::handleKeyEvent(uint8_t key)

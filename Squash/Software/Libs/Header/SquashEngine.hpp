@@ -35,6 +35,7 @@ extern "C" struct SquashSessionRecord {
     uint8_t  hrSource;   ///< 0 unknown, 1 optical, 2 external
     uint8_t  segmented;  ///< 0 when no calibration existed
     uint16_t discardedWindows;
+    uint32_t hrExternalReadings; ///< trusted readings that came from a strap
 };
 
 /// How one measurement sits against the wearer's own history.
@@ -47,7 +48,7 @@ extern "C" struct SquashComparison {
     uint8_t  reserved;
 };
 
-static_assert(sizeof(SquashSessionRecord) == 52, "must match the Rust side's layout");
+static_assert(sizeof(SquashSessionRecord) == 56, "must match the Rust side's layout");
 static_assert(sizeof(SquashComparison) == 16, "must match the Rust side's layout");
 
 extern "C" {
@@ -72,7 +73,7 @@ uint32_t squash_profile_compare(uint8_t metric, float value, SquashComparison* o
 /// Checked once at start-up rather than trusted: the two struct definitions are
 /// written twice, in two languages, and nothing but this notices when one of
 /// them moves. `squash_engine`'s own test prints the value.
-static constexpr uint32_t kAbiFingerprint = 3384192379u;
+static constexpr uint32_t kAbiFingerprint = 524638087u;
 
 /// No recording has set any threshold, so nothing is segmented or measured.
 static constexpr uint32_t kCalibrationAbsent = 0u;
