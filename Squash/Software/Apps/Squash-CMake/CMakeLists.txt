@@ -39,6 +39,27 @@ endif()
 
 project(${APP_NAME})
 
+# The engine is Rust, so the Service links an archive the way the Rust-GUI apps
+# in this repository already do -- the difference is only which ELF it goes into.
+# una_app_build_service() takes no library argument, but the target it creates is
+# an ordinary one, so the link is added after the call.
+set(RUST_CRATE_DIR "${LIBS_PATH}/rust")
+set(RUST_TARGET "thumbv8m.main-none-eabihf")
+set(RUST_LIB "${RUST_CRATE_DIR}/target/${RUST_TARGET}/release/libsquash_engine.a")
+
+find_program(CARGO_EXECUTABLE cargo REQUIRED)
+
+# Always invoke cargo and let it decide whether to rebuild: an OUTPUT/DEPENDS
+# rule restating cargo's inputs would silently link a stale archive against a
+# changed ABI. See RustGuiPoc/Docs/FINDINGS.md.
+add_custom_target(squash_engine_rust ALL
+    COMMAND ${CARGO_EXECUTABLE} build --release --target ${RUST_TARGET}
+    WORKING_DIRECTORY ${RUST_CRATE_DIR}
+    BYPRODUCTS ${RUST_LIB}
+    COMMENT "Building the Squash engine -> libsquash_engine.a"
+    VERBATIM
+)
+
 # Set up version
 una_app_setup_version(BUILD_VERSION ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -54,6 +75,8 @@ set(SERVICE_INCLUDE_DIRS
     ${UNA_SDK_INCLUDE_DIRS_SERVICE}
 )
 una_app_build_service(${APP_NAME}Service.elf)
+target_link_libraries(${APP_NAME}Service.elf PRIVATE ${RUST_LIB})
+add_dependencies(${APP_NAME}Service.elf squash_engine_rust)
 
 
 if(DEFINED TOUCHGFX_PATH)

@@ -90,6 +90,7 @@ Libs/Source/Fit/RecordingMarker.cpp\
 ../../Libs/Sources/ImuFileSink.cpp\
 ../../Libs/Sources/ImuMarkerLog.cpp\
 ../../Libs/Sources/Service.cpp\
+../../Libs/Sources/SquashEngine.cpp\
 ../../Libs/Sources/SettingsSerializer.cpp\
 ../../Libs/Sources/WristTiltDetector.cpp\
 ADDITIONAL_SOURCES :=
@@ -97,8 +98,11 @@ ADDITIONAL_INCLUDE_PATHS := $(SDK)/Libs/Header\
 ../../Libs/Header\
 $(SDK)/ThirdParty/coreJSON/source/include\
 \
-ADDITIONAL_LIBRARY_PATHS := 
-ADDITIONAL_LIBRARIES :=
+# The engine is a Rust staticlib, built for the simulator's own host target
+# rather than the watch's. Tools/docker-build.sh sim builds it first, in the
+# image that has cargo, because the simulator image does not.
+ADDITIONAL_LIBRARY_PATHS := ../../Libs/rust/target/release
+ADDITIONAL_LIBRARIES := squash_engine
 
 export ADDITIONAL_SOURCES ADDITIONAL_INCLUDE_PATHS ADDITIONAL_LIBRARY_PATHS ADDITIONAL_LIBRARIES ADDITIONAL_SOURCES_UNA SDK VPATH
 
