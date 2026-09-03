@@ -1,0 +1,83 @@
+98710 1788444925 launch v0.6.0 abi=3384192379 expect=3384192379 ok=1 calibration=0
+98732 1788444925 profile load=1 sessions=0
+22043 1788447324 launch v0.6.0 abi=3384192379 expect=3384192379 ok=1 calibration=0
+22059 1788447324 profile load=1 sessions=0
+22906 1788447325 start utc=1788447325 record_imu=1 armed=1
+34136 1788447336 imu intact=1 stop=1 samples=1090 bytes=31987 markers=0 beats=9
+1120584 1788449693 launch v0.6.0 abi=3384192379 expect=3384192379 ok=1 calibration=0
+1120794 1788449694 profile load=0 sessions=1
+1156024 1788449729 launch v0.6.0 abi=3384192379 expect=3384192379 ok=1 calibration=0
+1156041 1788449729 profile load=0 sessions=1
+1177627 1788449750 start utc=1788449750 record_imu=1 armed=1
+1900971 1788450474 imu intact=1 stop=1 samples=71900 bytes=2463312 markers=5 beats=707
+30183 1788452184 launch v0.6.0 abi=524638087 expect=524638087 ok=1 calibration=0
+30291 1788452184 profile load=0 sessions=2
+30352 1788452184 accessory state=2 at t=0s
+40702 1788452195 accessory state=3 at t=0s
+47278 1788452201 accessory state=4 at t=0s
+70503 1788452224 start utc=1788452224 record_imu=1 armed=1
+70822 1788452225 hr_source 0 -> 2 at t=0s
+85547 1788452239 pause at t=14s active=15s
+97662 1788452252 imu intact=1 stop=1 samples=2690 bytes=79718 markers=0 beats=26
+97671 1788452252 session discarded=1 empty=0 active=15
+100996 1788452255 launch v0.6.0 abi=524638087 expect=524638087 ok=1 calibration=0
+101015 1788452255 profile load=0 sessions=2
+101120 1788452255 accessory state=2 at t=0s
+103724 1788452258 accessory state=3 at t=0s
+110190 1788452264 accessory state=4 at t=0s
+115302 1788452269 start utc=1788452269 record_imu=1 armed=1
+115773 1788452270 hr_source 0 -> 2 at t=0s
+236261 1788452390 hr_source 2 -> 1 at t=120s
+240492 1788452394 strap_lost after 5s without external, t=124s
+355636 1788452510 pause at t=240s active=240s
+415898 1788452570 resume at t=300s active=240s
+775788 1788452930 pause at t=660s active=600s
+779805 1788452934 imu intact=1 stop=1 samples=66110 bytes=2351381 markers=3 beats=641
+114889 1788455500 launch v0.6.0 abi=524638087 expect=524638087 ok=1 calibration=0
+114931 1788455500 profile load=0 sessions=3
+115041 1788455500 accessory state=2 at t=0s
+133382 1788455518 accessory state=3 at t=0s
+139822 1788455525 accessory state=4 at t=0s
+144017 1788455529 start utc=1788455529 record_imu=1 armed=1
+144559 1788455529 hr_source 0 -> 1 at t=0s
+145573 1788455530 hr_source 1 -> 2 at t=0s
+265777 1788455651 hr_source 2 -> 1 at t=121s
+269878 1788455655 strap_lost after 5s without external, t=125s
+295440 1788455680 strap_reacquire after 30s without external, t=150s
+295473 1788455680 accessory state=2 at t=150s
+297531 1788455682 accessory state=3 at t=152s
+313167 1788455698 accessory state=2 at t=168s
+321446 1788455706 pause at t=176s active=177s
+325958 1788455711 imu intact=1 stop=1 samples=18000 bytes=563916 markers=0 beats=177
+13993 1788457124 launch v0.6.0 abi=524638087 expect=524638087 ok=1 calibration=0
+14029 1788457124 profile load=0 sessions=4
+14133 1788457124 accessory state=2 at t=0s
+50651 1788457160 accessory state=3 at t=0s
+61631 1788457171 accessory state=4 at t=0s
+84144 1788457194 start utc=1788457194 record_imu=1 armed=1
+84486 1788457194 hr_source 0 -> 2 at t=0s
+187408 1788457297 hr_source 2 -> 1 at t=102s
+191494 1788457301 strap_lost after 5s without external, t=106s
+217035 1788457327 strap_reacquire after 30s without external, t=132s
+217067 1788457327 accessory state=2 at t=132s
+219741 1788457329 accessory state=3 at t=135s
+235381 1788457345 accessory state=2 at t=150s
+377736 1788457487 accessory state=3 at t=293s
+378369 1788457488 accessory state=2 at t=293s
+384348 1788457494 accessory state=3 at t=299s
+384978 1788457495 accessory state=2 at t=300s
+390995 1788457501 accessory state=3 at t=306s
+391634 1788457501 accessory state=2 at t=307s
+397602 1788457507 accessory state=3 at t=312s
+398231 1788457508 accessory state=2 at t=313s
+437321 1788457547 accessory state=3 at t=352s
+437953 1788457548 accessory state=2 at t=353s
+445405 1788457555 accessory state=3 at t=360s
+446037 1788457556 accessory state=2 at t=361s
+476415 1788457586 accessory state=3 at t=391s
+477067 1788457587 accessory state=2 at t=391s
+498342 1788457608 accessory state=3 at t=413s
+498974 1788457609 accessory state=2 at t=413s
+551242 1788457661 pause at t=466s active=467s
+556351 1788457666 imu intact=1 stop=1 samples=46900 bytes=1621147 markers=0 beats=461
+556391 1788457666 sessions_csv restarted: the cap was reached or the columns changed

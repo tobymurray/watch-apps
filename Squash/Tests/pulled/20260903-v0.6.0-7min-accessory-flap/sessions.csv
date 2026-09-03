@@ -1,0 +1,2 @@
+utc,active_s,hr_mean_x100,hr_max_x100,hr_covered_s,hr_source,segmented,rally_count,rally_s,rest_s,off_court_s,rec_short_x100,rec_short_n,rec_long_x100,rec_long_n,discarded,profile_sessions,calibration,imu_stop,imu_samples,imu_bytes,markers,hr_rows,intact,saved,hr_external_n
+1788457666,467,7901,9000,464,1,0,0,0,0,0,0,0,0,0,0,5,0,1,46900,1621147,0,461,1,1,100
