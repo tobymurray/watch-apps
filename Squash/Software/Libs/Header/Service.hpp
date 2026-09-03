@@ -17,6 +17,7 @@
 #include "ImuCsvRecorder.hpp"
 #include "ImuFileSink.hpp"
 #include "HrCsvLog.hpp"
+#include "SquashEngine.hpp"
 #include "ImuMarkerLog.hpp"
 #include "AppConfigFields.hpp"
 #include <array>
@@ -81,9 +82,17 @@ private:
     ImuFileSink               mHrSink;
     HrCsvLog                  mHrLog;
     /// Sensor tick of the most recent IMU sample, which is the only clock a
-    /// marker can be placed on: a key event carries no sensor timestamp, and
-    /// the two clocks are unrelated. At 100 Hz this is at most 10 ms stale.
+    /// marker or a heart-rate reading can be placed on: neither event carries a
+    /// sensor timestamp, and the two clocks are unrelated. At 100 Hz this is at
+    /// most 10 ms stale.
     uint32_t                  mLastImuTs = 0;
+
+    // The engine runs on the same sensor tick as everything else, offset so a
+    // session starts at zero. Its state is static inside the Rust archive, so
+    // there is nothing to hold here but the offset.
+    SquashProfileStore        mProfileStore;
+    uint32_t                  mEngineStartTs = 0;
+    bool                      mEngineStarted = false;
 
     // -- Sensors --------------------------------------------------------------
 

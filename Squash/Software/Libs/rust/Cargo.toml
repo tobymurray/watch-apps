@@ -1,0 +1,24 @@
+[package]
+name = "squash_engine"
+version = "0.1.0"
+edition = "2021"
+description = "The Squash Service's half of EffortKit: a C ABI over the epoch segmenter, the recovery analyser and the cross-session profile, with all state static because the Service has no allocator and one thread."
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["staticlib", "lib"]
+
+[features]
+std = ["effortkit/std"]
+
+[dependencies]
+# A dependency, never a second staticlib: two archives each carrying a
+# #[panic_handler] collide at link time.
+effortkit = { path = "../../../../EffortKit" }
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false

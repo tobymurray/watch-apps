@@ -76,6 +76,7 @@
     <ClCompile Include="..\..\..\..\Libs\Sources\ImuFileSink.cpp"/>
     <ClCompile Include="..\..\..\..\Libs\Sources\ImuMarkerLog.cpp"/>
     <ClCompile Include="..\..\..\..\Libs\Sources\Service.cpp"/>
+    <ClCompile Include="..\..\..\..\Libs\Sources\SquashEngine.cpp"/>
     <ClCompile Include="..\..\..\..\Libs\Sources\SettingsSerializer.cpp"/>
     <ClCompile Include="..\..\..\..\Libs\Sources\WristTiltDetector.cpp"/>
     <ClCompile Include="..\..\generated\gui_generated\src\common\FrontendApplicationBase.cpp"/>
@@ -367,6 +368,7 @@
     <ClInclude Include="..\..\..\..\Libs\Header\ImuFileSink.hpp"/>
     <ClInclude Include="..\..\..\..\Libs\Header\ImuMarkerLog.hpp"/>
     <ClInclude Include="..\..\..\..\Libs\Header\Service.hpp"/>
+    <ClInclude Include="..\..\..\..\Libs\Header\SquashEngine.hpp"/>
     <ClInclude Include="..\..\..\..\Libs\Header\Settings.hpp"/>
     <ClInclude Include="..\..\..\..\Libs\Header\SettingsSerializer.hpp"/>
     <ClInclude Include="..\..\..\..\Libs\Header\Track.hpp"/>

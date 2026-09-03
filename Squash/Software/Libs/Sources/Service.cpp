@@ -43,6 +43,7 @@ Service::Service(SDK::Kernel &kernel)
         , mImuSink(mKernel, "Imu")
         , mMarkerSink(mKernel, "Imu", "_events")
         , mHrSink(mKernel, "Imu", "_hr")
+        , mProfileStore(mKernel, "profile.json")
         , mSensorHr(SDK::Sensor::Type::HEART_RATE_EX, skSamplePeriod, skSampleLatency)
         , mSensorBatteryLevel(SDK::Sensor::Type::BATTERY_LEVEL)
         , mSensorBatteryMetrics(SDK::Sensor::Type::BATTERY_METRICS, skSamplePeriod, skSampleLatency)
@@ -78,6 +79,21 @@ void Service::run()
 
     // Initialize time
     mTimeTracker.init();
+
+    // Checked rather than trusted: SquashSessionRecord is written twice, in
+    // two languages, and nothing else notices when one copy moves.
+    if (squash_engine_abi_fingerprint() != kAbiFingerprint) {
+        LOG_ERROR("Engine ABI is %u, expected %u; every session field would be misread\n",
+                  static_cast<unsigned>(squash_engine_abi_fingerprint()),
+                  static_cast<unsigned>(kAbiFingerprint));
+    }
+
+    // A profile that is absent, damaged or from a later schema is a warm-up,
+    // never a reason not to start.
+    const SquashProfileStore::Load profileLoad = mProfileStore.load();
+    LOG_INFO("Profile: load %u, %u sessions\n",
+             static_cast<unsigned>(profileLoad),
+             static_cast<unsigned>(squash_profile_sessions()));
 
     // Get settings
     if (!mSettingsSerializer.load(mSettings)) {
@@ -262,6 +278,13 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
                       parser.getBpm(), parser.getTrustLevel(), mHrSource,
                       mHrOpticalBpm, mHrExternalBpm);
 
+            if (mEngineStarted) {
+                squash_engine_on_hr(mLastImuTs - mEngineStartTs,
+                                    parser.getBpm(),
+                                    static_cast<uint8_t>(parser.getTrustLevel()),
+                                    static_cast<uint8_t>(parser.getSource()));
+            }
+
             if (mHrLog.isRecording()) {
                 HrCsvLog::Sample hr{};
                 hr.bpm         = parser.getBpm();
@@ -310,12 +333,28 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
                 SDK::SensorDataParser::FusionRaw::Data sample{};
                 parser.getData(sample);
 
+                // The sensor's own timestamp is the clock: a batch carries ~10
+                // samples, so a loop-local "now" would collapse them onto one
+                // instant.
+                const uint32_t ts = parser.getTimestamp();
+                mLastImuTs = ts;
+
+                // The engine sees every sample whether or not anything is being
+                // recorded, so the epoch path runs on hardware in an ordinary
+                // session rather than only when research mode is on.
+                if (mTrackState == Track::State::ACTIVE) {
+                    if (!mEngineStarted) {
+                        mEngineStarted = true;
+                        mEngineStartTs = ts;
+                    }
+                    const int16_t axes[6] = { sample.accel.x, sample.accel.y, sample.accel.z,
+                                              sample.gyro.x,  sample.gyro.y,  sample.gyro.z };
+                    squash_engine_on_imu(ts - mEngineStartTs, axes);
+                }
+
                 // Research recording gets all six axes in raw LSB, unlike the
-                // tilt detector below which only needs ay/gx. The sensor's own
-                // timestamp is the clock: a batch carries ~10 samples, so using
-                // a loop-local "now" would collapse them onto one instant.
+                // tilt detector below which only needs ay/gx.
                 if (mImuArmed || mImuRecorder.isRecording()) {
-                    const uint32_t ts = parser.getTimestamp();
                     if (mImuArmed) {
                         mImuArmed = false;
                         if (!mImuRecorder.begin(mImuSink, ts)) {
@@ -330,7 +369,6 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
                             LOG_ERROR("Failed to start the heart-rate log\n");
                         }
                     }
-                    mLastImuTs = ts;
                     if (mImuRecorder.isRecording()) {
                         ImuCsvRecorder::Sample raw{};
                         raw.ax = sample.accel.x;
@@ -707,6 +745,8 @@ void Service::startTrack(std::time_t utc)
         }
     }
     mLastImuTs = 0;
+    mEngineStarted = false;
+    squash_engine_begin();
 
     ActivityWriter::AppInfo info{};
     info.timestamp = utc;
@@ -916,6 +956,27 @@ void Service::stopTrack(bool discard)
         } else {
             LOG_ERROR("Research recording is torn and should not be trusted\n");
         }
+    }
+
+    // The engine is closed out on both paths so its static state does not carry
+    // into the next session, but the profile only hears about a session the
+    // wearer kept: discarding one is them saying it did not happen, and a
+    // baseline is a record of sessions that did.
+    SquashSessionRecord record{};
+    squash_engine_finish(static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                         static_cast<uint32_t>(mTimeCounter.getValueActive()),
+                         &record);
+    mEngineStarted = false;
+
+    if (!discard && mSessionNotEmpty) {
+        squash_profile_record(&record);
+        if (!mProfileStore.save()) {
+            LOG_WARNING("Profile not updated; the previous one is kept\n");
+        }
+        LOG_INFO("Session: %us active, HR mean %.1f max %.1f over %us, segmented %u\n",
+                 static_cast<unsigned>(record.activeS), record.hrMean, record.hrMax,
+                 static_cast<unsigned>(record.hrCoveredS),
+                 static_cast<unsigned>(record.segmented));
     }
 
     mTrackState = Track::State::INACTIVE;

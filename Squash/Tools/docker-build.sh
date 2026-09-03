@@ -37,17 +37,21 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
-SDK="${UNA_SDK:-$(cd "$REPO/../una-sdk" && pwd)}"
 VERSION="${BUILD_VERSION:-0.1.0}"
 
 ARM_IMAGE="${SQUASH_ARM_IMAGE:-sleeplab-arm:latest}"
 HOST_IMAGE="${SQUASH_HOST_IMAGE:-sleeplab-host:latest}"
 SIM_IMAGE="${SQUASH_SIM_IMAGE:-sleeplab-sim:latest}"
 
-if [ ! -f "$SDK/Libs/Header/SDK/AppConfig/AppConfig.hpp" ]; then
-    echo "error: \$UNA_SDK ($SDK) has no SDK/AppConfig — see the header of this script" >&2
-    exit 1
-fi
+# Resolved on demand, not at the top: the `rust` target needs no SDK at all, and
+# failing it on a missing one sends the reader looking in the wrong place.
+need_sdk() {
+    SDK="${UNA_SDK:-$(cd "$REPO/../una-sdk" 2>/dev/null && pwd)}"
+    if [ -z "${SDK:-}" ] || [ ! -f "$SDK/Libs/Header/SDK/AppConfig/AppConfig.hpp" ]; then
+        echo "error: \$UNA_SDK (${SDK:-unset}) has no SDK/AppConfig — see the header of this script" >&2
+        exit 1
+    fi
+}
 
 run_arm() {
     docker run --rm --platform linux/amd64 \
@@ -70,10 +74,12 @@ run_sim() {
 
 case "${1:-}" in
   app)
+    need_sdk
     run_arm "Squash/Software/Apps/Squash-CMake" \
       "cmake -B build -G 'Unix Makefiles' -DBUILD_VERSION=$VERSION . && cmake --build build -j\$(nproc)"
     ;;
   tests)
+    need_sdk
     # Configure, build and run in one container: /tmp does not survive between
     # docker run invocations, so a split would silently rebuild from scratch or
     # fail to find the binaries.
@@ -81,16 +87,23 @@ case "${1:-}" in
       "cmake -S Squash/Tests -B /tmp/sq -DCMAKE_BUILD_TYPE=Debug && cmake --build /tmp/sq -j\$(nproc) && cd /tmp/sq && ctest --output-on-failure"
     ;;
   sim)
+    need_sdk
+    # The simulator image has no cargo and the arm image does, so the engine's
+    # host-target archive is built there first. Both images are linux/amd64, so
+    # the archive one produces is the one the other links.
+    run_arm "Squash/Software/Libs/rust" "cargo build --release"
     run_sim "make -f simulator/gcc/Makefile -j\$(nproc)"
     ;;
   rust)
-    # No container: EffortKit needs only cargo, which is on the host, and the
-    # watch target is the check that matters -- it is what proves the crate is
-    # no_std and that nothing testable crept in behind feature = "std".
-    ( cd "$REPO/EffortKit" \
-      && cargo test --features std \
-      && cargo clippy --features std --all-targets -- -D warnings \
-      && cargo build --release --target thumbv8m.main-none-eabihf )
+    # No container: cargo is on the host. The watch target is the check that
+    # matters -- it is what proves the crates are no_std and that nothing
+    # testable crept in behind feature = "std".
+    for crate in "$REPO/EffortKit" "$REPO/Squash/Software/Libs/rust"; do
+        ( cd "$crate" \
+          && cargo test --features std \
+          && cargo clippy --features std --all-targets -- -D warnings \
+          && cargo build --release --target thumbv8m.main-none-eabihf )
+    done
     ;;
   *)
     sed -n '3,30p' "${BASH_SOURCE[0]}" >&2
