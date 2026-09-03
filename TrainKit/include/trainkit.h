@@ -134,6 +134,9 @@ uint8_t trainkit_recovery_end(trainkit_detector *d);
 /* Hand back a completed measurement, once. */
 uint8_t trainkit_recovery_take(trainkit_detector *d, trainkit_recovery *out);
 uint8_t trainkit_recovery_last_discard(const trainkit_detector *d);
+/* The name of a TRAINKIT_DISCARD_* value, NUL-terminated and static. Here so a
+   reason and its spelling cannot drift apart. */
+const char *trainkit_discard_name(uint8_t reason);
 
 /* -- The shared log -------------------------------------------------------- */
 

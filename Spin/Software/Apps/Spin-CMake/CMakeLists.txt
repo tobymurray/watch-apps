@@ -64,6 +64,7 @@ add_custom_target(spin_trainkit_rust ALL
 # stationary ride has no map to draw and no compass to calibrate.
 set(SERVICE_SOURCES
     ${LIBS_SOURCES}
+    ${TRAINKIT_PATH}/cpp/EventLog.cpp
     ${TRAINKIT_PATH}/cpp/SharedLog.cpp
     ${UNA_SDK_SOURCES_COMMON}
     ${UNA_SDK_SOURCES_APPSYSTEM}

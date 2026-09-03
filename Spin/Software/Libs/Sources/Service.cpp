@@ -45,6 +45,16 @@ uint8_t clampU8(float v)
     return (v >= 255.0f) ? 255u : static_cast<uint8_t>(v + 0.5f);
 }
 
+/// A heart rate as a percentage of the watch's maximum, for the diagnostic log
+/// only; 0 when the watch has no maximum.
+unsigned pctOfMax(float bpm, uint8_t maxHr)
+{
+    if (maxHr == 0 || bpm <= 0.0f) {
+        return 0;
+    }
+    return static_cast<unsigned>(bpm * 100.0f / static_cast<float>(maxHr) + 0.5f);
+}
+
 } // namespace
 
 extern "C" void trainkit_host_panic(const uint8_t* msg, uint32_t len)
@@ -60,6 +70,7 @@ Service::Service(SDK::Kernel &kernel)
     , mGuiSender(kernel)
     , mActivityWriter(mKernel, "Activity")
     , mSharedLog(mKernel.fs, skLogApp, skLogSport)
+    , mEventLog(mKernel.fs, skEventLogFile)
     , mSensorHr(SDK::Sensor::Type::HEART_RATE_EX, skSamplePeriod, skSampleLatency)
     , mSensorWristMotion(SDK::Sensor::Type::WRIST_MOTION)
     , mTimeTracker(kernel.sys)
@@ -516,6 +527,14 @@ void Service::startTrack(std::time_t utc)
     mRecoveryCount     = 0;
     mRecoveriesDropped = 0;
 
+    mEventLog.open();
+    mLastActiveLogUtc = 0;
+    mEventLog.line("%u start max_hr=%u zones=%u weight=%u",
+                   static_cast<uint32_t>(utc), static_cast<unsigned>(mSystemMaxHr),
+                   static_cast<unsigned>(mZoneCount),
+                   static_cast<unsigned>(mWeightKg + 0.5f));
+    mEventLog.sync();
+
     connectSensors();
 
     ActivityWriter::AppInfo info{};
@@ -557,14 +576,22 @@ void Service::processTrack()
     const uint8_t step = trainkit_recovery_second(
         &mRecoveryDetector, mTimeCounter.getCurrent(), mHrCounter.getCurrent(),
         trusted ? 1 : 0, static_cast<uint32_t>(mTimeCounter.getValueActive()));
+    logSecond(mTimeCounter.getCurrent(), trusted);
+
     if (step == TRAINKIT_STEP_COMPLETED) {
         trainkit_recovery measurement{};
         if (trainkit_recovery_take(&mRecoveryDetector, &measurement)) {
             keepRecovery(measurement);
         }
     } else if (step == TRAINKIT_STEP_DISCARDED) {
-        LOG_INFO("Recovery discarded: reason %u\n",
-                 static_cast<unsigned>(trainkit_recovery_last_discard(&mRecoveryDetector)));
+        const uint8_t reason = trainkit_recovery_last_discard(&mRecoveryDetector);
+        LOG_INFO("Recovery discarded: reason %u\n", static_cast<unsigned>(reason));
+        mEventLog.line("%u discard %s hr=%.0f pct=%u",
+                       static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                       trainkit_discard_name(reason),
+                       static_cast<double>(mHrCounter.getCurrent()),
+                       pctOfMax(mHrCounter.getCurrent(), mSystemMaxHr));
+        mEventLog.sync();
     }
 
     updateHrDerivedMetrics();
@@ -677,11 +704,19 @@ void Service::pauseTrack(bool pause)
         // The one moment effort has stopped and the sensor is still connected.
         // It covers the end of a ride too, because the ride stays paused
         // through the kilojoule screen until TRACK_STOP.
-        if (trainkit_recovery_cease(&mRecoveryDetector, TRAINKIT_TRIGGER_PAUSE) ==
-            TRAINKIT_STEP_DISCARDED) {
-            LOG_INFO("Recovery not attempted: reason %u\n",
-                     static_cast<unsigned>(
-                         trainkit_recovery_last_discard(&mRecoveryDetector)));
+        const uint8_t ceased =
+            trainkit_recovery_cease(&mRecoveryDetector, TRAINKIT_TRIGGER_PAUSE);
+        const uint8_t why = trainkit_recovery_last_discard(&mRecoveryDetector);
+        mEventLog.line("%u cease hr=%.0f pct=%u active=%u -> %s",
+                       static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                       static_cast<double>(mHrCounter.getCurrent()),
+                       pctOfMax(mHrCounter.getCurrent(), mSystemMaxHr),
+                       static_cast<uint32_t>(mTimeCounter.getValueActive()),
+                       ceased == TRAINKIT_STEP_DISCARDED
+                           ? trainkit_discard_name(why) : "armed");
+        mEventLog.sync();
+        if (ceased == TRAINKIT_STEP_DISCARDED) {
+            LOG_INFO("Recovery not attempted: reason %u\n", static_cast<unsigned>(why));
         }
         mTrackState = Track::State::PAUSED;
         LOG_INFO("Ride paused. UTC: %u\n", static_cast<uint32_t>(mTimeCounter.getCurrent()));
@@ -689,7 +724,12 @@ void Service::pauseTrack(bool pause)
         mTimeCounter.resume();
         mHrCounter.resume();
         mActivityWriter.resume(mTimeCounter.getCurrent());
-        trainkit_recovery_resume(&mRecoveryDetector);
+        if (trainkit_recovery_resume(&mRecoveryDetector) == TRAINKIT_STEP_DISCARDED) {
+            mEventLog.line("%u resume -> %s",
+                           static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                           trainkit_discard_name(
+                               trainkit_recovery_last_discard(&mRecoveryDetector)));
+        }
         mTrackState = Track::State::ACTIVE;
         LOG_INFO("Ride resumed. UTC: %u\n", static_cast<uint32_t>(mTimeCounter.getCurrent()));
     } else {
@@ -707,7 +747,11 @@ void Service::stopTrack(bool discard, uint16_t workKilojoules)
 
     // Before anything else: the sensor goes at the end of this function, so a
     // window still open here can never close.
-    trainkit_recovery_end(&mRecoveryDetector);
+    if (trainkit_recovery_end(&mRecoveryDetector) == TRAINKIT_STEP_DISCARDED) {
+        mEventLog.line("%u end -> %s", static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                       trainkit_discard_name(
+                           trainkit_recovery_last_discard(&mRecoveryDetector)));
+    }
 
     bool saved = false;
 
@@ -773,12 +817,43 @@ void Service::stopTrack(bool discard, uint16_t workKilojoules)
     }
 
     recordSession(saved, workKilojoules);
+    // After the session line, and before disconnect(): the file is the evidence
+    // for everything above it and must be on storage when the app goes.
+    mEventLog.line("%u stop saved=%u discard=%u",
+                   static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                   static_cast<unsigned>(saved), static_cast<unsigned>(discard));
+    mEventLog.close();
 
     mGuiSender.trackState(mTrackState);
     mGuiSender.rideSaved(mTimeCounter.getValueActive(), mHrCounter.getAverage(),
                          mTrackData.calories, saved, discard);
 
     disconnect();
+}
+
+void Service::logSecond(std::time_t utc, bool trusted)
+{
+    // Every second while paused, because that is where a window runs and the
+    // file is the only way to see one afterwards; a ride would be 3,600 lines,
+    // so riding gets one line every skActiveLogPeriod instead.
+    if (mTrackState != Track::State::PAUSED &&
+        utc - mLastActiveLogUtc < skActiveLogPeriod) {
+        return;
+    }
+    mLastActiveLogUtc = utc;
+
+    mEventLog.line("%u %c hr=%.0f trust=%.0f zone=%u pct=%u",
+                   static_cast<uint32_t>(utc),
+                   mTrackState == Track::State::PAUSED ? 'P' : 'A',
+                   static_cast<double>(mHrCounter.getCurrent()),
+                   static_cast<double>(mTrackData.hrTrustLevel),
+                   static_cast<unsigned>(mTrackData.hrZone),
+                   pctOfMax(mHrCounter.getCurrent(), mSystemMaxHr));
+    if (!trusted) {
+        // Marked rather than dropped, because an untrusted second is exactly
+        // what the window's 90% gate counts.
+        mEventLog.line("%u untrusted", static_cast<uint32_t>(utc));
+    }
 }
 
 void Service::keepRecovery(const trainkit_recovery& measurement)
@@ -788,6 +863,25 @@ void Service::keepRecovery(const trainkit_recovery& measurement)
              static_cast<unsigned>(measurement.hr_end),
              static_cast<unsigned>(measurement.window_s),
              static_cast<unsigned>(measurement.hr0_pct_max));
+
+    mEventLog.line(
+        "%u recovery hr0=%u hr_end=%u drop=%u window=%u trusted=%u pct=%u "
+        "curve=%u,%u,%u,%u,%u,%u,%u",
+        static_cast<uint32_t>(mTimeCounter.getCurrent()),
+        static_cast<unsigned>(measurement.hr0),
+        static_cast<unsigned>(measurement.hr_end),
+        static_cast<unsigned>(measurement.hr0 - measurement.hr_end),
+        static_cast<unsigned>(measurement.window_s),
+        static_cast<unsigned>(measurement.trusted_s),
+        static_cast<unsigned>(measurement.hr0_pct_max),
+        static_cast<unsigned>(measurement.curve[0]),
+        static_cast<unsigned>(measurement.curve[1]),
+        static_cast<unsigned>(measurement.curve[2]),
+        static_cast<unsigned>(measurement.curve[3]),
+        static_cast<unsigned>(measurement.curve[4]),
+        static_cast<unsigned>(measurement.curve[5]),
+        static_cast<unsigned>(measurement.curve[6]));
+    mEventLog.sync();
 
     if (mRecoveryCount < TRAINKIT_MAX_RECOVERIES) {
         mRecoveries[mRecoveryCount++] = measurement;
@@ -843,6 +937,15 @@ void Service::recordSession(bool saved, uint16_t workKilojoules)
              static_cast<unsigned>(status),
              static_cast<unsigned>(mRecoveryCount),
              static_cast<unsigned>(mRecoveriesDropped));
+
+    const int32_t trimp = trainkit_edwards_trimp(&entry);
+    mEventLog.line("%u session status=%u recoveries=%u dropped=%u active=%u "
+                   "hr_avg=%u work_kj=%u trimp=%d",
+                   entry.start_utc, static_cast<unsigned>(status),
+                   static_cast<unsigned>(mRecoveryCount),
+                   static_cast<unsigned>(mRecoveriesDropped),
+                   entry.active_s, static_cast<unsigned>(entry.hr_avg),
+                   static_cast<unsigned>(entry.work_kj), trimp);
 }
 
 void Service::setCapabilities()

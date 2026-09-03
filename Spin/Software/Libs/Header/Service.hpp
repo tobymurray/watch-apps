@@ -23,6 +23,7 @@
 
 #include "SDK/AppConfig/AppConfig.hpp"
 
+#include "EventLog.hpp"
 #include "SharedLog.hpp"
 #include "trainkit.h"
 
@@ -71,6 +72,15 @@ private:
     static constexpr size_t skMaxZones    = SpinConfig::kMaxZones;
     static constexpr size_t skZoneBuckets = skMaxZones + 1;
 
+    /// A bare filename, so it lands in this app's own directory where USB can
+    /// read it. Diagnostic only; see Docs/RECOVERY-FIELD-TEST.md.
+    static constexpr const char *skEventLogFile = "recovery.log";
+
+    /// Ticks a second apart are only logged while PAUSED, where the window is;
+    /// riding gets one line this often instead, which is enough to see the
+    /// shape of the ride without filling the card.
+    static constexpr std::time_t skActiveLogPeriod = 30;
+
     /// Names ../SharedData/spin_sessions.json and appears inside it.
     static constexpr const char *skLogApp   = "Spin";
     /// What the entries are, for a reader merging several apps' logs. The same
@@ -102,6 +112,11 @@ private:
     /// The record of the series, as opposed to the record of the ride. Written
     /// once, after the .fit is closed; see TrainKit/README.md for the schema.
     TrainKit::SharedLog mSharedLog;
+
+    /// Why a recovery window did what it did, in a file, because LOG_* needs a
+    /// debug UART adapter this watch is not usually attached to.
+    TrainKit::EventLog mEventLog;
+    std::time_t        mLastActiveLogUtc = 0;
 
     // -- Configuration --------------------------------------------------------
     // Values the wearer set on their phone, read through SDK::AppConfig from
@@ -216,6 +231,9 @@ private:
     void saveLap();
     /// Keep a completed measurement, dropping the oldest if there is no room.
     void keepRecovery(const trainkit_recovery& measurement);
+    /// One line per second while paused, one every skActiveLogPeriod while
+    /// riding, so a window can be reconstructed from the file afterwards.
+    void logSecond(std::time_t utc, bool trusted);
     /// Fold the finished ride into ../SharedData; @p saved is whether the .fit
     /// landed, and nothing is written when it did not.
     void recordSession(bool saved, uint16_t workKilojoules);
