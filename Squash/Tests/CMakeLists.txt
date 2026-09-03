@@ -88,6 +88,20 @@ target_include_directories(squash-log-tests PRIVATE
 target_link_libraries(squash-log-tests PRIVATE GTest::gtest_main)
 add_test(NAME squash-log-tests COMMAND squash-log-tests)
 
+# Not a test: a writer for the cross-language round trip. The three files it
+# emits are read by the Rust analyser, which is the only thing that checks the
+# two languages agree about a format neither owns alone. Driven by
+# Tools/docker-build.sh roundtrip, which needs cargo and so cannot be a ctest
+# in this image.
+add_executable(recording-export
+    recording_export.cpp
+    "${APP_LIBS}/Sources/ImuCsvRecorder.cpp"
+    "${APP_LIBS}/Sources/ImuMarkerLog.cpp"
+    "${APP_LIBS}/Sources/HrCsvLog.cpp"
+)
+
+target_include_directories(recording-export PRIVATE "${APP_LIBS}/Header")
+
 set(IMU_FUSION_SOURCE
     "${UNA_SDK_ROOT}/Libs/Source/Simulator/Components/Sensors/Imu/ImuFusionSource.cpp"
 )

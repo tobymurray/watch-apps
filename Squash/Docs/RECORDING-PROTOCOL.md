@@ -28,6 +28,51 @@ at once, so nothing is lost by splitting — but a state that straddles the spli
 is cut in two, which matters for the long off-court intervals in group T below.
 Plan the split for a moment you are on court, not off it.
 
+## 0.5 The ten-minute dry run, before you drive anywhere
+
+Do this once, at home, with the strap on. It costs ten minutes and it is the
+only thing standing between a format or a setting being wrong and finding that
+out after four and a half hours of court time.
+
+**Build and install a version above the one already on the watch** — the phone
+matches by `appVersion`, so a locally built `0.1.0` will not offer to replace an
+installed `0.6.0`:
+
+```sh
+BUILD_VERSION=0.7.0 Squash/Tools/docker-build.sh app
+```
+
+Then, on the watch: tick **Record raw IMU**, pair the strap, start an activity
+and run a miniature of group S — three minutes standing, sixty seconds hard,
+three minutes standing — pressing R2 at each of the two transitions plus a
+bookend at each end. Save it.
+
+Plug in over USB and check, in this order. Each line is a different failure, and
+each one would have cost a whole session:
+
+| Check | What it rules out |
+| --- | --- |
+| `Apps/Squash/Debug/squash.log` exists, and its `launch` line says `ok=1 calibration=0` | The two languages disagreeing about their shared structs, which would misread every session field silently |
+| `Apps/Squash/Debug/sessions.csv` has a row | The profile path never running |
+| `Imu/YYYYMM/` holds **three** files with the same stamp | `recordImu` reading as off — a JSON `"true"` instead of `true` is treated as absent, and absent is off |
+| `imu_<stamp>_hr.csv` has more than a header | No heart rate reaching the sidecar at all |
+| Its `source` column is **2**, and `external_x100` is populated | The strap not actually being used. If it says 1, the watch is on optical and every group S recording would be worthless |
+| The sample file is roughly `seconds × 4.3 KiB` | The recorder stopping early on a cap |
+| Free space on the drive is comfortably above **90 MB** | The later recordings silently truncating: eleven files at up to 8 MB each, and the SDK exposes no free-space query, so nothing on the watch will warn you |
+| Battery drop over the ten minutes | A 30-minute recording flattening the watch mid-session. Nobody has measured this yet |
+
+Then copy the three files off and run the analyser over them:
+
+```sh
+cd EffortKit
+cargo run --features std --bin phase-a -- /path/to/imu_*.csv --report dryrun.md
+```
+
+**Any line under `### Warnings` means stop and fix it before playing.** A clean
+run prints the cadence and quantisation tables, which is A1's first two answers
+already in hand — and if the strap was on, a settling time from the one
+transition, which tells you whether the full group S is worth the trip.
+
 ## 1. Turning it on, every time
 
 1. On the phone, tick **Record raw IMU** on the Squash card. Or over USB, put
@@ -261,8 +306,14 @@ Run the analyser over everything collected so far:
 
 ```sh
 cd EffortKit
-cargo run --features std --bin phase-a -- /path/to/imu_*.csv --epochs epochs.csv
+cargo run --features std --bin phase-a -- /path/to/imu_*.csv \
+    --report phase-a.md --epochs epochs.csv
 ```
+
+The glob picks up the sidecars too; the analyser drops them and says how many,
+because they are read from the recording they belong to rather than passed in.
+Both outputs are files on purpose: a report that exists only in a terminal's
+scrollback is a report nobody has when it matters.
 
 Then check, in this order:
 
