@@ -104,6 +104,15 @@ their READMEs
 ([Chrono](Chrono/README.md#why-13-matters), [MapManager](MapManager/README.md#why-its-pinned-to-sdk-13))
 no longer applies and neither has been rebuilt against 1.4 here.
 
+## Installing on a watch
+
+Copy the `.uapp` into `Apps/<AppName>/` and reboot. The order matters and every
+way of getting it wrong is silent — a stale `.uapp` left in the folder keeps the
+old build booting, `Apps/app_list.json` is the kernel's output rather than its
+input, and a USB replug is not a reboot. [`Docs/INSTALLING.md`](Docs/INSTALLING.md)
+has the procedure, the evidence for each step, and why `diskutil unmount` takes
+159 seconds to tell you Spotlight said no.
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE). Both apps derive from the UNA SDK's MIT-licensed
