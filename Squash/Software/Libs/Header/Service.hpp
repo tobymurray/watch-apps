@@ -127,6 +127,20 @@ private:
     /// Last source written to the diagnostic log, so a change is logged once
     /// rather than every second. 0xFF means nothing logged yet.
     uint8_t mHrSourceLogged = 0xFFu;
+
+    /// How long external heart rate must be absent before the wearer is told.
+    ///
+    /// Readings arrive every ~1005 ms and the longest dropout measured in 707
+    /// of them was 2011 ms, so five seconds is five expected readings and more
+    /// than twice the worst gap seen -- it does not fire on an ordinary one.
+    static constexpr uint32_t skStrapLostAfterMs = 5000;
+
+    /// True once the strap has fed a reading in this session. Without it a
+    /// strap that never connected would raise a "lost" alert, which is a
+    /// different thing the wearer already knows from the pre-start screen.
+    bool     mHrExternalSeen   = false;
+    uint32_t mHrLastExternalMs = 0;
+    bool     mStrapLostAlerted = false;
     uint8_t mHrOpticalBpm = 0;  ///< Latest raw optical (PPG) bpm, for the FIT hr_optical series.
     uint8_t mHrExternalBpm = 0; ///< Latest raw external (strap) bpm, for the FIT hr_external series.
 
@@ -190,6 +204,9 @@ private:
     void requestAccessoryRelease();
     void notifyNewActivity();
     void backlightOn(uint32_t timeoutMs = skBacklightTimeout);
+    /// Tell the wearer, once, when a strap that was feeding heart rate stops.
+    void checkStrapStillFeeding();
+
     void playBuzzerPattern(uint16_t beepMs, uint8_t count = 1, uint16_t silenceMs = 100);
     void playVibroPattern(SDK::Message::RequestVibroPlay::Effect effect, uint8_t count = 1, uint16_t silenceMs = 100);
 

@@ -27,6 +27,8 @@ public:
     virtual void onLapChanged(uint8_t lapEnd) {}
     virtual void onActivitySummary(const ActivitySummary& summary) {}
     virtual void onAccessoryStatus(uint8_t state, const char* name) {}  // WP-S4
+    /// A strap that had been feeding heart rate stopped; the Service decides when.
+    virtual void onHrStrapLost(uint16_t secondsWithout) {}
 
 
 protected:

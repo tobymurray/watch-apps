@@ -1,4 +1,6 @@
 #include <gui/track_screen/TrackView.hpp>
+#include <texts/TextKeysAndLanguages.hpp>
+#include <touchgfx/Color.hpp>
 #include <cstring>
 
 using FaceId = App::MenuNav::TrackView::Id;
@@ -19,6 +21,54 @@ void TrackView::setupScreen()
 
     scrollIndicator.setConfig(ScrollIndicator::kSmall);
     scrollIndicator.setCount(FaceId::ID_COUNT);
+
+    // Added last so it sits over whichever face is showing. Kept inside the
+    // round bezel: a full-width band would have its ends clipped away, so the
+    // band is inset and the text centred within it.
+    mBannerBg.setPosition(kBannerX, kBannerY, kBannerW, kBannerH);
+    mBannerBg.setColor(touchgfx::Color::getColorFromRGB(170, 85, 0));
+    mBannerBg.setVisible(false);
+    add(mBannerBg);
+
+    mBanner.setPosition(kBannerX, kBannerY + 2, kBannerW, kBannerH);
+    mBanner.setColor(touchgfx::Color::getColorFromRGB(255, 255, 255));
+    mBanner.setLinespacing(0);
+    mBanner.setTypedText(touchgfx::TypedText(T_TMP_MEDIUM_18));
+    mBannerBuffer[0] = 0;
+    mBanner.setWildcard(mBannerBuffer);
+    mBanner.setVisible(false);
+    add(mBanner);
+}
+
+void TrackView::showHrStrapLost(uint16_t /*secondsWithout*/)
+{
+    // The seconds are in Debug/squash.log with the moment it happened; on the
+    // glass the number would only invite the wearer to wonder whether 6 is
+    // worse than 5. What they can act on is that it is gone.
+    touchgfx::Unicode::snprintf(mBannerBuffer, sizeof(mBannerBuffer) / sizeof(mBannerBuffer[0]),
+                                "HR STRAP LOST");
+    mBanner.setWildcard(mBannerBuffer);
+
+    mBannerTicksLeft = kBannerTicks;
+    mBannerBg.setVisible(true);
+    mBanner.setVisible(true);
+    mBannerBg.invalidate();
+    mBanner.invalidate();
+}
+
+void TrackView::handleTickEvent()
+{
+    TrackViewBase::handleTickEvent();
+
+    if (mBannerTicksLeft == 0) {
+        return;
+    }
+    if (--mBannerTicksLeft == 0) {
+        mBannerBg.setVisible(false);
+        mBanner.setVisible(false);
+        mBannerBg.invalidate();
+        mBanner.invalidate();
+    }
 }
 
 void TrackView::tearDownScreen()
