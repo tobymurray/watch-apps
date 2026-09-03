@@ -71,13 +71,17 @@ installed `0.6.0`:
 BUILD_VERSION=0.7.0 Squash/Tools/docker-build.sh app
 ```
 
-**Install it from the phone.** Copying a `.uapp` into `Apps/Squash/` over USB
-does not install it, and neither does editing `Apps/app_list.json` to register
-one: the kernel owns that file and rewrites it from its own app table, and the
-phone's install deletes every `.uapp` in the folder it did not put there. Both
-were tried; ledger rows P7 to P9 record what each did. The only symptom of
-getting this wrong is the app running an older build, which looks exactly like
-the new build's logging being broken.
+**Install it, rather than copying it in.** Copying a `.uapp` into
+`Apps/Squash/` over USB and editing `Apps/app_list.json` to register it does not
+work: the kernel owns that file and rewrites it from its own app table, so the
+edit was gone by the next launch and the watch quietly went on running the build
+it already had. Ledger rows P7 to P10 record what was tried.
+
+The failure mode is what makes this worth a paragraph. Nothing announces it —
+the app opens, an activity starts, and the only symptom is that the new build's
+output is missing, which looks exactly like the new build's logging being
+broken. **Check the version in `Debug/squash.log`'s `launch` line before
+trusting anything else**, which is why §0.4 reads it first.
 
 Then, on the watch: tick **Record raw IMU**, pair the strap, start an activity
 and run a miniature of group S — three minutes standing, sixty seconds hard,
