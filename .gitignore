@@ -1,8 +1,17 @@
 # CMake builds in place, next to the project it built.
 build/
+# A sweep configures one tree per variant, named for the variant it built.
+build-*/
 # Packed apps land here; they are outputs, not sources.
 *.uapp
+# The linker writes this map beside the ELF it describes.
+*.elf.elf.map
 SleepLab/**/build/
+
+# TouchGFX's code generator keeps its own scratch beside the sources it emits;
+# only the emitted sources are worth committing.
+generated/**/cache/
+generated/**/UnicodeList*.txt
 
 # Claude Code. The shared commands and the project instructions are tracked;
 # worktrees and scratch files under .claude/ are local to one machine.
