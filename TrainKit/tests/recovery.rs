@@ -15,6 +15,8 @@ struct Ride {
     det: Detector,
     utc: i64,
     active_s: u32,
+    /// The sensor every second claims to come from, unless a test changes it.
+    src: u8,
 }
 
 impl Ride {
@@ -25,6 +27,7 @@ impl Ride {
             det,
             utc: 1_700_000_000,
             active_s: 0,
+            src: HR_SOURCE_EXTERNAL,
         }
     }
 
@@ -40,7 +43,9 @@ impl Ride {
             self.utc += 1;
             self.active_s += 1;
             let (bpm, trusted) = f(i);
-            last = self.det.second(self.utc, bpm, trusted, self.active_s);
+            last = self
+                .det
+                .second(self.utc, bpm, trusted, self.src, self.active_s);
             if last != Step::Nothing {
                 return last;
             }
@@ -54,7 +59,9 @@ impl Ride {
         for i in 0..n {
             self.utc += 1;
             let (bpm, trusted) = f(i);
-            last = self.det.second(self.utc, bpm, trusted, self.active_s);
+            last = self
+                .det
+                .second(self.utc, bpm, trusted, self.src, self.active_s);
             if last != Step::Nothing {
                 return last;
             }
@@ -317,7 +324,7 @@ fn a_stalled_tick_is_seconds_that_passed_not_seconds_that_did_not() {
     // The Service misses the baseline second entirely and comes back four
     // seconds later, well down the curve.
     r.utc += 4;
-    let step = r.det.second(r.utc, 150.0, true, r.active_s);
+    let step = r.det.second(r.utc, 150.0, true, r.src, r.active_s);
     assert_eq!(step, Step::Discarded);
     assert_eq!(r.det.last_discard(), DISCARD_NO_BASELINE);
 }
@@ -332,12 +339,12 @@ fn a_stall_inside_the_window_costs_the_seconds_it_took() {
     // Ten seconds the Service never served: they are untrusted seconds, so the
     // window falls under the 90% it needs rather than closing early.
     r.utc += 10;
-    let mut step = r.det.second(r.utc, 130.0, true, r.active_s);
+    let mut step = r.det.second(r.utc, 130.0, true, r.src, r.active_s);
     let mut guard = 0;
     while step == Step::Nothing && guard < 60 {
         r.utc += 1;
         guard += 1;
-        step = r.det.second(r.utc, 125.0, true, r.active_s);
+        step = r.det.second(r.utc, 125.0, true, r.src, r.active_s);
     }
     assert_eq!(step, Step::Discarded);
     assert_eq!(r.det.last_discard(), DISCARD_DROPOUT);
@@ -352,9 +359,12 @@ fn a_clock_that_repeats_a_second_changes_nothing() {
 
     let before = r.det.last_discard();
     // The same second again, and one before it.
-    assert_eq!(r.det.second(r.utc, 140.0, true, r.active_s), Step::Nothing);
     assert_eq!(
-        r.det.second(r.utc - 5, 140.0, true, r.active_s),
+        r.det.second(r.utc, 140.0, true, r.src, r.active_s),
+        Step::Nothing
+    );
+    assert_eq!(
+        r.det.second(r.utc - 5, 140.0, true, r.src, r.active_s),
         Step::Nothing
     );
     assert_eq!(r.det.last_discard(), before);
@@ -362,6 +372,74 @@ fn a_clock_that_repeats_a_second_changes_nothing() {
     // And the window still closes on time.
     assert_eq!(r.paused(40, decay(140.0, 90.0, 55.0)), Step::Completed);
     assert_eq!(r.det.take().unwrap().window_s, 60);
+}
+
+#[test]
+fn a_window_that_changes_sensor_is_discarded() {
+    let mut r = Ride::new(MAX_HR);
+    r.effort(600, 170.0);
+    r.det.cease(TRIGGER_PAUSE);
+    let fall = decay(170.0, 90.0, 55.0);
+
+    // Twenty seconds in, the kernel prefers the wrist. Measured over 34 minutes
+    // of pulled recordings: this happens to 14% of 60 s windows, and the two
+    // sensors disagree by a 95th-percentile 16 bpm -- the size of the whole
+    // measurement.
+    let mut step = Step::Nothing;
+    for i in 0..70 {
+        r.utc += 1;
+        r.src = if i < 20 {
+            HR_SOURCE_EXTERNAL
+        } else {
+            HR_SOURCE_OPTICAL
+        };
+        let (bpm, _) = fall(i);
+        step = r.det.second(r.utc, bpm, true, r.src, r.active_s);
+        if step != Step::Nothing {
+            break;
+        }
+    }
+    assert_eq!(step, Step::Discarded);
+    assert_eq!(r.det.last_discard(), DISCARD_SOURCE_CHANGED);
+    assert!(r.det.take().is_none());
+}
+
+#[test]
+fn a_measurement_names_the_sensor_it_came_from() {
+    let mut r = Ride::new(MAX_HR);
+    r.src = HR_SOURCE_OPTICAL;
+    r.effort(600, 170.0);
+    r.det.cease(TRIGGER_PAUSE);
+    assert_eq!(r.paused(70, decay(170.0, 90.0, 55.0)), Step::Completed);
+    assert_eq!(r.det.take().unwrap().source, HR_SOURCE_OPTICAL);
+}
+
+#[test]
+fn an_untrusted_second_does_not_count_as_a_sensor_change() {
+    // An untrusted reading carries no source worth believing, so it must not
+    // end a window that is otherwise on one sensor throughout.
+    let mut r = Ride::new(MAX_HR);
+    r.effort(600, 170.0);
+    r.det.cease(TRIGGER_PAUSE);
+    let fall = decay(170.0, 90.0, 55.0);
+
+    let mut step = Step::Nothing;
+    for i in 0..70 {
+        r.utc += 1;
+        let untrusted = (20..22).contains(&i);
+        r.src = if untrusted {
+            HR_SOURCE_NONE
+        } else {
+            HR_SOURCE_EXTERNAL
+        };
+        let (bpm, _) = fall(i);
+        step = r.det.second(r.utc, bpm, !untrusted, r.src, r.active_s);
+        if step != Step::Nothing {
+            break;
+        }
+    }
+    assert_eq!(step, Step::Completed);
+    assert_eq!(r.det.take().unwrap().source, HR_SOURCE_EXTERNAL);
 }
 
 #[test]

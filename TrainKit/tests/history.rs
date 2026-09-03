@@ -41,7 +41,8 @@ fn a_ride(start_utc: u32) -> Session {
                 hr0_pct_max: 89,
                 trigger: TRIGGER_PAUSE,
                 curve: [170, 157, 146, 137, 130, 123, 117],
-                reserved: [0; 3],
+                source: HR_SOURCE_EXTERNAL,
+                reserved: [0; 2],
             },
             Recovery::default(),
         ],
@@ -223,7 +224,8 @@ fn the_widest_possible_log_fits_the_buffer() {
             hr0_pct_max: 255,
             trigger: TRIGGER_PAUSE,
             curve: [255; CURVE_POINTS],
-            reserved: [0; 3],
+            source: HR_SOURCE_EXTERNAL,
+            reserved: [0; 2],
         }; MAX_RECOVERIES],
     };
     for i in 0..MAX_SESSIONS {
@@ -239,7 +241,7 @@ fn the_widest_possible_log_fits_the_buffer() {
     assert_eq!(h.sessions().len(), MAX_SESSIONS, "nothing was evicted");
     // Measured, not argued. Re-run after changing any cap or adding a field;
     // at 24 sessions this was 16,084 of 16,384, which is why the cap is 20.
-    assert_eq!(n, 13_420, "the widest log's size moved");
+    assert_eq!(n, 14_220, "the widest log's size moved");
     assert!(n < MAX_STORE_BYTES, "{n} bytes of {MAX_STORE_BYTES}");
 }
 
@@ -254,7 +256,7 @@ fn an_ordinary_log_is_measured_too() {
     }
     let mut buf = [0u8; MAX_STORE_BYTES];
     let n = h.save(&mut buf).unwrap();
-    assert_eq!(n, 9_046, "the ordinary log's size moved");
+    assert_eq!(n, 9_446, "the ordinary log's size moved");
 }
 
 #[test]

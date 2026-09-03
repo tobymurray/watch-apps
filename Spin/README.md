@@ -391,8 +391,12 @@ pedalling at one.
 A measurement that could not mean anything is **discarded, not written small**.
 It needs a maximum heart rate the watch actually knows, a heart rate at
 cessation at or above 80% of it, three minutes of uninterrupted effort before
-it, a heart rate that was not already falling, and 90% of the window's seconds
-carrying a reading the watch stands behind — the file's own gate, not
+it, a heart rate that was not already falling, 90% of the window's seconds
+carrying a reading the watch stands behind, and **one sensor throughout** —
+across 34 minutes of `HEART_RATE_EX` pulled off this watch, 14% of 60-second
+windows begin and end on different sensors, and the strap and the wrist differ
+by a 95th-percentile 16 bpm where both report at once, which is the size of the
+whole measurement — the file's own gate, not
 `HrHold`'s, because a held second is a display convenience and a measurement is
 a measurement. Each one is recorded with the context that makes it comparable to
 the next: the heart rate it started from in bpm and as a fraction of maximum,

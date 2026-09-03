@@ -150,6 +150,8 @@ pub struct Detector {
     base_utc: i64,
     base_active_s: u32,
     base_bpm: u8,
+    /// The sensor the baseline came from; every later reading must match it.
+    base_src: u8,
     trusted_s: u32,
     curve: [u8; CURVE_POINTS],
 
@@ -182,6 +184,7 @@ impl Detector {
             base_utc: 0,
             base_active_s: 0,
             base_bpm: 0,
+            base_src: 0,
             trusted_s: 0,
             curve: [0; CURVE_POINTS],
             result: Recovery {
@@ -193,7 +196,8 @@ impl Detector {
                 hr0_pct_max: 0,
                 trigger: 0,
                 curve: [0; CURVE_POINTS],
-                reserved: [0; 3],
+                source: 0,
+                reserved: [0; 2],
             },
             has_result: false,
             discard: DISCARD_NONE,
@@ -253,8 +257,9 @@ impl Detector {
     /// One second of the ride.
     ///
     /// @param bpm      the arbitrated reading; ignored unless `trusted`.
+    /// @param source   which sensor the kernel chose, one of `HR_SOURCE_*`.
     /// @param active_s the ride's unpaused seconds so far.
-    pub fn second(&mut self, utc: i64, bpm: f32, trusted: bool, active_s: u32) -> Step {
+    pub fn second(&mut self, utc: i64, bpm: f32, trusted: bool, source: u8, active_s: u32) -> Step {
         // A repeated or backward clock is a bug elsewhere, and folding it in
         // would shorten a window rather than leave the problem where it is.
         if self.has_last_utc && utc <= self.last_utc {
@@ -269,8 +274,8 @@ impl Detector {
 
         match self.state {
             State::Idle => Step::Nothing,
-            State::Arming => self.arming_second(utc, sample, active_s),
-            State::Open => self.open_second(utc, sample),
+            State::Arming => self.arming_second(utc, sample, source, active_s),
+            State::Open => self.open_second(utc, sample, source),
         }
     }
 
@@ -291,7 +296,7 @@ impl Detector {
 
     // -- Internals ------------------------------------------------------------
 
-    fn arming_second(&mut self, utc: i64, sample: u8, active_s: u32) -> Step {
+    fn arming_second(&mut self, utc: i64, sample: u8, source: u8, active_s: u32) -> Step {
         let lag = utc - self.arm_utc;
         if sample == 0 {
             if lag >= BASELINE_GRACE_S {
@@ -316,19 +321,25 @@ impl Detector {
         self.base_utc = utc;
         self.base_active_s = active_s;
         self.base_bpm = sample;
+        self.base_src = source;
         self.trusted_s = 1;
         self.curve = [0; CURVE_POINTS];
         self.curve[0] = sample;
         Step::Nothing
     }
 
-    fn open_second(&mut self, utc: i64, sample: u8) -> Step {
+    fn open_second(&mut self, utc: i64, sample: u8, source: u8) -> Step {
         let dt = utc - self.base_utc;
         if dt > WINDOW_S + WINDOW_GRACE_S {
             return self.give_up(DISCARD_NO_ENDPOINT);
         }
         if sample == 0 {
             return Step::Nothing;
+        }
+        // A window that spans a sensor switch measures the gap between two
+        // instruments as well as the fall; see DISCARD_SOURCE_CHANGED.
+        if source != self.base_src {
+            return self.give_up(DISCARD_SOURCE_CHANGED);
         }
 
         self.trusted_s += 1;
@@ -359,7 +370,8 @@ impl Detector {
             hr0_pct_max: pct_of(self.base_bpm, self.max_hr),
             trigger: self.trigger,
             curve: self.curve,
-            reserved: [0; 3],
+            source: self.base_src,
+            reserved: [0; 2],
         };
         self.has_result = true;
         self.state = State::Idle;

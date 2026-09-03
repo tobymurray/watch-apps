@@ -579,7 +579,8 @@ void Service::processTrack()
     // a window at all -- see TrainKit/src/recovery.rs.
     const uint8_t step = trainkit_recovery_second(
         &mRecoveryDetector, mTimeCounter.getCurrent(), mHrCounter.getCurrent(),
-        trusted ? 1 : 0, static_cast<uint32_t>(mTimeCounter.getValueActive()));
+        trusted ? 1 : 0, trusted ? mHrSource : TRAINKIT_HR_SOURCE_NONE,
+        static_cast<uint32_t>(mTimeCounter.getValueActive()));
     logSecond(mTimeCounter.getCurrent(), trusted);
 
     if (step == TRAINKIT_STEP_COMPLETED) {
@@ -870,7 +871,7 @@ void Service::keepRecovery(const trainkit_recovery& measurement)
 
     mEventLog.line(
         "%u recovery hr0=%u hr_end=%u drop=%u window=%u trusted=%u pct=%u "
-        "curve=%u,%u,%u,%u,%u,%u,%u",
+        "src=%u curve=%u,%u,%u,%u,%u,%u,%u",
         static_cast<uint32_t>(mTimeCounter.getCurrent()),
         static_cast<unsigned>(measurement.hr0),
         static_cast<unsigned>(measurement.hr_end),
@@ -878,6 +879,7 @@ void Service::keepRecovery(const trainkit_recovery& measurement)
         static_cast<unsigned>(measurement.window_s),
         static_cast<unsigned>(measurement.trusted_s),
         static_cast<unsigned>(measurement.hr0_pct_max),
+        static_cast<unsigned>(measurement.source),
         static_cast<unsigned>(measurement.curve[0]),
         static_cast<unsigned>(measurement.curve[1]),
         static_cast<unsigned>(measurement.curve[2]),

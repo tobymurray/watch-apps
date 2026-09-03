@@ -27,7 +27,8 @@ fn the_structs_are_where_the_header_says() {
     assert_eq!(core::mem::offset_of!(Recovery, hr0_pct_max), 8);
     assert_eq!(core::mem::offset_of!(Recovery, trigger), 9);
     assert_eq!(core::mem::offset_of!(Recovery, curve), 10);
-    assert_eq!(core::mem::offset_of!(Recovery, reserved), 17);
+    assert_eq!(core::mem::offset_of!(Recovery, source), 17);
+    assert_eq!(core::mem::offset_of!(Recovery, reserved), 18);
 
     assert_eq!(core::mem::size_of::<Session>(), 92);
     assert_eq!(core::mem::align_of::<Session>(), 4);
