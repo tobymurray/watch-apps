@@ -14,6 +14,7 @@ set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")
 set(LIBS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../Libs")
 set(CUSTOMGUI_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../CustomGUI")
 set(RUST_CRATE_DIR "${CUSTOMGUI_PATH}/rust")
+set(TRAINKIT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../../TrainKit")
 # una-app.cmake gates GUI-ELF merging on TOUCHGFX_PATH; there is no TouchGFX
 # here, so this only satisfies that gate.
 set(TOUCHGFX_PATH "${CUSTOMGUI_PATH}")
@@ -33,6 +34,7 @@ una_app_setup_version(BUILD_VERSION ${CMAKE_CURRENT_SOURCE_DIR})
 
 set(RUST_TARGET "thumbv8m.main-none-eabihf")
 set(RUST_LIB "${RUST_CRATE_DIR}/target/${RUST_TARGET}/release/libspin_gui.a")
+set(TRAINKIT_LIB "${TRAINKIT_PATH}/target/${RUST_TARGET}/release/libtrainkit.a")
 
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
 
@@ -47,10 +49,22 @@ add_custom_target(spin_gui_rust ALL
     VERBATIM
 )
 
+# The Service's Rust, and the first archive it has ever linked. Separate from
+# the GUI's because they land in different ELFs: two archives each carrying a
+# #[panic_handler] would collide if they landed in one.
+add_custom_target(spin_trainkit_rust ALL
+    COMMAND ${CARGO_EXECUTABLE} build --release --target ${RUST_TARGET}
+    WORKING_DIRECTORY ${TRAINKIT_PATH}
+    BYPRODUCTS ${TRAINKIT_LIB}
+    COMMENT "Building TrainKit -> libtrainkit.a"
+    VERBATIM
+)
+
 # Named groups rather than UNA_SDK_SOURCES_SERVICE, which is the whole set: a
 # stationary ride has no map to draw and no compass to calibrate.
 set(SERVICE_SOURCES
     ${LIBS_SOURCES}
+    ${TRAINKIT_PATH}/cpp/SharedLog.cpp
     ${UNA_SDK_SOURCES_COMMON}
     ${UNA_SDK_SOURCES_APPSYSTEM}
     ${UNA_SDK_SOURCES_FIT}
@@ -60,10 +74,15 @@ set(SERVICE_SOURCES
 )
 set(SERVICE_INCLUDE_DIRS
     ${LIBS_INCLUDE_DIRS}
+    ${TRAINKIT_PATH}/include
+    ${TRAINKIT_PATH}/cpp
     ${UNA_SDK_INCLUDE_DIRS_COMMON}
     ${UNA_SDK_INCLUDE_DIRS_SERVICE}
 )
 una_app_build_service(${APP_NAME}Service.elf)
+
+target_link_libraries(${APP_NAME}Service.elf PRIVATE ${TRAINKIT_LIB})
+add_dependencies(${APP_NAME}Service.elf spin_trainkit_rust)
 
 set(GUI_SOURCES
     $ENV{UNA_SDK}/Libs/Source/AppSystem/EntryPoint/CustomGUI/main.cpp

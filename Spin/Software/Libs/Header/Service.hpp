@@ -23,6 +23,9 @@
 
 #include "SDK/AppConfig/AppConfig.hpp"
 
+#include "SharedLog.hpp"
+#include "trainkit.h"
+
 #include "ActivityWriter.hpp"
 #include "AppConfigFields.hpp"
 #include "HrHold.hpp"
@@ -68,6 +71,12 @@ private:
     static constexpr size_t skMaxZones    = SpinConfig::kMaxZones;
     static constexpr size_t skZoneBuckets = skMaxZones + 1;
 
+    /// Names ../SharedData/spin_sessions.json and appears inside it.
+    static constexpr const char *skLogApp   = "Spin";
+    /// What the entries are, for a reader merging several apps' logs. The same
+    /// pair of words the FIT session carries as sport and sub_sport.
+    static constexpr const char *skLogSport = "indoor_cycling";
+
     // Three places size a zone-bucket array and every one of them is indexed by
     // hrZone, which runs to mZoneCount. Track::Data::zoneSeconds was left at 6
     // when the dial grew from five zones to eight, so an eight-zone ride wrote
@@ -77,6 +86,10 @@ private:
                   "Track::Data::zoneSeconds is not the size the Service indexes");
     static_assert(ActivityWriter::kZoneBuckets == skZoneBuckets,
                   "ActivityWriter's zone arrays are not the size the Service fills");
+    static_assert(TRAINKIT_MAX_ZONE_BUCKETS == skZoneBuckets,
+                  "TrainKit's zone arrays are not the size the Service fills");
+    static_assert(TRAINKIT_MAX_ZONES == skMaxZones,
+                  "TrainKit's zone ladder is not the size the Service fills");
 
     // -- Infrastructure -------------------------------------------------------
 
@@ -85,6 +98,10 @@ private:
     CustomMessage::Sender mGuiSender;
 
     ActivityWriter mActivityWriter;
+
+    /// The record of the series, as opposed to the record of the ride. Written
+    /// once, after the .fit is closed; see TrainKit/README.md for the schema.
+    TrainKit::SharedLog mSharedLog;
 
     // -- Configuration --------------------------------------------------------
     // Values the wearer set on their phone, read through SDK::AppConfig from
@@ -166,6 +183,18 @@ private:
     SecondsAccrual mAccrual;
     std::time_t mLapZoneSeconds[skZoneBuckets] = {};
 
+    /// Watches for a pause that follows real effort and measures the fall in
+    /// heart rate over the next minute. Opaque: TrainKit owns every gate, and
+    /// TrainKit/src/recovery.rs is where they are argued and sourced.
+    trainkit_detector mRecoveryDetector = {};
+
+    /// The measurements this ride produced. The newest are kept, because the
+    /// pause at the end of a ride is the one that happens every ride and so is
+    /// the one comparable across them.
+    trainkit_recovery mRecoveries[TRAINKIT_MAX_RECOVERIES] = {};
+    uint8_t mRecoveryCount     = 0;
+    uint8_t mRecoveriesDropped = 0;
+
     // -- Lifecycle ------------------------------------------------------------
 
     void connectSensors();
@@ -185,6 +214,11 @@ private:
     /// A lap the wearer asked for, as opposed to one auto-lap produced.
     void lapTrack();
     void saveLap();
+    /// Keep a completed measurement, dropping the oldest if there is no room.
+    void keepRecovery(const trainkit_recovery& measurement);
+    /// Fold the finished ride into ../SharedData; @p saved is whether the .fit
+    /// landed, and nothing is written when it did not.
+    void recordSession(bool saved, uint16_t workKilojoules);
     void updateHrDerivedMetrics();
     uint8_t hrZoneFor(float hr) const;
     uint8_t hrZoneFractionFor(float hr, uint8_t zone) const;

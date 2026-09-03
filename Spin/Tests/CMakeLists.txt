@@ -65,3 +65,22 @@ target_include_directories(spin-activitywriter-tests PRIVATE
 
 target_link_libraries(spin-activitywriter-tests PRIVATE GTest::gtest_main)
 add_test(NAME spin-activitywriter-tests COMMAND spin-activitywriter-tests)
+
+# The recovery detector and the load arithmetic are Rust in the shared TrainKit
+# crate, so `ctest` shells out to cargo rather than leaving them uncovered here.
+# Only when cargo is on the host: a machine without it should still be able to
+# run the two suites above.
+find_program(CARGO_EXECUTABLE cargo)
+if(CARGO_EXECUTABLE)
+    add_test(NAME trainkit-tests
+        COMMAND ${CARGO_EXECUTABLE} test --features std
+    )
+    set_tests_properties(trainkit-tests PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/../../TrainKit"
+    )
+else()
+    message(WARNING
+        "cargo not found: TrainKit's tests -- the recovery gates and the shared "
+        "log's bounds -- will not run here. CI runs them separately."
+    )
+endif()
