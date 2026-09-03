@@ -1,0 +1,26 @@
+[package]
+name = "effortkit"
+version = "0.1.0"
+edition = "2021"
+description = "Session structure for the UNA Watch's activity apps: epoch features from a raw IMU stream, a hysteresis segmenter over them, heart-rate recovery across qualified rest windows, and robust per-user baselines that survive across sessions. no_std and allocation-free. Design record: README.md."
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["lib"]
+
+# The analyser is the Phase A measurement tool, not part of the watch build, so
+# it is gated behind the same feature that brings in the CSV reader it needs.
+[[bin]]
+name = "phase-a"
+path = "src/bin/phase_a.rs"
+required-features = ["std"]
+
+[features]
+std = []
+
+[dependencies]
+# sqrtf, for accelerometer and gyroscope magnitude. The Cortex-M33 in this watch
+# has a hard-float FPU, so this compiles to vsqrt.f32.
+libm = "0.2"
+
+[dev-dependencies]
