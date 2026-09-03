@@ -1,0 +1,4 @@
+utc,active_s,hr_mean_x100,hr_max_x100,hr_covered_s,hr_source,segmented,rally_count,rally_s,rest_s,off_court_s,rec_short_x100,rec_short_n,rec_long_x100,rec_long_n,discarded,profile_sessions,calibration,imu_stop,imu_samples,imu_bytes,markers,hr_rows,intact,saved
+1788447336,5,6800,7000,5,1,0,0,0,0,0,0,0,0,0,0,1,0,1,1090,31987,0,9,1,1
+1788450473,498,7289,8700,720,1,0,0,0,0,0,0,0,0,0,0,2,0,1,71900,2463312,5,707,1,1
+1788452933,600,8684,11000,597,1,0,0,0,0,0,0,0,0,0,0,3,0,1,66110,2351381,3,641,1,1,117
