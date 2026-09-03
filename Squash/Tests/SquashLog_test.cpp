@@ -50,6 +50,21 @@ std::vector<std::string> lines(const std::string& text)
     return out;
 }
 
+/// The header this build writes, for the staleness test to compare against.
+const char* kSessionsHeaderForTest()
+{
+    static std::string header;
+    if (header.empty()) {
+        SDK::TestSupport::KernelFixture fixture;
+        SquashLog                       log(fixture.kernel);
+        SquashLog::Session              s{};
+        log.session(s);
+        const std::string text = read(fixture.fileSystem, kSquashSessionsPath);
+        header = lines(text)[0];
+    }
+    return header.c_str();
+}
+
 SquashLog::Session sessionRow()
 {
     SquashLog::Session s{};
@@ -192,6 +207,45 @@ TEST(SquashLog, PastItsCapTheSessionCsvRestartsWithItsHeaderIntact)
     ASSERT_GE(l.size(), 2u);
     EXPECT_EQ(l[0].compare(0, 1, "#"), 0) << "the rotation note, got: " << l[0];
     EXPECT_EQ(l[1].compare(0, 4, "utc,"), 0) << "a rotated CSV without its header is unreadable, got: " << l[1];
+}
+
+TEST(SquashLog, AStaleHeaderFromAnEarlierBuildRestartsTheFile)
+{
+    SDK::TestSupport::KernelFixture fixture;
+
+    // What an earlier build left behind: a header naming fewer columns, and a
+    // row written against it.
+    fixture.fileSystem.seedFile(
+        kSquashSessionsPath,
+        "utc,active_s,intact,saved\n1785751200,3600,1,1\n");
+
+    SquashLog log(fixture.kernel);
+    log.session(sessionRow());
+
+    const auto l = lines(read(fixture.fileSystem, kSquashSessionsPath));
+    ASSERT_GE(l.size(), 3u);
+    EXPECT_EQ(l[0].compare(0, 1, "#"), 0) << "a note saying why, got: " << l[0];
+    EXPECT_EQ(l[1], std::string(kSessionsHeaderForTest()))
+        << "this build's header, so the columns match the rows below it";
+
+    const auto commas = [](const std::string& s) {
+        return std::count(s.begin(), s.end(), ',');
+    };
+    EXPECT_EQ(commas(l[1]), commas(l[2]))
+        << "header and row must agree, which is the whole point";
+}
+
+TEST(SquashLog, AMatchingHeaderIsAppendedToRatherThanRestarted)
+{
+    SDK::TestSupport::KernelFixture fixture;
+    SquashLog                       log(fixture.kernel);
+
+    log.session(sessionRow());
+    log.session(sessionRow());
+
+    const auto l = lines(read(fixture.fileSystem, kSquashSessionsPath));
+    ASSERT_EQ(l.size(), 3u) << "one header and two rows, with no rotation note";
+    EXPECT_NE(l[0].compare(0, 1, "#"), 0);
 }
 
 TEST(SquashLog, TheLogIsWrittenUnderTheSharedDebugDirectory)

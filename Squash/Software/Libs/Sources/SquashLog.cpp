@@ -28,6 +28,26 @@ int32_t hundredths(float v)
     return static_cast<int32_t>(scaled < 0.0f ? scaled - 0.5f : scaled + 0.5f);
 }
 
+/// True when @p path already begins with @p header.
+///
+/// Read rather than assumed: the only thing that can say whether a file's
+/// columns are this build's is the file.
+bool headerMatches(const SDK::Kernel& kernel, const char* path, const char* header)
+{
+    std::unique_ptr<SDK::Interface::IFile> file = kernel.fs.file(path);
+    if (!file || !file->open(false, false)) {
+        return true;  // unreadable: leave it alone rather than truncate it
+    }
+
+    const size_t want = std::strlen(header);
+    char         head[320]{};
+    size_t       got = 0;
+    const bool   ok  = file->read(head, (want < sizeof(head)) ? want : sizeof(head) - 1, got);
+    file->close();
+
+    return ok && got == want && std::memcmp(head, header, want) == 0;
+}
+
 /// Append @p text, restarting the file first if it has reached @p cap.
 ///
 /// Failure is ignored throughout; see the header for why.
@@ -43,8 +63,16 @@ void append(const SDK::Kernel& kernel,
 
     SDK::Interface::IFileSystem::ObjectInfo info{};
     const bool exists = kernel.fs.objectInfo(path, info) && !info.isDir;
-    const bool over   = exists && info.size >= cap;
-    const bool fresh  = !exists || over;
+
+    // A header written by an earlier build names fewer columns than a newer
+    // build's rows carry, and the file is append-only, so every column after
+    // the last shared one silently shifts. Measured: adding hr_external_n gave
+    // a 25-column header above a 26-column row, and a reader took the value as
+    // missing rather than as misaligned. So a header that no longer matches is
+    // grounds to start the file again, exactly as reaching the cap is.
+    const bool stale = exists && header != nullptr && !headerMatches(kernel, path, header);
+    const bool over  = exists && (info.size >= cap || stale);
+    const bool fresh = !exists || over;
 
     std::unique_ptr<SDK::Interface::IFile> file = kernel.fs.file(path);
     if (!file || !file->open(true, over)) {
@@ -127,6 +155,6 @@ void SquashLog::session(const Session& s)
     }
 
     append(mKernel, kSquashSessionsPath, kSessionsHeader,
-           "# rotated: reached the cap and was restarted\n",
+           "# rotated: the cap was reached or the columns changed\n",
            kSquashSessionsMaxBytes, row, static_cast<size_t>(n));
 }
