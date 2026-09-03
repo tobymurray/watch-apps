@@ -23,12 +23,43 @@ namespace {
 /// ride to record and staying resident only costs battery.
 constexpr uint32_t kGuiInitTimeoutSec = 5;
 
+// The shared log's fields are narrower than the Service's own, so all three of
+// these saturate rather than wrapping: an 18-hour ride would otherwise record
+// as a short one.
+
+uint16_t clampU16(float v)
+{
+    if (v <= 0.0f) { return 0; }
+    return (v >= 65535.0f) ? 65535u : static_cast<uint16_t>(v + 0.5f);
+}
+
+uint16_t clampSeconds(std::time_t s)
+{
+    if (s <= 0) { return 0; }
+    return (s >= 65535) ? 65535u : static_cast<uint16_t>(s);
+}
+
+uint8_t clampU8(float v)
+{
+    if (v <= 0.0f) { return 0; }
+    return (v >= 255.0f) ? 255u : static_cast<uint8_t>(v + 0.5f);
+}
+
 } // namespace
+
+extern "C" void trainkit_host_panic(const uint8_t* msg, uint32_t len)
+{
+    // Named so a hung Service is traceable to the crate. Everything TrainKit
+    // does runs after the .fit is closed, so the ride itself is already safe.
+    LOG_ERROR("TrainKit panic: %.*s\n", static_cast<int>(len),
+              reinterpret_cast<const char*>(msg));
+}
 
 Service::Service(SDK::Kernel &kernel)
     : mKernel(kernel)
     , mGuiSender(kernel)
     , mActivityWriter(mKernel, "Activity")
+    , mSharedLog(mKernel.fs, skLogApp, skLogSport)
     , mSensorHr(SDK::Sensor::Type::HEART_RATE_EX, skSamplePeriod, skSampleLatency)
     , mSensorWristMotion(SDK::Sensor::Type::WRIST_MOTION)
     , mTimeTracker(kernel.sys)
@@ -45,6 +76,16 @@ Service::~Service()
 void Service::run()
 {
     LOG_INFO("Started\n");
+
+    // A stale libtrainkit.a against a changed struct is silent until it writes
+    // a file whose numbers are in the wrong fields -- and that file is one
+    // another app reads. Same check Gui::run() makes, and the same direction.
+    if (trainkit_abi_fingerprint() != trainkit_abi::fingerprint() ||
+        trainkit_detector_bytes() > sizeof(mRecoveryDetector) ||
+        trainkit_detector_align() > alignof(trainkit_detector)) {
+        LOG_ERROR("TrainKit ABI mismatch; refusing to start\n");
+        return;
+    }
 
     mTimeTracker.init();
 
@@ -469,6 +510,12 @@ void Service::startTrack(std::time_t utc)
     }
     mSessionNotEmpty = false;
 
+    // The watch's own maximum, which is what every measurement's intensity is
+    // recorded against. 0 means it has none, and TrainKit measures nothing.
+    trainkit_recovery_start(&mRecoveryDetector, mSystemMaxHr);
+    mRecoveryCount     = 0;
+    mRecoveriesDropped = 0;
+
     connectSensors();
 
     ActivityWriter::AppInfo info{};
@@ -502,6 +549,23 @@ void Service::processTrack()
     mTrackData.hrSource = (mTrackData.hr > 0.0f) ? mHrSource : 0;
     mTrackData.avgHR    = mHrCounter.getAverage();
     mTrackData.maxHR    = mHrCounter.getMaximum();
+
+    // The measured reading and the strict gate, not the held one: a recovery
+    // measurement is a measurement, and a held second is a display convenience.
+    // Fed while PAUSED as well as ACTIVE, which is the whole reason a pause is
+    // a window at all -- see TrainKit/src/recovery.rs.
+    const uint8_t step = trainkit_recovery_second(
+        &mRecoveryDetector, mTimeCounter.getCurrent(), mHrCounter.getCurrent(),
+        trusted ? 1 : 0, static_cast<uint32_t>(mTimeCounter.getValueActive()));
+    if (step == TRAINKIT_STEP_COMPLETED) {
+        trainkit_recovery measurement{};
+        if (trainkit_recovery_take(&mRecoveryDetector, &measurement)) {
+            keepRecovery(measurement);
+        }
+    } else if (step == TRAINKIT_STEP_DISCARDED) {
+        LOG_INFO("Recovery discarded: reason %u\n",
+                 static_cast<unsigned>(trainkit_recovery_last_discard(&mRecoveryDetector)));
+    }
 
     updateHrDerivedMetrics();
 
@@ -610,12 +674,22 @@ void Service::pauseTrack(bool pause)
         mTimeCounter.pause();
         mHrCounter.pause();
         mActivityWriter.pause(mTimeCounter.getCurrent());
+        // The one moment effort has stopped and the sensor is still connected.
+        // It covers the end of a ride too, because the ride stays paused
+        // through the kilojoule screen until TRACK_STOP.
+        if (trainkit_recovery_cease(&mRecoveryDetector, TRAINKIT_TRIGGER_PAUSE) ==
+            TRAINKIT_STEP_DISCARDED) {
+            LOG_INFO("Recovery not attempted: reason %u\n",
+                     static_cast<unsigned>(
+                         trainkit_recovery_last_discard(&mRecoveryDetector)));
+        }
         mTrackState = Track::State::PAUSED;
         LOG_INFO("Ride paused. UTC: %u\n", static_cast<uint32_t>(mTimeCounter.getCurrent()));
     } else if (!pause && mTrackState == Track::State::PAUSED) {
         mTimeCounter.resume();
         mHrCounter.resume();
         mActivityWriter.resume(mTimeCounter.getCurrent());
+        trainkit_recovery_resume(&mRecoveryDetector);
         mTrackState = Track::State::ACTIVE;
         LOG_INFO("Ride resumed. UTC: %u\n", static_cast<uint32_t>(mTimeCounter.getCurrent()));
     } else {
@@ -630,6 +704,10 @@ void Service::stopTrack(bool discard, uint16_t workKilojoules)
     if (mTrackState == Track::State::INACTIVE) {
         return;
     }
+
+    // Before anything else: the sensor goes at the end of this function, so a
+    // window still open here can never close.
+    trainkit_recovery_end(&mRecoveryDetector);
 
     bool saved = false;
 
@@ -694,11 +772,77 @@ void Service::stopTrack(bool discard, uint16_t workKilojoules)
         LOG_INFO("Work: %u kJ from the bike\n", static_cast<unsigned>(workKilojoules));
     }
 
+    recordSession(saved, workKilojoules);
+
     mGuiSender.trackState(mTrackState);
     mGuiSender.rideSaved(mTimeCounter.getValueActive(), mHrCounter.getAverage(),
                          mTrackData.calories, saved, discard);
 
     disconnect();
+}
+
+void Service::keepRecovery(const trainkit_recovery& measurement)
+{
+    LOG_INFO("Recovery: %u -> %u bpm over %u s, %u%% of maximum\n",
+             static_cast<unsigned>(measurement.hr0),
+             static_cast<unsigned>(measurement.hr_end),
+             static_cast<unsigned>(measurement.window_s),
+             static_cast<unsigned>(measurement.hr0_pct_max));
+
+    if (mRecoveryCount < TRAINKIT_MAX_RECOVERIES) {
+        mRecoveries[mRecoveryCount++] = measurement;
+        return;
+    }
+
+    // The newest win, because the pause at the end of a ride is the one that
+    // happens every ride and so the one comparable across them.
+    for (size_t i = 1; i < TRAINKIT_MAX_RECOVERIES; ++i) {
+        mRecoveries[i - 1] = mRecoveries[i];
+    }
+    mRecoveries[TRAINKIT_MAX_RECOVERIES - 1] = measurement;
+    if (mRecoveriesDropped < 255) {
+        ++mRecoveriesDropped;
+    }
+}
+
+void Service::recordSession(bool saved, uint16_t workKilojoules)
+{
+    // Only alongside a .fit that landed, so the two records can never disagree
+    // about whether a ride exists. A discarded ride is one the wearer threw
+    // away, and this is not a way to keep it.
+    if (!saved) {
+        return;
+    }
+
+    trainkit_session entry{};
+    entry.start_utc = static_cast<uint32_t>(
+        mTimeCounter.getCurrent() - mTimeCounter.getValueTotal());
+    entry.active_s  = static_cast<uint32_t>(mTimeCounter.getValueActive());
+    entry.elapsed_s = static_cast<uint32_t>(mTimeCounter.getValueTotal());
+    entry.kcal      = clampU16(mTrackData.calories);
+    entry.work_kj   = workKilojoules;
+    for (size_t i = 0; i < skZoneBuckets; ++i) {
+        entry.zone_s[i] = clampSeconds(mTrackData.zoneSeconds[i]);
+    }
+    for (size_t i = 0; i < skMaxZones; ++i) {
+        entry.zone_floor[i] = mZoneFloor[i];
+    }
+    entry.hr_avg         = clampU8(mHrCounter.getAverage());
+    entry.hr_max         = clampU8(mHrCounter.getMaximum());
+    entry.hr_max_setting = mSystemMaxHr;
+    entry.weight_kg      = clampU8(mWeightKg);
+    entry.zone_count     = mZoneCount;
+    entry.recovery_count     = mRecoveryCount;
+    entry.recoveries_dropped = mRecoveriesDropped;
+    for (size_t i = 0; i < mRecoveryCount; ++i) {
+        entry.recoveries[i] = mRecoveries[i];
+    }
+
+    const TrainKit::SharedLog::Status status = mSharedLog.record(entry);
+    LOG_INFO("Session log: status %u, %u recoveries (%u dropped)\n",
+             static_cast<unsigned>(status),
+             static_cast<unsigned>(mRecoveryCount),
+             static_cast<unsigned>(mRecoveriesDropped));
 }
 
 void Service::setCapabilities()

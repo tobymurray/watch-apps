@@ -1,0 +1,24 @@
+[package]
+name = "trainkit"
+version = "0.1.0"
+edition = "2021"
+description = "Heart-rate recovery detection, Edwards' TRIMP and the ../SharedData session log for the UNA Watch's activity apps: no_std, allocation-free, no SDK types. Design record and schema contract: README.md."
+license = "MIT OR Apache-2.0"
+
+# Both, for the two ways an app consumes this. A Service links the staticlib
+# through the C ABI in include/trainkit.h; a Rust GUI takes it as a dependency,
+# where a second archive carrying a #[panic_handler] would collide at link time.
+[lib]
+crate-type = ["staticlib", "lib"]
+
+[features]
+std = []
+
+[dependencies]
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false
