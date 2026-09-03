@@ -303,24 +303,13 @@ void Service::loadSystemSettings()
         mWeightKg = msg->weightKg;
     }
 
-    // FIRMWARE: the watch reports N thresholds as the boundaries of N-1 zones,
-    // its ladder being 50/60/70/80/90/100% of maximum -- so the last is the
-    // maximum, not a floor. Dropping it turns the list into floors.
-    uint8_t count = msg->heartRateCount;
-    if (count > 0) {
-        mSystemMaxHr = msg->heartRateTh[count - 1];
-        --count;
-    }
-    if (count > skMaxZones) {
-        count = skMaxZones;
-    }
-    for (uint8_t i = 0; i < count; ++i) {
-        mSystemZoneFloor[i] = msg->heartRateTh[i];
-    }
-    mSystemZoneCount = count;
+    mSystemZoneCount = ZoneLadder::fromWatch(
+        msg->heartRateTh, SDK::Message::RequestSystemSettings::skMaxHearRateTh,
+        msg->heartRateCount, mSystemZoneFloor, skMaxZones, mSystemMaxHr);
 
-    LOG_INFO("System: %.1f kg, %u zone floors from the watch\n",
-             static_cast<double>(mWeightKg), static_cast<unsigned>(mSystemZoneCount));
+    LOG_INFO("System: %.1f kg, %u zone floors and a %u bpm maximum from the watch\n",
+             static_cast<double>(mWeightKg), static_cast<unsigned>(mSystemZoneCount),
+             static_cast<unsigned>(mSystemMaxHr));
 }
 
 void Service::applyZoneConfig()
