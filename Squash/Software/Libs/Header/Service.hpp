@@ -16,6 +16,7 @@
 #include "WristTiltDetector.hpp"
 #include "ImuCsvRecorder.hpp"
 #include "ImuFileSink.hpp"
+#include "HrCsvLog.hpp"
 #include "ImuMarkerLog.hpp"
 #include "AppConfigFields.hpp"
 #include <array>
@@ -73,6 +74,12 @@ private:
     // sensor tick as the sample recorder and stamped from the last sample seen.
     ImuFileSink               mMarkerSink;
     ImuMarkerLog              mMarkerLog;
+
+    // The heart rate that went with the recording, on the recording's clock,
+    // because the settling time of this signal cannot be measured from the FIT
+    // file's own timebase.
+    ImuFileSink               mHrSink;
+    HrCsvLog                  mHrLog;
     /// Sensor tick of the most recent IMU sample, which is the only clock a
     /// marker can be placed on: a key event carries no sensor timestamp, and
     /// the two clocks are unrelated. At 100 Hz this is at most 10 ms stale.

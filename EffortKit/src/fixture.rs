@@ -224,14 +224,18 @@ fn parse_marker(line: &str) -> Option<Marker> {
     })
 }
 
+/// `t_ms,bpm_x100,trust,source,optical_x100,external_x100`, as `HrCsvLog` writes it.
+///
+/// Hundredths rather than a decimal because the watch has no float formatter,
+/// and the sub-bpm steps they preserve are the point of the file.
 fn parse_hr(line: &str) -> Option<HrSample> {
     let mut f = line.split(',');
     let t_ms = f.next()?.trim().parse().ok()?;
-    let bpm = f.next()?.trim().parse().ok()?;
+    let bpm = f.next()?.trim().parse::<i32>().ok()? as f32 / 100.0;
     let trust = f.next().unwrap_or("0").trim().parse().unwrap_or(0);
     let source = match f.next().unwrap_or("0").trim() {
-        "1" | "optical" => HrSource::Optical,
-        "2" | "external" => HrSource::External,
+        "1" => HrSource::Optical,
+        "2" => HrSource::External,
         _ => HrSource::Unknown,
     };
     Some(HrSample { t_ms, bpm, trust, source })
@@ -304,6 +308,15 @@ fn parse_labels(text: &str, markers: &[Marker], duration_ms: u32) -> (Vec<Interv
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_heart_rate_row_keeps_its_hundredths() {
+        let s = parse_hr("1000,14268,2,2,14100,14268").unwrap();
+        assert_eq!(s.t_ms, 1000);
+        assert_eq!(s.bpm, 142.68);
+        assert_eq!(s.trust, 2);
+        assert_eq!(s.source, HrSource::External);
+    }
 
     #[test]
     fn a_sample_row_parses_into_raw_lsb() {

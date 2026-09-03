@@ -85,6 +85,7 @@ Libs/Source/Fit/RecordingMarker.cpp\
 ../../Libs/Sources/ActivitySummarySerializer.cpp\
 ../../Libs/Sources/ActivityWriter.cpp\
 ../../Libs/Sources/AppConfigFields.cpp\
+../../Libs/Sources/HrCsvLog.cpp\
 ../../Libs/Sources/ImuCsvRecorder.cpp\
 ../../Libs/Sources/ImuFileSink.cpp\
 ../../Libs/Sources/ImuMarkerLog.cpp\
