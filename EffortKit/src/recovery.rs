@@ -136,6 +136,16 @@ pub struct Discarded {
 }
 
 impl Discarded {
+    /// No window discarded yet, usable in a `const`.
+    pub const NONE: Self = Self {
+        too_short: 0,
+        hr_gap: 0,
+        too_few_trusted: 0,
+        source_not_accepted: 0,
+        no_heart_rate: 0,
+        not_measurable: 0,
+    };
+
     /// Windows discarded for any reason.
     pub const fn total(&self) -> u16 {
         self.too_short
@@ -296,7 +306,11 @@ struct Pending {
 
 impl RecoveryAnalyser {
     /// An analyser for one session.
-    pub fn new(calibration: Calibration) -> Self {
+    ///
+    /// `const` for the same reason [`crate::segment::Segmenter::new`] is: this
+    /// type is 5 248 bytes, the watch Service's stack is 10 240, and building
+    /// one as a value to move into place is what overflowed it.
+    pub const fn new(calibration: Calibration) -> Self {
         Self {
             calibration,
             state: ActivityState::OffCourt,
@@ -304,7 +318,7 @@ impl RecoveryAnalyser {
             out: SessionRecovery {
                 windows: [None; MAX_WINDOWS],
                 stored: 0,
-                discarded: Discarded::default(),
+                discarded: Discarded::NONE,
                 windows_truncated: false,
             },
         }
@@ -393,13 +407,30 @@ impl RecoveryAnalyser {
         }
     }
 
+    /// Ready this analyser for a new session, in place.
+    pub fn reset(&mut self, calibration: Calibration) {
+        *self = Self::new(calibration);
+    }
+
     /// Close the session and report what its rests measured.
+    ///
+    /// Takes `self` by value, which moves 5 KB. On the watch's 10 KB Service
+    /// stack use [`RecoveryAnalyser::finish_in_place`].
     pub fn finish(mut self) -> Result<SessionRecovery, Unavailable> {
+        self.settle();
         if matches!(self.calibration, Calibration::Absent) {
             return Err(Unavailable::NotCalibrated);
         }
-        self.settle();
         Ok(self.out)
+    }
+
+    /// Close the session and borrow what its rests measured, moving nothing.
+    pub fn finish_in_place(&mut self) -> Result<&SessionRecovery, Unavailable> {
+        self.settle();
+        if matches!(self.calibration, Calibration::Absent) {
+            return Err(Unavailable::NotCalibrated);
+        }
+        Ok(&self.out)
     }
 
     fn settle(&mut self) {

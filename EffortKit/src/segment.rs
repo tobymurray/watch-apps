@@ -135,6 +135,21 @@ pub enum Calibration {
 /// [`SessionSegmentation::rallies_truncated`] reports.
 pub const MAX_RALLIES: usize = 256;
 
+/// An empty rally, so a `SessionSegmentation` can be built in a `const`.
+///
+/// `Default::default()` is not usable in const context, and a const is what
+/// keeps a 7 KB segmenter out of a 10 KB stack -- see [`Segmenter::new`].
+const EMPTY_RALLY: Rally = Rally {
+    start_epoch: 0,
+    epochs: 0,
+    hr_mean: 0.0,
+    hr_max: 0.0,
+    intensity_mean: 0.0,
+    hr_sum: 0.0,
+    hr_samples: 0,
+    intensity_sum: 0.0,
+};
+
 /// One rally, as the machine saw it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rally {
@@ -232,7 +247,14 @@ pub struct Segmenter {
 
 impl Segmenter {
     /// A segmenter for one session.
-    pub fn new(calibration: Calibration) -> Self {
+    ///
+    /// `const` on purpose. This type is 7 328 bytes and the watch Service's
+    /// stack is 10 240, so a caller that builds one as a value and moves it
+    /// into place overflows the stack: measured as a `STKOF` UsageFault
+    /// (`CFSR=0x00100000`) in `Squash.SRV` on 2026-09-03. A `const` can
+    /// initialise a `static` in place, and [`Segmenter::reset`] is how a second
+    /// session gets a clean one without a temporary existing at all.
+    pub const fn new(calibration: Calibration) -> Self {
         let separable = match calibration {
             Calibration::Measured(t) => !matches!(t.off_court, OffCourtRule::Indistinguishable),
             Calibration::Absent => false,
@@ -257,10 +279,24 @@ impl Segmenter {
                 rally_count: 0,
                 rallies_truncated: false,
                 off_court_separable: separable,
-                rallies: [Rally::default(); MAX_RALLIES],
+                rallies: [EMPTY_RALLY; MAX_RALLIES],
                 stored: 0,
             },
         }
+    }
+
+    /// Ready this segmenter for a new session, in place.
+    ///
+    /// Only the counters and indices are cleared; the rally array is left as it
+    /// is, because `stored` is what says how much of it means anything. Writing
+    /// 7 KB of zeroes to say the same thing would cost the sample path nothing
+    /// but would cost a caller the temporary this method exists to avoid.
+    pub fn reset(&mut self, calibration: Calibration) {
+        let stored = self.out.stored;
+        *self = Self::new(calibration);
+        // Keep whatever the array already held rather than rewriting it; it is
+        // unreadable while `stored` is 0.
+        let _ = stored;
     }
 
     /// Feed one epoch, with the heart rate that covered it if there was one.
@@ -310,12 +346,25 @@ impl Segmenter {
     }
 
     /// Close the session and report what it looked like.
+    ///
+    /// Takes `self` by value, which moves 7 KB; fine on a host but not on the
+    /// watch's 10 KB Service stack. [`Segmenter::finish_in_place`] is the one
+    /// to call there.
     pub fn finish(mut self) -> Result<SessionSegmentation, Unavailable> {
+        self.close_rally();
         if matches!(self.calibration, Calibration::Absent) {
             return Err(Unavailable::NotCalibrated);
         }
-        self.close_rally();
         Ok(self.out)
+    }
+
+    /// Close the session and borrow what it looked like, moving nothing.
+    pub fn finish_in_place(&mut self) -> Result<&SessionSegmentation, Unavailable> {
+        self.close_rally();
+        if matches!(self.calibration, Calibration::Absent) {
+            return Err(Unavailable::NotCalibrated);
+        }
+        Ok(&self.out)
     }
 
     /// The state the machine is in, for a live screen that wants it.

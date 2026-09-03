@@ -130,8 +130,25 @@ pub struct EpochAccumulator {
 
 impl EpochAccumulator {
     /// A fresh accumulator, positioned before the first epoch.
-    pub fn new() -> Self {
-        Self::default()
+    ///
+    /// `const` so that a caller holding one inside a `static` can initialise it
+    /// in place; see [`crate::segment::Segmenter::new`] for why that matters.
+    pub const fn new() -> Self {
+        Self {
+            index: 0,
+            started: false,
+            samples: 0,
+            accel_sum: 0.0,
+            accel_m2: 0.0,
+            accel_mean: 0.0,
+            jerk_sum: 0.0,
+            prev_accel_mag: 0.0,
+            has_prev: false,
+            gyro_sum: 0.0,
+            gyro_max: 0.0,
+            accel_sat: 0,
+            gyro_sat: 0,
+        }
     }
 
     /// Feed one sample.
