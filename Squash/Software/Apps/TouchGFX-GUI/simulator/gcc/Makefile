@@ -91,6 +91,7 @@ Libs/Source/Fit/RecordingMarker.cpp\
 ../../Libs/Sources/ImuMarkerLog.cpp\
 ../../Libs/Sources/Service.cpp\
 ../../Libs/Sources/SquashEngine.cpp\
+../../Libs/Sources/SquashLog.cpp\
 ../../Libs/Sources/SettingsSerializer.cpp\
 ../../Libs/Sources/WristTiltDetector.cpp\
 ADDITIONAL_SOURCES :=

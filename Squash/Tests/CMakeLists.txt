@@ -68,6 +68,26 @@ target_include_directories(squash-hrlog-tests PRIVATE "${APP_LIBS}/Header")
 target_link_libraries(squash-hrlog-tests PRIVATE GTest::gtest_main)
 add_test(NAME squash-hrlog-tests COMMAND squash-hrlog-tests)
 
+# SquashLog writes through SDK::Kernel, so it needs the kernel test doubles --
+# but not the Rust archive: it only uses SquashSessionRecord's layout, and calls
+# nothing across the ABI.
+add_executable(squash-log-tests
+    SquashLog_test.cpp
+    "${APP_LIBS}/Sources/SquashLog.cpp"
+    "${UNA_SDK_ROOT}/Tests/Host/support/KernelTestDoubles.cpp"
+    "${UNA_SDK_ROOT}/Libs/Source/UnaLogger/Logger.cpp"
+    "${UNA_SDK_ROOT}/Libs/Source/Wrappers/StdLibWrappers.c"
+)
+
+target_include_directories(squash-log-tests PRIVATE
+    "${APP_LIBS}/Header"
+    "${UNA_SDK_ROOT}/Libs/Header"
+    "${UNA_SDK_ROOT}/Tests/Host/support"
+)
+
+target_link_libraries(squash-log-tests PRIVATE GTest::gtest_main)
+add_test(NAME squash-log-tests COMMAND squash-log-tests)
+
 set(IMU_FUSION_SOURCE
     "${UNA_SDK_ROOT}/Libs/Source/Simulator/Components/Sensors/Imu/ImuFusionSource.cpp"
 )

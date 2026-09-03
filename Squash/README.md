@@ -5,6 +5,11 @@ session handling — start/pause/resume/save, live HR and zones, calories, laps,
 FIT recording with crash recovery — plus one thing Workout has not got: a
 research recorder that streams the raw 100 Hz IMU to CSV.
 
+It also carries an engine for rally structure and heart-rate recovery, and a
+profile that remembers what past sessions measured — **none of which displays
+anything**, because no recording exists to set a threshold with. See
+[what it does not show, and why](#what-it-does-not-show-and-why).
+
 **It does not detect shots yet.** That is deliberate, and it is worth being
 clear about why, because the ordering is the whole point.
 
@@ -96,6 +101,26 @@ t_ms,ax,ay,az,gx,gy,gz
 `t_ms` is relative to the first recorded sample and comes from the sensor's own
 timestamps, so the cadence in the file is the sensor's, not the message loop's.
 
+Two sidecars sit beside it, sharing that clock exactly — all three are begun
+from the same sensor tick, so a row in any of them with the same `t_ms` is the
+same instant, and nothing has to be correlated:
+
+| File | What it carries |
+| --- | --- |
+| `imu_<stamp>_events.csv` | `t_ms,seq,kind` — every R2 press. A press is a boundary; what the stretch between two of them *was* comes from the labels file you write, since the watch has one button and cannot say what a press meant. |
+| `imu_<stamp>_hr.csv` | `t_ms,bpm_x100,trust,source,optical_x100,external_x100` — the arbitrated heart rate and both per-source readings behind it. |
+
+Hundredths of a bpm, as an integer, because there is no float formatter here and
+whole-bpm rounding would discard what the file exists to collect: consecutive
+readings have been measured differing by **0.50 and 0.18 bpm** over two real
+rides, which is what kernel smoothing looks like and what tells a physiological
+fall from a filter settling.
+
+Both per-source columns are kept alongside the arbitrated reading so that
+"is wrist optical usable during play?" is answerable from one recording rather
+than two — the same reason the FIT file carries `hr_source`, `hr_optical` and
+`hr_external` rather than only the beat.
+
 Budget honestly: a row is ~44 bytes typical, 53 worst case, so 100 Hz costs
 ~4.3 KiB/s and 30 minutes is ~7.9 MB. Two hard caps stop it there — 8 MB and 30
 minutes by default — and a row is only written if its worst case still fits, so
@@ -153,11 +178,87 @@ There is no suite here for reading the config file. That is `SDK::AppConfig`,
 which the SDK tests in `Tests/Host/appconfig/`; a copy of those assertions in
 this tree would only test the SDK twice and rot separately.
 
+`squash-hrlog-tests` covers `HrCsvLog` the same way, against the same in-memory
+sink.
+
 `squash-filesink-tests` asserts the round trip — recorder to storage through
 `SDK::Kernel`, then back out through the simulator's `ImuFusionSource` playback
-parser — so it needs an SDK checkout carrying the IMU fusion sensor source.
-That is not in the SDK mainline yet; on a mainline SDK the suite is skipped at
-configure time with a message rather than failing the build.
+parser — so it needs an SDK checkout carrying the IMU fusion sensor source. On
+an SDK without it the suite is skipped at configure time with a message rather
+than failing the build.
+
+**Getting an SDK that has it**, along with the `SDK::AppConfig` the simulator
+needs and the `apps-v1.4.0` tag does not, is one cherry-pick;
+[`Tools/docker-build.sh`](Tools/docker-build.sh)'s header carries the recipe and
+drives all four builds:
+
+```sh
+Tools/docker-build.sh tests   # host tests
+Tools/docker-build.sh rust    # both crates: test, clippy, and the watch target
+Tools/docker-build.sh sim     # the TouchGFX simulator
+Tools/docker-build.sh app     # the .uapp
+```
+
+The Rust crates are `EffortKit` and `Squash/Software/Libs/rust`, and their tests
+run with plain `cargo test --features std` — no container and no SDK.
+
+## The engine, and the profile
+
+The rally/rest segmenter, the recovery analyser and the cross-session baselines
+live in [`EffortKit`](../EffortKit), a shared `no_std` Rust crate — shared
+because [`Spin`](../Spin/Docs/RECOVERY-PROMPT.md) asks for the same recovery and
+the same cross-session record, and because `SleepLab` already grew its own copy
+of the baseline machinery for want of anywhere to put the first one.
+`Software/Libs/rust` is this app's C ABI over it, linked into the **Service**
+ELF — the first Rust in a Service in this repository, though the GUI-side apps
+had already established the toolchain.
+
+The wearer's own file is `profile.json` in the app's directory, separate from
+`settings.json` (which the watch rewrites whole whenever a setting changes) and
+`input.json` (which comes from the phone). It holds the last twenty sessions and
+is committed through a temporary and a rename, so a battery pull mid-write
+leaves the previous one intact. Absent, damaged, or from a schema this build
+does not read, it is a warm-up and never a reason not to start. The schema is a
+table with units in [EffortKit's README](../EffortKit/README.md#the-profile-file).
+
+Baselines are derived from those stored sessions on load, never persisted, so
+changing how a figure is computed applies to the whole history instead of
+orphaning it.
+
+## What it does not show, and why
+
+Nothing from the engine reaches the screen, the FIT file or the summary. Not
+because it is unfinished, but because there is no recording to defend a number
+with.
+
+Every threshold in `EffortKit` is behind a type that cannot be constructed
+without naming the recordings that set it, and **no such constant exists in this
+repository**. So `Calibration::Absent` is the only value the watch build can
+reach, the segmenter and the recovery analyser return
+`Unavailable::NotCalibrated`, and a saved session records `segmented: 0` —
+zero because nothing ran, not because nothing happened.
+
+The heart-rate figures are real, because they need no threshold, which makes the
+heart-rate baselines the one family that can start warming up today. No
+comparison is offered until five qualifying sessions exist, and below that the
+raw measurement is shown with the comparison reported as unavailable rather than
+a percentile invented from three.
+
+This app will never tell you:
+
+- **How far you moved, in metres.** Wrist dead reckoning on a 6.4 m court is not
+  credible, and one fabricated number discredits the honest ones beside it.
+- **Who won a point.** A wrist IMU cannot know.
+- **How you compare to anyone else.** Every baseline here is your own.
+- **A recovery figure from a rest that did not qualify.** It is not a small
+  number; it is not a measurement.
+
+[`Docs/PHASE-A.md`](Docs/PHASE-A.md) is the verdict and the method,
+[`Docs/RECORDING-PROTOCOL.md`](Docs/RECORDING-PROTOCOL.md) is the nine
+recordings that would change it, and
+[`Docs/FEASIBILITY-LEDGER.md`](Docs/FEASIBILITY-LEDGER.md) has one row per
+metric. A metric with no row does not ship; a row that does not say validated is
+not displayed.
 
 ## Licence
 

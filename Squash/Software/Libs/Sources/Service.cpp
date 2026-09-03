@@ -44,6 +44,7 @@ Service::Service(SDK::Kernel &kernel)
         , mMarkerSink(mKernel, "Imu", "_events")
         , mHrSink(mKernel, "Imu", "_hr")
         , mProfileStore(mKernel, "profile.json")
+        , mLog(mKernel)
         , mSensorHr(SDK::Sensor::Type::HEART_RATE_EX, skSamplePeriod, skSampleLatency)
         , mSensorBatteryLevel(SDK::Sensor::Type::BATTERY_LEVEL)
         , mSensorBatteryMetrics(SDK::Sensor::Type::BATTERY_METRICS, skSamplePeriod, skSampleLatency)
@@ -82,11 +83,16 @@ void Service::run()
 
     // Checked rather than trusted: SquashSessionRecord is written twice, in
     // two languages, and nothing else notices when one copy moves.
-    if (squash_engine_abi_fingerprint() != kAbiFingerprint) {
+    const uint32_t abi   = squash_engine_abi_fingerprint();
+    const bool     abiOk = abi == kAbiFingerprint;
+    if (!abiOk) {
         LOG_ERROR("Engine ABI is %u, expected %u; every session field would be misread\n",
-                  static_cast<unsigned>(squash_engine_abi_fingerprint()),
-                  static_cast<unsigned>(kAbiFingerprint));
+                  static_cast<unsigned>(abi), static_cast<unsigned>(kAbiFingerprint));
     }
+    mLog.line("launch", "v%s abi=%u expect=%u ok=%u calibration=%u",
+              BUILD_VERSION, static_cast<unsigned>(abi),
+              static_cast<unsigned>(kAbiFingerprint), abiOk ? 1u : 0u,
+              static_cast<unsigned>(squash_engine_calibration()));
 
     // A profile that is absent, damaged or from a later schema is a warm-up,
     // never a reason not to start.
@@ -94,6 +100,9 @@ void Service::run()
     LOG_INFO("Profile: load %u, %u sessions\n",
              static_cast<unsigned>(profileLoad),
              static_cast<unsigned>(squash_profile_sessions()));
+    mLog.line("profile", "load=%u sessions=%u",
+              static_cast<unsigned>(profileLoad),
+              static_cast<unsigned>(squash_profile_sessions()));
 
     // Get settings
     if (!mSettingsSerializer.load(mSettings)) {
@@ -747,6 +756,8 @@ void Service::startTrack(std::time_t utc)
     mLastImuTs = 0;
     mEngineStarted = false;
     squash_engine_begin();
+    mLog.line("start", "utc=%lld record_imu=%u armed=%u",
+              static_cast<long long>(utc), mRecordImu ? 1u : 0u, mImuArmed ? 1u : 0u);
 
     ActivityWriter::AppInfo info{};
     info.timestamp = utc;
@@ -936,6 +947,7 @@ void Service::stopTrack(bool discard)
     // Closed out on both paths, including discard: the CSV is research data,
     // not part of the activity, so a discarded session's samples are still
     // worth keeping. end() is safe when nothing was ever started.
+    SquashLog::Session logRow{};
     if (mImuArmed || mImuRecorder.isRecording() || mImuSink.isOpen()) {
         const bool intact = mImuRecorder.end();
         const uint32_t samples = mImuRecorder.sampleCount();
@@ -948,6 +960,17 @@ void Service::stopTrack(bool discard)
         mMarkerSink.close();
         mHrLog.end();
         mHrSink.close();
+
+        logRow.imuSamples      = samples;
+        logRow.imuBytes         = bytes;
+        logRow.markers          = markers;
+        logRow.hrRows           = beats;
+        logRow.imuStop          = static_cast<uint8_t>(mImuRecorder.stopReason());
+        logRow.recordingIntact  = intact ? 1u : 0u;
+        mLog.line("imu", "intact=%u stop=%u samples=%u bytes=%u markers=%u beats=%u",
+                  intact ? 1u : 0u, static_cast<unsigned>(mImuRecorder.stopReason()),
+                  static_cast<unsigned>(samples), static_cast<unsigned>(bytes),
+                  static_cast<unsigned>(markers), static_cast<unsigned>(beats));
 
         if (intact) {
             LOG_INFO("Research recording saved: %u samples, %u bytes, %u markers, %u beats\n",
@@ -970,13 +993,24 @@ void Service::stopTrack(bool discard)
 
     if (!discard && mSessionNotEmpty) {
         squash_profile_record(&record);
-        if (!mProfileStore.save()) {
+        const bool saved = mProfileStore.save();
+        if (!saved) {
             LOG_WARNING("Profile not updated; the previous one is kept\n");
         }
         LOG_INFO("Session: %us active, HR mean %.1f max %.1f over %us, segmented %u\n",
                  static_cast<unsigned>(record.activeS), record.hrMean, record.hrMax,
                  static_cast<unsigned>(record.hrCoveredS),
                  static_cast<unsigned>(record.segmented));
+
+        logRow.record          = record;
+        logRow.profileSessions = squash_profile_sessions();
+        logRow.calibration     = squash_engine_calibration();
+        logRow.profileSaved    = saved ? 1u : 0u;
+        mLog.session(logRow);
+    } else {
+        mLog.line("session", "discarded=%u empty=%u active=%u",
+                  discard ? 1u : 0u, mSessionNotEmpty ? 0u : 1u,
+                  static_cast<unsigned>(record.activeS));
     }
 
     mTrackState = Track::State::INACTIVE;

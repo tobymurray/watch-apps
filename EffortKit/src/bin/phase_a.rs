@@ -8,26 +8,49 @@
 //! so. A2 asks whether the movement states are separable at all, and answers it
 //! with distributions and an overlap rather than a threshold.
 //!
-//! Usage: `phase-a <imu_*.csv> [...]`, optionally `--epochs <out.csv>`.
+//! Usage: `phase-a <imu_*.csv> [...]`, optionally `--report <out.md>` and
+//! `--epochs <out.csv>`. Both write files: a report that exists only in a
+//! terminal's scrollback is a report nobody has when it matters.
 
 use std::collections::BTreeMap;
 use std::env;
+use std::io::Write;
 use std::process::ExitCode;
+use std::sync::Mutex;
 
 use effortkit::epoch::{EpochAccumulator, EpochFeatures, Feature, ALL_FEATURES, EPOCH_MS};
 use effortkit::fixture::{self, Label, Recording};
 use effortkit::recovery::{HrSample, HrSource};
 
+/// Everything `say!` has emitted, so the report can be written to a file as
+/// well as to the terminal.
+static REPORT: Mutex<String> = Mutex::new(String::new());
+
+/// Print a line and keep it for the report file.
+macro_rules! say {
+    () => { say!("") };
+    ($($arg:tt)*) => {{
+        let line = format!($($arg)*);
+        println!("{line}");
+        if let Ok(mut r) = REPORT.lock() {
+            r.push_str(&line);
+            r.push('\n');
+        }
+    }};
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     let mut paths = Vec::new();
     let mut epoch_csv = None;
+    let mut report_md = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--epochs" => epoch_csv = it.next().cloned(),
+            "--report" => report_md = it.next().cloned(),
             "-h" | "--help" => {
-                eprintln!("usage: phase-a <imu_*.csv> [...] [--epochs out.csv]");
+                eprintln!("usage: phase-a <imu_*.csv> [...] [--report out.md] [--epochs out.csv]");
                 return ExitCode::SUCCESS;
             }
             _ => paths.push(a.clone()),
@@ -35,9 +58,9 @@ fn main() -> ExitCode {
     }
 
     if paths.is_empty() {
-        println!("# Phase A\n");
-        println!("No recordings given, and there are none in this repository.\n");
-        println!(
+        say!("# Phase A\n");
+        say!("No recordings given, and there are none in this repository.\n");
+        say!(
             "Nothing in Phase A can be answered without them, so no threshold can be set and\n\
              nothing can be displayed. `Squash/Docs/RECORDING-PROTOCOL.md` says which recordings\n\
              are needed and what each one settles."
@@ -56,7 +79,7 @@ fn main() -> ExitCode {
         }
     }
 
-    println!("# Phase A measurements\n");
+    say!("# Phase A measurements\n");
     inventory(&recordings);
     a1(&recordings);
     let labelled = a2(&recordings);
@@ -68,15 +91,26 @@ fn main() -> ExitCode {
         }
         eprintln!("wrote {} epochs to {path}", labelled.len());
     }
+
+    if let Some(path) = report_md {
+        let text = REPORT.lock().map(|r| r.clone()).unwrap_or_default();
+        match std::fs::File::create(&path).and_then(|mut f| f.write_all(text.as_bytes())) {
+            Ok(()) => eprintln!("wrote the report to {path}"),
+            Err(e) => {
+                eprintln!("{path}: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
     ExitCode::SUCCESS
 }
 
 fn inventory(rs: &[Recording]) {
-    println!("## Recordings\n");
-    println!("| File | Duration | Samples | Markers | HR samples | Labelled |");
-    println!("| --- | --- | --- | --- | --- | --- |");
+    say!("## Recordings\n");
+    say!("| File | Duration | Samples | Markers | HR samples | Labelled |");
+    say!("| --- | --- | --- | --- | --- | --- |");
     for r in rs {
-        println!(
+        say!(
             "| `{}` | {} | {} | {} | {} | {} |",
             r.path.file_name().unwrap_or_default().to_string_lossy(),
             hms(r.duration_ms()),
@@ -86,24 +120,30 @@ fn inventory(rs: &[Recording]) {
             if r.intervals.is_empty() { "no" } else { "yes" },
         );
     }
-    println!();
+    say!();
     let warnings: Vec<&String> = rs.iter().flat_map(|r| r.warnings.iter()).collect();
     if !warnings.is_empty() {
-        println!("### Warnings\n");
-        for w in warnings {
-            println!("- {w}");
+        // Capped: a wholly unreadable sidecar warns once per row, and a report
+        // that is ten thousand identical lines is one nobody reads to the end.
+        const SHOWN: usize = 15;
+        say!("### Warnings\n");
+        for w in warnings.iter().take(SHOWN) {
+            say!("- {w}");
         }
-        println!();
+        if warnings.len() > SHOWN {
+            say!("- ...and {} more of the same shape.", warnings.len() - SHOWN);
+        }
+        say!();
     }
 }
 
 // ---------------------------------------------------------------- A1
 
 fn a1(rs: &[Recording]) {
-    println!("## A1 — what the heart-rate signal is doing\n");
+    say!("## A1 — what the heart-rate signal is doing\n");
     let hr: Vec<&HrSample> = rs.iter().flat_map(|r| r.hr.iter()).collect();
     if hr.is_empty() {
-        println!(
+        say!(
             "No heart-rate sidecar in any recording, so none of A1 is answered. Recovery is not\n\
              buildable until it is: without the update cadence and the settling time there is no\n\
              way to tell a physiological fall from the kernel's own filter.\n"
@@ -111,7 +151,7 @@ fn a1(rs: &[Recording]) {
         return;
     }
 
-    println!("### Update cadence\n");
+    say!("### Update cadence\n");
     let mut gaps: Vec<u32> = Vec::new();
     for r in rs {
         for w in r.hr.windows(2) {
@@ -122,14 +162,14 @@ fn a1(rs: &[Recording]) {
     for g in &gaps {
         *hist.entry(g / 100 * 100).or_default() += 1;
     }
-    println!("| Gap (ms, 100 ms buckets) | Count |");
-    println!("| --- | --- |");
+    say!("| Gap (ms, 100 ms buckets) | Count |");
+    say!("| --- | --- |");
     for (k, v) in hist.iter().take(12) {
-        println!("| {k} | {v} |");
+        say!("| {k} | {v} |");
     }
-    println!("\nNominal is 1000 ms. {} gaps measured.\n", gaps.len());
+    say!("\nNominal is 1000 ms. {} gaps measured.\n", gaps.len());
 
-    println!("### Quantisation\n");
+    say!("### Quantisation\n");
     let mut steps: Vec<f32> = Vec::new();
     for r in rs {
         for w in r.hr.windows(2) {
@@ -141,12 +181,12 @@ fn a1(rs: &[Recording]) {
     }
     steps.sort_by(|a, b| a.partial_cmp(b).unwrap());
     if steps.is_empty() {
-        println!("Every consecutive pair was identical, which is itself a finding.\n");
+        say!("Every consecutive pair was identical, which is itself a finding.\n");
     } else {
         let sub_bpm = steps.iter().filter(|s| **s < 1.0).count();
-        println!("| Smallest non-zero step | Median step | Steps below 1 bpm |");
-        println!("| --- | --- | --- |");
-        println!(
+        say!("| Smallest non-zero step | Median step | Steps below 1 bpm |");
+        say!("| --- | --- | --- |");
+        say!(
             "| {:.4} bpm | {:.4} bpm | {} of {} ({:.0}%) |",
             steps[0],
             steps[steps.len() / 2],
@@ -154,14 +194,14 @@ fn a1(rs: &[Recording]) {
             steps.len(),
             100.0 * sub_bpm as f32 / steps.len() as f32
         );
-        println!(
+        say!(
             "\nA raw beat-derived rate cannot step by a fraction of a bpm at 1 Hz. A high\n\
              proportion below 1 bpm is the kernel's own smoothing, and is what makes a fitted\n\
              slope over a rest a measurement of the filter rather than of the wearer.\n"
         );
     }
 
-    println!("### Step response at labelled effort transitions\n");
+    say!("### Step response at labelled effort transitions\n");
     let mut taus: Vec<(HrSource, f32, f32)> = Vec::new();
     for r in rs {
         for iv in &r.intervals {
@@ -175,7 +215,7 @@ fn a1(rs: &[Recording]) {
         }
     }
     if taus.is_empty() {
-        println!(
+        say!(
             "No labelled transition out of effort carried enough heart rate to measure across,\n\
              so the settling time is unmeasured and recovery stays unbuildable.\n"
         );
@@ -189,7 +229,7 @@ fn a1(rs: &[Recording]) {
         }
         lags.sort_by(|a, b| a.partial_cmp(b).unwrap());
         ts.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        println!(
+        say!(
             "- **{:?}**: {} transitions, median lag {:.1} s, median time constant {:.1} s.",
             src,
             ts.len(),
@@ -197,7 +237,7 @@ fn a1(rs: &[Recording]) {
             ts[ts.len() / 2]
         );
     }
-    println!(
+    say!(
         "\n**The verdict A1 owes Phase C**: compare the median time constant with the rest\n\
          windows recovery would be measured over. If they are comparable, a fall measured\n\
          across one rest is the filter settling and `Formulation::NotMeasurableOnThisHardware`\n\
@@ -247,7 +287,7 @@ struct Labelled {
 }
 
 fn a2(rs: &[Recording]) -> Vec<Labelled> {
-    println!("## A2 — are the movement states separable\n");
+    say!("## A2 — are the movement states separable\n");
     let mut out = Vec::new();
     for r in rs {
         let file = r.path.file_name().unwrap_or_default().to_string_lossy().to_string();
@@ -271,7 +311,7 @@ fn a2(rs: &[Recording]) -> Vec<Labelled> {
     }
 
     if out.is_empty() {
-        println!(
+        say!(
             "No labelled epochs. Either no recording carried a labels file, or none of its\n\
              stretches named a state this build knows. Nothing in A2 is answered, so the\n\
              segmenter stays uncalibrated.\n"
@@ -280,17 +320,17 @@ fn a2(rs: &[Recording]) -> Vec<Labelled> {
     }
 
     let labels = present_labels(&out);
-    println!("### Distributions\n");
+    say!("### Distributions\n");
     for f in ALL_FEATURES {
-        println!("**{}**\n", f.name());
-        println!("| State | n | min | p5 | p25 | median | p75 | p95 | max |");
-        println!("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
+        say!("**{}**\n", f.name());
+        say!("| State | n | min | p5 | p25 | median | p75 | p95 | max |");
+        say!("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
         for l in &labels {
             let v = values(&out, *l, f);
             if v.is_empty() {
                 continue;
             }
-            println!(
+            say!(
                 "| {} | {} | {:.1} | {:.1} | {:.1} | {:.1} | {:.1} | {:.1} | {:.1} |",
                 l.name(),
                 v.len(),
@@ -303,12 +343,12 @@ fn a2(rs: &[Recording]) -> Vec<Labelled> {
                 pct(&v, 1.0)
             );
         }
-        println!();
+        say!();
     }
 
-    println!("### Overlap between the pairs the segmenter has to separate\n");
-    println!("| Pair | Feature | Best threshold | Error rate | Overlap |");
-    println!("| --- | --- | --- | --- | --- |");
+    say!("### Overlap between the pairs the segmenter has to separate\n");
+    say!("| Pair | Feature | Best threshold | Error rate | Overlap |");
+    say!("| --- | --- | --- | --- | --- |");
     for (a, b) in [(Label::Rally, Label::Rest), (Label::Rest, Label::OffCourt), (Label::Rally, Label::Drill)] {
         for f in ALL_FEATURES {
             let va = values(&out, a, f);
@@ -317,7 +357,7 @@ fn a2(rs: &[Recording]) -> Vec<Labelled> {
                 continue;
             }
             let (thr, err) = best_split(&va, &vb);
-            println!(
+            say!(
                 "| {} vs {} | {} | {:.1} | {:.1}% | {:.1}% |",
                 a.name(),
                 b.name(),
@@ -328,7 +368,7 @@ fn a2(rs: &[Recording]) -> Vec<Labelled> {
             );
         }
     }
-    println!(
+    say!(
         "\nA feature whose error rate at its own best single threshold is high has not\n\
          separated the two states, and a hysteresis machine over it will not either. That is a\n\
          result, not a failure: it says find a better feature before proceeding.\n"
