@@ -18,6 +18,7 @@
 #include "ImuFileSink.hpp"
 #include "HrCsvLog.hpp"
 #include "SquashEngine.hpp"
+#include "SquashLog.hpp"
 #include "ImuMarkerLog.hpp"
 #include "AppConfigFields.hpp"
 #include <array>
@@ -91,6 +92,9 @@ private:
     // session starts at zero. Its state is static inside the Rust archive, so
     // there is nothing to hold here but the offset.
     SquashProfileStore        mProfileStore;
+    /// Everything worth knowing about a session, on the volume rather than down
+    /// a UART nobody has attached on court.
+    SquashLog                 mLog;
     uint32_t                  mEngineStartTs = 0;
     bool                      mEngineStarted = false;
 
