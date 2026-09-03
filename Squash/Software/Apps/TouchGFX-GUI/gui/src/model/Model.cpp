@@ -348,6 +348,12 @@ bool Model::customMessageHandler(SDK::MessageBase* message)
             }
         } break;
 
+        case CustomMessage::HR_STRAP_LOST: {
+            auto* msg = static_cast<CustomMessage::HrStrapLost*>(message);
+            LOG_DEBUG("HR_STRAP_LOST %u s\n", msg->secondsWithout);
+            modelListener->onHrStrapLost(msg->secondsWithout);
+        } break;
+
         default:
             break;
     }

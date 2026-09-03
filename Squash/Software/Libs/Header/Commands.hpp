@@ -34,6 +34,7 @@ namespace CustomMessage {
     constexpr SDK::MessageType::Type LAP_END                  = 0x00000007;
     constexpr SDK::MessageType::Type SUMMARY                  = 0x00000008;
     constexpr SDK::MessageType::Type ACCESSORY_STATUS         = 0x00000009;
+    constexpr SDK::MessageType::Type HR_STRAP_LOST             = 0x00000010;
 
     // GUI --> Service
     constexpr SDK::MessageType::Type SETTINGS_SAVE         = 0x0000000A;
@@ -123,6 +124,23 @@ namespace CustomMessage {
             , name{}
         {}
     };
+
+    /// The strap stopped feeding heart rate for longer than the Service's
+    /// threshold, having fed it earlier in the session.
+    ///
+    /// One-shot: the Service decides when a gap counts, so the threshold lives
+    /// in one place and the GUI only displays. Re-sent if the strap comes back
+    /// and drops again.
+    struct HrStrapLost : public SDK::MessageBase {
+        uint16_t secondsWithout; ///< how long external HR has been absent
+        HrStrapLost()
+            : SDK::MessageBase(HR_STRAP_LOST)
+            , secondsWithout(0)
+        {}
+    };
+
+    static_assert(sizeof(HrStrapLost) <= 256,
+                  "the largest IPC pool block is 256 bytes");
 
     // GUI --> Service
     struct SettingsSave : public SDK::MessageBase {
@@ -250,6 +268,18 @@ public:
         auto *msg = mKernel.comm.allocateMessage<CustomMessage::Summary>();
         if (msg) {
             msg->summary = summaryPtr;
+            status = mKernel.comm.sendMessage(msg);
+            mKernel.comm.releaseMessage(msg);
+        }
+        return status;
+    }
+
+    bool hrStrapLost(uint16_t secondsWithout)
+    {
+        bool status = false;
+        auto *msg = mKernel.comm.allocateMessage<CustomMessage::HrStrapLost>();
+        if (msg) {
+            msg->secondsWithout = secondsWithout;
             status = mKernel.comm.sendMessage(msg);
             mKernel.comm.releaseMessage(msg);
         }

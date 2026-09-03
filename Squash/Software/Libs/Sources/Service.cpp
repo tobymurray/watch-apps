@@ -318,6 +318,8 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
                 mHrSourceLogged = mHrSource;
             }
 
+            checkStrapStillFeeding();
+
             if (mEngineStarted && mTrackState == Track::State::ACTIVE) {
                 squash_engine_on_hr(mLastImuTs - mEngineStartTs,
                                     parser.getBpm(),
@@ -570,6 +572,50 @@ void Service::backlightOn(uint32_t timeoutMs)
     }
 }
 
+void Service::checkStrapStillFeeding()
+{
+    // Only while the activity is running: a wearer who paused deliberately does
+    // not need telling that the strap went with them.
+    if (mTrackState != Track::State::ACTIVE) {
+        return;
+    }
+
+    const uint32_t now = mKernel.sys.getTimeMs();
+    const bool external =
+        mHrSource == static_cast<uint8_t>(SDK::SensorDataParser::HeartRateEx::Source::EXTERNAL);
+
+    if (external) {
+        mHrExternalSeen   = true;
+        mHrLastExternalMs = now;
+        // Re-armed, so a strap that drops twice is reported twice.
+        mStrapLostAlerted = false;
+        return;
+    }
+
+    if (!mHrExternalSeen || mStrapLostAlerted) {
+        return;
+    }
+
+    // Unsigned subtraction, correct across the 32-bit tick wrap.
+    const uint32_t without = now - mHrLastExternalMs;
+    if (without < skStrapLostAfterMs) {
+        return;
+    }
+
+    mStrapLostAlerted = true;
+    const uint16_t seconds = static_cast<uint16_t>(without / 1000u);
+
+    LOG_INFO("HR strap has not fed for %u s\n", static_cast<unsigned>(seconds));
+    mLog.line("strap_lost", "after %us without external, t=%us",
+              static_cast<unsigned>(seconds),
+              static_cast<unsigned>(mEngineStarted ? (mLastImuTs - mEngineStartTs) / 1000u : 0u));
+
+    // Two clicks rather than a long buzz: the wearer is mid-session and this is
+    // information, not an alarm.
+    playVibroPattern(SDK::Message::RequestVibroPlay::DOUBLE_CLICK_100, 2, 250);
+    mGuiSender.hrStrapLost(seconds);
+}
+
 void Service::playBuzzerPattern(uint16_t beepMs, uint8_t count, uint16_t silenceMs)
 {
     if (count == 0) {
@@ -787,6 +833,9 @@ void Service::startTrack(std::time_t utc)
     mLastImuTs = 0;
     mEngineStarted = false;
     mHrSourceLogged = 0xFFu;
+    mHrExternalSeen = false;
+    mHrLastExternalMs = 0;
+    mStrapLostAlerted = false;
     squash_engine_begin();
     mLog.line("start", "utc=%lld record_imu=%u armed=%u",
               static_cast<long long>(utc), mRecordImu ? 1u : 0u, mImuArmed ? 1u : 0u);

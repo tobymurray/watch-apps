@@ -32,6 +32,7 @@ public:
     virtual void onTime(uint8_t hour, uint8_t minute, uint8_t sec) override;
     virtual void onLapChanged(uint8_t lapEnd) override;
     virtual void onAccessoryStatus(uint8_t state, const char* name) override;
+    virtual void onHrStrapLost(uint16_t secondsWithout) override;
 
     void saveLap();
 

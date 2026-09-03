@@ -54,6 +54,11 @@ void TrackPresenter::onAccessoryStatus(uint8_t state, const char* /*name*/)
     view.setAccessoryStatus(state);
 }
 
+void TrackPresenter::onHrStrapLost(uint16_t secondsWithout)
+{
+    view.showHrStrapLost(secondsWithout);
+}
+
 void TrackPresenter::onLapChanged(uint8_t lapEnd)
 {
     model->application().gotoTrackLapScreenNoTransition();
