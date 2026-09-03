@@ -12,10 +12,38 @@ version the app itself reports before you believe anything else it wrote.
 
 ---
 
-## The rule
+## Read this first: the rule below is contradicted by a measurement
+
+Both this repository's installers — the SDK's `Update-Watch-Apps.ps1` and
+Kira's generated script — do nothing but copy the file, hash it, delete stale
+`.uapp`s, and tell you to reboot. Neither writes anything else. So the rule
+below is what the tooling believes.
+
+**On 2026-09-03 it did not work.** `Squash_0.6.1.uapp` was copied into
+`Apps/Squash/` as the only `.uapp` in the folder, SHA-256 and CRC-32 verified
+after a physical reconnect, and the watch was restarted. The kernel *did*
+rewrite `Apps/app_list.json` at that boot — mtime 14:45:14 in the watch's UTC,
+matching the restart — and produced 26 entries with **no Squash row**, leaving
+the app absent from the launcher and never run (`Debug/squash.log` untouched).
+The app was not in `_disabled_apps_backup` and left no crash dump.
+
+The one difference from a normal update: Squash's registry row had been pruned
+beforehand, because the `.uapp` it pointed at was deleted. A plausible reading is
+that the kernel reconciles *removals* at boot but never *additions*, so an app
+whose row is gone cannot be brought back by putting a binary in its folder. That
+is a guess. It is recorded here as a guess because four earlier explanations of
+this same problem were each stated confidently and each wrong — see the table
+below.
+
+**So: follow the procedure, then verify the app actually registered, and if it
+did not, use whatever installed it last time.** Do not conclude the procedure
+worked because the file is in place and hashes correctly; that was true in the
+failing case too.
+
+## The rule the tooling assumes
 
 **A `.uapp` is installed by copying it into `Apps/<AppName>/` and rebooting the
-watch. Nothing else installs anything.**
+watch.**
 
 Two corollaries that cost an afternoon:
 
@@ -84,6 +112,20 @@ A real power-cycle. **A USB replug is not a reboot**: a replug prunes registry
 rows whose files have gone but adds nothing, so an app copied in and replugged
 is an app that has vanished from the launcher. Only a boot rebuilds the list.
 
+## Then check it registered, and check the version
+
+```sh
+python3 -c '
+import json, sys
+d = json.load(open("/Volumes/UNA WATCH/Apps/app_list.json"))
+print([a for a in d["apps"] if a["name"] == sys.argv[1]] or "NOT REGISTERED")
+' Squash
+```
+
+An app with no row here does not appear in the launcher, whatever is in its
+folder. This is the check that would have saved the afternoon: the file was
+perfect and the app was not installed.
+
 ## Then check the version, not the behaviour
 
 ```sh
@@ -103,7 +145,7 @@ below was diagnosed from.
 | 1 | Copied the `.uapp` in and hand-edited `app_list.json` to register it | The kernel rewrote the file; the app kept running a build from three versions earlier, and `Debug/` never appeared, which read as the logging being broken |
 | 2 | Concluded the phone must be the installer | No phone install had taken place. The conclusion was invented to fit a folder listing |
 | 3 | Concluded the stale `.uapp` was the whole story | Half of it. The output-only registry was the other half |
-| 4 | Concluded copying does not install at all | Also wrong: copying installs, the reboot registers |
+| 4 | Concluded copying installs and the reboot registers | Wrote it into this file, and then a copy plus a real restart did not register the app at all — see the top of this document |
 
 The `.uapp` files `Squash_0.3.0.uapp` and `Squash_0.4.0.uapp` sat inert in
 `Apps/Squash/` from 2026-09-01 to 2026-09-03 for exactly this reason: they had
