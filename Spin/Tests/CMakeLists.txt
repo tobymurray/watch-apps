@@ -66,6 +66,39 @@ target_include_directories(spin-activitywriter-tests PRIVATE
 target_link_libraries(spin-activitywriter-tests PRIVATE GTest::gtest_main)
 add_test(NAME spin-activitywriter-tests COMMAND spin-activitywriter-tests)
 
+# Getting the two files onto storage, which is the half of the feature TrainKit's
+# Rust deliberately knows nothing about. Links the release staticlib because the
+# JSON round-trip goes through it; TRAINKIT_LIB is built by the app's CMake or by
+# `cargo build --release` in TrainKit.
+set(TRAINKIT_DIR "${CMAKE_CURRENT_LIST_DIR}/../../TrainKit")
+find_library(TRAINKIT_LIB trainkit
+    PATHS "${TRAINKIT_DIR}/target/release"
+    NO_DEFAULT_PATH
+)
+if(TRAINKIT_LIB)
+    add_executable(spin-sharedlog-tests
+        SharedLog_test.cpp
+        "${TRAINKIT_DIR}/cpp/SharedLog.cpp"
+        "${TRAINKIT_DIR}/cpp/EventLog.cpp"
+        "${UNA_SDK_ROOT}/Tests/Host/support/KernelTestDoubles.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/UnaLogger/Logger.cpp"
+    )
+    target_include_directories(spin-sharedlog-tests PRIVATE
+        "${TRAINKIT_DIR}/cpp"
+        "${TRAINKIT_DIR}/include"
+        "${UNA_SDK_ROOT}/Libs/Header"
+        "${UNA_SDK_ROOT}/Tests/Host/support"
+    )
+    target_link_libraries(spin-sharedlog-tests PRIVATE GTest::gtest_main ${TRAINKIT_LIB})
+    add_test(NAME spin-sharedlog-tests COMMAND spin-sharedlog-tests)
+else()
+    message(WARNING
+        "libtrainkit.a not found under ${TRAINKIT_DIR}/target/release: the "
+        "shared-log and diagnostic-log tests are skipped. Run "
+        "`cargo build --release` in TrainKit and re-configure."
+    )
+endif()
+
 # The recovery detector and the load arithmetic are Rust in the shared TrainKit
 # crate, so `ctest` shells out to cargo rather than leaving them uncovered here.
 # Only when cargo is on the host: a machine without it should still be able to

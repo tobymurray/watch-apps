@@ -39,13 +39,14 @@ void copySlug(char* dst, size_t cap, const char* src, bool lowercase)
 SharedLog::SharedLog(SDK::Interface::IFileSystem& fs, const char* app, const char* sport)
     : mFs(fs)
 {
-    copySlug(mApp, sizeof(mApp), app, true);
+    copySlug(mFileSlug, sizeof(mFileSlug), app, true);
+    copySlug(mApp, sizeof(mApp), app, false);
     copySlug(mSport, sizeof(mSport), sport, false);
 }
 
 void SharedLog::buildPath(char* out, size_t cap, const char* suffix) const
 {
-    std::snprintf(out, cap, "%s/%s%s%s", TRAINKIT_SHARED_DIR, mApp,
+    std::snprintf(out, cap, "%s/%s%s%s", TRAINKIT_SHARED_DIR, mFileSlug,
                   TRAINKIT_STORE_SUFFIX, suffix);
 }
 

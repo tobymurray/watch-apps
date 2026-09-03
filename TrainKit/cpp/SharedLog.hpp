@@ -67,8 +67,12 @@ private:
     void buildPath(char* out, size_t cap, const char* suffix) const;
 
     SDK::Interface::IFileSystem& mFs;
-    char mApp[kMaxAppLen]   = {};
-    char mSport[kMaxAppLen] = {};
+    /// Lowercased, because FAT is not reliably case-sensitive and two apps
+    /// differing only in case would be one file.
+    char mFileSlug[kMaxAppLen] = {};
+    /// As the app spells itself, because this one is read by a person.
+    char mApp[kMaxAppLen]      = {};
+    char mSport[kMaxAppLen]    = {};
 };
 
 } // namespace TrainKit
