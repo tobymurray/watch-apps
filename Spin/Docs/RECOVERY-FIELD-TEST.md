@@ -25,8 +25,12 @@ anyway; there are four hard minutes in it and a lot of sitting still.
    That is the intensity floor. For 190 bpm it is 152.
 3. **Wear the chest strap.** The wrist sensor with your hands on the bars is
    the worst case for dropouts, and Ride C tests that on purpose.
-4. **Install this build**, then **delete `recovery.log`** from Spin's folder
-   over USB if one is already there.
+4. **Install this build following [`Docs/INSTALLING.md`](../../Docs/INSTALLING.md)**,
+   which is not optional reading: the `.uapp` goes in, every other one comes
+   out, and the watch is **power-cycled** — a USB replug is not a reboot, and a
+   stale binary or an unregistered app both fail silently, looking exactly like
+   this feature being broken. Then **delete `recovery.log`** from Spin's folder
+   if one is already there.
 
 ## Before you leave the house
 
@@ -48,7 +52,7 @@ does not is a different fault:
 |---|---|
 | The app started at all | The `TrainKit ABI mismatch` guard in `Service::run()` fired and the Service returned immediately — a stale `libtrainkit.a` against a changed struct. Rebuild. |
 | **`recovery.log` exists in Spin's folder** | `IFile::open(write, no-override)` neither appends nor creates on this kernel, and the fallback in `EventLog::open()` missed it. **Stop here** — everything below is blind without it. |
-| Its first line reads `start max_hr=<n>` with **n > 0** | The watch has no maximum heart rate set. Rides A–C will produce nothing but `no_max_hr`. Go and set your zones. |
+| Its first line reads `start version=<the build you installed> max_hr=<n>`, **n > 0** | A **wrong version** means a stale `.uapp` is still booting, which is the headline failure in [`Docs/INSTALLING.md`](../../Docs/INSTALLING.md) and announces itself in no other way. `max_hr=0` means the watch has no maximum set, and Rides A–C would produce nothing but `no_max_hr`. |
 | It contains `cease ... -> too_short` | The pause never reached the detector — `pauseTrack()` is not calling `trainkit_recovery_cease()`. |
 | `SharedData/spin_sessions.json` exists and ends `"kept":1` with `status=0` on the log's `session` line | The write path failed. The `status=` number says where: `1` refused, `2` out of memory, `3` commit rename failed, `4` write failed (`SharedLog.hpp`). |
 
@@ -217,7 +221,7 @@ Mount the watch over USB. Three files matter:
 `recovery.log` is plain text, one event per line, `<utc> <event> key=value`:
 
 ```
-1756800000 start max_hr=190 zones=5 weight=75
+1756800000 start version=0.9.0 max_hr=184 zones=5 weight=90
 1756800030 A hr=131 trust=3 zone=2 pct=69
 ...
 1756800612 cease hr=171 pct=90 active=600 -> armed

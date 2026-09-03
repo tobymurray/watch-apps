@@ -529,8 +529,12 @@ void Service::startTrack(std::time_t utc)
 
     mEventLog.open();
     mLastActiveLogUtc = 0;
-    mEventLog.line("%u start max_hr=%u zones=%u weight=%u",
-                   static_cast<uint32_t>(utc), static_cast<unsigned>(mSystemMaxHr),
+    // The build first. A stale .uapp left beside a new one keeps the old one
+    // booting and nothing says so, so an app that cannot name its own build
+    // cannot be debugged over USB -- see Docs/INSTALLING.md.
+    mEventLog.line("%u start version=%s max_hr=%u zones=%u weight=%u",
+                   static_cast<uint32_t>(utc), BUILD_VERSION,
+                   static_cast<unsigned>(mSystemMaxHr),
                    static_cast<unsigned>(mZoneCount),
                    static_cast<unsigned>(mWeightKg + 0.5f));
     mEventLog.sync();
