@@ -69,6 +69,10 @@ impl<T> Single<T> {
 }
 
 struct Session {
+    /// False before the first `begin()` and after `finish()`, which is what
+    /// `Option<Session>` used to say before holding one by value became a
+    /// stack overflow.
+    running: bool,
     epochs: EpochAccumulator,
     segmenter: Segmenter,
     recovery: RecoveryAnalyser,
@@ -84,8 +88,18 @@ struct Session {
 }
 
 impl Session {
-    fn new() -> Self {
+    /// `const`, and never called anywhere but the `static` below.
+    ///
+    /// This type is 12 656 bytes and the Service's stack is 10 240. Building
+    /// one as a value and moving it into place is a stack overflow, and it is
+    /// not a subtle one: the watch took a `STKOF` UsageFault
+    /// (`CFSR=0x00100000`) in `Squash.SRV` the first time an activity was
+    /// started, on the line after the three recording sinks were opened. Host
+    /// tests cannot see it -- a host thread has an 8 MB stack -- which is why
+    /// `a_session_starts_within_the_services_stack` runs on a 10 KiB one.
+    const fn new() -> Self {
         Self {
+            running: false,
             epochs: EpochAccumulator::new(),
             segmenter: Segmenter::new(SegmentCalibration::Absent),
             recovery: RecoveryAnalyser::new(RecoveryCalibration::Absent),
@@ -100,9 +114,31 @@ impl Session {
             last_hr_bpm: 0.0,
         }
     }
+
+    /// Ready this session for a new activity, touching nothing large.
+    fn reset(&mut self) {
+        self.epochs = EpochAccumulator::new();
+        self.segmenter.reset(SegmentCalibration::Absent);
+        self.recovery.reset(RecoveryCalibration::Absent);
+        self.hr_sum = 0.0;
+        self.hr_count = 0;
+        self.hr_max = 0.0;
+        self.hr_covered_ms = 0;
+        self.last_hr_ms = 0;
+        self.have_hr = false;
+        self.optical = 0;
+        self.external = 0;
+        self.last_hr_bpm = 0.0;
+        self.running = false;
+    }
 }
 
-static SESSION: Single<Option<Session>> = Single::new(None);
+/// Live for the life of the process, in BSS rather than on any stack.
+static SESSION: Single<Session> = Single::new(Session::new());
+
+/// The watch Service's stack, from `una_app_build_service`'s default of
+/// `10*1024`. Nothing here may put a session-sized object on it.
+pub const SERVICE_STACK_BYTES: usize = 10 * 1024;
 static PROFILE: Single<Profile> = Single::new(Profile::empty());
 
 // ------------------------------------------------------------------ ABI types
@@ -184,7 +220,9 @@ pub const COMPARE_NO_DATA: u32 = 3;
 /// Start a session. Any session in progress is discarded.
 #[no_mangle]
 pub extern "C" fn squash_engine_begin() {
-    *SESSION.get() = Some(Session::new());
+    let s = SESSION.get();
+    s.reset();
+    s.running = true;
 }
 
 /// Feed one IMU sample, in raw sensor LSB, on the session's own clock.
@@ -193,10 +231,8 @@ pub extern "C" fn squash_engine_begin() {
 /// `axes` must point at six `int16_t`: ax, ay, az, gx, gy, gz.
 #[no_mangle]
 pub unsafe extern "C" fn squash_engine_on_imu(t_ms: u32, axes: *const i16) {
-    let Some(s) = SESSION.get().as_mut() else {
-        return;
-    };
-    if axes.is_null() {
+    let s = SESSION.get();
+    if !s.running || axes.is_null() {
         return;
     }
     let a = core::slice::from_raw_parts(axes, 6);
@@ -213,9 +249,10 @@ pub unsafe extern "C" fn squash_engine_on_imu(t_ms: u32, axes: *const i16) {
 /// Feed one heart-rate reading on the session's own clock.
 #[no_mangle]
 pub extern "C" fn squash_engine_on_hr(t_ms: u32, bpm: f32, trust: u8, source: u8) {
-    let Some(s) = SESSION.get().as_mut() else {
+    let s = SESSION.get();
+    if !s.running {
         return;
-    };
+    }
     let source = match source {
         1 => HrSource::Optical,
         2 => HrSource::External,
@@ -271,7 +308,9 @@ pub unsafe extern "C" fn squash_engine_finish(
     }
     let mut r = SquashSessionRecord { started_utc, active_s, ..Default::default() };
 
-    if let Some(mut s) = SESSION.get().take() {
+    let s = SESSION.get();
+    if s.running {
+        s.running = false;
         if let Some(e) = s.epochs.flush() {
             let hr = s.have_hr.then_some(s.last_hr_bpm);
             s.segmenter.push(&e, hr);
@@ -288,14 +327,14 @@ pub unsafe extern "C" fn squash_engine_finish(
                 0
             };
         }
-        if let Ok(seg) = s.segmenter.finish() {
+        if let Ok(seg) = s.segmenter.finish_in_place() {
             r.segmented = 1;
             r.rally_count = seg.rally_count;
             r.rally_s = seg.rally_epochs;
             r.rest_s = seg.rest_epochs;
             r.off_court_s = seg.off_court_epochs;
         }
-        if let Ok(rec) = s.recovery.finish() {
+        if let Ok(rec) = s.recovery.finish_in_place() {
             use effortkit::recovery::WindowKind;
             r.recovery_short_mean = rec.mean_drop(WindowKind::BetweenRallies).unwrap_or(0.0);
             r.recovery_short_n = rec.count(WindowKind::BetweenRallies);
@@ -548,6 +587,50 @@ mod tests {
         }
         let r = finish(1, 140);
         assert!(r.hr_covered_s < 30, "the gap must not be counted: {}", r.hr_covered_s);
+    }
+
+    /// The bug this file's design exists to prevent, exercised on a stack the
+    /// size of the one it crashed on.
+    ///
+    /// A host thread gets 8 MB by default, which is why 69 passing tests said
+    /// nothing about a 12 656-byte value being moved through a 10 240-byte
+    /// stack. The platform may round the request up -- macOS has a 16 KiB
+    /// floor -- so this is a floor on the guarantee, not the exact watch
+    /// condition; it still fails outright on a by-value construction.
+    #[test]
+    fn a_session_starts_within_the_services_stack() {
+        let _alone = alone();
+        std::thread::Builder::new()
+            .stack_size(SERVICE_STACK_BYTES)
+            .spawn(|| {
+                squash_engine_begin();
+                for i in 0..300u32 {
+                    unsafe { squash_engine_on_imu(i * 10, imu(4096).as_ptr()) };
+                }
+                for i in 0..3u32 {
+                    squash_engine_on_hr(i * 1000, 140.0, 2, 2);
+                }
+                let mut r = SquashSessionRecord::default();
+                unsafe { squash_engine_finish(1, 3, &mut r) };
+                r
+            })
+            .expect("a thread with the Service's stack size")
+            .join()
+            .expect("the whole ABI path must fit the Service's stack");
+    }
+
+    #[test]
+    fn a_session_is_too_large_for_that_stack_which_is_why_it_is_static() {
+        let _alone = alone();
+        // Not a limit being enforced -- a measurement being kept. If this ever
+        // fails, Session now fits the stack and the static is only an
+        // optimisation; the comment on Session::new needs revising, not this.
+        assert!(
+            core::mem::size_of::<Session>() > SERVICE_STACK_BYTES,
+            "Session is {} bytes against a {}-byte stack",
+            core::mem::size_of::<Session>(),
+            SERVICE_STACK_BYTES
+        );
     }
 
     #[test]
