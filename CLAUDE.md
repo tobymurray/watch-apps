@@ -63,6 +63,12 @@ source.
   measured.
 - **Logic worth testing goes somewhere it can be tested without a kernel** — a Rust
   module in the app's crate, or a header-only file free of SDK types.
+- **Installing a build on the watch has an order, and getting it wrong is
+  silent.** Copy the `.uapp` in, then reboot; `Apps/app_list.json` is the
+  kernel's output and editing it does nothing, and a stale `.uapp` left beside
+  the new one keeps the old build booting. Read `Docs/INSTALLING.md` before
+  touching a watch volume — it also explains why `diskutil unmount` appears to
+  hang for 159 seconds.
 - **Conventional commits, one logical change per commit.** Stage deliberately; a
   `git add <App>` once swept an unrelated change into a commit whose message described
   only the intended fix. CI bumps the version and cuts the release from the commit type,
