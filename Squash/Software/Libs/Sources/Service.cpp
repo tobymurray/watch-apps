@@ -196,6 +196,17 @@ void Service::run()
                 case SDK::MessageType::EVENT_ACCESSORY_STATUS: {
                     auto* evt = static_cast<SDK::Message::Accessory::EventStatus*>(msg);
                     LOG_INFO("Accessory status: state %u\n", evt->state);
+                    // 0 unavailable, 1 idle, 2 searching, 3 connecting,
+                    // 4 connected, 5 lost. Logged because a strap that drops
+                    // mid-session is indistinguishable afterwards from a strap
+                    // the arbiter stopped preferring, and the two have
+                    // different causes: on 2026-09-03 a strap went from trust 3
+                    // to absent in one sample and nothing recorded which it was.
+                    mLog.line("accessory", "state=%u at t=%us",
+                              static_cast<unsigned>(evt->state),
+                              static_cast<unsigned>(mEngineStarted
+                                                        ? (mLastImuTs - mEngineStartTs) / 1000u
+                                                        : 0u));
                     mGuiSender.accessoryStatus(evt->state, evt->name);
                 } break;
 
@@ -1061,6 +1072,16 @@ void Service::pauseTrack(bool pause)
 
         mTrackState = Track::State::PAUSED;
         LOG_INFO("Track paused. UTC: %u\n", static_cast<uint32_t>(mTimeCounter.getCurrent()));
+        // Pause and resume are what turn a recording's own clock into active
+        // time, and without them a gap between the two cannot be placed: the
+        // 8-minute recording of 2026-09-03 had 225 seconds unaccounted for and
+        // no way to say when they were, so whether a pause dropped the strap
+        // could not be answered either way.
+        mLog.line("pause", "at t=%us active=%us",
+                  static_cast<unsigned>(mEngineStarted
+                                            ? (mLastImuTs - mEngineStartTs) / 1000u
+                                            : 0u),
+                  static_cast<unsigned>(mTimeCounter.getValueActive()));
         mGuiSender.trackState(mTrackState);
 
         buildPartialSummary();
@@ -1075,6 +1096,11 @@ void Service::pauseTrack(bool pause)
 
         mTrackState = Track::State::ACTIVE;
         LOG_INFO("Track resumed. UTC: %u\n", static_cast<uint32_t>(mTimeCounter.getCurrent()));
+        mLog.line("resume", "at t=%us active=%us",
+                  static_cast<unsigned>(mEngineStarted
+                                            ? (mLastImuTs - mEngineStartTs) / 1000u
+                                            : 0u),
+                  static_cast<unsigned>(mTimeCounter.getValueActive()));
         mGuiSender.trackState(mTrackState);
     }
 }
