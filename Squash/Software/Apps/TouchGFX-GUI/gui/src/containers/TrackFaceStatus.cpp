@@ -31,6 +31,40 @@ void TrackFaceStatus::initialize()
     mSensorRow.setPosition(0, 20, 240, 24);
     mSensorRow.setIcons(touchgfx::BITMAP_INVALID, touchgfx::BITMAP_INVALID,
                         BITMAP_SENSORHRDARK_ID, BITMAP_SENSORHRLIGHT_ID);
+
+    // The letter sits immediately right of the icon. SensorStatusRow centres a
+    // lone icon in its own width, so the icon's right edge is derived from the
+    // bitmap rather than assumed -- the two must not disagree about where the
+    // heart ends.
+    const int16_t iconW = touchgfx::Bitmap(BITMAP_SENSORHRLIGHT_ID).getWidth();
+    const int16_t letterX = static_cast<int16_t>((mSensorRow.getWidth() + iconW) / 2 + kSourceGap);
+
+    mHrSource.setColor(touchgfx::Color::getColorFromRGB(192, 192, 192));
+    mHrSource.setLinespacing(0);
+    mHrSource.setTypedText(touchgfx::TypedText(T_TMP_MEDIUM_18_L));
+    mHrSourceBuffer[0] = 0;
+    mHrSource.setWildcard(mHrSourceBuffer);
+    mHrSource.setPosition(letterX, 20, kSourceW, 24);
+    add(mHrSource);
+}
+
+void TrackFaceStatus::setHrSource(uint8_t source)
+{
+    // SDK::SensorDataParser::HeartRateEx::Source; anything else is "no source
+    // yet", which is a real state at the start of a session and is shown as one
+    // rather than left blank.
+    const touchgfx::Unicode::UnicodeChar letter =
+        (source == 2) ? 'E' : ((source == 1) ? 'O' : '-');
+
+    if (mHrSourceBuffer[0] == letter) {
+        return;
+    }
+
+    mHrSource.invalidate();
+    mHrSourceBuffer[0] = letter;
+    mHrSourceBuffer[1] = 0;
+    mHrSource.setWildcard(mHrSourceBuffer);
+    mHrSource.invalidate();
 }
 
 void TrackFaceStatus::setTime(uint8_t h, uint8_t m, bool is12Hour)

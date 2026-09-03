@@ -124,6 +124,9 @@ private:
     std::array<uint8_t, CustomMessage::kHrThresholdsCount> mHrThresholds = {};
     uint8_t mHrThresholdCount = 0;
     uint8_t mHrSource = 0;      ///< Latest HR source (HeartRateEx::Source) for the icon + FIT hr_source.
+    /// Last source written to the diagnostic log, so a change is logged once
+    /// rather than every second. 0xFF means nothing logged yet.
+    uint8_t mHrSourceLogged = 0xFFu;
     uint8_t mHrOpticalBpm = 0;  ///< Latest raw optical (PPG) bpm, for the FIT hr_optical series.
     uint8_t mHrExternalBpm = 0; ///< Latest raw external (strap) bpm, for the FIT hr_external series.
 

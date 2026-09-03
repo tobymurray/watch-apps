@@ -20,7 +20,7 @@ constexpr char kSessionsHeader[] =
     "utc,active_s,hr_mean_x100,hr_max_x100,hr_covered_s,hr_source,segmented,"
     "rally_count,rally_s,rest_s,off_court_s,rec_short_x100,rec_short_n,"
     "rec_long_x100,rec_long_n,discarded,profile_sessions,calibration,"
-    "imu_stop,imu_samples,imu_bytes,markers,hr_rows,intact,saved\n";
+    "imu_stop,imu_samples,imu_bytes,markers,hr_rows,intact,saved,hr_external_n\n";
 
 int32_t hundredths(float v)
 {
@@ -108,7 +108,7 @@ void SquashLog::session(const Session& s)
     char      row[320];
     const int n = std::snprintf(
         row, sizeof(row),
-        "%lu,%lu,%ld,%ld,%lu,%u,%u,%lu,%lu,%lu,%lu,%ld,%u,%ld,%u,%u,%lu,%lu,%u,%lu,%lu,%u,%u,%u,%u\n",
+        "%lu,%lu,%ld,%ld,%lu,%u,%u,%lu,%lu,%lu,%lu,%ld,%u,%ld,%u,%u,%lu,%lu,%u,%lu,%lu,%u,%u,%u,%u,%lu\n",
         static_cast<unsigned long>(r.startedUtc), static_cast<unsigned long>(r.activeS),
         static_cast<long>(hundredths(r.hrMean)), static_cast<long>(hundredths(r.hrMax)),
         static_cast<unsigned long>(r.hrCoveredS), r.hrSource, r.segmented,
@@ -120,7 +120,8 @@ void SquashLog::session(const Session& s)
         static_cast<unsigned long>(s.profileSessions), static_cast<unsigned long>(s.calibration),
         s.imuStop, static_cast<unsigned long>(s.imuSamples),
         static_cast<unsigned long>(s.imuBytes), s.markers, s.hrRows,
-        s.recordingIntact, s.profileSaved);
+        s.recordingIntact, s.profileSaved,
+        static_cast<unsigned long>(r.hrExternalReadings));
     if (n <= 0 || static_cast<size_t>(n) >= sizeof(row)) {
         return;
     }

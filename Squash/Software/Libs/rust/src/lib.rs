@@ -175,7 +175,9 @@ pub struct SquashSessionRecord {
     pub recovery_short_n: u16,
     /// Qualifying off-court rests.
     pub recovery_long_n: u16,
-    /// 0 unknown, 1 optical, 2 external.
+    /// The source that supplied most of the session: 0 unknown, 1 optical,
+    /// 2 external. A majority, so it hides a strap that fed part of it —
+    /// which is what `hr_external_s` is for.
     pub hr_source: u8,
     /// Zero when no calibration existed, in which case every segmentation and
     /// recovery field above is zero because nothing ran, not because nothing
@@ -183,6 +185,13 @@ pub struct SquashSessionRecord {
     pub segmented: u8,
     /// Recovery windows discarded, all reasons together.
     pub discarded_windows: u16,
+    /// Trusted readings that came from a chest strap.
+    ///
+    /// Separate from `hr_source` because a strap that linked before the session
+    /// and dropped during it is a majority-optical session that nonetheless had
+    /// a strap: measured on 2026-09-03, external for 118 of 707 readings, which
+    /// `hr_source` alone reported as plain optical.
+    pub hr_external_readings: u32,
 }
 
 /// How one measurement sits against the wearer's own history.
@@ -327,6 +336,7 @@ pub unsafe extern "C" fn squash_engine_finish(
             let hr = s.have_hr.then_some(s.last_hr_bpm);
             s.segmenter.push(&e, hr);
         }
+        r.hr_external_readings = s.external;
         if s.hr_count > 0 {
             // Coverage and source are reported whatever the count: they are what
             // say whether a missing mean is missing for want of data, and which
@@ -525,7 +535,7 @@ const fn fnv1a(h: u32, v: usize) -> u32 {
 ///
 /// `SquashEngine.hpp` asserts the same number at start-up. Changing it is a
 /// deliberate act: it means the C++ side must change too.
-pub const ABI_FINGERPRINT: u32 = 3_384_192_379;
+pub const ABI_FINGERPRINT: u32 = 524_638_087;
 
 /// A hash of every offset the C++ side reads, so a struct that drifts is a
 /// runtime assertion rather than a silently misread field.
@@ -538,10 +548,11 @@ pub extern "C" fn squash_engine_abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(SquashSessionRecord, hr_source));
     let h = fnv1a(h, core::mem::offset_of!(SquashSessionRecord, segmented));
     let h = fnv1a(h, core::mem::offset_of!(SquashComparison, sessions));
+    let h = fnv1a(h, core::mem::offset_of!(SquashSessionRecord, hr_external_readings));
     fnv1a(h, METRICS.len())
 }
 
-const _: () = assert!(core::mem::size_of::<SquashSessionRecord>() == 52);
+const _: () = assert!(core::mem::size_of::<SquashSessionRecord>() == 56);
 const _: () = assert!(core::mem::align_of::<SquashSessionRecord>() == 4);
 const _: () = assert!(core::mem::size_of::<SquashComparison>() == 16);
 
@@ -655,6 +666,22 @@ mod tests {
     /// stack. The platform may round the request up -- macOS has a 16 KiB
     /// floor -- so this is a floor on the guarantee, not the exact watch
     /// condition; it still fails outright on a by-value construction.
+    #[test]
+    fn the_strap_is_visible_even_when_optical_supplied_most_of_the_session() {
+        let _alone = alone();
+        squash_engine_begin();
+        // The 2026-09-03 shape: external for 118 readings, then optical.
+        for i in 0..118u32 {
+            squash_engine_on_hr(i * 1000, 77.0, 3, 2);
+        }
+        for i in 118..707u32 {
+            squash_engine_on_hr(i * 1000, 72.0, 2, 1);
+        }
+        let r = finish(1_788_450_473, 498);
+        assert_eq!(r.hr_source, 1, "optical supplied the majority");
+        assert_eq!(r.hr_external_readings, 118, "and the strap is still on the record");
+    }
+
     #[test]
     fn a_session_starts_within_the_services_stack() {
         let _alone = alone();

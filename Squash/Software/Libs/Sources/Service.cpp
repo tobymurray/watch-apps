@@ -292,6 +292,21 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
             // PAUSED and heart rate keeps arriving, so an ungated feed counted
             // paused time as covered. The 2026-09-03 8-minute recording
             // reported 720 covered seconds against 498 active ones.
+            // A strap that links before the session and drops during it reads,
+            // to the wearer, exactly like a strap that worked -- so the change
+            // is recorded with the second it happened. Measured: the 8-minute
+            // recording of 2026-09-03 switched from external to optical once,
+            // 118 seconds in, and nothing on the watch or in the files said so.
+            if (mHrSource != mHrSourceLogged) {
+                mLog.line("hr_source", "%u -> %u at t=%us",
+                          static_cast<unsigned>(mHrSourceLogged == 0xFFu ? 0u : mHrSourceLogged),
+                          static_cast<unsigned>(mHrSource),
+                          static_cast<unsigned>(mEngineStarted
+                                                    ? (mLastImuTs - mEngineStartTs) / 1000u
+                                                    : 0u));
+                mHrSourceLogged = mHrSource;
+            }
+
             if (mEngineStarted && mTrackState == Track::State::ACTIVE) {
                 squash_engine_on_hr(mLastImuTs - mEngineStartTs,
                                     parser.getBpm(),
@@ -760,6 +775,7 @@ void Service::startTrack(std::time_t utc)
     }
     mLastImuTs = 0;
     mEngineStarted = false;
+    mHrSourceLogged = 0xFFu;
     squash_engine_begin();
     mLog.line("start", "utc=%lld record_imu=%u armed=%u",
               static_cast<long long>(utc), mRecordImu ? 1u : 0u, mImuArmed ? 1u : 0u);

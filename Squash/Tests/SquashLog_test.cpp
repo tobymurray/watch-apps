@@ -60,6 +60,7 @@ SquashLog::Session sessionRow()
     s.record.hrMax             = 181.25f;
     s.record.hrSource          = 2;
     s.record.segmented         = 0;
+    s.record.hrExternalReadings = 118;
     s.profileSessions          = 3;
     s.calibration              = 0;
     s.imuSamples               = 180000;
@@ -136,7 +137,8 @@ TEST(SquashLog, ASessionRowCarriesEveryColumnItsHeaderNames)
         return std::count(s.begin(), s.end(), ',');
     };
     EXPECT_EQ(commas(l[0]), commas(l[1])) << "header and row must have the same column count";
-    EXPECT_EQ(l[1], "1785751200,3600,14250,18125,3500,2,0,0,0,0,0,0,0,0,0,0,3,0,1,180000,7900000,41,1800,1,1");
+    EXPECT_EQ(l[1],
+              "1785751200,3600,14250,18125,3500,2,0,0,0,0,0,0,0,0,0,0,3,0,1,180000,7900000,41,1800,1,1,118");
 }
 
 TEST(SquashLog, AnUncalibratedSessionRecordsZerosThatSayNothingRanNotThatNothingHappened)
