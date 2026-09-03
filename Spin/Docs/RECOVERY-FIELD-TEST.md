@@ -28,7 +28,33 @@ anyway; there are four hard minutes in it and a lot of sitting still.
 4. **Install this build**, then **delete `recovery.log`** from Spin's folder
    over USB if one is already there.
 
-Throughout: **R1 pauses. R1 again resumes. L1 from paused is SAVE.**
+## Two different things, and the whole feature is the gap between them
+
+This document never says "pause" as an instruction, because the word means two
+things here and only one of them reaches the watch:
+
+- **Press R1** — the button. This is the *only* thing the detector sees. It is
+  what calls `trainkit_recovery_cease()` and opens the window.
+- **Stop pedalling** — the physical act. The watch **cannot see this at all**.
+  There is no cadence sensor and no way to tell a stationary rider from a
+  soft-pedalling one.
+
+A valid measurement needs **both, at the same moment**. Get them out of step and
+you measure something else:
+
+| Press R1 | Stop pedalling | What you get |
+|---|---|---|
+| yes | yes, at the same time | the measurement this feature is for |
+| yes | no — you keep spinning | a window over *active* recovery, which Barak et al. found is 41% slower. The file cannot tell, and neither can you afterwards. |
+| no | yes | nothing at all happens; 40 s later, R1 gives `already_falling` |
+| no | no | nothing |
+
+That second row is the trap the README calls the biggest one, and it is why the
+instructions below are always spelled out as a button and a body separately.
+
+The buttons, throughout: **R1 while riding pauses the clock. R1 again resumes
+it. L1 while paused is SAVE.** Nothing below ever asks you to "pause" — it asks
+for a button, or for your legs, or for both.
 
 ---
 
@@ -39,22 +65,30 @@ effort" gates.
 
 | # | Do | Expect in `recovery.log` |
 |---|---|---|
-| A1 | Start the ride. Pedal easy for **2 minutes**, then pause. | `cease ... -> too_short` |
-| A2 | Resume. Ride easy — **below 80% of HRmax** — for **5 minutes**, then pause. | `cease ... -> too_easy` |
-| A3 | Resume. **Hard, 5 minutes**, ending at or above 80% of HRmax and still climbing. Pause at the top. | `cease ... -> armed` |
-| A4 | **Sit still on the bike. Do not pedal. Do not get off. 90 seconds.** Watch the clock. | `recovery hr0=… drop=…` after ~60 s |
-| A5 | Resume. Easy 2 minutes. Then **hard 4 minutes** again, pause at the top. | `cease ... -> armed` |
+| A1 | Start the ride. Pedal easy for **2 minutes**. Stop pedalling and **press R1** together. | `cease ... -> too_short` |
+| A2 | **R1** to resume. Ride easy — **below 80% of HRmax** — for **5 minutes**. Stop pedalling and **press R1** together. | `cease ... -> too_easy` |
+| A3 | **R1** to resume. **Hard, 5 minutes**, ending at or above 80% of HRmax and still climbing. At the top, stop pedalling and **press R1 in the same moment**. | `cease ... -> armed` |
+| A4 | **Stay on the bike. Feet off or still. Do not pedal, do not get off, do not stand up. 90 seconds by the clock.** | `recovery hr0=… drop=…` after ~60 s |
+| A5 | **R1** to resume. Easy 2 minutes, then **hard 4 minutes**. At the top, stop pedalling and **press R1** together again. | `cease ... -> armed` |
 | A6 | **Sit still, 90 seconds** again. | a second `recovery` line |
-| A7 | Resume, easy 2 minutes, pause, **L1 SAVE**. Enter the bike's kJ with L1/L2. **R1 SAVE**. | `session … recoveries=2` |
+| A7 | **R1** to resume, easy 2 minutes, stop pedalling and **press R1**, then **L1 SAVE**. Enter the bike's kJ with L1/L2. **R1 SAVE**. | `session … recoveries=2` |
 
-**A4 and A6 are the whole ride.** Everything else is scaffolding. If you get off
-the bike, walk to the water fountain, or keep soft-pedalling, you have measured
-something different — that is the active-versus-passive trap, and the watch
-cannot see it, which is exactly why the README says so.
+**A4 and A6 are the whole ride.** Everything else is scaffolding.
+
+**A3 and A5 are where it is won or lost.** The button and the legs have to stop
+together. Press R1 while still turning the pedals and the window opens over
+active recovery, which Barak et al. measured as 41% slower — you will get a
+number, it will look fine, and it will be a measurement of something else. Stop
+pedalling a few seconds before pressing R1 and you have started the fall early,
+which either shows up as `already_falling` or quietly understates `hr0`.
+
+If in doubt: **stop, then press within a second.** A baseline up to 2 s late is
+allowed and `window_s` records it; a baseline taken while you were still working
+is not detectable at all.
 
 A3 and A5 must be **separated by real effort**, not just by a resume: the effort
-gate measures the current bout, so resuming and pausing ten seconds later gives
-`too_short` (which A1 already covers).
+gate measures the current bout, so resuming and pressing R1 ten seconds later
+gives `too_short` (which A1 already covers).
 
 ## Ride B — the ones that should be thrown away (about 20 minutes)
 
@@ -62,9 +96,9 @@ Each of these is a window that opens and then correctly produces nothing.
 
 | # | Do | Expect |
 |---|---|---|
-| B1 | Hard 5 minutes to above 80%. Then **stop pedalling but do NOT pause.** Sit for 40 seconds. *Now* pause. | `cease ... -> already_falling` |
-| B2 | Resume, hard 5 minutes, pause at the top, then **resume after 30 seconds**. | `resume -> effort_resumed` |
-| B3 | Resume, hard 4 minutes, pause at the top, sit **30 seconds**, then **L1 SAVE** and finish the ride. | `end -> ride_ended`, and `session … recoveries=0` |
+| B1 | Hard 5 minutes to above 80%. Then **stop pedalling and do NOT press R1** — the clock keeps running. Sit for 40 seconds. **Now press R1.** | `cease ... -> already_falling` |
+| B2 | **R1**, hard 5 minutes, stop and **press R1** at the top, then **press R1 again after 30 seconds** and pedal. | `resume -> effort_resumed` |
+| B3 | **R1**, hard 4 minutes, stop and **press R1** at the top, sit **30 seconds**, then **L1 SAVE** and finish the ride. | `end -> ride_ended`, and `session … recoveries=0` |
 
 B1 is the subtle one and the most likely to disagree with the design. If your
 heart rate falls below 80% of HRmax during those 40 seconds you will get
@@ -79,9 +113,9 @@ real state and the file must show it rather than omitting the session.
 
 | # | Do | Expect |
 |---|---|---|
-| C1 | Start with the strap on. Hard 5 minutes, pause at the top. | `cease -> armed` |
+| C1 | Start with the strap on. Hard 5 minutes, stop pedalling and **press R1** at the top. | `cease -> armed` |
 | C2 | About 20 seconds into the window, **take the strap off** and leave it off for 15 seconds, then put it back. Stay seated for the rest of the 90 s. | `untrusted` lines, then `discard dropout` — or a `recovery` with `trusted=` below 61 if the gap was short |
-| C3 | Resume, hard 4 minutes, pause, sit 90 s **without touching the strap**. | a clean `recovery` |
+| C3 | **R1**, hard 4 minutes, stop and **press R1**, sit 90 s **without touching the strap**. | a clean `recovery` |
 | C4 | Finish, but this time **SKIP** the kilojoule screen (R2). | `session … work_kj=0` |
 
 C2 is a judgement call in the moment: fewer than about 6 untrusted seconds in
@@ -93,7 +127,8 @@ C4 checks that `work_kj` is **absent** from the JSON, not zero.
 ## Ride D — no zones (5 minutes)
 
 1. Turn the watch's heart-rate zones **off** in settings.
-2. Ride hard 4 minutes, pause, sit 90 seconds, finish and save.
+2. Ride hard 4 minutes, stop pedalling and **press R1**, sit 90 seconds, finish
+   and save.
 3. Turn the zones back on.
 
 Expect `cease ... -> no_max_hr` and a session in the log with
@@ -172,15 +207,15 @@ answered it should come out.
 - **Nothing at all was measured across A and C.** The 80%-of-maximum floor is
   the most likely cause, and it is the gate with the weakest provenance — it is
   matched to Barak et al.'s protocol rather than derived from a threshold study.
-  `recovery.log` has your actual `pct=` at every pause, so the right number can
+  `recovery.log` has your actual `pct=` at every R1, so the right number can
   be re-derived from the ride instead of argued.
 - **`already_falling` fires on A3 or A5**, where it should not. The 10 bpm
   threshold is derived, not measured on this wearer; the `A` lines in the 30 s
-  before the pause are exactly what it should be re-measured from.
+  before you pressed R1 are exactly what it should be re-measured from.
 - **`dropout` fires on a window you did not sabotage.** Spin measured 5%
   untrusted seconds over two rides with a strap; if yours is much worse, the 90%
   gate is set for someone else's sensor.
-- **The pause window almost never survives**, because 60 seconds of sitting
+- **The window almost never survives**, because 60 seconds of sitting
   still is longer than anyone waits. That would be the finding that matters
   most, and the honest response is not to shorten the window — a 30 s number is
   not comparable to a 60 s one — but to say so on the paused screen so a wearer
