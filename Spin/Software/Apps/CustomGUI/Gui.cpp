@@ -256,6 +256,14 @@ void Gui::handleButton(SDK::Message::EventButton::Id id,
         case Track::State::ACTIVE:
             if (id == Id::SW2) {            // R1: pause
                 sender.trackPause();
+            } else if (id == Id::SW4) {     // R2: lap
+                // The one screen where R2 does not leave. It is the lap button
+                // on the SDK's own activity apps -- TrackView::handleKeyEvent
+                // in the Cycling example -- and a wearer arriving from those
+                // has that in their fingers. Matching the platform beats
+                // matching this app's own rule, and R2 was free here precisely
+                // because leaving mid-ride is what the rule forbids.
+                sender.trackLap();
             }
             break;
 

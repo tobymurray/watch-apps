@@ -91,6 +91,9 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
         // A strap that dropped out mid-ride.
         ("riding_dropout", riding(SCREEN_RIDING, 1830, 0, HR_NONE)),
         ("riding_three_digit_hr", riding(SCREEN_RIDING, 2400, 187, HR_EXTERNAL)),
+        // Mid-ride with zones, where both live buttons show at once: the mark
+        // alone for pause, and the named one for lap.
+        ("riding_lap_hint", in_zone(riding(SCREEN_RIDING, 640, 151, HR_EXTERNAL), 4)),
         // The arc in the bottom gap, partly filled.
         (
             "riding_target_half",

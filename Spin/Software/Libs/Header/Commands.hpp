@@ -37,6 +37,7 @@ namespace CustomMessage {
     constexpr SDK::MessageType::Type TRACK_STOP         = 0x00000011;
     constexpr SDK::MessageType::Type TRACK_PAUSE        = 0x00000012;
     constexpr SDK::MessageType::Type TRACK_RESUME       = 0x00000013;
+    constexpr SDK::MessageType::Type TRACK_LAP          = 0x00000014;
 
     // -- Service --> GUI ------------------------------------------------------
 
@@ -134,6 +135,13 @@ namespace CustomMessage {
         TrackPause() : SDK::MessageBase(TRACK_PAUSE) {}
     };
 
+    /// Close the current lap here. Carries nothing: the Service owns the clock
+    /// and every per-lap total, so the only thing the GUI can contribute is
+    /// the instant, which is the moment this arrives.
+    struct TrackLap : public SDK::MessageBase {
+        TrackLap() : SDK::MessageBase(TRACK_LAP) {}
+    };
+
     struct TrackResume : public SDK::MessageBase {
         TrackResume() : SDK::MessageBase(TRACK_RESUME) {}
     };
@@ -191,6 +199,7 @@ public:
     bool trackStart()  { return send<TrackStart>([](TrackStart *) {}); }
     bool trackPause()  { return send<TrackPause>([](TrackPause *) {}); }
     bool trackResume() { return send<TrackResume>([](TrackResume *) {}); }
+    bool trackLap()    { return send<TrackLap>([](TrackLap *) {}); }
 
     /// @param workKilojoules  kJ, or 0 for "nobody said". Not defaulted: a
     ///        caller with no number should have to write the 0 that says so.

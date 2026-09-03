@@ -30,10 +30,12 @@ pair (`SDK::Fit::Sport::Cycling`, `SDK::Fit::SubSport::IndoorCycling`).
 Everything else in the file, all asserted in
 [`Tests/ActivityWriter_test.cpp`](Tests/ActivityWriter_test.cpp):
 
-- **At least one lap, and they add up.** Spin has no lap button, so with
-  auto-lap off the single lap is the whole ride — a session with no lap at all
-  is one many FIT consumers quietly drop. With auto-lap on, the laps sum to the
-  session.
+- **At least one lap, and they add up.** With nothing pressed and auto-lap off,
+  the single lap is the whole ride — a session with no lap at all is one many
+  FIT consumers quietly drop. Press R2 mid-ride, or set auto-lap, and the laps
+  still sum to the session. Each one carries its own average and maximum heart
+  rate, calories and time in zone, which is what makes a lap an interval
+  worth reading afterwards.
 - **Where each beat came from.** Every `record` carries the arbitrated
   `heart_rate` plus developer fields `hr_source`, `hr_optical` and
   `hr_external`. Which sensor the kernel believed is not recoverable from the
@@ -452,7 +454,7 @@ an accidental exit would cost the ride.
 | Screen | Shows | L1 | L2 | R1 | R2 |
 |---|---|---|---|---|---|
 | Ready | strap status, target if set | | | **START** | **EXIT** |
-| Riding | clock, heart rate, zone | | | pause | |
+| Riding | clock, heart rate, zone | | | pause | **LAP** |
 | Paused | dimmed clock, `PAUSED` | **SAVE** | **DISCARD** | resume | |
 | Bike kJ | the number being built | **+100** | **+10** | **SAVE** | **SKIP** |
 | Saved / discarded | what happened | | | done | **DONE** |
@@ -466,10 +468,19 @@ perfectly normal ride.
 Each live button is marked by a short arc at its own corner of the bezel — the
 same mark the SDK's TouchGFX apps use, and it belongs to the zone ring's family
 rather than floating free. **Words appear only where there is a decision.**
-While riding there is one live button and one obvious thing for it to do, so it
-gets the mark alone; the same goes for resume when paused, which was PAUSE a
-second earlier. The two endings of a ride get words, because choosing between
-them is the whole reason that screen exists.
+Riding has two live buttons, and only the newer one is named: R1 keeps the mark
+alone because pausing is unchanged and already learned, while R2 gets `LAP`,
+since the labelled button should be the unfamiliar one. Resume when paused gets
+the mark alone for the same reason — it was PAUSE a second earlier. The two
+endings of a ride get words, because choosing between them is the whole reason
+that screen exists.
+
+**R2 mid-ride is the one place the "R2 leaves" rule does not hold**, and it is a
+deliberate trade: R2 is the lap button on the SDK's own activity apps
+(`TrackView::handleKeyEvent` in the Cycling example), so a wearer arriving from
+those already has it in their fingers. Matching the platform beats matching this
+app's own rule — and the slot was free precisely because leaving mid-ride is
+what the rule forbids.
 
 The first version put the labels on horizontal rows above and below the clock,
 where `PAUSE` landed directly over it and read as its caption, and `FINISH` and
@@ -634,9 +645,17 @@ Deliberately, and the first two are firmware limits rather than choices:
 - **No distance or speed.** There is no honest way to produce either without a
   trainer, and a fabricated distance is worse than an absent one. The FIT file
   omits both rather than writing zeros.
-- **No structured intervals.** Reachable with what is already here — the SDK's
-  profile even carries `Workout` and `WorkoutStep` — and the obvious next thing
-  to build.
+- **No structured intervals — no workout to follow.** The SDK's profile carries
+  `Workout` and `WorkoutStep`, so the file side is reachable; the hard part is
+  where a workout would come from. `configFields` caps at 32 flat scalar fields
+  rendered as one form, with no arrays and no repeats, so an arbitrary session
+  would have to be encoded as a numbered list nobody wants to fill in.
+
+  The lap button is the answer to most of it: the rider marks the structure as
+  it happens rather than declaring it in advance, and each lap already records
+  its own heart rate, calories and time in zone. A guided workout — the watch
+  telling you what to do next — is the part still missing, and the tractable
+  version is three fields (work, rest, repeats) rather than an arbitrary one.
 
 ## Versions
 

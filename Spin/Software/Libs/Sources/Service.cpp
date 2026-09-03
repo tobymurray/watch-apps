@@ -116,6 +116,11 @@ void Service::run()
                     pauseTrack(false);
                     break;
 
+                case CustomMessage::TRACK_LAP:
+                    LOG_DEBUG("TRACK_LAP\n");
+                    lapTrack();
+                    break;
+
                 case SDK::MessageType::EVENT_SENSOR_LAYER_DATA: {
                     auto *event = static_cast<SDK::Message::Sensor::EventData*>(msg);
                     SDK::Sensor::DataBatch batch(event->data, event->count, event->stride);
@@ -523,6 +528,18 @@ void Service::processTrack()
     }
 
     mGuiSender.trackData(mTrackData);
+}
+
+void Service::lapTrack()
+{
+    // Only while the clock is running, and only once there is something to
+    // close: a lap of no seconds is a message in the file that describes
+    // nothing, and pressing the button twice is easier than pressing it once.
+    if (mTrackState != Track::State::ACTIVE || mTimeCounter.getLapValueActive() <= 0) {
+        return;
+    }
+    saveLap();
+    notifyLapEnd();
 }
 
 void Service::saveLap()

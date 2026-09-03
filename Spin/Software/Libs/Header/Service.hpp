@@ -182,6 +182,8 @@ private:
     void applyZoneConfig();
     void startTrack(std::time_t utc);
     void processTrack();
+    /// A lap the wearer asked for, as opposed to one auto-lap produced.
+    void lapTrack();
     void saveLap();
     void updateHrDerivedMetrics();
     uint8_t hrZoneFor(float hr) const;

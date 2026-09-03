@@ -653,7 +653,12 @@ fn draw_riding(fb: &mut FrameBuf, frame: &Frame) {
         draw_button_tick(fb, BUTTON_R1_DEG, WHITE);
         draw_button_hint(fb, BUTTON_L2_DEG, "DISCARD", RED);
     } else {
+        // Two live buttons now, doing different things. R1 keeps the mark
+        // alone: pausing is unchanged and already learned, and a word there
+        // costs the clock its space. R2 is the new one, so it is the one that
+        // needs naming -- the labelled button is the unfamiliar button.
         draw_button_tick(fb, BUTTON_R1_DEG, WHITE);
+        draw_button_hint(fb, BUTTON_R2_DEG, "LAP", DIM);
     }
 }
 

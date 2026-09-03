@@ -12,7 +12,7 @@
   "description": "A stationary bike ride: the clock, your heart rate, and a FIT file that says indoor cycling rather than a bike ride that covered no ground. Uses a paired chest strap when one is connected and the wrist sensor when it is not.",
   "id": "1B8D0B8FA049E33F",
   "stravaExport": true,
-  "supportsLaps": false,
+  "supportsLaps": true,
   "supportsDistance": false,
   "supportsTrack": false,
   "supportsHeartbeat": true,
