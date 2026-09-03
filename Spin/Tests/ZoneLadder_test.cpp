@@ -23,6 +23,75 @@ TEST(ZoneLadder, MatchesTheWatchAtFiveZones)
     EXPECT_EQ(out[4], 166);
 }
 
+TEST(ZoneLadder, SplitsTheLadderTheWatchActuallySent)
+{
+    // Pulled off the watch: settings.json held heartRateZones
+    // [92,110,129,147,166,184], and recovery.log reported six floors beside
+    // max_hr=0 -- which the old split produces only if heartRateCount was 7,
+    // one more than the thresholds filled. It took the unfilled slot for the
+    // maximum and left 184 standing as a sixth floor, and that is what made
+    // every recovery window no_max_hr.
+    const uint8_t sent[8] = {92, 110, 129, 147, 166, 184, 0, 0};
+    uint8_t out[8] = {};
+    uint8_t maxHr  = 0;
+
+    EXPECT_EQ(ZoneLadder::fromWatch(sent, 8, 7, out, 8, maxHr), 5);
+    EXPECT_EQ(maxHr, 184);
+
+    uint8_t spread[8] = {};
+    ASSERT_TRUE(ZoneLadder::floors(184, 5, spread, 8));
+    for (uint8_t i = 0; i < 5; ++i) {
+        EXPECT_EQ(out[i], spread[i]) << "floor " << int(i);
+    }
+}
+
+TEST(ZoneLadder, LeavesTheMaximumAloneWhenTheWatchSentNoLadder)
+{
+    const uint8_t sent[8] = {};
+    uint8_t out[8] = {};
+
+    for (uint8_t zoneCount : {0, 1}) {
+        uint8_t maxHr = 0;
+        EXPECT_EQ(ZoneLadder::fromWatch(sent, 8, zoneCount, out, 8, maxHr), 0);
+        EXPECT_EQ(maxHr, 0) << "zone count " << int(zoneCount);
+    }
+}
+
+TEST(ZoneLadder, KeepsTheMaximumWhenThereIsRoomForNoFloors)
+{
+    // Two zones is one threshold, and that threshold is the maximum.
+    const uint8_t sent[8] = {184, 0, 0, 0, 0, 0, 0, 0};
+    uint8_t out[8] = {};
+    uint8_t maxHr  = 0;
+
+    EXPECT_EQ(ZoneLadder::fromWatch(sent, 8, 2, out, 8, maxHr), 0);
+    EXPECT_EQ(maxHr, 184);
+}
+
+TEST(ZoneLadder, WritesNoMoreFloorsThanItWasGivenRoomFor)
+{
+    const uint8_t sent[8] = {92, 110, 129, 147, 166, 184, 0, 0};
+    uint8_t out[3] = {};
+    uint8_t maxHr  = 0;
+
+    EXPECT_EQ(ZoneLadder::fromWatch(sent, 8, 7, out, 3, maxHr), 3);
+    EXPECT_EQ(maxHr, 184);
+    EXPECT_EQ(out[2], 129);
+}
+
+TEST(ZoneLadder, ReadsNoFurtherThanTheMessageItWasHanded)
+{
+    // The count comes from firmware and the array it indexes does not grow, so
+    // a count past the end has to stop at the end.
+    const uint8_t sent[4] = {92, 110, 129, 147};
+    uint8_t out[8] = {};
+    uint8_t maxHr  = 0;
+
+    EXPECT_EQ(ZoneLadder::fromWatch(sent, 4, 200, out, 8, maxHr), 3);
+    EXPECT_EQ(maxHr, 147);
+    EXPECT_EQ(out[2], 129);
+}
+
 TEST(ZoneLadder, StartsAtHalfTheMaximumAndStaysBelowIt)
 {
     for (uint8_t maxHr : {150, 184, 200}) {

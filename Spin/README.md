@@ -147,6 +147,15 @@ uses, and a second copy is a second thing to keep in step. The watch reports its
 ladder as 50/60/70/80/90/100% of maximum heart rate, so the last value is the
 maximum rather than a floor and Spin drops it to get five floors.
 
+`heartRateCount` in that message is a count of **zones, not thresholds** — the
+SDK header says so itself, in the comment `4 thresholds = 5 zones` — so the
+array holds one fewer value than the count and reading `heartRateTh[count - 1]`
+lands on a slot the firmware never filled. It reads 0 there, which is a maximum
+heart rate of zero and a ladder one zone too long, and it cost the first desk
+run of the recovery feature: every window was discarded as `no_max_hr` on a
+watch that had a maximum set the whole time. `ZoneLadder::fromWatch` owns the
+split now, against the ladder the watch actually sent.
+
 **`hrZoneCount` defaults to 5**, because five is what almost everyone means by
 heart-rate zones and it is what the watch itself ships. Set it to anything from
 2 to 8 for a model the watch cannot express — a three-zone polarised split, or a
