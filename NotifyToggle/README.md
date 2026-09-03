@@ -19,6 +19,23 @@ full derivation, address by address, lives in
 and, canonically kept current, in `una-sdk`'s `research` branch. Short
 version:
 
+- **No app-facing message can read or write this setting.** The SDK hands an
+  app watch settings through exactly one message, `RequestSystemSettings`
+  (`Libs/Header/SDK/Messages/CommandMessages.hpp`), whose payload carries
+  language, units, time format, heart-rate zones, daily goals, height and
+  weight — the whole `phone` group is absent. That omission is deliberate
+  rather than an oversight: the simulator's `REQUEST_SYSTEM_SETTINGS` handler
+  (`Libs/Source/Simulator/App/KernelMessageDispatcher.cpp`) copies
+  `unitsImperial`, the zones and the three daily goals out of the very
+  `WatchSettings` struct that holds `phone.notifications`, and steps over that
+  one field. Nor is there a setter anywhere: `REQUEST_SYSTEM_INFO` and
+  `REQUEST_SYSTEM_SETTINGS` are the only two `REQUEST_SYSTEM_*` messages in the
+  headers, and both are reads. The single notification lever an app is given is
+  `RequestSetCapabilities::enPhoneNotification`, which the SDK's own comment
+  scopes as "Enable phone notifications during app" — it lasts only as long as
+  the declaring app, which is why it is not what R1 pulls here. Falsified by a
+  `phone` field appearing in `RequestSystemSettings`, a third
+  `REQUEST_SYSTEM_*` message, or that handler learning to copy the field.
 - **The SDK's own sandboxed filesystem API cannot reach `settings.json` at
   all.** `FileSystemGuard::getFullPath` implements exactly one relative-path
   escape (a hardcoded match on `"../SharedData"`) and rejects every other
