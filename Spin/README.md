@@ -404,6 +404,24 @@ about 25% with a signal-to-noise ratio of 1.3, so one number on its own is
 noise, and there is no honest way to put a single noisy number on a 240×240
 panel without it reading as a verdict. It is written for a later reader instead.
 
+### Watching it work
+
+`LOG_*` on this watch reaches a debug UART adapter and nothing else, so on real
+hardware a discarded measurement would be invisible — a ride that measured
+nothing and a ride whose windows were all correctly declined would look
+identical. So the Service also writes **`recovery.log`** into its own folder,
+where USB can read it: one line per event, one line a second while paused, and
+the reason by name whenever a window produces nothing.
+
+It appends across rides, stops at 128 KiB, and is held open for the ride rather
+than opened per line — a FatFs open/write/flush/close every second would land
+inside the same tick the window is measured on, and a logger that changed the
+measurement would be worse than no logger.
+
+This is a diagnostic for the first hardware sessions, not a feature.
+[`Docs/RECOVERY-FIELD-TEST.md`](Docs/RECOVERY-FIELD-TEST.md) is the ride that
+makes every gate fire, and what to check afterwards.
+
 ### What it cannot tell you
 
 The full list, with its sources, is in [TrainKit's README](../TrainKit/README.md#what-this-cannot-tell-you).
@@ -448,7 +466,7 @@ was linked:
 ```
              .text    .data     .bss     .uapp
 without      68,584    1,732   11,776   121,800
-with         89,280    1,732   12,064   142,940
+with         91,128    1,732   12,096   144,840
 ```
 
 The 288 bytes of RAM are the detector; the 16 KiB the log is read into is heap,

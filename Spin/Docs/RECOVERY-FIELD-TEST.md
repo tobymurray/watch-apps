@@ -1,0 +1,190 @@
+# The ride that tests heart-rate recovery
+
+A prescribed session for the first hardware run of
+[heart-rate recovery and the shared session log](../README.md#how-fast-your-heart-falls-when-you-stop).
+It is designed to make **every gate fire at least once** and to leave three
+pieces of evidence that can be checked against each other: the `.fit`, the
+shared log, and `recovery.log`.
+
+It is not a training session. Do it on a day you were going to ride easy
+anyway; there are four hard minutes in it and a lot of sitting still.
+
+> **Before you start**: nothing here has ever run on hardware. Treat a wrong
+> number as information, not as a failure — the point of the ride is to find
+> out. Every gate's threshold is written down in
+> [TrainKit's README](../../TrainKit/README.md#the-gates-and-what-each-one-is-for)
+> with the source it came from, so if one is wrong you can see what it was
+> derived from.
+
+## What you need first
+
+1. **A maximum heart rate set on the watch.** Settings → heart-rate zones. If
+   the watch has none, every measurement is discarded as `no_max_hr` — which is
+   Ride D's job, so set it for A–C.
+2. **Write down your maximum**, call it `HRmax`, and work out **80% of it**.
+   That is the intensity floor. For 190 bpm it is 152.
+3. **Wear the chest strap.** The wrist sensor with your hands on the bars is
+   the worst case for dropouts, and Ride C tests that on purpose.
+4. **Install this build**, then **delete `recovery.log`** from Spin's folder
+   over USB if one is already there.
+
+Throughout: **R1 pauses. R1 again resumes. L1 from paused is SAVE.**
+
+---
+
+## Ride A — the one that should work (about 25 minutes)
+
+The measurement this feature exists for, taken twice, plus the two "not enough
+effort" gates.
+
+| # | Do | Expect in `recovery.log` |
+|---|---|---|
+| A1 | Start the ride. Pedal easy for **2 minutes**, then pause. | `cease ... -> too_short` |
+| A2 | Resume. Ride easy — **below 80% of HRmax** — for **5 minutes**, then pause. | `cease ... -> too_easy` |
+| A3 | Resume. **Hard, 5 minutes**, ending at or above 80% of HRmax and still climbing. Pause at the top. | `cease ... -> armed` |
+| A4 | **Sit still on the bike. Do not pedal. Do not get off. 90 seconds.** Watch the clock. | `recovery hr0=… drop=…` after ~60 s |
+| A5 | Resume. Easy 2 minutes. Then **hard 4 minutes** again, pause at the top. | `cease ... -> armed` |
+| A6 | **Sit still, 90 seconds** again. | a second `recovery` line |
+| A7 | Resume, easy 2 minutes, pause, **L1 SAVE**. Enter the bike's kJ with L1/L2. **R1 SAVE**. | `session … recoveries=2` |
+
+**A4 and A6 are the whole ride.** Everything else is scaffolding. If you get off
+the bike, walk to the water fountain, or keep soft-pedalling, you have measured
+something different — that is the active-versus-passive trap, and the watch
+cannot see it, which is exactly why the README says so.
+
+A3 and A5 must be **separated by real effort**, not just by a resume: the effort
+gate measures the current bout, so resuming and pausing ten seconds later gives
+`too_short` (which A1 already covers).
+
+## Ride B — the ones that should be thrown away (about 20 minutes)
+
+Each of these is a window that opens and then correctly produces nothing.
+
+| # | Do | Expect |
+|---|---|---|
+| B1 | Hard 5 minutes to above 80%. Then **stop pedalling but do NOT pause.** Sit for 40 seconds. *Now* pause. | `cease ... -> already_falling` |
+| B2 | Resume, hard 5 minutes, pause at the top, then **resume after 30 seconds**. | `resume -> effort_resumed` |
+| B3 | Resume, hard 4 minutes, pause at the top, sit **30 seconds**, then **L1 SAVE** and finish the ride. | `end -> ride_ended`, and `session … recoveries=0` |
+
+B1 is the subtle one and the most likely to disagree with the design. If your
+heart rate falls below 80% of HRmax during those 40 seconds you will get
+`too_easy` instead of `already_falling` — **both are correct refusals**, and
+which one fires tells you where the two gates meet on your physiology. Write
+down which you got.
+
+B3 leaves a session in the shared log with **no recoveries at all**. That is a
+real state and the file must show it rather than omitting the session.
+
+## Ride C — the sensor, and the file (about 15 minutes)
+
+| # | Do | Expect |
+|---|---|---|
+| C1 | Start with the strap on. Hard 5 minutes, pause at the top. | `cease -> armed` |
+| C2 | About 20 seconds into the window, **take the strap off** and leave it off for 15 seconds, then put it back. Stay seated for the rest of the 90 s. | `untrusted` lines, then `discard dropout` — or a `recovery` with `trusted=` below 61 if the gap was short |
+| C3 | Resume, hard 4 minutes, pause, sit 90 s **without touching the strap**. | a clean `recovery` |
+| C4 | Finish, but this time **SKIP** the kilojoule screen (R2). | `session … work_kj=0` |
+
+C2 is a judgement call in the moment: fewer than about 6 untrusted seconds in
+the window survives, more does not. Either outcome is evidence — note how long
+you actually had it off.
+
+C4 checks that `work_kj` is **absent** from the JSON, not zero.
+
+## Ride D — no zones (5 minutes)
+
+1. Turn the watch's heart-rate zones **off** in settings.
+2. Ride hard 4 minutes, pause, sit 90 seconds, finish and save.
+3. Turn the zones back on.
+
+Expect `cease ... -> no_max_hr` and a session in the log with
+`hr_max_setting: 0`, `zone_count: 0`, and **no `edwards_trimp`**.
+
+## Ride E — a ladder Edwards never wrote weights for (5 minutes)
+
+1. On the phone, set Spin's `hrZoneCount` to **3**.
+2. Ride 4 minutes at any intensity, finish and save.
+3. Set it back to **5** (or 0).
+
+Expect the session to have `zone_count: 3`, three `zone_floors`, four `zone_s`
+buckets, and **no `edwards_trimp` field at all**. Ride A's session, by contrast,
+must have one.
+
+---
+
+## Reading it back
+
+Mount the watch over USB. Three files matter:
+
+| File | Where | What it proves |
+|---|---|---|
+| `recovery.log` | Spin's own folder | Why each window did what it did, second by second |
+| `spin_sessions.json` | `SharedData/` | What survived into the record |
+| the `.fit` | the activity folder | That the ride itself is unharmed |
+
+`recovery.log` is plain text, one event per line, `<utc> <event> key=value`:
+
+```
+1756800000 start max_hr=190 zones=5 weight=75
+1756800030 A hr=131 trust=3 zone=2 pct=69
+...
+1756800612 cease hr=171 pct=90 active=600 -> armed
+1756800613 P hr=171 trust=3 zone=5 pct=90
+1756800614 P hr=170 trust=3 zone=5 pct=89
+...
+1756800673 recovery hr0=171 hr_end=118 drop=53 window=60 trusted=61 pct=90 curve=171,158,147,138,131,124,118
+1756800690 session status=0 recoveries=1 dropped=0 active=1500 hr_avg=142 work_kj=430 trimp=112
+```
+
+`A` is a riding second (one every 30 s), `P` is a paused second (one every
+second, because that is where a window runs). `status=0` on the session line is
+`SharedLog::Status::OK`; anything else is in `SharedLog.hpp`.
+
+The log **appends across rides** and stops at 128 KiB, so pull it and delete it
+between sessions. It is a diagnostic, not a feature — once these questions are
+answered it should come out.
+
+### The eight things to check
+
+1. **`recovery.log` exists at all.** If it does not, `IFile::open(write,
+   no-override)` does not create a missing file on this kernel and the fallback
+   in `EventLog::open()` did not catch it. Everything else in this document is
+   then blind, so fix this first.
+2. **Ride A produced two `recovery` lines**, and `spin_sessions.json` has both.
+3. **`drop_bpm` is plausible** — somewhere in the 15–45 range for most people
+   sitting still after hard work. A drop under 5 or over 70 means look at the
+   `curve`, which is the raw evidence.
+4. **The `curve` falls monotonically.** A curve that rises in the middle means
+   the strap was arguing with the wrist sensor, and `hr_source` in the `.fit`
+   will say which one won that second.
+5. **Every gate in Rides A–E fired**, and each was the reason predicted above.
+   A gate that never fires is a gate that has never been tested.
+6. **`spin_sessions.json` parses**, and each session's `zone_s` sums to its
+   `active_s`. That is the same property `SecondsAccrual` holds for the `.fit`,
+   so the two records must agree.
+7. **`hr_avg` and `active_s` match the `.fit`'s** `avg_heart_rate` and
+   `total_timer_time`. If they do not, one of the two records is wrong about the
+   same ride.
+8. **Five sessions are in the file after Ride E**, oldest first, `kept: 5`,
+   `dropped: 0`, and a `.bak` beside it from the last commit.
+
+### What would change the design
+
+- **Nothing at all was measured across A and C.** The 80%-of-maximum floor is
+  the most likely cause, and it is the gate with the weakest provenance — it is
+  matched to Barak et al.'s protocol rather than derived from a threshold study.
+  `recovery.log` has your actual `pct=` at every pause, so the right number can
+  be re-derived from the ride instead of argued.
+- **`already_falling` fires on A3 or A5**, where it should not. The 10 bpm
+  threshold is derived, not measured on this wearer; the `A` lines in the 30 s
+  before the pause are exactly what it should be re-measured from.
+- **`dropout` fires on a window you did not sabotage.** Spin measured 5%
+  untrusted seconds over two rides with a strap; if yours is much worse, the 90%
+  gate is set for someone else's sensor.
+- **The pause window almost never survives**, because 60 seconds of sitting
+  still is longer than anyone waits. That would be the finding that matters
+  most, and the honest response is not to shorten the window — a 30 s number is
+  not comparable to a 60 s one — but to say so on the paused screen so a wearer
+  who wants the measurement knows to wait.
+
+Record what happened here, in this file, under a dated heading. A field test
+whose results live only in a chat window has not been done.

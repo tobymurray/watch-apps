@@ -9,9 +9,11 @@ Two things, for any activity app on this watch:
    wrote it or by another one.
 
 Rust, `no_std`, no allocator, no SDK types, no clock and no filesystem — so
-everything it decides can be checked by `cargo test` without a kernel. The one
-piece of C++ is [`cpp/SharedLog.cpp`](cpp/SharedLog.cpp), which does the file
-I/O the Rust deliberately knows nothing about.
+everything it decides can be checked by `cargo test` without a kernel. The two
+pieces of C++ are [`cpp/SharedLog.cpp`](cpp/SharedLog.cpp), which does the file
+I/O the Rust deliberately knows nothing about, and
+[`cpp/EventLog.cpp`](cpp/EventLog.cpp), which writes the diagnostics that `LOG_*`
+cannot reach without a debug UART adapter.
 
 ## Why it is a crate and not a file in one app
 
@@ -384,8 +386,8 @@ Spin's Service, built by CI's toolchain image, before and after linking this:
 ```
              .text    .data     .bss     .uapp
 without      68,584    1,732   11,776   121,800
-with         89,280    1,732   12,064   142,940
-             +20,696       0     +288   +21,140
+with         91,128    1,732   12,096   144,840
+             +22,544       0     +320   +23,040
 ```
 
 The RAM cost is the 192-byte detector blob in `.bss` and nothing else — the

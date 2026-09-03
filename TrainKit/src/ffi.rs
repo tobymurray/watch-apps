@@ -10,7 +10,7 @@
 use core::ffi::c_void;
 
 use crate::history::{History, Load, MAX_STORE_BYTES};
-use crate::record::{Recovery, Session};
+use crate::record::*;
 use crate::recovery::{Detector, Step};
 
 // -- What `history_load` reported --------------------------------------------
@@ -147,6 +147,29 @@ pub unsafe extern "C" fn trainkit_recovery_last_discard(d: *const c_void) -> u8 
         Some(det) => det.last_discard(),
         None => 0,
     }
+}
+
+/// The name of a `DISCARD_*` value, NUL-terminated and statically allocated.
+///
+/// Here rather than in the caller so a reason and its name cannot drift apart:
+/// the numbering is this crate's, so the spelling should be too.
+#[no_mangle]
+pub extern "C" fn trainkit_discard_name(reason: u8) -> *const core::ffi::c_char {
+    let s: &'static [u8] = match reason {
+        DISCARD_NONE => b"none\0",
+        DISCARD_NO_MAX_HR => b"no_max_hr\0",
+        DISCARD_TOO_SHORT => b"too_short\0",
+        DISCARD_TOO_EASY => b"too_easy\0",
+        DISCARD_ALREADY_FALLING => b"already_falling\0",
+        DISCARD_NO_BASELINE_HISTORY => b"no_baseline_history\0",
+        DISCARD_NO_BASELINE => b"no_baseline\0",
+        DISCARD_DROPOUT => b"dropout\0",
+        DISCARD_NO_ENDPOINT => b"no_endpoint\0",
+        DISCARD_EFFORT_RESUMED => b"effort_resumed\0",
+        DISCARD_RIDE_ENDED => b"ride_ended\0",
+        _ => b"unknown\0",
+    };
+    s.as_ptr() as *const core::ffi::c_char
 }
 
 fn step_code(s: Step) -> u8 {
