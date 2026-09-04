@@ -70,10 +70,44 @@ uint32_t squash_profile_compare(uint8_t metric, float value, SquashComparison* o
 
 /// What squash_engine_abi_fingerprint() returns for the layout above.
 ///
-/// Checked once at start-up rather than trusted: the two struct definitions are
-/// written twice, in two languages, and nothing but this notices when one of
-/// them moves. `squash_engine`'s own test prints the value.
-static constexpr uint32_t kAbiFingerprint = 524638087u;
+/// Baselines squash_profile_compare() can place a value against.
+///
+/// Pinned against the enum below, and hashed into the fingerprint, so the two
+/// lists cannot differ in length without a refused start-up.
+static constexpr size_t kMetricCount = 7;
+
+namespace squash_abi
+{
+
+constexpr uint32_t fnv1a(uint32_t hash, size_t v)
+{
+    return (hash ^ static_cast<uint32_t>(v)) * 16777619u;
+}
+
+/// The same walk, in the same order, as squash_engine_abi_fingerprint() in
+/// lib.rs -- but over the offsets *this* compiler produced.
+///
+/// Computed rather than copied. A literal transcribed from the Rust side's
+/// test catches a struct that drifts in Rust and misses one that drifts here,
+/// which is half a check: the two definitions are written twice, in two
+/// languages, and only walking both notices when either moves.
+constexpr uint32_t fingerprint()
+{
+    uint32_t h = fnv1a(2166136261u, sizeof(SquashSessionRecord));
+    h = fnv1a(h, sizeof(SquashComparison));
+    h = fnv1a(h, offsetof(SquashSessionRecord, activeS));
+    h = fnv1a(h, offsetof(SquashSessionRecord, hrMean));
+    h = fnv1a(h, offsetof(SquashSessionRecord, hrSource));
+    h = fnv1a(h, offsetof(SquashSessionRecord, segmented));
+    h = fnv1a(h, offsetof(SquashComparison, sessions));
+    h = fnv1a(h, offsetof(SquashSessionRecord, hrExternalReadings));
+    return fnv1a(h, kMetricCount);
+}
+
+} // namespace squash_abi
+
+/// What squash_engine_abi_fingerprint() must return for the layout above.
+static constexpr uint32_t kAbiFingerprint = squash_abi::fingerprint();
 
 /// No recording has set any threshold, so nothing is segmented or measured.
 static constexpr uint32_t kCalibrationAbsent = 0u;
@@ -97,6 +131,9 @@ enum class SquashMetric : uint8_t {
     RECOVERY_SHORT,
     RECOVERY_LONG,
 };
+
+static_assert(static_cast<size_t>(SquashMetric::RECOVERY_LONG) + 1 == kMetricCount,
+              "the metric enum and kMetricCount disagree");
 
 /**
  * @class SquashProfileStore
