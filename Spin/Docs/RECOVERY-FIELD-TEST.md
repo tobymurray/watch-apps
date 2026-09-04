@@ -9,8 +9,10 @@ shared log, and `recovery.log`.
 It is not a training session. Do it on a day you were going to ride easy
 anyway; there are four hard minutes in it and a lot of sitting still.
 
-> **Before you start**: no gate here has ever fired on hardware — only the desk
-> check below has run, on [2026-09-03](#2026-09-03--the-desk-check). Treat a
+> **Before you start**: no window here has ever produced a measurement on
+> hardware — only the desk check below has run, on
+> [2026-09-03](#2026-09-03--the-desk-check), where every gate that fired was a
+> refusal. Treat a
 > wrong number as information, not as a failure — the point of the ride is to
 > find out. Every gate's threshold is written down in
 > [TrainKit's README](../../TrainKit/README.md#the-gates-and-what-each-one-is-for)
@@ -361,10 +363,39 @@ developer fields declared; and untrusted seconds carried as an invalid
   reader would have seen the field as absent rather than pinned. It stops at
   65534 now.
 
+### The re-run, on `0.8.0-11-0ed81df`
+
+One desk run on a build carrying the four fixes. Every check above passes, and
+the three numbers the checks are actually about:
+
+```
+1788480655 start version=0.8.0-11-0ed81df max_hr=184 zones=5 weight=90
+1788480735 cease hr=65 pct=35 active=79 -> too_short
+1788480855 session status=0 recoveries=0 dropped=0 active=79 hr_avg=66 work_kj=200 trimp=0
+```
+
+The ladder is the watch's own five floors — `[92,110,129,147,166]` with 184 as
+the maximum rather than a sixth floor — so `time_in_hr_zone` is six buckets,
+`hr_max_setting` is 184, and `edwards_trimp` is emitted for the first time
+(0 here, since a desk run never leaves zone 0). `pct=` is a real fraction of
+maximum on every line where it used to be 0, which is the 80% gate having
+something to compare against at last.
+
+`too_short` is the reason this document predicts, and the pause was 119 s — the
+window was declined on the 180 s effort gate, not on its length.
+
+The two records now agree: a mean of 66.3846 bpm is 66 in the `.fit` and 66 in
+`spin_sessions.json`. The `session` line sorts last, `kept` rose to 3, and the
+`.bak` beside it holds 2.
+
 ### Still open
 
-- The desk check needs **repeating on a build carrying these fixes**, because no
-  recovery window has ever armed on hardware. Until one does, the gates are
-  untested and Rides A–E are premature.
+- **No window has ever survived to produce a measurement.** Every gate that has
+  fired on hardware so far has been a refusal — `no_max_hr`, then `too_short`.
+  The fastest way to close this is
+  [the five-minute trick above](#optional-force-a-real-measurement-without-exercise-5-minutes):
+  it works now that the watch's maximum reads back, and it exercises the window,
+  the curve, the struct across the C ABI, the JSON and the commit without a bike.
+  Rides A–E stay premature until it has.
 - `Docs/INSTALLING.md`, linked twice above and once from `Service.cpp`, does not
   exist.
