@@ -17,6 +17,8 @@ on:
       # The renderer's text comes from the shared crate; a change there is a
       # change to this app's binary.
       - 'TextKit/**'
+      # So is the recovery detector and the shared session log.
+      - 'EffortKit/**'
       - '.github/workflows/spin.yml'
       - '.github/workflows/app-build.yml'
   pull_request:
@@ -25,6 +27,8 @@ on:
       # The renderer's text comes from the shared crate; a change there is a
       # change to this app's binary.
       - 'TextKit/**'
+      # So is the recovery detector and the shared session log.
+      - 'EffortKit/**'
       - '.github/workflows/spin.yml'
       - '.github/workflows/app-build.yml'
   workflow_dispatch:

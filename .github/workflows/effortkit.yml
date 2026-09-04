@@ -1,0 +1,73 @@
+name: EffortKit
+
+# A shared crate belongs to no app, so no app's workflow builds it. Spin and
+# Squash both rebuild when it changes -- their paths filters say so -- but that
+# only proves their binaries still link. This is what proves the crate itself is
+# still correct, still no_std, and still free of anything that crept in behind
+# `feature = "std"`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'EffortKit/**'
+      - 'Tools/hr_analyse.py'
+      - 'Tools/hr_source.py'
+      - '.github/workflows/effortkit.yml'
+  pull_request:
+    paths:
+      - 'EffortKit/**'
+      - 'Tools/hr_analyse.py'
+      - 'Tools/hr_source.py'
+      - '.github/workflows/effortkit.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: effortkit-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/tobymurray/watch-apps-toolchain@sha256:cca44e2ca090850480a612f4ed3d4acbd317f3bd32516b0d8fe323cf37c0ee26
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --features std, not a bare `cargo test`: the crate is no_std for the
+      # watch, and a test binary cannot link a crate whose panics do not unwind.
+      - name: Tests
+        working-directory: EffortKit
+        run: cargo test --features std
+
+      # The one that matters most. A `std` type reached for by accident compiles
+      # fine on the host and fails only here.
+      - name: The watch target
+        working-directory: EffortKit
+        run: cargo build --release --target thumbv8m.main-none-eabihf
+
+      # No clippy step: the toolchain image has no clippy component, and a step
+      # that can only pass is worse than no step. Run it on a workstation.
+
+      # Every "measured" number in the crate's own documentation is re-derived
+      # from the recordings checked in beside it, so a recording that changes
+      # without the documentation following is visible here.
+      - name: The recordings still say what the crate says they say
+        run: |
+          set -euo pipefail
+          python3 Tools/hr_analyse.py | tail -20
+          python3 Tools/hr_source.py | tail -10
+
+      # Reads every pulled recording end to end, which is the only thing that
+      # exercises the fixture reader and the Phase A tool at all.
+      - name: Phase A runs over the recordings
+        working-directory: EffortKit
+        run: cargo run --features std --bin phase-a -- ../Squash/Tests/pulled/*/imu_*.csv > /dev/null
