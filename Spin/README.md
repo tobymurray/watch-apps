@@ -432,8 +432,10 @@ inside the same tick the window is measured on, and a logger that changed the
 measurement would be worse than no logger.
 
 This is a diagnostic for the first hardware sessions, not a feature.
-[`Docs/RECOVERY-FIELD-TEST.md`](Docs/RECOVERY-FIELD-TEST.md) is the ride that
-makes every gate fire, and what to check afterwards.
+[`Docs/RECOVERY-FIELD-RESULTS.md`](Docs/RECOVERY-FIELD-RESULTS.md) is what those
+sessions found — every discard reason but `source_changed` has now fired on the
+watch — and [`Docs/RECOVERY-FIELD-TEST.md`](Docs/RECOVERY-FIELD-TEST.md) is what
+is left to run, and what to check in any run.
 
 ### What it cannot tell you
 
