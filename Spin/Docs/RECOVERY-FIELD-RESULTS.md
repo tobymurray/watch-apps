@@ -332,8 +332,8 @@ The two records now agree: a mean of 66.3846 bpm is 66 in the `.fit` and 66 in
 
 - Closed by [Ride A](#2026-09-03--ride-a-real-maximum-184), later the same day: two windows
   survived and the whole path past `armed` ran.
-- `Docs/INSTALLING.md`, linked twice above and once from `Service.cpp`, does not
-  exist.
+- Closed: [`Docs/INSTALLING.md`](../../Docs/INSTALLING.md), linked twice above
+  and once from `Service.cpp`, exists now.
 
 ---
 
@@ -577,3 +577,162 @@ cannot rule out a rare excursion at real intensity; a 1-in-927 event need not
 appear in that sample. This shows the confidence *distribution* is much better
 where the gates operate. It does not show the tail is absent there.
 
+---
+
+---
+
+## 2026-09-04 — Ride A's seconds, pulled at last, and the instrument for the ride still missing
+
+> **No interval session has been ridden.** The watch was read on 2026-09-04;
+> its newest activity is 2026-09-04 00:20, a desk ride at the synthetic
+> maximum. The design in
+> [`HR-TREND-PROMPT.md`](HR-TREND-PROMPT.md#2-the-design-that-came-out-of-it)
+> is therefore **not built**, for the reason at the bottom of this section.
+
+### Ride A's per-second stream was on the watch, and is now in the repository
+
+Until 2026-09-04 the numbers in
+[`HR-TREND-PROMPT.md` §1](HR-TREND-PROMPT.md#the-horizon-and-its-floor) rested
+on a file that existed nowhere but the watch: this document kept Ride A's
+`cease`, `recovery` and `session` lines and the two seven-point curves, and
+nothing else. The comparison the trend experiment turns on is *against Ride A*,
+so the baseline was one factory reset from being gone.
+
+It is now [`Spin/Tests/pulled/20260903-rideA-real-max-184/`](../Tests/pulled/20260903-rideA-real-max-184),
+alongside the `recovery.log` covering every session to date and the shared log
+at `kept: 7`.
+
+### The published horizon table reproduces exactly
+
+`Tools/hr_trend.py` decoding the `.fit` through python-fitparse — which shares
+no code with the writer — against the table `HR-TREND-PROMPT.md` §1 published:
+
+| window | p50 \|Δ\| | p90 | reads flat | §1 said |
+|---:|---:|---:|---:|---|
+| 5 s | 1 | 3 | 58% | 1 / 3 / 58% |
+| 10 s | 2 | 5 | 40% | 2 / 5 / 40% |
+| 20 s | 3 | 8 | 23% | 3 / 8 / 23% |
+| 45 s | 5 | 13 | 19% | 5 / 13 / 19% |
+
+Every cell, from a different reader on a different file. The delta method and
+the choice of seconds are settled, and the 15-second floor stands: the median
+is the 1 bpm quantisation step at 5 s and first clears it at 15 s.
+
+The two horizons §1 did not publish, now filled in — 1137 seconds with a
+reading over 1404 elapsed, four pauses, 64–162 bpm, zone width 18.4 bpm:
+
+| window | p50 | p90 | max | flat | p50 zw | p90 zw |
+|---:|---:|---:|---:|---:|---:|---:|
+| 15 s | 3 | 6 | 32 | 32% | 0.16 | 0.33 |
+| 30 s | 4 | 10 | 25 | 21% | 0.22 | 0.54 |
+
+### The one number that does not reproduce, and it is the one carrying a design claim
+
+§1 reports 20 s and 45 s agreeing **94%** of the time and 5 s and 20 s **87%**,
+and concludes that "stacked multi-horizon carets are redundant nine times in
+ten". No definition tried reproduces those, on the very file they came from:
+
+| "the two horizons agree" means | 5 s vs 20 s | 20 s vs 45 s |
+|---|---:|---:|
+| the signs match, a zero delta being its own state | 58% | 75% |
+| three-way down/flat/up, flat below 2 bpm | 48% | 67% |
+| the signs match, over seconds where neither is zero | 76% | 88% |
+| they do not point to **opposite** sides | 83% | 90% |
+| **§1's figure** | **87%** | **94%** |
+
+The horizon table matching cell-for-cell rules out a different ride or a
+different delta method, so the gap is the agreement statistic alone — and it is
+not written down anywhere. The loosest reading, "never actually contradict each
+other", is the closest and still falls 4 points short at both horizons.
+
+**What Ride A actually supports** is narrower than "redundant nine times in
+ten": over the seconds where both horizons are moving, 20 s and 45 s point to
+**opposite sides 6%** of the time, and adjacent horizons much less — 15 s
+against 20 s disagree outright on **1%**. That is a good argument for one mark
+rather than a trail. It is not the argument §1 made, and the difference matters
+because §1's version is the one that would justify never revisiting the
+question.
+
+### Where Ride A's peaks actually fell
+
+A pause is where the wearer stopped pedalling, and Spin writes a `record` only
+while the clock runs, so the gaps in the stream mark the efforts without
+needing a lap press. Ride A's five riding blocks:
+
+| block | length | start → peak | peak, relative to the moment riding stopped |
+|---|---:|---|---:|
+| 1 | 119 s | 64 → 96 | −105 s |
+| 2 | 299 s | 88 → 102 | −31 s |
+| **3** | 299 s | 89 → **161** | **−17 s** |
+| **4** | 300 s | 129 → **162** | **−1 s** |
+| 5 | 120 s | 121 → 125 | −100 s |
+
+Blocks 3 and 4 are A3 and A5, the two hard efforts. Both peak within seconds of
+the button, and block 4's peak *is* the ride's maximum of 162 — reached one
+second before riding stopped, then held into the recovery window. On a
+five-minute ramp the heart rate is still climbing when the effort ends. **This
+is the lag, measured**, and it is the body: no display can show a peak that has
+not happened yet.
+
+Blocks 1 and 5 peak early with nothing behind them; block 1's 96 bpm at 14 s is
+startup acquisition.
+
+### The instrument: `Tools/hr_trend.py`
+
+Given a Spin `.fit`, or an `_hr.csv` of the shape Squash pulls, it reports the
+three things the experiment asks: the horizon table in bpm and zone widths;
+what a second mark would add, as both "same state at all" and "point to
+opposite sides"; and each effort's peak against its own end, using the laps
+when the ride was lapped and the riding blocks between pauses when it was not.
+`--json` writes the numbers out so two rides can be put side by side.
+
+A window is counted only when the wearer was riding through all of it — every
+window that would straddle a pause is dropped rather than bridged.
+
+Checked four ways: on a synthetic 1 bpm/s ramp every horizon reads exactly its
+own width and returns exactly `n − horizon` windows; on a synthetic 50 bpm step
+across a pause no window straddles the gap; on the 10-minute Squash recording
+the `.fit` and the `_hr.csv` — two independent records of the same seconds —
+agree within 1 bpm at every horizon; and on Ride A it reproduces the published
+table above.
+
+### The control, and what it is worth
+
+The [`Squash/Tests/pulled/`](../../Squash/Tests/pulled) recordings of
+2026-09-03 are the only other per-second `HEART_RATE_EX` here — 64 to 110 bpm,
+which against a real maximum of 184 is 35–60% and below every gate in this
+feature. Their p50 at 5 s is 1 bpm in all three, the same quantisation floor
+Ride A shows 52 bpm higher up, on mostly the strap where Ride A was wrist
+optical. That is the floor holding across regimes and sensors, and it is all
+these recordings are good for; they say nothing about intervals.
+
+### The watch's maximum is still 100
+
+`settings.json` reads `heartRateZones: [30,60,70,80,90,100]`. That is the
+synthetic maximum
+[the low-maximum technique](RECOVERY-FIELD-TEST.md#the-technique-lower-the-maximum)
+calls for, left in place since 2026-09-03 — the instruction to "write down 184
+first, and put it back at the end" was not completed.
+
+**Put 184 back, and reopen Spin, before riding anything.** A changed maximum is
+read once in `Service::run()`, so a ride started without reopening the app uses
+the old one, and an interval ride recorded against a maximum of 100 is a
+synthetic session whose heart-rate numbers mean nothing.
+
+### Why the ghost tick is still not built
+
+The experiment's terms are that the design is decided from the interval
+comparison, and no interval session has been ridden. Building now would fix a
+horizon and a full-scale point from one ride of 4–5 minute ramps, against a
+complaint that is specifically about 20-second sprints.
+
+What today changed is that the comparison is now *possible*: the baseline is in
+the repository, the instrument reproduces its published numbers, and the only
+missing half is one ordinary interval workout — [Session
+5](RECOVERY-FIELD-TEST.md#session-5--an-interval-ride-an-ordinary-workout).
+
+Nothing found today argues against the design. The 15-second floor got
+independent support, and the case for one mark over a trail got a real number
+from Ride A rather than a desk session — 1% outright disagreement between
+adjacent horizons. What it does argue against is §1's **94%**, which no longer
+has a derivation anyone can point at.

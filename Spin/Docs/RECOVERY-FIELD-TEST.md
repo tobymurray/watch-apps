@@ -9,9 +9,15 @@ and how to read what it produces.
 table before running anything here: every discard reason but `source_changed`
 has already fired, so most of the original prescription is spent.
 
-Two sessions are outstanding, both at a desk, neither needing a bike, a strap,
-or any hard effort. Ride A — the one hard session — is **done and does not need
-repeating**, because the measurement happens on every pause of every ride.
+Two of the three sessions outstanding are at a desk, and neither needs a bike,
+a strap, or any hard effort. Ride A — the one prescribed hard session — is
+**done and does not need repeating**, because the measurement happens on every
+pause of every ride.
+
+The third is [Session 5](#session-5--an-interval-ride-an-ordinary-workout), and
+it belongs to a different experiment: it is the evidence
+[`HR-TREND-PROMPT.md`](HR-TREND-PROMPT.md) is blocked on, and it is an ordinary
+workout rather than a prescription.
 
 > Treat a wrong number as information, not as a failure. Every gate's threshold
 > is in [EffortKit's README](../../EffortKit/README.md#the-gates-and-what-each-one-is-for)
@@ -36,15 +42,22 @@ repeating**, because the measurement happens on every pause of every ride.
    which is not optional reading: the `.uapp` goes in, every other one comes
    out, and the watch is **power-cycled** — a USB replug is not a reboot, and a
    stale binary or an unregistered app both fail silently, looking exactly like
-   this feature being broken. Then **delete `recovery.log`** from Spin's folder
-   if one is already there.
+   this feature being broken. **Pull `recovery.log` and `spin_sessions.json`
+   off the watch first if you mean to clear them** — they append across rides
+   and are the only copy of every session before this one, which is why Ride A's
+   are now [in the repository](../Tests/pulled/20260903-rideA-real-max-184).
+   Clearing is not required; the log caps itself at 128 KiB.
 
-## Before you leave the house
+## After installing a build, before trusting it
 
-Seventy minutes of riding is a lot to spend finding out that the log file was
-never created. Two checks first, and neither needs a bike.
+**This is a check on an install, not on the feature.** Every gate below it has
+fired on hardware and is recorded in
+[`RECOVERY-FIELD-RESULTS.md`](RECOVERY-FIELD-RESULTS.md#what-is-already-proven);
+none of that carries over to the next `.uapp` you put on the watch. A stale
+binary announces itself in no other way, so this runs once per build and then
+never again for that build.
 
-### On the desk: does the plumbing work? (3 minutes)
+### The three-minute desk ride
 
 Wear the watch, sit down, and do a ride that requires nothing of you:
 
@@ -59,36 +72,19 @@ does not is a different fault:
 |---|---|
 | The app started at all | The `Engine ABI mismatch` guard in `Service::run()` fired and the Service returned immediately — a stale `libspin_engine.a` against a changed struct. Rebuild. |
 | **`recovery.log` exists in Spin's folder** | `IFile::open(write, no-override)` neither appends nor creates on this kernel, and the fallback in `EventLog::open()` missed it. **Stop here** — everything below is blind without it. |
-| Its first line reads `start version=<the build you installed> max_hr=<n>`, **n > 0** | A **wrong version** means a stale `.uapp` is still booting, which is the headline failure in [`Docs/INSTALLING.md`](../../Docs/INSTALLING.md) and announces itself in no other way. **A missing `version=` means the same thing** — the field has been in the start line since this document existed, so a line without it is an older build. `max_hr=0` usually means the watch has no maximum set, and Rides A–C would produce nothing but `no_max_hr` — but check the next row before believing the watch. |
+| Its first line reads `start version=<the build you installed> max_hr=<n>`, **n > 0** | A **wrong version** means a stale `.uapp` is still booting, which is the headline failure in [`Docs/INSTALLING.md`](../../Docs/INSTALLING.md) and announces itself in no other way. **A missing `version=` means the same thing** — the field has been in the start line since this document existed, so a line without it is an older build. `max_hr=0` usually means the watch has no maximum set, and every window would then be discarded as `no_max_hr` — but check the next row before believing the watch. |
 | `zones=<n>` is one **fewer** than `heartRateZones` in the watch's own `settings.json` | Both numbers come from the same ladder, and the last threshold is the maximum rather than a floor. Equal counts, with `max_hr=0` beside them, is Spin misreading the message and not a watch with no zones — which is what happened on 2026-09-03, below. |
 | It contains `cease ... -> too_short` | The pause never reached the detector — `pauseTrack()` is not calling `spin_engine_cease()`. |
-| `SharedData/spin_sessions.json` exists and ends `"kept":1` with `status=0` on the log's `session` line | The write path failed. The `status=` number says where: `1` refused, `2` out of memory, `3` commit rename failed, `4` write failed (`SharedLog.hpp`). |
+| `SharedData/spin_sessions.json` exists, `status=0` on the log's `session` line, and `kept` has **risen by one** — it accumulates across rides and stood at 7 on 2026-09-04, so a fresh install does not reset it | The write path failed. The `status=` number says where: `1` refused, `2` out of memory, `3` commit rename failed, `4` write failed (`SharedLog.hpp`). |
 
-Then do it **once more**. The second run must give `"kept":2` and leave a
-`spin_sessions.json.bak` beside it — that is the rotate-and-rename commit
-working, which is the part a power cut would otherwise ruin.
-
-### Optional: force a real measurement without exercise (5 minutes)
-
-The gates need 80% of your maximum, which you cannot reach at a desk — unless
-you move the maximum. On the watch, **temporarily set your maximum heart rate to
-just below your resting rate** (if you sit at 65, set 75). Then:
-
-1. Start a ride and sit still for **4 minutes** — past the 180 s effort gate.
-2. **Press R1.** Sit still, not moving, for **90 seconds**.
-3. Save.
-
-You should get a real `recovery` line with a `curve`, and a session carrying one
-recovery. **The number is physiologically meaningless** — it is a resting heart
-rate drifting by a beat or two — but it proves the entire path end to end: the
-window, the curve, the struct across the C ABI, the JSON, and the commit.
-
-Afterwards: **put your real maximum back**, and delete both
-`spin_sessions.json` and `recovery.log` so the field test starts clean.
+Then do it **once more**. `kept` must rise by one again and leave a
+`spin_sessions.json.bak` beside it holding the previous value — that is the
+rotate-and-rename commit working, which is the part a power cut would otherwise
+ruin.
 
 ### What is already checked without you
 
-`ctest --test-dir build` covers four suites, two of which are this feature:
+`ctest --test-dir build`, of which these are this feature:
 
 - **`spin-sharedlog-tests`** — the commit sequence, the `.bak` rotation, the
   refusal to overwrite a newer schema, the rotation of an unreadable one, and
@@ -129,7 +125,7 @@ for a button, or for your legs, or for both.
 
 ---
 
-## The two sessions that are left
+## The sessions that are left
 
 ### The strap, and why Ride C is deferred
 
@@ -243,6 +239,61 @@ was run with the watch set to `[30,60,70,80,90,100]` and recorded
 are never read. On the standard 50–100% ladder the two coincide exactly, which
 is why it has never shown before.
 
+### Session 5 — an interval ride (an ordinary workout)
+
+Not a prescription, and not part of the recovery feature. This is the one piece
+of evidence the
+[heart-rate trend experiment](HR-TREND-PROMPT.md#3-the-open-question-which-is-the-actual-job)
+has never had: **per-second heart rate through short, hard efforts**. Every
+number that experiment argues from comes from Ride A's 4–5 minute ramps, and
+the wearer's complaint is about 20-second sprints.
+
+Ride whatever session you were going to ride. Two things only:
+
+| # | Do | Why |
+|---|---|---|
+| 1 | Ride an **interval** session — short hard efforts with recoveries between them, whatever your usual is | the delta distribution at short efforts is the whole question |
+| 2 | **Press R2 (LAP) at each change** — at the start of each effort and at the end of it | a lap is the only mark of structure that costs nothing mid-effort; without one, the efforts can only be read from the pauses, and an interval session ridden straight through has none |
+
+Nothing else changes. Pause and save exactly as usual; the recovery windows
+that open on the way are a bonus rather than the point, and no hard effort is
+spent on diagnostics.
+
+> **First: put the maximum back to 184 and reopen Spin.** The watch was read on
+> 2026-09-04 still carrying `heartRateZones: [30,60,70,80,90,100]`, the
+> synthetic maximum. `loadSystemSettings()` runs once in `Service::run()`, so a
+> ride started without reopening the app uses the old number — and an interval
+> ride recorded at a maximum of 100 is a synthetic session that answers nothing.
+
+Pull the ride's `.fit` into a dated directory beside
+[Ride A's](../Tests/pulled/20260903-rideA-real-max-184), which is already here.
+Then, with `python-fitparse` installed:
+
+```sh
+Tools/hr_trend.py RIDE.fit --max-hr 184 --zones 5 --json interval.json
+Tools/hr_trend.py Spin/Tests/pulled/20260903-rideA-real-max-184/activity_20260903T205637.fit \
+    --max-hr 184 --zones 5 --json ride-a.json
+```
+
+Three things to read off the two tables, and each one changes the design:
+
+1. **Is p90 of the 20-second delta wider than Ride A's 8 bpm (0.43 zone
+   widths)?** If it is not, "intervals look dynamic for free" is wrong and a
+   fixed scale is the wrong choice.
+2. **Do two horizons point to opposite sides more often than on Ride A?** Ride
+   A's are 1% for 15 s against 20 s and 6% for 20 s against 45 s. Stay near
+   those and one mark is the answer; go well above and a trail at 20/40/60 s
+   starts to earn its clutter.
+3. **Where does each effort's peak fall relative to its end?** Ride A's two hard
+   efforts peaked 17 s and 1 s *before* the wearer stopped. A peak landing at or
+   after the end is the physiology, and no display can fix it — which would make
+   the honest answer that a 20-second effort has no heart-rate feedback at
+   all.
+
+Record what the two tables said in
+[`RECOVERY-FIELD-RESULTS.md`](RECOVERY-FIELD-RESULTS.md), under a dated
+heading, with the raw numbers.
+
 ### Ride A never needs running again
 
 The measurement happens on **every pause of every ride**, with no setting and no
@@ -280,9 +331,10 @@ Mount the watch over USB. Three files matter:
 second, because that is where a window runs). `status=0` on the session line is
 `SharedLog::Status::OK`; anything else is in `SharedLog.hpp`.
 
-The log **appends across rides** and stops at 128 KiB, so pull it and delete it
-between sessions. It is a diagnostic, not a feature — once these questions are
-answered it should come out.
+The log **appends across rides** and stops at 128 KiB, so pull it before you
+clear it — it is the only copy of every session before this one. Clearing keeps
+a session's own lines easy to find; it is not required. It is a diagnostic, not
+a feature — once these questions are answered it should come out.
 
 ### What to check in any run
 
