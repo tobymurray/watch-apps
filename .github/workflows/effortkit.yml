@@ -33,6 +33,12 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # The container's default shell is sh, where `set -o pipefail` is an illegal
+    # option and every step below that uses a pipe would report success for a
+    # command that failed. Declared once for the job rather than per step.
+    defaults:
+      run:
+        shell: bash
     container:
       image: ghcr.io/tobymurray/watch-apps-toolchain@sha256:cca44e2ca090850480a612f4ed3d4acbd317f3bd32516b0d8fe323cf37c0ee26
       credentials:
