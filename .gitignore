@@ -7,6 +7,8 @@ build-*/
 # The linker writes this map beside the ELF it describes.
 *.elf.elf.map
 SleepLab/**/build/
+# Cargo builds in place as well, and a target/ tree is nobody's source.
+target/
 
 # TouchGFX's code generator keeps its own scratch beside the sources it emits;
 # only the emitted sources are worth committing.
