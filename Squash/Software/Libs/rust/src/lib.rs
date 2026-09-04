@@ -83,8 +83,9 @@ struct Session {
     last_state: Option<effortkit::segment::ActivityState>,
     /// What this session's windows measured.
     measured: SessionRecord,
-    /// Whether a trusted reading arrived during the second being accumulated.
-    hr_trusted_this_s: bool,
+    /// The best confidence any reading carried during the second being
+    /// accumulated, so the calibration decides what counts rather than this.
+    hr_trust_this_s: u8,
     /// The source of that reading.
     hr_source_this_s: HrSource,
     hr_sum: f32,
@@ -116,7 +117,7 @@ impl Session {
             recovery: Detector::new(&RECOVERY_CALIBRATION),
             last_state: None,
             measured: SessionRecord::EMPTY,
-            hr_trusted_this_s: false,
+            hr_trust_this_s: 0,
             hr_source_this_s: HrSource::Unknown,
             hr_sum: 0.0,
             hr_count: 0,
@@ -138,16 +139,16 @@ impl Session {
     /// feed cannot: with nothing to fire on it cannot tell a sensor that stopped
     /// from a rest that ended, and reports the first as the second.
     fn tick(&mut self, epoch_index: u32) {
-        let bpm = if self.hr_trusted_this_s { self.last_hr_bpm } else { 0.0 };
+        let bpm = if self.hr_trust_this_s > 0 { self.last_hr_bpm } else { 0.0 };
         self.recovery.second(
             epoch_index as i64,
             bpm,
-            self.hr_trusted_this_s,
+            self.hr_trust_this_s,
             self.hr_source_this_s,
             epoch_index,
         );
         self.drain_windows();
-        self.hr_trusted_this_s = false;
+        self.hr_trust_this_s = 0;
         self.hr_source_this_s = HrSource::Unknown;
     }
 
@@ -189,7 +190,7 @@ impl Session {
         self.recovery = Detector::new(&RECOVERY_CALIBRATION);
         self.last_state = None;
         self.measured = SessionRecord::EMPTY;
-        self.hr_trusted_this_s = false;
+        self.hr_trust_this_s = 0;
         self.hr_source_this_s = HrSource::Unknown;
         self.hr_sum = 0.0;
         self.hr_count = 0;
@@ -359,7 +360,11 @@ pub extern "C" fn squash_engine_on_hr(t_ms: u32, bpm: f32, trust: u8, source: u8
         }
     }
     s.have_hr = true;
-    s.hr_trusted_this_s = true;
+    // The best of the second, so one good reading is not hidden by a poor one
+    // arriving after it.
+    if trust > s.hr_trust_this_s {
+        s.hr_trust_this_s = trust;
+    }
     s.hr_source_this_s = source;
     s.last_hr_ms = t_ms;
     s.last_hr_bpm = bpm;
