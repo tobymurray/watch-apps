@@ -23,6 +23,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
 #include <string>
 
 using SDK::TestSupport::KernelFixture;
@@ -52,6 +53,41 @@ namespace {
 constexpr const char* kPath    = "../SharedData/spin_sessions.json";
 constexpr const char* kTmpPath = "../SharedData/spin_sessions.json.tmp";
 constexpr const char* kBakPath = "../SharedData/spin_sessions.json.bak";
+
+/// The in-memory double lets a rename overwrite its target. FatFs does not --
+/// Squash proved that and left the finding in SquashEngine.cpp -- so a test
+/// running against the permissive double would pass on code the watch refuses.
+/// This narrows the double to the real behaviour for that one call.
+class FatFsRenameRules : public SDK::TestSupport::InMemoryFileSystem {
+public:
+    bool rename(const char* oldPath, const char* newPath) override
+    {
+        if (newPath == nullptr) {
+            return false;
+        }
+        // The rotation of the live file to .bak is best-effort, so the code
+        // under test has to survive it failing. Nothing else simulates that.
+        if (failBackupRotation && endsWith(newPath, ".bak")) {
+            return false;
+        }
+        if (exist(newPath)) {
+            ++refused;
+            return false;
+        }
+        return InMemoryFileSystem::rename(oldPath, newPath);
+    }
+
+    /// Renames the real filesystem would have rejected.
+    int refused = 0;
+    bool failBackupRotation = false;
+
+private:
+    static bool endsWith(const char* s, const char* suffix)
+    {
+        const size_t n = std::strlen(s), m = std::strlen(suffix);
+        return n >= m && std::strcmp(s + n - m, suffix) == 0;
+    }
+};
 
 /// One plausible ride, so a test only has to say what it is varying.
 trainkit_session aRide(uint32_t startUtc)
@@ -200,6 +236,38 @@ TEST(SharedLog, RubbishIsKeptAsEvidenceAndAFreshFileStarted)
 
     EXPECT_EQ(readBack(k, kBakPath), "this is not json");
     EXPECT_NE(readBack(k, kPath).find("\"kept\":1"), std::string::npos);
+}
+
+TEST(SharedLog, AnOrdinaryCommitNeverRenamesOntoAnExistingPath)
+{
+    FatFsRenameRules fs;
+    SharedLog log(fs, "Spin", "indoor_cycling");
+    ASSERT_EQ(log.record(aRide(1000)), SharedLog::Status::OK);
+    ASSERT_EQ(log.record(aRide(2000)), SharedLog::Status::OK);
+    EXPECT_EQ(fs.refused, 0) << "a rename was issued onto a path that existed";
+}
+
+TEST(SharedLog, LosingTheBackupDoesNotLoseTheRide)
+{
+    // Rotating the live file to .bak is best-effort. When it fails the live
+    // file is still there -- and because FatFs refuses a rename onto an
+    // existing path, the commit that follows fails too, turning a lost backup
+    // into a lost ride. Every assertion below passes without the remove() in
+    // SharedLog::commit(); only this one fails.
+    FatFsRenameRules fs;
+    SharedLog log(fs, "Spin", "indoor_cycling");
+    ASSERT_EQ(log.record(aRide(1000)), SharedLog::Status::OK);
+
+    fs.failBackupRotation = true;
+    ASSERT_EQ(log.record(aRide(2000)), SharedLog::Status::OK)
+        << "a failed .bak rotation blocked the commit";
+    EXPECT_EQ(fs.refused, 0) << "a rename was issued onto a path that existed";
+
+    auto it = fs.files.find(kPath);
+    ASSERT_NE(it, fs.files.end());
+    const std::string text(it->second.content.begin(), it->second.content.end());
+    EXPECT_NE(text.find("\"start_utc\":2000"), std::string::npos)
+        << "the newest ride did not survive: " << text;
 }
 
 TEST(SharedLog, TheFilenameIsThisAppsAndLowercase)
