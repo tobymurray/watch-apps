@@ -9,10 +9,12 @@ shared log, and `recovery.log`.
 It is not a training session. Do it on a day you were going to ride easy
 anyway; there are four hard minutes in it and a lot of sitting still.
 
-> **Before you start**: no window here has ever produced a measurement on
-> hardware — only the desk check below has run, on
-> [2026-09-03](#2026-09-03--the-desk-check), where every gate that fired was a
-> refusal. Treat a
+> **Before you start**: read
+> [what is left](#what-is-left-and-the-cheapest-way-to-get-it) before riding any
+> of A–E. Ride A is [done](#2026-09-03--ride-a), Ride C is deferred on a strap
+> firmware bug, and B, D and E have cheaper forms that reach the same gates at a
+> desk. Treat a wrong number as information, not as a failure — the point is to
+> find out. Treat a
 > wrong number as information, not as a failure — the point of the ride is to
 > find out. Every gate's threshold is written down in
 > [TrainKit's README](../../TrainKit/README.md#the-gates-and-what-each-one-is-for)
@@ -26,8 +28,13 @@ anyway; there are four hard minutes in it and a lot of sitting still.
    Ride D's job, so set it for A–C.
 2. **Write down your maximum**, call it `HRmax`, and work out **80% of it**.
    That is the intensity floor. For 190 bpm it is 152.
-3. **Wear the chest strap.** The wrist sensor with your hands on the bars is
-   the worst case for dropouts, and Ride C tests that on purpose.
+3. **Do not wear the chest strap** while the two-minute disconnect is
+   outstanding — see [the strap](#the-strap-and-why-ride-c-is-deferred). A strap
+   that drops mid-window is discarded as `source_changed`, which looks like the
+   gate misfiring. Wrist optical is the worst case for dropouts *while riding*,
+   but no gate measures trust there: the window runs while you sit still with
+   your hands off the bars, and Ride A took two windows at 61 trusted seconds
+   out of 61.
 4. **Install this build following [`Docs/INSTALLING.md`](../../Docs/INSTALLING.md)**,
    which is not optional reading: the `.uapp` goes in, every other one comes
    out, and the watch is **power-cycled** — a USB replug is not a reboot, and a
@@ -124,7 +131,7 @@ for a button, or for your legs, or for both.
 
 ---
 
-## Ride A — the one that should work (about 25 minutes)
+## Ride A — the one that should work (done, 2026-09-03)
 
 The measurement this feature exists for, taken twice, plus the two "not enough
 effort" gates.
@@ -132,7 +139,7 @@ effort" gates.
 | # | Do | Expect in `recovery.log` |
 |---|---|---|
 | A1 | Start the ride. Pedal easy for **2 minutes**. Stop pedalling and **press R1** together. | `cease ... -> too_short` |
-| A2 | **R1** to resume. Ride easy — **below 80% of HRmax** — for **5 minutes**. Stop pedalling and **press R1** together. | `cease ... -> too_easy` |
+| A2 | **R1** to resume. Ride easy — **below 80% of HRmax** — for **5 minutes**. Stop pedalling and **press R1** together. | `cease ... -> armed`, then `discard too_easy` |
 | A3 | **R1** to resume. **Hard, 5 minutes**, ending at or above 80% of HRmax and still climbing. At the top, stop pedalling and **press R1 in the same moment**. | `cease ... -> armed` |
 | A4 | **Stay on the bike. Feet off or still. Do not pedal, do not get off, do not stand up. 90 seconds by the clock.** | `recovery hr0=… drop=…` after ~60 s |
 | A5 | **R1** to resume. Easy 2 minutes, then **hard 4 minutes**. At the top, stop pedalling and **press R1** together again. | `cease ... -> armed` |
@@ -162,18 +169,39 @@ Each of these is a window that opens and then correctly produces nothing.
 
 | # | Do | Expect |
 |---|---|---|
-| B1 | Hard 5 minutes to above 80%. Then **stop pedalling and do NOT press R1** — the clock keeps running. Sit for 40 seconds. **Now press R1.** | `cease ... -> already_falling` |
+| B1 | Hard 5 minutes to above 80%. Then **stop pedalling and do NOT press R1** — the clock keeps running. Watch the number, and press R1 while it reads between 80% of HRmax and 11 below its peak. | `cease ... -> armed`, then `discard already_falling` |
 | B2 | **R1**, hard 5 minutes, stop and **press R1** at the top, then **press R1 again after 30 seconds** and pedal. | `resume -> effort_resumed` |
 | B3 | **R1**, hard 4 minutes, stop and **press R1** at the top, sit **30 seconds**, then **L1 SAVE** and finish the ride. | `end -> ride_ended`, and `session … recoveries=0` |
 
-B1 is the subtle one and the most likely to disagree with the design. If your
-heart rate falls below 80% of HRmax during those 40 seconds you will get
-`too_easy` instead of `already_falling` — **both are correct refusals**, and
-which one fires tells you where the two gates meet on your physiology. Write
-down which you got.
+### A `cease` line carries only three of the reasons
+
+Both rows above used to predict the wrong line, and Ride A caught it. `cease()`
+checks exactly three things — a maximum the watch knows, `MIN_EFFORT_S` of
+unpaused clock, and enough trusted history for a baseline — and then arms.
+**`too_easy` and `already_falling` are checked against the baseline sample, one
+second later, in `second()`**, because `hr0` is the number the measurement is
+built on rather than whatever the heart rate happened to be at the instant of
+the button press. It is the same reasoning as the two-second baseline grace.
+
+So a `cease` line can only ever say `no_max_hr`, `too_short` or
+`no_baseline_history`. Every other reason arrives on the next line as a
+`discard`, and **`armed` followed by a `discard` is the gate working**, not the
+gate failing to fire.
+
+B1 is the subtle one. Its strip is bounded below by 80% of maximum and above by
+11 bpm under the preceding 30 seconds' peak, so its width in bpm is
+`(peak − 10) − 0.8 × HRmax`. On Ride A's two measured curves that was
+**3.8 bpm — about four seconds of curve** — and a blind 40-second wait landed on
+`already_falling` for one and `too_easy` for the other. Both are correct
+refusals, but if you want to see a particular one, **aim by the number on the
+screen rather than by a stopwatch**, and note that the strip widens as the
+maximum falls, which is what
+[the low-maximum sessions](#the-technique-lower-the-maximum) exploit.
 
 B3 leaves a session in the shared log with **no recoveries at all**. That is a
-real state and the file must show it rather than omitting the session.
+real state and the file must show it rather than omitting the session — though
+the three desk sessions of 2026-09-03 have already demonstrated it, so only
+`end -> ride_ended` is still unrun here.
 
 ## Ride C — the sensor, and the file (about 15 minutes)
 
@@ -218,6 +246,132 @@ must have one.
 
 ---
 
+## What is left, and the cheapest way to get it
+
+Rides A–E above are the original prescription. Ride A has been done and does not
+need doing again; what follows replaces B–E with sessions that reach the same
+gates without hard effort, and says which gate each one is for.
+
+### The strap, and why Ride C is deferred
+
+Reported 2026-09-03: **the strap disconnects after about two minutes**, with a
+firmware fix expected the following week. Until it lands, everything here is
+wrist optical.
+
+C1–C3 defer, because their mechanism is removing a *working* strap mid-window.
+Meanwhile **do not wear the strap at all**: one that connects and drops at two
+minutes puts a sensor change inside any window spanning it, which is discarded
+as `source_changed` — manufacturing precisely the failure that gate exists to
+catch, and reading as a bug in the gate rather than in the firmware. Wrist-only
+makes the source constant by construction. `source_changed` is therefore the one
+gate nothing below can reach, and it stays unrun.
+
+C2's **dropout** half needs no strap. The 90% gate counts untrusted seconds
+inside the window, and lifting the watch off the wrist produces them, so it
+moves into Session 1. C4 has nothing to do with the sensor and folds into any
+ending.
+
+Nothing measured in the meantime is wasted. Every recovery records `source` by
+name in the shared log and every `record` carries `hr_source`, so wrist-era
+measurements are labelled where they are captured and can be filtered out — or
+compared against — once strap data exists.
+
+### The technique: lower the maximum
+
+Every intensity gate is a fraction of the watch's own maximum: `MIN_HR0_PCT_MAX`
+is 80% **of that setting**. Lower the setting and the whole test scales down onto
+an identical code path, because nothing in TrainKit knows the number is
+arbitrary.
+
+Two facts make it free rather than a compromise:
+
+- **The 180-second gate is not an intensity gate.** It compares unpaused clock
+  seconds, and the watch cannot see pedalling at all — which is the distinction
+  [this document is built around](#two-different-things-and-the-whole-feature-is-the-gap-between-them).
+  Three minutes of sitting satisfies it.
+- **Every session below but one produces no measurement by design.** They are
+  refusals, so there is no physiology to lose. The exception is Session 2, whose
+  measurements are meaningless and are stamped `hr_max_setting: 100` in the
+  shared log for exactly that reason.
+
+Set the maximum so that 80% of it is a heart rate you reach by standing up and
+marching on the spot. **100 is the suggestion**: the gate lands at 80 bpm, and
+the already-falling strip is `(peak − 10) − 80` — ten bpm wide at a peak of 100,
+against the 3.8 measured at a real maximum of 184.
+
+**Write down 184 first, and put it back at the end.**
+
+### What is already proven
+
+| Gate or claim | Where it fired |
+|---|---|
+| `no_max_hr` | the desk checks, twice |
+| `too_short` | Ride A, A1 and A7 |
+| `too_easy` | Ride A, A2, as a `discard` |
+| `armed` → `recovery` | Ride A, A4 and A6 |
+| a session with two recoveries | Ride A |
+| a session with none, recorded rather than omitted | the three desk sessions |
+| `work_kj` present, and `avg_power` from it | every ride so far |
+| `edwards_trimp` on the watch's own five-zone ladder | the desk re-run, and Ride A |
+| the `.bak` rotation and commit rename | `kept` 1 → 2 → 3 → 4 |
+
+### Session 1 — the refusals (about 20 minutes, at a desk)
+
+Maximum set to 100. One ride, five parts; each needs its own three minutes of
+clock first, because `resume()` restarts the bout.
+
+| # | Do | Expect |
+|---|---|---|
+| 1 | START. Sit 3 minutes. March on the spot to about 100. Stop marching and **press R1** together. **Press R1 again** after 15 seconds and march. | `resume -> effort_resumed` |
+| 2 | Sit 3 minutes. March to about 100. Stop marching and **do not press R1**. Watch the number, and **press R1 when it reads between 80 and 89**. | `armed`, then `discard already_falling` |
+| 3 | Sit 3 minutes. March to about 100, stop and **press R1** together. About 20 seconds in, **take the watch off** for 10 seconds, then put it back. | `untrusted` lines, then `discard dropout` — or a `recovery` with `trusted` below 61 |
+| 4 | Sit 3 minutes. **Take the watch off for 15 seconds**, put it back on and **press R1 immediately**. | `cease ... -> no_baseline_history` |
+| 5 | Sit 3 minutes. March to about 100, stop and **press R1**, sit 30 seconds, then **L1 SAVE**, and **SKIP** the kilojoule screen with R2. | `end -> ride_ended`, and `work_kj` **absent** from the session |
+
+Part 4 reaches a gate this document has never mentioned and nothing has ever
+run: `cease()` needs 20 of the preceding 30 seconds trusted, and a watch off the
+wrist supplies the gap. Part 5 is C4 folded in — `work_kj` must be **absent**
+from `spin_sessions.json`, not zero.
+
+### Session 2 — the recovery cap (about 12 minutes)
+
+Maximum still 100. **Three** successful windows in one ride: sit 3 minutes,
+march to about 100, stop and **press R1** together, sit **70 seconds**. Repeat
+three times, then save.
+
+`TRAINKIT_MAX_RECOVERIES` is 2 and Ride A returned exactly 2, so the
+shift-and-drop in `Service::keepRecovery()` has never run. Expect
+`session ... recoveries=2 dropped=1`, with the shared log keeping the **last
+two**. The numbers themselves are meaningless and say so, in `hr_max_setting`.
+
+### Session 3 — no zones (about 2 minutes)
+
+Turn the watch's heart-rate zones **off**. START, **press R1**, save.
+
+That is the whole session. `cease()` tests `max_hr == 0` **before** the effort
+gate, so it short-circuits — the original Ride D's "ride hard 4 minutes" buys
+nothing at all. Expect `cease ... -> no_max_hr`, and a session with
+`hr_max_setting: 0`, `zone_count: 0` and **no** `edwards_trimp`. Turn the zones
+back on afterwards.
+
+### Session 4 — three zones (about 5 minutes)
+
+Set Spin's `hrZoneCount` to **3**, ride 4 minutes at a desk, save, set it back.
+No effort and no bike: the ride only has to exist. Expect `zone_count: 3`, three
+`zone_floors`, four `zone_s` buckets, and **no** `edwards_trimp`.
+
+This is the only session that exercises the app-config path at all —
+`app_config.json` has never carried anything but `energyInKilojoules`.
+
+### Ride A never needs running again
+
+The measurement happens on **every pause of every ride**, with no setting and no
+button. A prescribed hard session was the way to get the first one; ordinary
+training is the way to get the rest, and each arrives labelled with its `source`,
+its `hr0_pct_max` and the ladder it was taken against. The open questions —
+whether `drop_bpm` is stable, whether the 60-second window is longer than anyone
+waits — are answered by accumulating rides, not by riding hard on purpose.
+
 ## Reading it back
 
 Mount the watch over USB. Three files matter:
@@ -260,9 +414,14 @@ answered it should come out.
 3. **`drop_bpm` is plausible** — somewhere in the 15–45 range for most people
    sitting still after hard work. A drop under 5 or over 70 means look at the
    `curve`, which is the raw evidence.
-4. **The `curve` falls monotonically.** A curve that rises in the middle means
-   the strap was arguing with the wrist sensor, and `hr_source` in the `.fit`
-   will say which one won that second.
+4. **The `curve` falls, after it stops rising.** A rise in the first ten or
+   twenty seconds is ordinary: heart rate overshoots after effort ceases, and
+   wrist optical lags a fast fall on top of that. Both of Ride A's curves rise
+   161 → 162 before turning over, on a ride with no strap in it at all, and the
+   raw `P` seconds behind them agree — so the curve is faithful to what the
+   sensor reported. Check `source` first: only if it is `external` and the
+   curve is ragged in the **middle** is this the strap arguing with the wrist
+   sensor, which `hr_source` in the `.fit` will then settle second by second.
 5. **Every gate in Rides A–E fired**, and each was the reason predicted above.
    A gate that never fires is a gate that has never been tested.
 6. **`spin_sessions.json` parses**, and each session's `zone_s` sums to its
@@ -390,13 +549,8 @@ The two records now agree: a mean of 66.3846 bpm is 66 in the `.fit` and 66 in
 
 ### Still open
 
-- **No window has ever survived to produce a measurement.** Every gate that has
-  fired on hardware so far has been a refusal — `no_max_hr`, then `too_short`.
-  The fastest way to close this is
-  [the five-minute trick above](#optional-force-a-real-measurement-without-exercise-5-minutes):
-  it works now that the watch's maximum reads back, and it exercises the window,
-  the curve, the struct across the C ABI, the JSON and the commit without a bike.
-  Rides A–E stay premature until it has.
+- Closed by [Ride A](#2026-09-03--ride-a), later the same day: two windows
+  survived and the whole path past `armed` ran.
 - `Docs/INSTALLING.md`, linked twice above and once from `Service.cpp`, does not
   exist.
 
