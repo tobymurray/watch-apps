@@ -11,7 +11,7 @@ anyway; there are four hard minutes in it and a lot of sitting still.
 
 > **Before you start**: read
 > [what is left](#what-is-left-and-the-cheapest-way-to-get-it) before riding any
-> of A–E. Ride A is [done](#2026-09-03--ride-a), Ride C is deferred on a strap
+> of A–E. Ride A is [done](#2026-09-03--ride-a-real-maximum-184), Ride C is deferred on a strap
 > firmware bug, and B, D and E have cheaper forms that reach the same gates at a
 > desk. Treat a wrong number as information, not as a failure — the point is to
 > find out. Treat a
@@ -308,6 +308,30 @@ the already-falling strip is `(peak − 10) − 80` — ten bpm wide at a peak o
 against the 3.8 measured at a real maximum of 184.
 
 **Write down 184 first, and put it back at the end.**
+
+> **Everything recorded this way is a code-path test and nothing else.** A
+> session run against a synthetic maximum carries `hr_max_setting: 100` in the
+> shared log, and that field is the only thing separating it from a real ride
+> afterwards — **filter on it before reading any number as physiology**. Two
+> things are wrong with these sessions' numbers, not one: the effort is trivial,
+> so a heart rate returns all the way to resting and a *bigger* `drop_bpm` means
+> *less* work rather than more; and the wrist sensor is measurably less
+> confident at these heart rates, which
+> [Session 2](#2026-09-03--session-2-synthetic-maximum-100) shows corrupting a
+> recorded curve. Neither applies to a ride at a real maximum.
+
+### Which maximum each recorded session ran against
+
+| Recorded, local | `hr_max_setting` | Maximum | Evidence for |
+|---|---:|---|---|
+| 11:11:56, 19:35:44 | `0` | **none read** — the zone-count bug | the plumbing, and the bug itself |
+| 20:10:56 | `184` | **real** | the desk re-run on the fixed build |
+| 20:56:37 | `184` | **real** | **Ride A — the only physiological measurements here** |
+| 21:51:35, 22:49:32 | `100` | **synthetic** | Session 1's refusals |
+| 23:17:32 | `100` | **synthetic** | Session 2's recovery cap |
+
+Only the two rows marked **real** carry heart-rate numbers that mean anything
+about a body. Everything at `100` exists to make a code path execute.
 
 ### What is already proven
 
@@ -622,14 +646,17 @@ The two records now agree: a mean of 66.3846 bpm is 66 in the `.fit` and 66 in
 
 ### Still open
 
-- Closed by [Ride A](#2026-09-03--ride-a), later the same day: two windows
+- Closed by [Ride A](#2026-09-03--ride-a-real-maximum-184), later the same day: two windows
   survived and the whole path past `armed` ran.
 - `Docs/INSTALLING.md`, linked twice above and once from `Service.cpp`, does not
   exist.
 
 ---
 
-## 2026-09-03 — Ride A
+## 2026-09-03 — Ride A (real maximum, 184)
+
+> **`hr_max_setting: 184`.** A real ride at a real maximum: the two measurements
+> below are the only ones in this document that mean anything physiologically.
 
 On `0.8.0-14-165ab48`, wrist optical throughout, no strap (see
 [the strap](#the-strap-and-why-ride-c-is-deferred)). **Both windows produced a
@@ -706,11 +733,14 @@ This is measured from the two curves above, not derived.
 
 ---
 
-## 2026-09-03 — Session 1, in two runs
+## 2026-09-03 — Session 1, in two runs (synthetic maximum, 100)
 
-Maximum temporarily set to 100 so the intensity gates were reachable by marching
-on the spot. Both sessions carry `hr_max_setting: 100`, which is what keeps them
-out of Ride A's real numbers.
+> **`hr_max_setting: 100`.** A code-path test. Every heart-rate number below is
+> an artefact of a maximum set to 100 so the gates would engage while marching
+> on the spot; none of it is physiology.
+
+Both runs carry `hr_max_setting: 100`, which is what keeps them out of Ride A's
+real numbers.
 
 **The maximum is settable**, which had been an open question: the watch took
 `[30,60,70,80,90,100]` and Spin's start line read `max_hr=100 zones=5`.
@@ -779,4 +809,81 @@ Session 1 recorded `zone_floors: [50,60,70,80,90]` against a watch set to
 the spread-from-maximum path, so the watch's own floors are never read and the
 custom 30 was dropped. It coincides exactly on the standard 50–100% ladder,
 which is why it had never shown before.
+
+---
+
+## 2026-09-03 — Session 2 (synthetic maximum, 100)
+
+> **`hr_max_setting: 100`.** A code-path test. The three drops below are 38–50
+> bpm where [Ride A](#2026-09-03--ride-a-real-maximum-184)'s were 17 and 23, and
+> that is not a better result — it is a *worse* effort. Marching on the spot
+> then sitting returns a heart rate the whole way to resting, which a real
+> interval does not. Nothing here is physiology.
+
+```
+1788491851 start version=0.8.0-14-165ab48 max_hr=100 zones=5 weight=90
+1788492113 cease hr=108 pct=108 active=261 -> armed
+1788492174 recovery hr0=107 hr_end=68 drop=39 window=60 trusted=61 pct=107 src=1 curve=107,96,81,74,68,70,68
+1788492525 cease hr=103 pct=103 active=591 -> armed
+1788492586 recovery hr0=103 hr_end=65 drop=38 window=60 trusted=61 pct=103 src=1 curve=103,96,80,76,85,71,65
+1788492892 cease hr=114 pct=114 active=889 -> armed
+1788492953 recovery hr0=114 hr_end=64 drop=50 window=60 trusted=61 pct=114 src=1 curve=114,104,94,81,78,67,64
+1788492967 session status=0 recoveries=2 dropped=1 active=889 hr_avg=69 work_kj=0 trimp=37
+```
+
+**The cap works, and drops the right end.** Three windows, `recoveries=2
+dropped=1`, and the shared log kept the last two — `at_active_s` 591 and 889,
+with 261 discarded. That is the shift-and-drop in `Service::keepRecovery()`
+running for the first time. `work_kj` absent again, and the `.fit` agrees with
+the shared log on active time, average heart rate and every zone bucket.
+
+### A low-confidence excursion, recorded into a curve
+
+Curve 2 is `[103, 96, 80, 76, 85, 71, 65]` — it rises 9 bpm at the
+forty-second point. The raw seconds say why:
+
+```
+1788492562 P hr=73 trust=1
+1788492563 P hr=88 trust=1     <- +15 bpm in one second
+1788492564 P hr=88 trust=1
+1788492565 P hr=85 trust=1
+1788492566 P hr=85 trust=1     <- the curve samples here
+1788492567 P hr=79 trust=2
+1788492568 P hr=72 trust=3
+```
+
+A five-second excursion of up to 15 bpm, entirely at trust=1, bracketed by
+trust=3 readings of 77 and 72 on a smoothly falling signal. `drop_bpm` is
+untouched, since that is `hr0` minus `hr_end`; what carries the artefact is the
+curve, which `trainkit.h` calls "the input any later curve fit would need". And
+`trusted_s: 61` of 61 is a weaker claim than it looks, because trust=1 counts as
+trusted.
+
+### The excursion belongs to this regime, not to the sensor
+
+The obvious conclusion — that `PRE_MAX_FALL_BPM` of 10 sits inside the wrist
+sensor's noise — **does not survive comparing the two regimes**:
+
+| | Ride A, real maximum | these sessions, synthetic |
+|---|---:|---:|
+| heart rate range, paused | 87–162 | 59–114 |
+| paused seconds | 271 | 656 |
+| **trust=1** | **9%** | **24%** |
+| trust=3 | 54% | 34–54% |
+| largest one-second move | **3 bpm** | **15 bpm** |
+| trust=1 → trust=1 moves | n=8, mean 0.25, max **1** | n=110, mean 0.75, max **15** |
+
+At real intensity the sensor is low-confidence a third as often, and the largest
+move across Ride A's whole 271 paused seconds was 3 bpm. A stronger pulse gives
+the optical sensor more to work with.
+
+**And the gate can only ever run in the good regime.** `already_falling` is
+tested against a baseline at or above 80% of maximum — 147 bpm on a real 184 —
+so it never sees these heart rates unless the maximum is fake, which only ever
+happens in a test. No gate change is warranted, and none is proposed.
+
+**The limit, in the other direction**: 271 paused seconds and 8 trust=1 pairs
+cannot rule out a rare excursion at real intensity; a 1-in-927 event need not
+appear in that sample. This shows the confidence *distribution* is much better
+where the gates operate. It does not show the tail is absent there.
 
