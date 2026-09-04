@@ -4,7 +4,7 @@
  * @brief   Commits one session into ../SharedData/<app>_sessions.json.
  ******************************************************************************
  *
- * The half of TrainKit that touches a filesystem, and the only part of it that
+ * The half of the engine that touches a filesystem, and the only part that
  * is C++: the Rust in ../src decides what the file says, this decides how it
  * lands. Any activity Service can link both -- nothing here is Spin's.
  *
@@ -15,17 +15,17 @@
  ******************************************************************************
  */
 
-#ifndef TRAINKIT_SHARED_LOG_HPP
-#define TRAINKIT_SHARED_LOG_HPP
+#ifndef SPIN_SHARED_LOG_HPP
+#define SPIN_SHARED_LOG_HPP
 
 #include <cstddef>
 #include <cstdint>
 
 #include "SDK/Interfaces/IFileSystem.hpp"
 
-#include "trainkit.h"
+#include "SpinEngine.hpp"
 
-namespace TrainKit {
+namespace Spin {
 
 class SharedLog {
 public:
@@ -56,7 +56,7 @@ public:
     /// Safe to interrupt: the new content is written to a .tmp and renamed over
     /// the real file, so a power loss leaves either the old file or the new one
     /// and never half of either.
-    Status record(const trainkit_session& session);
+    Status record(const SpinSessionRecord& session);
 
 private:
     bool readExisting(uint8_t* buf, uint32_t cap, uint32_t& outLen) const;
@@ -75,6 +75,6 @@ private:
     char mSport[kMaxAppLen]    = {};
 };
 
-} // namespace TrainKit
+} // namespace Spin
 
-#endif // TRAINKIT_SHARED_LOG_HPP
+#endif // SPIN_SHARED_LOG_HPP

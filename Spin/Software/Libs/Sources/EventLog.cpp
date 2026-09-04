@@ -3,7 +3,7 @@
 #include <cstdarg>
 #include <cstdio>
 
-namespace TrainKit {
+namespace Spin {
 
 EventLog::EventLog(SDK::Interface::IFileSystem& fs, const char* path)
     : mFs(fs), mPath(path)
@@ -111,4 +111,4 @@ void EventLog::line(const char* fmt, ...)
     }
 }
 
-} // namespace TrainKit
+} // namespace Spin

@@ -5,11 +5,11 @@
 #include <memory>
 #include <new>
 
-#define LOG_MODULE_PRX      "TrainKit"
+#define LOG_MODULE_PRX      "SpinEngine"
 #define LOG_MODULE_LEVEL    LOG_LEVEL_INFO
 #include "SDK/UnaLogger/Logger.h"
 
-namespace TrainKit {
+namespace Spin {
 
 namespace {
 
@@ -46,41 +46,56 @@ SharedLog::SharedLog(SDK::Interface::IFileSystem& fs, const char* app, const cha
 
 void SharedLog::buildPath(char* out, size_t cap, const char* suffix) const
 {
-    std::snprintf(out, cap, "%s/%s%s%s", TRAINKIT_SHARED_DIR, mFileSlug,
-                  TRAINKIT_STORE_SUFFIX, suffix);
+    std::snprintf(out, cap, "%s/%s%s%s", SPIN_SHARED_DIR, mFileSlug,
+                  SPIN_STORE_SUFFIX, suffix);
 }
 
-SharedLog::Status SharedLog::record(const trainkit_session& session)
+namespace
+{
+/// Length of a NUL-terminated name, bounded so a missing NUL cannot run away.
+uint32_t nameLength(const char* s)
+{
+    uint32_t n = 0;
+    while (s != nullptr && s[n] != '\0' && n < 64u) {
+        ++n;
+    }
+    return n;
+}
+} // namespace
+
+SharedLog::Status SharedLog::record(const SpinSessionRecord& session)
 {
     // FatFs f_open does not create missing parents, and "already exists"
     // counts as success -- the same first step SDK::Calibration::
     // OutdoorStrideCalibrator::finalise() takes.
-    if (!mFs.mkdir(TRAINKIT_SHARED_DIR)) {
-        LOG_ERROR("Could not make %s\n", TRAINKIT_SHARED_DIR);
+    if (!mFs.mkdir(SPIN_SHARED_DIR)) {
+        LOG_ERROR("Could not make %s\n", SPIN_SHARED_DIR);
         return Status::WRITE_FAILED;
     }
 
-    const uint32_t cap = trainkit_max_store_bytes();
+    const uint32_t cap = spin_history_max_bytes();
     // Transient, and only at the end of a ride: the .fit is already closed by
     // the time anything here runs.
     std::unique_ptr<uint8_t[]> buf(new (std::nothrow) uint8_t[cap]);
-    std::unique_ptr<uint8_t[]> hist(
-        new (std::nothrow) uint8_t[trainkit_history_bytes()]);
-    if (!buf || !hist) {
+    if (!buf) {
         LOG_ERROR("No room for the session log\n");
         return Status::NO_MEMORY;
     }
 
-    trainkit_history_init(hist.get(), mApp, mSport);
+    // The log itself lives in the engine's .bss: twenty sessions is far too
+    // much to build on this Service's stack, and there is no allocator to put
+    // it on a heap that outlives the call.
+    spin_history_init(reinterpret_cast<const uint8_t*>(mApp), nameLength(mApp),
+                      reinterpret_cast<const uint8_t*>(mSport), nameLength(mSport));
 
     uint32_t len = 0;
     readExisting(buf.get(), cap, len);
 
-    switch (trainkit_history_load(hist.get(), buf.get(), len)) {
-        case TRAINKIT_LOAD_OK:
+    switch (spin_history_load(buf.get(), len)) {
+        case SPIN_LOAD_OK:
             break;
 
-        case TRAINKIT_LOAD_NEWER:
+        case SPIN_LOAD_NEWER:
             // Something knows more about this file than this build does, and
             // what it wrote is not recoverable once overwritten.
             LOG_WARNING("Session log is a newer schema; leaving it alone\n");
@@ -98,9 +113,9 @@ SharedLog::Status SharedLog::record(const trainkit_session& session)
         } break;
     }
 
-    trainkit_history_add(hist.get(), &session);
+    spin_history_add(&session);
 
-    const int32_t written = trainkit_history_save(hist.get(), buf.get(), cap);
+    const int32_t written = spin_history_save(buf.get(), cap);
     if (written <= 0) {
         LOG_ERROR("Session log would not serialise\n");
         return Status::WRITE_FAILED;
@@ -208,4 +223,4 @@ SharedLog::Status SharedLog::commit()
     return Status::OK;
 }
 
-} // namespace TrainKit
+} // namespace Spin

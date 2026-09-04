@@ -57,11 +57,11 @@ unsigned pctOfMax(float bpm, uint8_t maxHr)
 
 } // namespace
 
-extern "C" void trainkit_host_panic(const uint8_t* msg, uint32_t len)
+extern "C" void spin_engine_host_panic(const uint8_t* msg, uint32_t len)
 {
-    // Named so a hung Service is traceable to the crate. Everything TrainKit
+    // Named so a hung Service is traceable to the crate. Everything the engine
     // does runs after the .fit is closed, so the ride itself is already safe.
-    LOG_ERROR("TrainKit panic: %.*s\n", static_cast<int>(len),
+    LOG_ERROR("Engine panic: %.*s\n", static_cast<int>(len),
               reinterpret_cast<const char*>(msg));
 }
 
@@ -88,13 +88,12 @@ void Service::run()
 {
     LOG_INFO("Started\n");
 
-    // A stale libtrainkit.a against a changed struct is silent until it writes
-    // a file whose numbers are in the wrong fields -- and that file is one
-    // another app reads. Same check Gui::run() makes, and the same direction.
-    if (trainkit_abi_fingerprint() != trainkit_abi::fingerprint() ||
-        trainkit_detector_bytes() > sizeof(mRecoveryDetector) ||
-        trainkit_detector_align() > alignof(trainkit_detector)) {
-        LOG_ERROR("TrainKit ABI mismatch; refusing to start\n");
+    // A stale libspin_engine.a against a changed struct is silent until it
+    // writes a file whose numbers are in the wrong fields -- and that file is
+    // one another app reads. Both sides walk their own offsets, so a drift on
+    // either is caught here rather than in the file.
+    if (spin_engine_abi_fingerprint() != spin_abi::fingerprint()) {
+        LOG_ERROR("Engine ABI mismatch; refusing to start\n");
         return;
     }
 
@@ -511,8 +510,8 @@ void Service::startTrack(std::time_t utc)
     mSessionNotEmpty = false;
 
     // The watch's own maximum, which is what every measurement's intensity is
-    // recorded against. 0 means it has none, and TrainKit measures nothing.
-    trainkit_recovery_start(&mRecoveryDetector, mSystemMaxHr);
+    // recorded against. 0 means it has none, and the engine measures nothing.
+    spin_engine_start(mSystemMaxHr);
     mRecoveryCount     = 0;
     mRecoveriesDropped = 0;
 
@@ -565,24 +564,33 @@ void Service::processTrack()
     // The measured reading and the strict gate, not the held one: a recovery
     // measurement is a measurement, and a held second is a display convenience.
     // Fed while PAUSED as well as ACTIVE, which is the whole reason a pause is
-    // a window at all -- see TrainKit/src/recovery.rs.
-    const uint8_t step = trainkit_recovery_second(
-        &mRecoveryDetector, mTimeCounter.getCurrent(), mHrCounter.getCurrent(),
-        trusted ? 1 : 0, trusted ? mHrSource : TRAINKIT_HR_SOURCE_NONE,
+    // a window at all -- see EffortKit/src/window.rs.
+    // The kernel's own 0-3 confidence, passed through rather than collapsed to
+    // a yes/no: the calibration decides how far the sensor is believed, and
+    // `trusted_s` then counts seconds that met that floor rather than seconds
+    // this Service called trusted. Zero when the reading itself is out of
+    // range, which is not a question about confidence.
+    const bool sane = mHrCounter.getCurrent() > skHrMinValid &&
+                      mTrackData.hrTrustLevel <= skHrTrustMax;
+    const uint8_t hrTrust =
+        sane ? static_cast<uint8_t>(mTrackData.hrTrustLevel) : 0u;
+
+    const uint8_t step = spin_engine_second(mTimeCounter.getCurrent(), mHrCounter.getCurrent(),
+        hrTrust, hrTrust > 0 ? mHrSource : SPIN_HR_SOURCE_NONE,
         static_cast<uint32_t>(mTimeCounter.getValueActive()));
     logSecond(mTimeCounter.getCurrent(), trusted);
 
-    if (step == TRAINKIT_STEP_COMPLETED) {
-        trainkit_recovery measurement{};
-        if (trainkit_recovery_take(&mRecoveryDetector, &measurement)) {
+    if (step == SPIN_STEP_COMPLETED) {
+        SpinRecovery measurement{};
+        if (spin_engine_take(&measurement)) {
             keepRecovery(measurement);
         }
-    } else if (step == TRAINKIT_STEP_DISCARDED) {
-        const uint8_t reason = trainkit_recovery_last_discard(&mRecoveryDetector);
+    } else if (step == SPIN_STEP_DISCARDED) {
+        const uint8_t reason = spin_engine_last_discard();
         LOG_INFO("Recovery discarded: reason %u\n", static_cast<unsigned>(reason));
         mEventLog.line("%u discard %s hr=%.0f pct=%u",
                        static_cast<uint32_t>(mTimeCounter.getCurrent()),
-                       trainkit_discard_name(reason),
+                       spin_engine_discard_name(reason),
                        static_cast<double>(mHrCounter.getCurrent()),
                        pctOfMax(mHrCounter.getCurrent(), mSystemMaxHr));
         mEventLog.sync();
@@ -699,17 +707,17 @@ void Service::pauseTrack(bool pause)
         // It covers the end of a ride too, because the ride stays paused
         // through the kilojoule screen until TRACK_STOP.
         const uint8_t ceased =
-            trainkit_recovery_cease(&mRecoveryDetector, TRAINKIT_TRIGGER_PAUSE);
-        const uint8_t why = trainkit_recovery_last_discard(&mRecoveryDetector);
+            spin_engine_cease();
+        const uint8_t why = spin_engine_last_discard();
         mEventLog.line("%u cease hr=%.0f pct=%u active=%u -> %s",
                        static_cast<uint32_t>(mTimeCounter.getCurrent()),
                        static_cast<double>(mHrCounter.getCurrent()),
                        pctOfMax(mHrCounter.getCurrent(), mSystemMaxHr),
                        static_cast<uint32_t>(mTimeCounter.getValueActive()),
-                       ceased == TRAINKIT_STEP_DISCARDED
-                           ? trainkit_discard_name(why) : "armed");
+                       ceased == SPIN_STEP_DISCARDED
+                           ? spin_engine_discard_name(why) : "armed");
         mEventLog.sync();
-        if (ceased == TRAINKIT_STEP_DISCARDED) {
+        if (ceased == SPIN_STEP_DISCARDED) {
             LOG_INFO("Recovery not attempted: reason %u\n", static_cast<unsigned>(why));
         }
         mTrackState = Track::State::PAUSED;
@@ -718,11 +726,11 @@ void Service::pauseTrack(bool pause)
         mTimeCounter.resume();
         mHrCounter.resume();
         mActivityWriter.resume(mTimeCounter.getCurrent());
-        if (trainkit_recovery_resume(&mRecoveryDetector) == TRAINKIT_STEP_DISCARDED) {
+        if (spin_engine_resume() == SPIN_STEP_DISCARDED) {
             mEventLog.line("%u resume -> %s",
                            static_cast<uint32_t>(mTimeCounter.getCurrent()),
-                           trainkit_discard_name(
-                               trainkit_recovery_last_discard(&mRecoveryDetector)));
+                           spin_engine_discard_name(
+                               spin_engine_last_discard()));
         }
         mTrackState = Track::State::ACTIVE;
         LOG_INFO("Ride resumed. UTC: %u\n", static_cast<uint32_t>(mTimeCounter.getCurrent()));
@@ -741,10 +749,10 @@ void Service::stopTrack(bool discard, uint16_t workKilojoules)
 
     // Before anything else: the sensor goes at the end of this function, so a
     // window still open here can never close.
-    if (trainkit_recovery_end(&mRecoveryDetector) == TRAINKIT_STEP_DISCARDED) {
+    if (spin_engine_end() == SPIN_STEP_DISCARDED) {
         mEventLog.line("%u end -> %s", static_cast<uint32_t>(mTimeCounter.getCurrent()),
-                       trainkit_discard_name(
-                           trainkit_recovery_last_discard(&mRecoveryDetector)));
+                       spin_engine_discard_name(
+                           spin_engine_last_discard()));
     }
 
     bool saved = false;
@@ -850,7 +858,7 @@ void Service::logSecond(std::time_t utc, bool trusted)
     }
 }
 
-void Service::keepRecovery(const trainkit_recovery& measurement)
+void Service::keepRecovery(const SpinRecovery& measurement)
 {
     LOG_INFO("Recovery: %u -> %u bpm over %u s, %u%% of maximum\n",
              static_cast<unsigned>(measurement.hr0),
@@ -878,17 +886,17 @@ void Service::keepRecovery(const trainkit_recovery& measurement)
         static_cast<unsigned>(measurement.curve[6]));
     mEventLog.sync();
 
-    if (mRecoveryCount < TRAINKIT_MAX_RECOVERIES) {
+    if (mRecoveryCount < SPIN_MAX_RECOVERIES) {
         mRecoveries[mRecoveryCount++] = measurement;
         return;
     }
 
     // The newest win, because the pause at the end of a ride is the one that
     // happens every ride and so the one comparable across them.
-    for (size_t i = 1; i < TRAINKIT_MAX_RECOVERIES; ++i) {
+    for (size_t i = 1; i < SPIN_MAX_RECOVERIES; ++i) {
         mRecoveries[i - 1] = mRecoveries[i];
     }
-    mRecoveries[TRAINKIT_MAX_RECOVERIES - 1] = measurement;
+    mRecoveries[SPIN_MAX_RECOVERIES - 1] = measurement;
     if (mRecoveriesDropped < 255) {
         ++mRecoveriesDropped;
     }
@@ -903,7 +911,7 @@ void Service::recordSession(bool saved, uint16_t workKilojoules)
         return;
     }
 
-    trainkit_session entry{};
+    SpinSessionRecord entry{};
     entry.start_utc = static_cast<uint32_t>(
         mTimeCounter.getCurrent() - mTimeCounter.getValueTotal());
     entry.active_s  = static_cast<uint32_t>(mTimeCounter.getValueActive());
@@ -927,13 +935,13 @@ void Service::recordSession(bool saved, uint16_t workKilojoules)
         entry.recoveries[i] = mRecoveries[i];
     }
 
-    const TrainKit::SharedLog::Status status = mSharedLog.record(entry);
+    const Spin::SharedLog::Status status = mSharedLog.record(entry);
     LOG_INFO("Session log: status %u, %u recoveries (%u dropped)\n",
              static_cast<unsigned>(status),
              static_cast<unsigned>(mRecoveryCount),
              static_cast<unsigned>(mRecoveriesDropped));
 
-    const int32_t trimp = trainkit_edwards_trimp(&entry);
+    const int32_t trimp = spin_edwards_trimp(&entry);
     mEventLog.line("%u session status=%u recoveries=%u dropped=%u active=%u "
                    "hr_avg=%u work_kj=%u trimp=%d",
                    static_cast<uint32_t>(mTimeCounter.getCurrent()),

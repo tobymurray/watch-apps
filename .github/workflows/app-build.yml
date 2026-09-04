@@ -136,12 +136,12 @@ jobs:
           textkit=no
           if [ -n "$crate" ] && grep -q 'TextKit' "$crate"; then textkit=yes; fi
           # A Service that measures heart-rate recovery or writes the shared
-          # session log links the TrainKit crate, whose own tests are the only
+          # session log links the EffortKit crate, whose own tests are the only
           # thing that covers either -- Service.cpp has no host test at all.
           # Found from the app's CMake rather than a Cargo.toml, because this
           # crate is linked by the Service and lives outside the app.
-          trainkit=no
-          if [ -n "$cmake" ] && grep -rq 'TrainKit' "$cmake"; then trainkit=yes; fi
+          effortkit=no
+          if [ -n "$cmake" ] && grep -rq 'EffortKit' "$cmake"; then effortkit=yes; fi
 
           {
             echo "manifest=$([ -f "$manifest" ] && echo "$manifest" || echo '')"
@@ -149,7 +149,7 @@ jobs:
             echo "cmake=$([ -n "$cmake" ] && dirname "$cmake" || echo '')"
             echo "crate=$([ -n "$crate" ] && dirname "$crate" || echo '')"
             echo "textkit=$textkit"
-            echo "trainkit=$trainkit"
+            echo "effortkit=$effortkit"
           } >> "$GITHUB_OUTPUT"
 
           echo "app       $app"
@@ -355,10 +355,10 @@ jobs:
       # The gates that decide whether a recovery measurement counts, and the
       # shared log's schema and bounds. Both are Service-side, and the Service
       # has no host test suite of its own, so this is where they are held.
-      - name: TrainKit tests
-        if: steps.app.outputs.trainkit == 'yes'
+      - name: EffortKit tests
+        if: steps.app.outputs.effortkit == 'yes'
         shell: bash
-        working-directory: apps/TrainKit
+        working-directory: apps/EffortKit
         run: cargo test --features std
 
       # TextKit's src/faces.rs is what Tools/atlas.py writes, checked in so an

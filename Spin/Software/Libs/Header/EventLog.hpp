@@ -28,8 +28,8 @@
  ******************************************************************************
  */
 
-#ifndef TRAINKIT_EVENT_LOG_HPP
-#define TRAINKIT_EVENT_LOG_HPP
+#ifndef SPIN_EVENT_LOG_HPP
+#define SPIN_EVENT_LOG_HPP
 
 #include <cstddef>
 #include <cstdint>
@@ -37,7 +37,7 @@
 
 #include "SDK/Interfaces/IFileSystem.hpp"
 
-namespace TrainKit {
+namespace Spin {
 
 class EventLog {
 public:
@@ -77,6 +77,6 @@ private:
     bool                                     mFull  = false;
 };
 
-} // namespace TrainKit
+} // namespace Spin
 
-#endif // TRAINKIT_EVENT_LOG_HPP
+#endif // SPIN_EVENT_LOG_HPP

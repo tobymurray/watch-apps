@@ -3,7 +3,7 @@
  * @file    SharedLog_test.cpp
  * @brief   The two files a ride leaves behind, written against a filesystem.
  *
- * TrainKit's own tests cover what the JSON says; these cover getting it onto
+ * EffortKit's own tests cover what the JSON says; these cover getting it onto
  * storage -- the mkdir, the tmp/rotate/rename commit, the refusal to overwrite
  * a newer schema, and the append-across-rides the diagnostic log relies on.
  * None of that is reachable from a Rust test, and none of it is reachable from
@@ -19,7 +19,7 @@
 #include "EventLog.hpp"
 #include "KernelTestDoubles.hpp"
 #include "SharedLog.hpp"
-#include "trainkit.h"
+#include "SpinEngine.hpp"
 
 #include <gtest/gtest.h>
 
@@ -27,24 +27,23 @@
 #include <string>
 
 using SDK::TestSupport::KernelFixture;
-using TrainKit::EventLog;
-using TrainKit::SharedLog;
+using Spin::EventLog;
+using Spin::SharedLog;
 
 extern "C" {
 
 /// The Service's own, which the archive expects any host to provide. A panic
-/// reaching here means a TrainKit bug the Rust suite should have caught, so it
+/// reaching here means an engine bug the Rust suite should have caught, so it
 /// fails the test rather than being swallowed.
-void trainkit_host_panic(const uint8_t* msg, uint32_t len)
+void spin_engine_host_panic(const uint8_t* msg, uint32_t len)
 {
-    FAIL() << "TrainKit panicked: "
+    FAIL() << "The engine panicked: "
            << std::string(reinterpret_cast<const char*>(msg), len);
 }
 
-/// libtrainkit.a is built `no_std` against a `core` that was compiled to
-/// unwind, so the host linker still wants this even though `panic = "abort"`
-/// means nothing ever reaches it. The watch build has its own.
-void rust_eh_personality() {}
+// No rust_eh_personality here: the shim defines it, for the same reason it
+// defines the panic handler -- the archive that owns the C ABI owns what the
+// linker needs to resolve it.
 
 } // extern "C"
 
@@ -90,9 +89,9 @@ private:
 };
 
 /// One plausible ride, so a test only has to say what it is varying.
-trainkit_session aRide(uint32_t startUtc)
+SpinSessionRecord aRide(uint32_t startUtc)
 {
-    trainkit_session s{};
+    SpinSessionRecord s{};
     s.start_utc = startUtc;
     s.active_s  = 2700;
     s.elapsed_s = 2760;
@@ -119,7 +118,7 @@ trainkit_session aRide(uint32_t startUtc)
     s.recoveries[0].window_s    = 60;
     s.recoveries[0].trusted_s   = 61;
     s.recoveries[0].hr0_pct_max = 89;
-    s.recoveries[0].trigger     = TRAINKIT_TRIGGER_PAUSE;
+    s.recoveries[0].kind        = SPIN_KIND_PAUSE;
     const uint8_t curve[7] = {170, 157, 146, 137, 130, 123, 117};
     for (size_t i = 0; i < 7; ++i) {
         s.recoveries[0].curve[i] = curve[i];
@@ -156,7 +155,7 @@ TEST(SharedLog, AFirstRideCreatesTheFile)
 
     const std::string text = readBack(k, kPath);
     ASSERT_FALSE(text.empty()) << "nothing landed at " << kPath;
-    EXPECT_NE(text.find("\"version\":1"), std::string::npos) << text;
+    EXPECT_NE(text.find("\"version\":2"), std::string::npos) << text;
     EXPECT_NE(text.find("\"app\":\"Spin\""), std::string::npos) << text;
     EXPECT_NE(text.find("\"kept\":1"), std::string::npos) << text;
     EXPECT_NE(text.find("\"start_utc\":1756800000"), std::string::npos) << text;
@@ -199,25 +198,28 @@ TEST(SharedLog, TheSameRideTwiceIsOneEntry)
     EXPECT_NE(readBack(k, kPath).find("\"kept\":1"), std::string::npos);
 }
 
-TEST(SharedLog, WhatIsWrittenIsWhatTrainKitReadsBack)
+TEST(SharedLog, WhatIsWrittenIsWhatTheEngineReadsBack)
 {
     KernelFixture k;
     SharedLog log(k.kernel.fs, "Spin", "indoor_cycling");
     ASSERT_EQ(log.record(aRide(777)), SharedLog::Status::OK);
 
     const std::string text = readBack(k, kPath);
-    std::vector<uint8_t> hist(trainkit_history_bytes());
-    trainkit_history_init(hist.data(), "Spin", "indoor_cycling");
-    ASSERT_EQ(trainkit_history_load(hist.data(),
+    spin_history_init(reinterpret_cast<const uint8_t*>("Spin"), 4,
+                      reinterpret_cast<const uint8_t*>("indoor_cycling"), 14);
+    ASSERT_EQ(spin_history_load(
                                     reinterpret_cast<const uint8_t*>(text.data()),
                                     static_cast<uint32_t>(text.size())),
-              TRAINKIT_LOAD_OK);
+              SPIN_LOAD_OK);
 }
 
 TEST(SharedLog, ANewerSchemaIsLeftExactlyAsFound)
 {
     KernelFixture k;
-    const std::string newer = R"({"version":2,"app":"Spin","sessions":[],"future":1})";
+    // A version this build does not write. Two is what it writes now, so a
+    // file at two is not newer -- bumping the schema has to bump this too, or
+    // the test stops testing the refusal.
+    const std::string newer = R"({"version":3,"app":"Spin","sessions":[],"future":1})";
     putFile(k, kPath, newer);
 
     SharedLog log(k.kernel.fs, "Spin", "indoor_cycling");

@@ -25,7 +25,7 @@
 
 #include "EventLog.hpp"
 #include "SharedLog.hpp"
-#include "trainkit.h"
+#include "SpinEngine.hpp"
 
 #include "ActivityWriter.hpp"
 #include "AppConfigFields.hpp"
@@ -96,10 +96,10 @@ private:
                   "Track::Data::zoneSeconds is not the size the Service indexes");
     static_assert(ActivityWriter::kZoneBuckets == skZoneBuckets,
                   "ActivityWriter's zone arrays are not the size the Service fills");
-    static_assert(TRAINKIT_MAX_ZONE_BUCKETS == skZoneBuckets,
-                  "TrainKit's zone arrays are not the size the Service fills");
-    static_assert(TRAINKIT_MAX_ZONES == skMaxZones,
-                  "TrainKit's zone ladder is not the size the Service fills");
+    static_assert(SPIN_MAX_ZONE_BUCKETS == skZoneBuckets,
+                  "the engine's zone arrays are not the size the Service fills");
+    static_assert(SPIN_MAX_ZONES == skMaxZones,
+                  "the engine's zone ladder is not the size the Service fills");
 
     // -- Infrastructure -------------------------------------------------------
 
@@ -110,12 +110,12 @@ private:
     ActivityWriter mActivityWriter;
 
     /// The record of the series, as opposed to the record of the ride. Written
-    /// once, after the .fit is closed; see TrainKit/README.md for the schema.
-    TrainKit::SharedLog mSharedLog;
+    /// once, after the .fit is closed; see EffortKit/README.md for the schema.
+    Spin::SharedLog mSharedLog;
 
     /// Why a recovery window did what it did, in a file, because LOG_* needs a
     /// debug UART adapter this watch is not usually attached to.
-    TrainKit::EventLog mEventLog;
+    Spin::EventLog mEventLog;
     std::time_t        mLastActiveLogUtc = 0;
 
     // -- Configuration --------------------------------------------------------
@@ -198,15 +198,10 @@ private:
     SecondsAccrual mAccrual;
     std::time_t mLapZoneSeconds[skZoneBuckets] = {};
 
-    /// Watches for a pause that follows real effort and measures the fall in
-    /// heart rate over the next minute. Opaque: TrainKit owns every gate, and
-    /// TrainKit/src/recovery.rs is where they are argued and sourced.
-    trainkit_detector mRecoveryDetector = {};
-
     /// The measurements this ride produced. The newest are kept, because the
     /// pause at the end of a ride is the one that happens every ride and so is
     /// the one comparable across them.
-    trainkit_recovery mRecoveries[TRAINKIT_MAX_RECOVERIES] = {};
+    SpinRecovery mRecoveries[SPIN_MAX_RECOVERIES] = {};
     uint8_t mRecoveryCount     = 0;
     uint8_t mRecoveriesDropped = 0;
 
@@ -230,7 +225,7 @@ private:
     void lapTrack();
     void saveLap();
     /// Keep a completed measurement, dropping the oldest if there is no room.
-    void keepRecovery(const trainkit_recovery& measurement);
+    void keepRecovery(const SpinRecovery& measurement);
     /// One line per second while paused, one every skActiveLogPeriod while
     /// riding, so a window can be reconstructed from the file afterwards.
     void logSecond(std::time_t utc, bool trusted);
