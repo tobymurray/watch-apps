@@ -113,7 +113,7 @@ impl Session {
             running: false,
             epochs: EpochAccumulator::new(),
             segmenter: Segmenter::new(SegmentCalibration::Absent),
-            recovery: Detector::new(RecoveryCalibration::absent()),
+            recovery: Detector::new(&RECOVERY_CALIBRATION),
             last_state: None,
             measured: SessionRecord::EMPTY,
             hr_trusted_this_s: false,
@@ -186,7 +186,7 @@ impl Session {
     fn reset(&mut self) {
         self.epochs = EpochAccumulator::new();
         self.segmenter.reset(SegmentCalibration::Absent);
-        self.recovery = Detector::new(RecoveryCalibration::absent());
+        self.recovery = Detector::new(&RECOVERY_CALIBRATION);
         self.last_state = None;
         self.measured = SessionRecord::EMPTY;
         self.hr_trusted_this_s = false;
@@ -203,6 +203,12 @@ impl Session {
         self.running = false;
     }
 }
+
+/// Squash measures nothing until a recording sets its thresholds, and the
+/// detector borrows this rather than copying it: a calibration carries a
+/// provenance for every number and is an order of magnitude larger than the
+/// state machine that reads it.
+static RECOVERY_CALIBRATION: RecoveryCalibration = RecoveryCalibration::absent();
 
 /// Live for the life of the process, in BSS rather than on any stack.
 static SESSION: Single<Session> = Single::new(Session::new());
