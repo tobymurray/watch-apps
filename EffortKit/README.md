@@ -149,9 +149,37 @@ measurement. Every gate has a test named after it in
 | Trusted readings in that 30 s | ≥ **20 of 30** | `Measured` | 5.3% of seconds untrusted, so about 1.6 of 30 is normal and 10 missing is not. |
 | A trusted baseline at cessation | within **2 s** | `Measured` | Past that the baseline is already down the curve and understates the fall. |
 | Trusted seconds inside the window | ≥ **90%** | `Measured` | Allows 6 untrusted seconds in 61. Across 34 minutes of recordings: 5.3% untrusted, in 89 runs of median length 1 and **maximum 4** — no run has ever been long enough to trip this alone. **A dropout is a discarded measurement, never an interpolated one.** |
+| The reading is one the kernel stands behind | trust ≥ **1** | `Defined` | `HEART_RATE_EX` uses 0 for a reading it does not vouch for. The floor is a calibration knob, for the reason below. |
 | The sensor did not change | — | `Measured` | **14%** of 60 s windows begin and end on different sensors, and where both report they differ by a median of 2 bpm and a 95th-percentile **16** — against falls of 8–20 bpm. Those windows averaged **−2.1 bpm**, an apparent rise. |
 | A trusted endpoint | at 60 s, or within **2 s** after | — | `window_s` records the second actually used. |
 | Nothing restarted effort | — | — | Resuming, or ending the session, closes the window with nothing. |
+
+### Confidence is a level, not a boolean
+
+The detector takes the kernel's 0–3 confidence rather than a yes/no the caller
+has already collapsed, so a calibration decides how far the sensor is believed
+and `trusted_s` counts seconds that met *that* floor.
+
+Spin's Session 2 of 2026-09-03 is why. A five-second excursion of up to 15 bpm,
+entirely at trust=1 and bracketed by trust=3 readings on a smoothly falling
+signal, reached a stored curve. The fall itself was untouched — that is `hr0`
+minus `hr_end` — but `trusted_s: 61 of 61` was a stronger claim than the sensor
+had made.
+
+**The shipping floor is still 1, deliberately.** The same document measured that
+regime against a real one:
+
+| | Real maximum (184) | Synthetic (100) |
+|---|---:|---:|
+| trust=1, of paused seconds | **9%** | **24%** |
+| largest one-second move | **3 bpm** | **15 bpm** |
+
+The gates only run above 80% of a *real* maximum, which is the good regime, so
+they never see the bad one — and that regime only exists because a test set a
+fake maximum to make the code paths execute. The floor is a knob because the
+difference was measured, not because it needs turning. What that sample cannot
+show is that the tail is absent at real intensity: 271 paused seconds and eight
+trust=1 pairs cannot rule out a rare excursion.
 
 The intensity gate and the already-falling gate interact, and Ride A measured
 how: with both configured the band where `already_falling` fires rather than

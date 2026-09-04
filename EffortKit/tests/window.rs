@@ -8,6 +8,9 @@ use effortkit::window::*;
 /// A wearer with a 190 bpm maximum, so 80% is 152.
 const MAX_HR: u8 = 190;
 
+/// The kernel's top confidence, which is what a healthy reading carries.
+const FULL_TRUST: u8 = 3;
+
 /// The shipping whole-session calibration, which is what Spin links.
 static SPIN: Calibration = Calibration::absent().with(WindowKind::Pause, HRR60);
 
@@ -49,7 +52,8 @@ impl Ride {
             self.utc += 1;
             self.active_s += 1;
             let (bpm, trusted) = f(i);
-            last = self.det.second(self.utc, bpm, trusted, self.src, self.active_s);
+            let trust = if trusted { FULL_TRUST } else { 0 };
+            last = self.det.second(self.utc, bpm, trust, self.src, self.active_s);
             if last != Step::Nothing {
                 return last;
             }
@@ -63,7 +67,8 @@ impl Ride {
         for i in 0..n {
             self.utc += 1;
             let (bpm, trusted) = f(i);
-            last = self.det.second(self.utc, bpm, trusted, self.src, self.active_s);
+            let trust = if trusted { FULL_TRUST } else { 0 };
+            last = self.det.second(self.utc, bpm, trust, self.src, self.active_s);
             if last != Step::Nothing {
                 return last;
             }
@@ -326,7 +331,7 @@ fn a_stalled_tick_is_seconds_that_passed_not_seconds_that_did_not() {
     // The Service misses the baseline second entirely and comes back four
     // seconds later, well down the curve.
     r.utc += 4;
-    let step = r.det.second(r.utc, 150.0, true, r.src, r.active_s);
+    let step = r.det.second(r.utc, 150.0, FULL_TRUST, r.src, r.active_s);
     assert_eq!(step, Step::Discarded);
     assert_eq!(r.det.last_discard(), Some(Reason::NoBaseline));
 }
@@ -341,12 +346,12 @@ fn a_stall_inside_the_window_costs_the_seconds_it_took() {
     // Ten seconds the Service never served: they are untrusted seconds, so the
     // window falls under the 90% it needs rather than closing early.
     r.utc += 10;
-    let mut step = r.det.second(r.utc, 130.0, true, r.src, r.active_s);
+    let mut step = r.det.second(r.utc, 130.0, FULL_TRUST, r.src, r.active_s);
     let mut guard = 0;
     while step == Step::Nothing && guard < 60 {
         r.utc += 1;
         guard += 1;
-        step = r.det.second(r.utc, 125.0, true, r.src, r.active_s);
+        step = r.det.second(r.utc, 125.0, FULL_TRUST, r.src, r.active_s);
     }
     assert_eq!(step, Step::Discarded);
     assert_eq!(r.det.last_discard(), Some(Reason::Dropout));
@@ -361,8 +366,8 @@ fn a_clock_that_repeats_a_second_changes_nothing() {
 
     let before = r.det.last_discard();
     // The same second again, and one before it.
-    assert_eq!(r.det.second(r.utc, 140.0, true, r.src, r.active_s), Step::Nothing);
-    assert_eq!(r.det.second(r.utc - 5, 140.0, true, r.src, r.active_s), Step::Nothing);
+    assert_eq!(r.det.second(r.utc, 140.0, FULL_TRUST, r.src, r.active_s), Step::Nothing);
+    assert_eq!(r.det.second(r.utc - 5, 140.0, FULL_TRUST, r.src, r.active_s), Step::Nothing);
     assert_eq!(r.det.last_discard(), before);
 
     // And the window still closes on time.
@@ -386,7 +391,7 @@ fn a_window_that_changes_sensor_is_discarded() {
         r.utc += 1;
         r.src = if i < 20 { HrSource::External } else { HrSource::Optical };
         let (bpm, _) = fall(i);
-        step = r.det.second(r.utc, bpm, true, r.src, r.active_s);
+        step = r.det.second(r.utc, bpm, FULL_TRUST, r.src, r.active_s);
         if step != Step::Nothing {
             break;
         }
@@ -421,7 +426,7 @@ fn an_untrusted_second_does_not_count_as_a_sensor_change() {
         let untrusted = (20..22).contains(&i);
         r.src = if untrusted { HrSource::Unknown } else { HrSource::External };
         let (bpm, _) = fall(i);
-        step = r.det.second(r.utc, bpm, !untrusted, r.src, r.active_s);
+        step = r.det.second(r.utc, bpm, if untrusted { 0 } else { FULL_TRUST }, r.src, r.active_s);
         if step != Step::Nothing {
             break;
         }
@@ -628,4 +633,72 @@ fn every_discard_reason_has_its_own_name_and_code() {
             assert_ne!(a.name(), b.name(), "two reasons share a name");
         }
     }
+}
+
+#[test]
+fn a_confidence_floor_keeps_a_low_trust_excursion_out_of_the_curve() {
+    // MEASURED, from Spin's Session 2 of 2026-09-03: a five-second excursion of
+    // up to 15 bpm, entirely at trust=1, bracketed by trust=3 readings on a
+    // smoothly falling signal, reached the stored curve. The fall itself was
+    // untouched -- that is hr0 minus hr_end -- but `trusted_s` counted every
+    // one of those seconds, which is a stronger claim than the sensor made.
+    let cal: &'static Calibration = Box::leak(Box::new(
+        Calibration::absent()
+            .with(WindowKind::Pause, HRR60)
+            .requiring_trust(Gate::measured(
+                2,
+                "Spin/Docs/RECOVERY-FIELD-RESULTS.md, Session 2",
+                "2026-09-03",
+                "a 15 bpm one-second move at trust=1 on a falling signal",
+            )),
+    ));
+    let mut r = Ride::borrowing(cal, MAX_HR);
+    r.effort(600, 170.0);
+    r.det.cease(WindowKind::Pause);
+
+    let fall = decay(170.0, 90.0, 55.0);
+    let step = r.paused(70, |i| {
+        // Seconds 30 to 34 are the excursion: badly wrong, and the kernel says
+        // so with a low confidence.
+        if (30..35).contains(&i) {
+            (185.0, true)
+        } else {
+            fall(i)
+        }
+    });
+    // The harness gives every "trusted" second full confidence, so re-run the
+    // excursion at the confidence the sensor actually reported.
+    assert_eq!(step, Step::Completed);
+    let m = r.det.take().expect("a measurement");
+    assert_eq!(m.trusted_s, 61, "at full confidence every second counts");
+
+    // Now the same window with the excursion at trust=1, under a floor of 2.
+    let mut r2 = Ride::borrowing(cal, MAX_HR);
+    r2.effort(600, 170.0);
+    r2.det.cease(WindowKind::Pause);
+    let mut step2 = Step::Nothing;
+    for i in 0..70u32 {
+        r2.utc += 1;
+        let (bpm, trust) = if (30..35).contains(&i) { (185.0, 1) } else { (fall(i).0, 3) };
+        step2 = r2.det.second(r2.utc, bpm, trust, r2.src, r2.active_s);
+        if step2 != Step::Nothing {
+            break;
+        }
+    }
+    assert_eq!(step2, Step::Completed, "five untrusted of 61 is inside the 90% gate");
+    let m2 = r2.det.take().expect("a measurement");
+    assert_eq!(m2.trusted_s, 56, "the five low-confidence seconds did not count");
+    assert_eq!(m2.curve[3], 0, "and the excursion left a hole rather than a reading");
+    assert_eq!(m2.drop_bpm(), m.drop_bpm(), "the fall itself is unaffected either way");
+}
+
+#[test]
+fn the_shipping_floor_believes_whatever_the_kernel_stands_behind() {
+    // Unchanged behaviour, and deliberately so: the field results measured that
+    // at a real intensity trust=1 is 9% of paused seconds against 24% at a
+    // synthetic one, and the largest one-second move is 3 bpm against 15. The
+    // gates only run above 80% of a real maximum, so the bad regime is one they
+    // never see. The floor is a knob because that was measured, not turned.
+    assert_eq!(TRUST_ANY.value, 1);
+    assert_eq!(SPIN.min_trust().value, 1);
 }

@@ -65,6 +65,17 @@ pub const BASELINE_GRACE_S: i64 = 2;
 /// window is visible rather than rounded away.
 pub const WINDOW_GRACE_S: i64 = 2;
 
+/// Believe any reading the kernel did not itself mark untrusted.
+///
+/// `HEART_RATE_EX` carries a 0-3 confidence and uses 0 for a reading it does
+/// not stand behind, so this is the kernel's own floor rather than a number
+/// anybody here chose.
+pub const TRUST_ANY: Gate<u8> = Gate::defined(
+    1,
+    "SDK SensorDataParser::HeartRateEx, confidence 0-3",
+    "0 is the value the kernel uses for a reading it does not stand behind",
+);
+
 /// What kind of cessation opened a window, and the wire code for it.
 ///
 /// A reader needs this because the kinds are not comparable with each other: a
@@ -322,6 +333,7 @@ pub const HRR60: Thresholds = Thresholds {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Calibration {
     kinds: [Option<Thresholds>; ALL_KINDS.len()],
+    min_trust: Gate<u8>,
 }
 
 impl Default for Calibration {
@@ -333,7 +345,33 @@ impl Default for Calibration {
 impl Calibration {
     /// Nothing is measured, and every cessation says so.
     pub const fn absent() -> Self {
-        Self { kinds: [None; ALL_KINDS.len()] }
+        Self { kinds: [None; ALL_KINDS.len()], min_trust: TRUST_ANY }
+    }
+
+    /// Believe only readings at or above this confidence.
+    ///
+    /// On the calibration rather than on each kind of window, because how far
+    /// a sensor is believed is a property of the instrument and not of what
+    /// the wearer stopped doing.
+    ///
+    /// MEASURED, and the reason this is a knob rather than a constant: Spin's
+    /// Session 2 of 2026-09-03 carried a five-second, 15 bpm excursion
+    /// entirely at trust=1, bracketed by trust=3 readings on a smoothly
+    /// falling signal, and it reached the stored curve. But the same document
+    /// measured that regime against a real one: at a genuine intensity trust=1
+    /// was 9% of paused seconds against 24%, and the largest one-second move
+    /// across 271 paused seconds was 3 bpm against 15. The gates only ever run
+    /// above 80% of a real maximum, which is the good regime, so the shipping
+    /// floor stays at [`TRUST_ANY`] and this exists for a calibration that
+    /// measures otherwise.
+    pub const fn requiring_trust(mut self, min_trust: Gate<u8>) -> Self {
+        self.min_trust = min_trust;
+        self
+    }
+
+    /// The confidence a reading needs before it is believed at all.
+    pub const fn min_trust(&self) -> Gate<u8> {
+        self.min_trust
     }
 
     /// Measure one kind of window on the given terms.
@@ -690,14 +728,19 @@ impl Detector {
 
     /// One second of the session.
     ///
-    /// `bpm` is the arbitrated reading and is ignored unless `trusted`;
-    /// `source` is the sensor the kernel chose; `active_s` is the session's
-    /// unpaused seconds so far.
+    /// `bpm` is the arbitrated reading and is ignored below the calibration's
+    /// confidence floor; `trust` is the kernel's own 0-3 confidence; `source`
+    /// is the sensor it chose; `active_s` is the session's unpaused seconds.
+    ///
+    /// The level rather than a boolean the caller already collapsed, so a
+    /// calibration can say how far the sensor is believed -- and so that
+    /// `Recovery::trusted_s` counts seconds which met that floor rather than
+    /// seconds somebody else called trusted.
     pub fn second(
         &mut self,
         utc: i64,
         bpm: f32,
-        trusted: bool,
+        trust: u8,
         source: HrSource,
         active_s: u32,
     ) -> Step {
@@ -707,7 +750,11 @@ impl Detector {
             return Step::Nothing;
         }
 
-        let sample = if trusted { clamp_bpm(bpm) } else { UNTRUSTED };
+        let sample = if trust >= self.calibration.min_trust.value {
+            clamp_bpm(bpm)
+        } else {
+            UNTRUSTED
+        };
         self.push_pre(utc, sample);
         self.last_utc = utc;
         self.has_last_utc = true;
