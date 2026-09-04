@@ -34,12 +34,23 @@ That is what makes this one crate rather than two. `epoch` and `segment` are
 Squash's producer and Spin never calls them; `history` is Spin's cross-app
 record and Squash may never write one.
 
-**The cost of the half a consumer does not use is zero.** Measured on the CI
-toolchain image against the pinned SDK, `arm-none-eabi-size` on
-`SpinService.elf`: linking this crate but never calling `epoch`, `segment` or
-`baseline` leaves `.text` byte-for-byte unchanged, and making the same three
-reachable costs 3,976 bytes. The linker settles the "a crate whose every
-consumer uses half of it" objection; nothing here has to.
+**A consumer pays for its own half and almost nothing for the other.** Measured
+on the CI toolchain image against the pinned SDK, `arm-none-eabi-size` on
+`SpinService.elf`, with a shim forcing symbols in so this measures the code
+rather than measuring `--gc-sections`:
+
+| Spin's Service | `.text` | `.data` | `.bss` |
+|---|---:|---:|---:|
+| No crate linked | 68,584 | 1,732 | 11,776 |
+| Spin's half reachable | 81,416 | 2,812 | 14,240 |
+| Squash's half also compiled, never called | 81,440 | 2,812 | 14,240 |
+| Squash's half reachable too | 86,072 | 10,100 | 17,324 |
+
+Spin's half costs **+12,832** of `.text`; carrying Squash's half without calling
+it costs **24 bytes** and nothing in RAM; calling it would cost a further
+**+4,656** `.text` and **+7,288** `.data`, which Spin never pays. That settles
+the "a crate whose every consumer uses half of it" objection with a number
+rather than an argument.
 
 ---
 

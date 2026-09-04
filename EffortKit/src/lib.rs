@@ -13,8 +13,9 @@
 //! WHAT OPENS A WINDOW IS AN INPUT, NOT A COMPONENT. Spin calls
 //! [`window::Detector::cease`] from a button and Squash calls it from
 //! [`segment`]; the measurement does not know which, and an app links only the
-//! producer it uses. Measured on the watch toolchain: the modules a consumer
-//! never calls cost it zero bytes of flash, and 3,976 when it calls them.
+//! producer it uses. Measured on the watch toolchain: carrying the modules a
+//! consumer never calls costs it 24 bytes of flash and nothing in RAM; see
+//! `README.md` for the whole table.
 //!
 //! NO SDK TYPES, NO CLOCK, NO FILESYSTEM. Everything here is a pure function of
 //! what it is handed, which is what lets `cargo test` cover it without a
