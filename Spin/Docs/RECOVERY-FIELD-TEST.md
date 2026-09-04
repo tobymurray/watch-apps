@@ -165,6 +165,8 @@ gives `too_short` (which A1 already covers).
 
 ## Ride B — the ones that should be thrown away (about 20 minutes)
 
+> **Superseded by [Session 1](#session-1--the-refusals-about-20-minutes-at-a-desk)**, which reaches all three gates at a desk with no hard effort. Kept for the reasoning below it.
+
 Each of these is a window that opens and then correctly produces nothing.
 
 | # | Do | Expect |
@@ -205,6 +207,8 @@ the three desk sessions of 2026-09-03 have already demonstrated it, so only
 
 ## Ride C — the sensor, and the file (about 15 minutes)
 
+> **C1–C3 deferred** on the strap's two-minute disconnect — see [the strap](#the-strap-and-why-ride-c-is-deferred). C2's dropout half and C4 have moved into [Session 1](#session-1--the-refusals-about-20-minutes-at-a-desk).
+
 | # | Do | Expect |
 |---|---|---|
 | C1 | Start with the strap on. Hard 5 minutes, stop pedalling and **press R1** at the top. | `cease -> armed` |
@@ -226,6 +230,8 @@ C4 checks that `work_kj` is **absent** from the JSON, not zero.
 
 ## Ride D — no zones (5 minutes)
 
+> **Superseded by [Session 3](#session-3--no-zones-about-2-minutes)**: `no_max_hr` is tested before the effort gate, so the four hard minutes below buy nothing.
+
 1. Turn the watch's heart-rate zones **off** in settings.
 2. Ride hard 4 minutes, stop pedalling and **press R1**, sit 90 seconds, finish
    and save.
@@ -235,6 +241,8 @@ Expect `cease ... -> no_max_hr` and a session in the log with
 `hr_max_setting: 0`, `zone_count: 0`, and **no `edwards_trimp`**.
 
 ## Ride E — a ladder Edwards never wrote weights for (5 minutes)
+
+> **Superseded by [Session 4](#session-4--three-zones-about-5-minutes)**, which is the same test at a desk.
 
 1. On the phone, set Spin's `hrZoneCount` to **3**.
 2. Ride 4 minutes at any intensity, finish and save.
