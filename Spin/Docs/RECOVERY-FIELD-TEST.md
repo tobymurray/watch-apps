@@ -165,7 +165,7 @@ gives `too_short` (which A1 already covers).
 
 ## Ride B — the ones that should be thrown away (about 20 minutes)
 
-> **Superseded by [Session 1](#session-1--the-refusals-about-20-minutes-at-a-desk)**, which reaches all three gates at a desk with no hard effort. Kept for the reasoning below it.
+> **Superseded by [Session 1](#session-1--the-refusals-about-25-minutes-at-a-desk)**, which reaches all three gates at a desk with no hard effort. Kept for the reasoning below it.
 
 Each of these is a window that opens and then correctly produces nothing.
 
@@ -207,7 +207,7 @@ the three desk sessions of 2026-09-03 have already demonstrated it, so only
 
 ## Ride C — the sensor, and the file (about 15 minutes)
 
-> **C1–C3 deferred** on the strap's two-minute disconnect — see [the strap](#the-strap-and-why-ride-c-is-deferred). C2's dropout half and C4 have moved into [Session 1](#session-1--the-refusals-about-20-minutes-at-a-desk).
+> **C1–C3 deferred** on the strap's two-minute disconnect — see [the strap](#the-strap-and-why-ride-c-is-deferred). C2's dropout half and C4 have moved into [Session 1](#session-1--the-refusals-about-25-minutes-at-a-desk).
 
 | # | Do | Expect |
 |---|---|---|
@@ -230,7 +230,7 @@ C4 checks that `work_kj` is **absent** from the JSON, not zero.
 
 ## Ride D — no zones (5 minutes)
 
-> **Superseded by [Session 3](#session-3--no-zones-about-2-minutes)**: `no_max_hr` is tested before the effort gate, so the four hard minutes below buy nothing.
+> **Superseded by [Session 3](#session-3--no-zones-about-3-minutes)**: `no_max_hr` is tested before the effort gate, so the four hard minutes below buy nothing.
 
 1. Turn the watch's heart-rate zones **off** in settings.
 2. Ride hard 4 minutes, stop pedalling and **press R1**, sit 90 seconds, finish
@@ -242,7 +242,7 @@ Expect `cease ... -> no_max_hr` and a session in the log with
 
 ## Ride E — a ladder Edwards never wrote weights for (5 minutes)
 
-> **Superseded by [Session 4](#session-4--three-zones-about-5-minutes)**, which is the same test at a desk.
+> **Superseded by [Session 4](#session-4--three-zones-about-6-minutes)**, which is the same test at a desk.
 
 1. On the phone, set Spin's `hrZoneCount` to **3**.
 2. Ride 4 minutes at any intensity, finish and save.
@@ -311,65 +311,130 @@ against the 3.8 measured at a real maximum of 184.
 
 ### What is already proven
 
+Every discard reason but one has now fired on hardware.
+
 | Gate or claim | Where it fired |
 |---|---|
 | `no_max_hr` | the desk checks, twice |
-| `too_short` | Ride A, A1 and A7 |
-| `too_easy` | Ride A, A2, as a `discard` |
-| `armed` → `recovery` | Ride A, A4 and A6 |
-| a session with two recoveries | Ride A |
-| a session with none, recorded rather than omitted | the three desk sessions |
-| `work_kj` present, and `avg_power` from it | every ride so far |
-| `edwards_trimp` on the watch's own five-zone ladder | the desk re-run, and Ride A |
-| the `.bak` rotation and commit rename | `kept` 1 → 2 → 3 → 4 |
+| `too_short` | Ride A's A1 and A7; and at `active=0` in Session 1's retry |
+| `no_baseline_history` | Session 1 |
+| `too_easy` | Ride A's A2, as a `discard` |
+| `already_falling` | Session 1 |
+| `dropout` | Session 1's retry |
+| `effort_resumed` | Session 1 |
+| `ride_ended` | Session 1's retry |
+| `source_changed` | **nowhere — deferred on the strap firmware** |
+| `armed` → `recovery` | Ride A, twice |
+| a session with two recoveries, and one with none | Ride A; the desk sessions |
+| `work_kj` present, and `avg_power` from it | Ride A and before |
+| `work_kj` **absent** on SKIP, and 48/20 out of the FIT definition | Session 1, both runs |
+| `edwards_trimp` on a five-zone ladder | the desk re-run, Ride A, Session 1 |
+| the `.bak` rotation and commit rename | `kept` 1 → 2 → 3 → 4 → 5 → 6 |
 
-### Session 1 — the refusals (about 20 minutes, at a desk)
+What is left is `recoveries_dropped` (Session 2), `zone_count: 0` (Session 3),
+`zone_count: 3` (Session 4), and `source_changed` when the strap can hold a
+connection.
 
-Maximum set to 100. One ride, five parts; each needs its own three minutes of
-clock first, because `resume()` restarts the bout.
+### Before any session: the clock, and the app
 
-| # | Do | Expect |
-|---|---|---|
-| 1 | START. Sit 3 minutes. March on the spot to about 100. Stop marching and **press R1** together. **Press R1 again** after 15 seconds and march. | `resume -> effort_resumed` |
-| 2 | Sit 3 minutes. March to about 100. Stop marching and **do not press R1**. Watch the number, and **press R1 when it reads between 80 and 89**. | `armed`, then `discard already_falling` |
-| 3 | Sit 3 minutes. March to about 100, stop and **press R1** together. About 20 seconds in, **take the watch off** for 10 seconds, then put it back. | `untrusted` lines, then `discard dropout` — or a `recovery` with `trusted` below 61 |
-| 4 | Sit 3 minutes. **Take the watch off for 15 seconds**, put it back on and **press R1 immediately**. | `cease ... -> no_baseline_history` |
-| 5 | Sit 3 minutes. March to about 100, stop and **press R1**, sit 30 seconds, then **L1 SAVE**, and **SKIP** the kilojoule screen with R2. | `end -> ride_ended`, and `work_kj` **absent** from the session |
+Two things fail silently, and both have already cost a run.
 
-Part 4 reaches a gate this document has never mentioned and nothing has ever
-run: `cease()` needs 20 of the preceding 30 seconds trusted, and a watch off the
-wrist supplies the gap. Part 5 is C4 folded in — `work_kj` must be **absent**
-from `spin_sessions.json`, not zero.
+**Every R1 that pauses needs an R1 that resumes.** The clock stops the moment
+you press R1 and does not move again until you press it a second time, and
+`MIN_EFFORT_S` counts **unpaused** seconds only. Session 1's last part failed on
+exactly this: 202 seconds of wall clock passed between two `cease` lines, but 33
+of them were spent paused after a refusal, so the ride counted 169 and the
+180-second gate refused it. Every table below therefore names the clock's state
+after each step, and no step assumes a resume that the step before it did not
+make.
 
-### Session 2 — the recovery cap (about 12 minutes)
+**A changed maximum needs Spin restarted.** `loadSystemSettings()` runs once in
+`Service::run()`, not per ride — `loadConfig()` and `applyZoneConfig()` are the
+ones that re-run in `startTrack()`. Change the watch's maximum while Spin is
+open and every ride in that session still uses the old one. Close the app and
+reopen it, and confirm from the dial before spending twenty minutes: at a
+maximum of 100 the floors are 50/60/70/80/90, so sitting still at ~68 bpm lights
+zone 2, where at 184 the rim stays dark.
 
-Maximum still 100. **Three** successful windows in one ride: sit 3 minutes,
-march to about 100, stop and **press R1** together, sit **70 seconds**. Repeat
-three times, then save.
+### Session 1 — the refusals (about 25 minutes, at a desk)
+
+Maximum set to 100, Spin reopened. One ride. Each `3½ minutes` is deliberate:
+the gate is a hard 180 seconds and the wait only counts while the clock runs.
+
+| # | Do | Clock after | Expect in `recovery.log` |
+|---|---|---|---|
+| 1 | **START**, then sit **3½ minutes** | running | — |
+| 2 | March on the spot to about 100. Stop marching and **press R1** together | **paused** | `cease ... -> armed` |
+| 3 | Wait 15 seconds. **Press R1** and march | running | `resume -> effort_resumed` |
+| 4 | Sit **3½ minutes** | running | — |
+| 5 | March to about 100. Stop marching and **do not press R1**. Watch the number, and **press R1** when it reads 80 up to your peak minus 11 | **paused** | `cease ... -> armed`, then `discard already_falling` |
+| 6 | **Press R1** to resume | running | — |
+| 7 | Sit **3½ minutes** | running | — |
+| 8 | March to about 100. Stop marching and **press R1** together | **paused** | `cease ... -> armed` |
+| 9 | Sit **75 seconds and press nothing**. At about 20 seconds in take the watch off for 15, then put it back and keep sitting | **paused** | `untrusted` lines, then `discard dropout` |
+| 10 | **Press R1** to resume | running | — |
+| 11 | Sit **3½ minutes** | running | — |
+| 12 | Take the watch off for 15 seconds, put it on and **press R1** immediately | **paused** | `cease ... -> no_baseline_history` |
+| 13 | **Press R1** to resume | running | — |
+| 14 | Sit **3½ minutes** | running | — |
+| 15 | March to about 100. Stop marching and **press R1** together | **paused** | `cease ... -> armed` |
+| 16 | Sit **30 seconds**, then **L1 SAVE**, then **SKIP** with R2 | saved | `end -> ride_ended`, and `work_kj` **absent** |
+
+Step 9 is the one to be patient through: the window is 60 seconds and **any**
+resume ends it first as `effort_resumed`, which is what happened on the first
+attempt at 56 seconds. Step 12 reaches a gate the original rides never mentioned
+— `cease()` needs 20 of the preceding 30 seconds trusted, and a watch off the
+wrist supplies the gap. Step 16 folds in C4: `work_kj` must be **absent** from
+`spin_sessions.json`, not zero.
+
+### Session 2 — the recovery cap (about 15 minutes)
+
+Maximum still 100. Three windows that all succeed, in one ride.
+
+| # | Do | Clock after | Expect |
+|---|---|---|---|
+| 1 | **START**, then sit **3½ minutes** | running | — |
+| 2 | March to about 100. Stop marching and **press R1** together | **paused** | `cease ... -> armed` |
+| 3 | Sit **75 seconds and press nothing** | **paused** | `recovery hr0=… drop=…` |
+| 4 | **Press R1** to resume | running | — |
+| 5 | Repeat steps 1–4 **twice more** | | a second and third `recovery` |
+| 6 | After the third window closes, **L1 SAVE** | saved | `session ... recoveries=2 dropped=1` |
 
 `TRAINKIT_MAX_RECOVERIES` is 2 and Ride A returned exactly 2, so the
-shift-and-drop in `Service::keepRecovery()` has never run. Expect
-`session ... recoveries=2 dropped=1`, with the shared log keeping the **last
-two**. The numbers themselves are meaningless and say so, in `hr_max_setting`.
+shift-and-drop in `Service::keepRecovery()` has never run. The shared log must
+keep the **last two** and report one dropped. The numbers themselves are
+meaningless and say so, in `hr_max_setting`.
 
-### Session 3 — no zones (about 2 minutes)
+### Session 3 — no zones (about 3 minutes)
 
-Turn the watch's heart-rate zones **off**. START, **press R1**, save.
+| # | Do | Clock after | Expect |
+|---|---|---|---|
+| 1 | Turn the watch's heart-rate zones **off**, then close and reopen Spin | | the start line reads `max_hr=0 zones=0` |
+| 2 | **START**, then **press R1** | **paused** | `cease ... -> no_max_hr` |
+| 3 | **L1 SAVE** | saved | `hr_max_setting: 0`, `zone_count: 0`, **no** `edwards_trimp` |
 
-That is the whole session. `cease()` tests `max_hr == 0` **before** the effort
-gate, so it short-circuits — the original Ride D's "ride hard 4 minutes" buys
-nothing at all. Expect `cease ... -> no_max_hr`, and a session with
-`hr_max_setting: 0`, `zone_count: 0` and **no** `edwards_trimp`. Turn the zones
-back on afterwards.
+`cease()` tests `max_hr == 0` **before** the effort gate, so it short-circuits
+and no wait is needed at all — the original Ride D's four hard minutes bought
+nothing. Turn the zones back on afterwards, and reopen Spin again.
 
-### Session 4 — three zones (about 5 minutes)
+### Session 4 — three zones (about 6 minutes)
 
-Set Spin's `hrZoneCount` to **3**, ride 4 minutes at a desk, save, set it back.
-No effort and no bike: the ride only has to exist. Expect `zone_count: 3`, three
-`zone_floors`, four `zone_s` buckets, and **no** `edwards_trimp`.
+| # | Do | Clock after | Expect |
+|---|---|---|---|
+| 1 | Set Spin's `hrZoneCount` to **3**. This one needs no restart — `loadConfig()` re-runs every ride | | — |
+| 2 | **START**, then sit **4 minutes** at any intensity | running | — |
+| 3 | **Press R1** to pause, then **L1 SAVE** | saved | `zone_count: 3`, three `zone_floors`, four `zone_s` buckets, **no** `edwards_trimp` |
+| 4 | Set `hrZoneCount` back to 5 or 0 | | — |
 
-This is the only session that exercises the app-config path at all —
-`app_config.json` has never carried anything but `energyInKilojoules`.
+The only session that exercises the app-config path at all: `app_config.json`
+has never carried anything but `energyInKilojoules`.
+
+**A custom ladder on the watch is only honoured at `hrZoneCount: 0`.** Session 1
+was run with the watch set to `[30,60,70,80,90,100]` and recorded
+`zone_floors: [50,60,70,80,90]` — because a declared count sends
+`applyZoneConfig()` down the spread-from-maximum path and the watch's own floors
+are never read. On the standard 50–100% ladder the two coincide exactly, which
+is why it has never shown before.
 
 ### Ride A never needs running again
 
@@ -638,4 +703,80 @@ effort:
 At a maximum of 184 the strip is **3.8 bpm wide** — `(peak − 10) − 0.8 × max`,
 or 151 down to 147.2 — which is about four seconds of a real recovery curve.
 This is measured from the two curves above, not derived.
+
+---
+
+## 2026-09-03 — Session 1, in two runs
+
+Maximum temporarily set to 100 so the intensity gates were reachable by marching
+on the spot. Both sessions carry `hr_max_setting: 100`, which is what keeps them
+out of Ride A's real numbers.
+
+**The maximum is settable**, which had been an open question: the watch took
+`[30,60,70,80,90,100]` and Spin's start line read `max_hr=100 zones=5`.
+
+### The first run — four of six
+
+```
+1788486694 start version=0.8.0-14-165ab48 max_hr=100 zones=5 weight=90
+1788486913 cease hr=101 pct=101 active=218 -> armed
+1788486929 resume -> effort_resumed
+1788487201 cease hr=87 pct=87 active=490 -> armed
+1788487202 discard already_falling hr=87 pct=87
+1788487477 cease hr=100 pct=100 active=715 -> armed
+1788487533 resume -> effort_resumed
+1788487747 cease hr=0 pct=0 active=929 -> no_baseline_history
+1788487949 cease hr=100 pct=100 active=1098 -> too_short
+1788487994 session status=0 recoveries=0 dropped=0 active=1098 hr_avg=76 work_kj=0 trimp=56
+```
+
+`effort_resumed`, `already_falling` and `no_baseline_history` all fired for the
+first time, and `work_kj` came back **absent** from `spin_sessions.json` rather
+than zero — with 48 and 20 absent from the FIT session's definition too, which
+is the strong form of the claim.
+
+Two parts missed, and **both were faults in the instructions rather than in the
+watch**:
+
+- **`dropout` was pre-empted four seconds early.** The window armed at
+  `...477`, the watch came off at `...501` for 29 seconds, and a resume landed at
+  `...533` — 56 seconds into a 60-second window, so it ended as
+  `effort_resumed`. Thirty untrusted of 61 would have refused comfortably. The
+  table had no step telling the wearer to sit the window out, because the two
+  parts before it end *with* a resume by design.
+- **`ride_ended` never got its window.** Between the `no_baseline_history`
+  refusal and the next press, 202 seconds of wall clock passed but only **169**
+  reached the ride: 33 were spent paused, because a refusal leaves the ride
+  paused and the table's next line said "sit 3 minutes" as though the clock were
+  running. The gate is a hard 180.
+
+Both are fixed above — every step now names the clock's state, and no step
+assumes a resume the step before it did not make.
+
+### The retry — both, cleanly
+
+```
+1788490172 start version=0.8.0-14-165ab48 max_hr=100 zones=5 weight=90
+1788490172 cease hr=69 pct=69 active=0 -> too_short
+1788490479 cease hr=98 pct=98 active=199 -> armed
+1788490540 discard dropout hr=68 pct=68
+1788490825 cease hr=106 pct=106 active=469 -> armed
+1788490861 end -> ride_ended
+1788490861 session status=0 recoveries=0 dropped=0 active=469 hr_avg=71 work_kj=0 trimp=20
+```
+
+`dropout` on 30 untrusted seconds of 61 — 51% trusted against a 90% gate — and
+`ride_ended` on a window torn down 36 seconds in. `work_kj` absent again.
+
+The stray `cease ... active=0 -> too_short` in the first second is an R1 pressed
+the instant the ride began, and it is worth keeping: it is `MIN_EFFORT_S`
+refusing a **zero-length bout**, which nothing had tested.
+
+### What the ladder did
+
+Session 1 recorded `zone_floors: [50,60,70,80,90]` against a watch set to
+`[30,60,70,80,90,100]`. A declared `hrZoneCount` sends `applyZoneConfig()` down
+the spread-from-maximum path, so the watch's own floors are never read and the
+custom 30 was dropped. It coincides exactly on the standard 50–100% ladder,
+which is why it had never shown before.
 
