@@ -439,7 +439,7 @@ is left to run, and what to check in any run.
 
 ### What it cannot tell you
 
-The full list, with its sources, is in [TrainKit's README](../TrainKit/README.md#what-this-cannot-tell-you).
+The full list, with its sources, is in [EffortKit's README](../EffortKit/README.md#what-this-cannot-tell-you).
 The one that matters most on a bike:
 
 **It is dominated by what you do next, and the watch cannot see that.** In the
@@ -487,10 +487,10 @@ with         91,128    1,732   12,096   144,840
 The 288 bytes of RAM are the detector; the 16 KiB the log is read into is heap,
 transient, and only alive after the `.fit` is closed. Most of the flash is
 `compiler_builtins` arriving with the first Rust archive this Service has ever
-linked rather than the crate's own code — about 6 KB of it is TrainKit.
+linked rather than the crate's own code — about 6 KB of it is the engine.
 
 The schema is documented as a table, with units, in
-[TrainKit's README](../TrainKit/README.md#the-schema), because the point of the folder is
+[EffortKit's README](../EffortKit/README.md#the-series), because the point of the folder is
 that something else reads it. That something is not this app: a training log on
 a 240×240 reflective panel would be a worse version of a thing that already
 exists, which is the same argument
@@ -706,7 +706,7 @@ GUI draws snapshots:
 HEART_RATE_EX ─┐
    the clock ──┤→ Service.cpp ──CustomMessage──→ Gui.cpp ──spin_gui_frame──→ lib.rs
  app_config ───┤       │                                                     (pixels)
-               │       └→ TrainKit ────→ ../SharedData/spin_sessions.json
+               │       └→ engine ──────→ ../SharedData/spin_sessions.json
                └→ ActivityWriter → .fit
 ```
 
@@ -810,7 +810,7 @@ compiled against.
 
 Needs `$UNA_SDK` pointing at an `apps-v1.4.0` checkout, and `cargo` with the
 `thumbv8m.main-none-eabihf` target installed. Two Rust archives are built, not
-one: `libspin_gui.a` for the GUI and [`libtrainkit.a`](../TrainKit) for the
+one: `libspin_gui.a` for the GUI and [`libspin_engine.a`](Software/Libs/rust) for the
 Service. They stay separate because they land in different ELFs — two archives
 each carrying a `#[panic_handler]` would collide if they landed in one.
 
@@ -838,14 +838,14 @@ CMake project — from what the directory holds.
 Three suites, because they cover three different things.
 
 **Whether a recovery measurement counts, and what the shared log says** —
-[`../TrainKit`](../TrainKit), Rust. Every gate in
+[`../EffortKit`](../EffortKit), Rust. Every gate in
 [§ How fast your heart falls](#how-fast-your-heart-falls-when-you-stop) has a
 test named after it, and the log's byte bound is a measured number rather than
 an argued one. `ctest` shells out to cargo for them, so running the host suite
 below covers them without knowing they are Rust:
 
 ```sh
-cd TrainKit && cargo test --features std
+cd EffortKit && cargo test --features std
 ```
 
 That is also the only host coverage the Service side of this feature has:

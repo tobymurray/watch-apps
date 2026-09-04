@@ -1,5 +1,11 @@
 # Heart-rate recovery: what has been tested
 
+> **The symbol names below are the ones the build under test actually called.**
+> Every run here predates the merge onto the shared `EffortKit` crate, so they
+> read `trainkit_*`; the code that runs now calls `spin_engine_*` through the
+> shim in `Software/Libs/rust`. The findings are unaffected — a record of what
+> happened is not improved by renaming it afterwards.
+
 The record of what has actually been run on hardware, dated, with what each run
 found. The work still outstanding is in
 [`RECOVERY-FIELD-TEST.md`](RECOVERY-FIELD-TEST.md).

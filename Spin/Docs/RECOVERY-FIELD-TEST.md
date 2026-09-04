@@ -14,7 +14,7 @@ or any hard effort. Ride A — the one hard session — is **done and does not n
 repeating**, because the measurement happens on every pause of every ride.
 
 > Treat a wrong number as information, not as a failure. Every gate's threshold
-> is in [TrainKit's README](../../TrainKit/README.md#the-gates-and-what-each-one-is-for)
+> is in [EffortKit's README](../../EffortKit/README.md#the-gates-and-what-each-one-is-for)
 > with the source it came from, so if one is wrong you can see what it was
 > derived from.
 
@@ -57,11 +57,11 @@ does not is a different fault:
 
 | Check | If it fails |
 |---|---|
-| The app started at all | The `TrainKit ABI mismatch` guard in `Service::run()` fired and the Service returned immediately — a stale `libtrainkit.a` against a changed struct. Rebuild. |
+| The app started at all | The `Engine ABI mismatch` guard in `Service::run()` fired and the Service returned immediately — a stale `libspin_engine.a` against a changed struct. Rebuild. |
 | **`recovery.log` exists in Spin's folder** | `IFile::open(write, no-override)` neither appends nor creates on this kernel, and the fallback in `EventLog::open()` missed it. **Stop here** — everything below is blind without it. |
 | Its first line reads `start version=<the build you installed> max_hr=<n>`, **n > 0** | A **wrong version** means a stale `.uapp` is still booting, which is the headline failure in [`Docs/INSTALLING.md`](../../Docs/INSTALLING.md) and announces itself in no other way. **A missing `version=` means the same thing** — the field has been in the start line since this document existed, so a line without it is an older build. `max_hr=0` usually means the watch has no maximum set, and Rides A–C would produce nothing but `no_max_hr` — but check the next row before believing the watch. |
 | `zones=<n>` is one **fewer** than `heartRateZones` in the watch's own `settings.json` | Both numbers come from the same ladder, and the last threshold is the maximum rather than a floor. Equal counts, with `max_hr=0` beside them, is Spin misreading the message and not a watch with no zones — which is what happened on 2026-09-03, below. |
-| It contains `cease ... -> too_short` | The pause never reached the detector — `pauseTrack()` is not calling `trainkit_recovery_cease()`. |
+| It contains `cease ... -> too_short` | The pause never reached the detector — `pauseTrack()` is not calling `spin_engine_cease()`. |
 | `SharedData/spin_sessions.json` exists and ends `"kept":1` with `status=0` on the log's `session` line | The write path failed. The `status=` number says where: `1` refused, `2` out of memory, `3` commit rename failed, `4` write failed (`SharedLog.hpp`). |
 
 Then do it **once more**. The second run must give `"kept":2` and leave a
@@ -96,7 +96,8 @@ Afterwards: **put your real maximum back**, and delete both
   filesystem. That is evidence about *this code's logic*, not about the
   kernel's `open()` and `rename()` mapping — which is why the desk check above
   exists at all.
-- **`trainkit-tests`** — every gate, and the log's schema and bounds.
+- **`effortkit-tests`** and **`spin-engine-tests`** — every gate, the log's
+  schema and bounds, and the C ABI over them.
 
 ## Two different things, and the whole feature is the gap between them
 
@@ -104,7 +105,7 @@ This document never says "pause" as an instruction, because the word means two
 things here and only one of them reaches the watch:
 
 - **Press R1** — the button. This is the *only* thing the detector sees. It is
-  what calls `trainkit_recovery_cease()` and opens the window.
+  what calls `spin_engine_cease()` and opens the window.
 - **Stop pedalling** — the physical act. The watch **cannot see this at all**.
   There is no cadence sensor and no way to tell a stationary rider from a
   soft-pedalling one.
@@ -158,7 +159,7 @@ compared against — once strap data exists.
 
 Every intensity gate is a fraction of the watch's own maximum: `MIN_HR0_PCT_MAX`
 is 80% **of that setting**. Lower the setting and the whole test scales down onto
-an identical code path, because nothing in TrainKit knows the number is
+an identical code path, because nothing in the engine knows the number is
 arbitrary.
 
 Two facts make it free rather than a compromise:
