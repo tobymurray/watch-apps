@@ -1,0 +1,35 @@
+[package]
+name = "effortkit"
+version = "0.1.0"
+edition = "2021"
+description = "Session structure for the UNA Watch's activity apps: heart-rate recovery across gated windows, the bounded cross-app session log, epoch features from a raw IMU stream, a hysteresis segmenter over them, and robust per-user baselines. no_std and allocation-free. Design record: README.md."
+license = "MIT OR Apache-2.0"
+
+# A library only. Every Service links this through a per-app shim that is itself
+# the staticlib, so the archive carrying a #[panic_handler] is the app's own and
+# two apps can never contribute two of them to one binary.
+[lib]
+crate-type = ["lib"]
+
+# The Phase A measurement tool, not part of any watch build, so it is gated
+# behind the same feature that brings in the CSV reader it needs.
+[[bin]]
+name = "phase-a"
+path = "src/bin/phase_a.rs"
+required-features = ["std"]
+
+[features]
+std = []
+
+[dependencies]
+# sqrtf and friends, for accelerometer magnitude and the baseline's absolute
+# values. The Cortex-M33 in this watch has a hard-float FPU, so this compiles to
+# the corresponding instruction rather than a call.
+libm = "0.2"
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false
