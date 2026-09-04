@@ -399,3 +399,81 @@ The two records now agree: a mean of 66.3846 bpm is 66 in the `.fit` and 66 in
   Rides A–E stay premature until it has.
 - `Docs/INSTALLING.md`, linked twice above and once from `Service.cpp`, does not
   exist.
+
+---
+
+## 2026-09-03 — Ride A
+
+On `0.8.0-14-165ab48`, wrist optical throughout, no strap (see
+[the strap](#the-strap-and-why-ride-c-is-deferred)). **Both windows produced a
+measurement**, which is the first time the path past `armed` has ever run on
+hardware: the 60-second window, the seven-point curve, the `trainkit_recovery`
+struct across the C ABI, the JSON, and the commit.
+
+19 minutes active of 23.5 elapsed. Average 116 bpm, maximum 162, 129 kcal,
+160 kJ entered by hand for **140 W**. Edwards TRIMP 35. Time in zone
+162 / 321 / 341 / 173 / 145 / 0 seconds, which sums to the active time and
+matches `time_in_hr_zone` in the `.fit` bucket for bucket.
+
+The whole ride, with the per-second lines stripped:
+
+```
+1788483397 start version=0.8.0-14-165ab48 max_hr=184 zones=5 weight=90
+1788483517 cease hr=88 pct=48 active=120 -> too_short
+1788483850 cease hr=96 pct=52 active=420 -> armed
+1788483851 discard too_easy hr=97 pct=53
+1788484182 cease hr=161 pct=88 active=720 -> armed
+1788484243 recovery hr0=161 hr_end=144 drop=17 window=60 trusted=61 pct=88 src=1 curve=161,162,157,154,147,144,144
+1788484581 cease hr=161 pct=88 active=1021 -> armed
+1788484642 recovery hr0=161 hr_end=138 drop=23 window=60 trusted=61 pct=88 src=1 curve=161,162,159,154,147,144,138
+1788484802 cease hr=114 pct=62 active=1142 -> too_short
+1788484810 session status=0 recoveries=2 dropped=0 active=1142 hr_avg=116 work_kj=160 trimp=35
+1788484810 stop saved=1 discard=0
+```
+
+### The two measurements
+
+| | at | hr0 | % max | hr_end | drop | trusted | source |
+|---|---:|---:|---:|---:|---:|---:|---|
+| A4 | 720 s | 161 | 88 | 144 | **17** | 61/61 | optical |
+| A6 | 1021 s | 161 | 88 | 138 | **23** | 61/61 | optical |
+
+Both drops fall in the 15–45 band this document calls plausible, at the low
+end — expected on wrist optical, which lags a fast fall.
+
+Not one untrusted second in either window, so the 90% gate was never in
+question. That is the wrist sensor at its **best**, not its worst: the window
+runs while the wearer sits still with their hands off the bars, and no gate
+measures trust during the riding portion at all.
+
+**The accidental control is the useful part.** Both windows opened at exactly
+hr0 = 161 and 88% of maximum, and returned drops 6 bpm apart. On identical
+starting conditions that spread is a first measurement of the method's own
+noise on this wearer, and it sits inside Buchheit's ~25% typical error. It is
+n = 2, and whether the gap holds is the thing to watch.
+
+The ride's maximum of 162 occurred **inside** the recovery windows rather than
+during the effort.
+
+### Ride A produced exactly the cap
+
+`TRAINKIT_MAX_RECOVERIES` is 2, and this ride returned 2. A ride with a third
+qualifying pause would exercise the shift-and-drop in `Service::keepRecovery()`
+and set `recoveries_dropped`, and nothing has ever run that path.
+
+### Where a late press actually lands
+
+`already_falling` needs a baseline at or above 80% of maximum **and** more than
+10 bpm below the preceding 30 seconds' peak. Those two bound a narrow strip,
+and both curves here measure it — pressing R1 this many seconds after ceasing
+effort:
+
+| | `already_falling` | `too_easy` from |
+|---|---|---|
+| A4's curve | 35–40 s | 41 s |
+| A6's curve | 36–39 s | 40 s |
+
+At a maximum of 184 the strip is **3.8 bpm wide** — `(peak − 10) − 0.8 × max`,
+or 151 down to 147.2 — which is about four seconds of a real recovery curve.
+This is measured from the two curves above, not derived.
+
