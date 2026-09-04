@@ -1,0 +1,6 @@
+98710 1788444925 launch v0.6.0 abi=3384192379 expect=3384192379 ok=1 calibration=0
+98732 1788444925 profile load=1 sessions=0
+22043 1788447324 launch v0.6.0 abi=3384192379 expect=3384192379 ok=1 calibration=0
+22059 1788447324 profile load=1 sessions=0
+22906 1788447325 start utc=1788447325 record_imu=1 armed=1
+34136 1788447336 imu intact=1 stop=1 samples=1090 bytes=31987 markers=0 beats=9
