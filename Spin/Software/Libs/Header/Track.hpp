@@ -56,7 +56,12 @@ struct Data {
     float calories        = 0.0f;   ///< kcal, active, over the ride
     float restingCalories = 0.0f;   ///< kcal at MET 1.0, accrued every active second
 
-    uint32_t lapNum = 0;            ///< laps closed so far (auto-lap only)
+    uint32_t lapNum = 0;            ///< laps closed so far, however they closed
+
+    /// Active seconds of the lap just closed, or 0 when there is no split worth
+    /// showing -- which is what the screen tests, so the GUI owns no timer.
+    /// A lap of no seconds is never saved, so 0 can carry the absence.
+    uint16_t lastLapSeconds = 0;
 
     /// The same flag that fired the buzz, so the screen can never announce the
     /// target a second before or after the wrist felt it.

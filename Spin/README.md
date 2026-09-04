@@ -583,7 +583,7 @@ an accidental exit would cost the ride.
 | Screen | Shows | L1 | L2 | R1 | R2 |
 |---|---|---|---|---|---|
 | Ready | strap status, target if set | | | **START** | **EXIT** |
-| Riding | clock, heart rate, zone | | | pause | **LAP** |
+| Riding | clock, heart rate, zone, a split after each lap | | | pause | **LAP** |
 | Paused | dimmed clock, `PAUSED` | **SAVE** | **DISCARD** | resume | |
 | Bike kJ | the number being built | **+100** | **+10** | **SAVE** | **SKIP** |
 | Saved / discarded | what happened | | | done | **DONE** |
@@ -603,6 +603,30 @@ since the labelled button should be the unfamiliar one. Resume when paused gets
 the mark alone for the same reason — it was PAUSE a second earlier. The two
 endings of a ride get words, because choosing between them is the whole reason
 that screen exists.
+
+### The split, and the one banner slot
+
+Pressing R2 buzzes the wrist and closes a lap in the file, and for a few seconds
+it also writes the lap's own time under the clock — `LAP 3  1:04`, the number
+dim and the time bright. Without it the button's whole feedback is a buzz, and a
+wearer lapping an interval session cannot tell a registered press from a missed
+one, let alone read the split they pressed for.
+
+It lands in the same slot as `PAUSED` and `TARGET MET`, and the three are
+ordered by **how long each stays true**. Paused wins: it is the state the wearer
+can act on. A split beats the target, because the split is the thing that just
+happened and is gone in seconds where the target stays met for the rest of the
+ride.
+
+The Service decides when a split has gone stale and sends `last_lap_s` as 0 once
+it has, so **the GUI still owns no clock** — the same property the ride timer
+already has. The lap clock resets with the lap, so it is already "seconds since
+the lap" and no new timer was needed. A lap of no seconds is never saved, so 0
+carries the absence and the ABI needs no second flag.
+
+The dwell is five seconds: long enough to read with the wrist moving, and well
+clear of the next repetition in the shortest structure anyone rides — 20 seconds
+hard against 40 seconds easy.
 
 **R2 mid-ride is the one place the "R2 leaves" rule does not hold**, and it is a
 deliberate trade: R2 is the lap button on the SDK's own activity apps

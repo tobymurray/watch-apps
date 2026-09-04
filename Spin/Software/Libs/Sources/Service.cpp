@@ -620,6 +620,12 @@ void Service::processTrack()
         }
     }
 
+    // The split, while it is still worth showing. Decided here because the
+    // Service owns every derived fact and the GUI owns no timer; the lap clock
+    // resets with the lap, so it is already "seconds since the lap".
+    mTrackData.lastLapSeconds =
+        (mTimeCounter.getLapValueActive() < skLapSplitSeconds) ? mLastLapSeconds : 0;
+
     mGuiSender.trackData(mTrackData);
 }
 
@@ -653,6 +659,7 @@ void Service::saveLap()
 
     mActivityWriter.addLap(fitLap);
     mTrackData.lapNum++;
+    mLastLapSeconds = static_cast<uint16_t>(mTimeCounter.getLapValueActive());
 
     LOG_INFO("Lap %u saved: %u / %u s, HR %.0f / %.0f bpm\n",
              static_cast<unsigned>(mTrackData.lapNum),

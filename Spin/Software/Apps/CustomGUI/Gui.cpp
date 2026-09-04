@@ -145,6 +145,11 @@ void Gui::buildFrame(spin_gui_frame &out) const
     out.zone_count       = mZoneCount;
     out.hr_zone_fraction = mTrackData.hrZoneFraction;
     out.has_zones        = mTrackData.hasZones ? 1u : 0u;
+
+    // Taken as published, like the heart rate: the Service decides when a split
+    // has stopped being worth showing, so this side holds no clock.
+    out.last_lap_s = mTrackData.lastLapSeconds;
+    out.lap_number = static_cast<uint16_t>(mTrackData.lapNum);
 }
 
 void Gui::renderAndPush()

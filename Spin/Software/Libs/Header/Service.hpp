@@ -64,6 +64,11 @@ private:
 
     static constexpr std::time_t skSecondsPerMinute = 60;
 
+    /// How long a closed lap's split stays on the riding screen. Long enough
+    /// to read with the wrist moving, and well clear of the next rep in the
+    /// shortest structure anyone rides -- 20 s hard against 40 s easy.
+    static constexpr std::time_t skLapSplitSeconds = 5;
+
     /// Fallback when the watch's profile carries no weight. The calorie model
     /// is proportional to it, so a wrong weight scales the estimate rather than
     /// breaking it -- but it is why the figure is an estimate.
@@ -191,6 +196,9 @@ private:
     /// only be shown one it could not explain.
     float       mLapCalories        = 0.0f;
     float       mLapRestingCalories = 0.0f;
+    /// Active seconds of the lap just closed, held so the split survives the
+    /// lap counter being reset under it.
+    uint16_t    mLastLapSeconds     = 0;
 
     /// Turns a tick into the span of active time it is responsible for, so
     /// zone seconds and calories total the ride rather than exceeding it by
