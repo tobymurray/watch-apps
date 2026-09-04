@@ -490,7 +490,7 @@ transient, and only alive after the `.fit` is closed. Most of the flash is
 linked rather than the crate's own code — about 6 KB of it is the engine.
 
 The schema is documented as a table, with units, in
-[EffortKit's README](../EffortKit/README.md#the-series), because the point of the folder is
+[EffortKit's README](../EffortKit/README.md#shareddataapp_sessionsjson--the-series), because the point of the folder is
 that something else reads it. That something is not this app: a training log on
 a 240×240 reflective panel would be a worse version of a thing that already
 exists, which is the same argument
