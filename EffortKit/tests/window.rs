@@ -9,9 +9,7 @@ use effortkit::window::*;
 const MAX_HR: u8 = 190;
 
 /// The shipping whole-session calibration, which is what Spin links.
-fn spin() -> Calibration {
-    Calibration::absent().with(WindowKind::Pause, HRR60)
-}
+static SPIN: Calibration = Calibration::absent().with(WindowKind::Pause, HRR60);
 
 /// A wearer on the bike: seconds of steady effort, then a pause.
 struct Ride {
@@ -24,10 +22,16 @@ struct Ride {
 
 impl Ride {
     fn new(max_hr: u8) -> Self {
-        Self::with(spin(), max_hr)
+        Self::borrowing(&SPIN, max_hr)
     }
 
+    /// Leaks, because a detector borrows its calibration for 'static and a test
+    /// builds one at run time. A watch build has a `static` to point at.
     fn with(calibration: Calibration, max_hr: u8) -> Self {
+        Self::borrowing(Box::leak(Box::new(calibration)), max_hr)
+    }
+
+    fn borrowing(calibration: &'static Calibration, max_hr: u8) -> Self {
         let mut det = Detector::new(calibration);
         det.start(max_hr);
         Ride { det, utc: 1_700_000_000, active_s: 0, src: HrSource::External }

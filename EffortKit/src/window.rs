@@ -343,9 +343,16 @@ impl Calibration {
     }
 
     /// The terms for one kind, if this app measures it.
-    pub const fn for_kind(&self, kind: WindowKind) -> Option<Thresholds> {
-        self.kinds[kind.index()]
+    ///
+    /// By reference: a calibration carries a provenance for every number, which
+    /// is static metadata and would otherwise be copied into every detector and
+    /// down every per-second call path.
+    pub const fn for_kind(&self, kind: WindowKind) -> Option<&Thresholds> {
+        self.kinds[kind.index()].as_ref()
     }
+
+    /// Nothing measured, as a `static` a detector can borrow.
+    pub const ABSENT: Calibration = Calibration::absent();
 
     /// True when no kind is measured at all.
     pub fn is_absent(&self) -> bool {
@@ -547,7 +554,10 @@ enum State {
 /// a tick the Service was too busy to serve on time is a real second that went
 /// past, and counting calls would quietly shorten every window it happened in.
 pub struct Detector {
-    calibration: Calibration,
+    /// Borrowed, never owned. A calibration is 1,520 bytes on a 64-bit host
+    /// because every threshold carries its own provenance; copying one into
+    /// each detector put a session past the Service's 10 KiB stack.
+    calibration: &'static Calibration,
     state: State,
 
     /// bpm for each of the last [`PRE_WINDOW_S`] seconds; 0 = not trusted.
@@ -566,7 +576,7 @@ pub struct Detector {
     arm_utc: i64,
     kind: WindowKind,
     /// The terms the open window is being measured on; set by `cease`.
-    active: Option<Thresholds>,
+    active: Option<&'static Thresholds>,
     /// Highest trusted reading in the 30 s before cessation, snapped at cease.
     pre_peak: Bpm,
 
@@ -586,7 +596,7 @@ pub struct Detector {
 
 impl Detector {
     /// A detector that measures whatever `calibration` says it measures.
-    pub const fn new(calibration: Calibration) -> Self {
+    pub const fn new(calibration: &'static Calibration) -> Self {
         Detector {
             calibration,
             state: State::Idle,
@@ -731,7 +741,7 @@ impl Detector {
     }
 
     /// The terms this detector measures on, or why it measures nothing.
-    pub fn calibration(&self) -> Result<Calibration, Unavailable> {
+    pub fn calibration(&self) -> Result<&'static Calibration, Unavailable> {
         if self.calibration.is_absent() {
             return Err(Unavailable::NotCalibrated);
         }

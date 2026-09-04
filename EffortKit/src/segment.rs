@@ -292,11 +292,34 @@ impl Segmenter {
     /// 7 KB of zeroes to say the same thing would cost the sample path nothing
     /// but would cost a caller the temporary this method exists to avoid.
     pub fn reset(&mut self, calibration: Calibration) {
-        let stored = self.out.stored;
-        *self = Self::new(calibration);
-        // Keep whatever the array already held rather than rewriting it; it is
-        // unreadable while `stored` is 0.
-        let _ = stored;
+        // Field by field, never `*self = Self::new(..)`. This type is over
+        // 7 KB because of the rally array, and building one as a value to move
+        // into place needs it twice on a Service stack of 10 240 bytes --
+        // which is the fault `squash_engine`'s own start-up test catches.
+        //
+        // The array itself is deliberately not rewritten: it is unreadable
+        // while `stored` is 0, so clearing it would cost 7 KB of stores to
+        // hide nothing.
+        let separable = match calibration {
+            Calibration::Measured(t) => !matches!(t.off_court, OffCourtRule::Indistinguishable),
+            Calibration::Absent => false,
+        };
+        self.calibration = calibration;
+        self.state = if separable { ActivityState::OffCourt } else { ActivityState::Rest };
+        self.run_len = 0;
+        self.pending = None;
+        self.current = None;
+
+        let out = &mut self.out;
+        out.epochs_total = 0;
+        out.rally_epochs = 0;
+        out.rest_epochs = 0;
+        out.off_court_epochs = 0;
+        out.epochs_dropped = 0;
+        out.rally_count = 0;
+        out.rallies_truncated = false;
+        out.off_court_separable = separable;
+        out.stored = 0;
     }
 
     /// Feed one epoch, with the heart rate that covered it if there was one.
