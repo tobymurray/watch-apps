@@ -1,5 +1,10 @@
 # Two crates measure heart-rate recovery — what should exist instead
 
+> **Implemented.** This design was carried out on `main` as `EffortKit/`. Where
+> building it settled a question or corrected a number, the section below says
+> so and the crate's own `README.md` carries the current figures. Six things
+> changed in the doing, listed in [§8](#8-what-changed-in-the-implementing).
+
 A design pass over [`TrainKit`](../TrainKit) (`feat/hr-recovery`) and `EffortKit`
 (`feat/effortkit`), answering [`RECOVERY-CONVERGENCE-PROMPT.md`](RECOVERY-CONVERGENCE-PROMPT.md).
 No code was written. Both branches were live when this was taken; the commits
@@ -585,3 +590,69 @@ HRV and rMSSD; any on-watch trend view; the `.fit`'s field numbers; population
 norms and anything phrased as advice about a person. Nothing above touches them.
 
 `SleepLab` is not rewritten.
+
+
+---
+
+## 8. What changed in the implementing
+
+A design pass is a claim about what will work. Six of these did not survive
+contact, and the crate rather than this document is now the record.
+
+1. **`Provenance` split two ways was not enough.** A single provenance over a
+   whole calibration still lied: the 60 s interval is `Defined` by Cole et al.
+   while the 90% trusted-seconds floor is `Measured` here, and they sat in one
+   struct. Every threshold is now a `Gate<T>` carrying its own, so no two
+   numbers share a justification that covers one of them.
+
+2. **The discard counters do not fit the way §3.5 estimated.** That section put
+   them at "roughly 40 bytes a session, about 800 for twenty". Measured: the
+   fourteen key names cost 317 bytes a session when all are non-zero, and 20
+   such sessions do not fit 16 KiB — only 16 do. The writer omits zero counters
+   and omits the block entirely when nothing was discarded, so the reachable
+   worst case (five reasons at once, more than any recorded session) is 16,340
+   of 16,384 and does hold all twenty. Both are pinned by tests; the widest
+   pathological case pins the *degradation* rather than a guarantee.
+
+3. **The profile cannot store per-window detail for twenty sessions.** §3.4 said
+   the interior file keeps "up to 256 windows". Sixteen per session is already
+   48 KB. The file now keeps 4 windows of detail per session and a per-kind
+   **sum and count** that every qualifying window updates, so the mean is over
+   all of them and only inspection is bounded. Storing the mean itself — the
+   defect §3.4 identified in EffortKit — is still avoided.
+
+4. **The curve does not belong in the interior file.** Seven numbers per window,
+   wanted only for a fit this hardware cannot support, and the series file
+   already keeps one per measurement. Dropping it is most of what made the
+   profile fit.
+
+5. **`NotMeasurableOnThisHardware` rested on a misread number.** Its motivation
+   was consecutive readings differing by 0.50 and 0.18 bpm, taken as evidence of
+   sub-bpm kernel smoothing. Those are *mean* steps. Across all six recordings
+   the smallest non-zero step is exactly 1 bpm and **0 of 691** are smaller. The
+   variant stays — `phase-a` reports no labelled transition out of effort
+   carried enough heart rate to measure a step response — but the stated reason
+   was wrong.
+
+6. **The flash figure is superseded.** §0.6 measured the two pre-merge crates.
+   Against the merged crate: Spin's half costs 12,832 bytes of `.text`, carrying
+   Squash's half without calling it costs **24 bytes** rather than zero, and
+   calling it would cost a further 4,656 `.text` and 7,288 `.data`. The
+   conclusion is unchanged and the numbers are in the crate's `README.md`.
+
+### And one question the design pass listed as open is now closed
+
+**"Whether 60 s of sitting still ever survives."** Spin's Ride A on 2026-09-03
+produced two measurements — the first time the path past `armed` has run on
+hardware. Both windows opened at an identical `hr0` of 161 at 88% of maximum and
+returned **17 and 23 bpm**, wrist optical, with not one untrusted second in
+either. That 6 bpm spread on identical starting conditions is also the first
+direct measurement of the method's own noise on this wearer, and it sits inside
+Buchheit's ~25% typical error.
+
+Two of the five remaining open questions are unaffected by it: the ride was one
+wearer at one intensity, so the 80% gate is still underivable from it, and the
+strap was not worn, so `ExternalOnly` versus `EitherWithSourceRecorded` is still
+undecided. The `already_falling` gate gained a measurement rather than an
+answer: the band where it fires rather than `too_easy` is 3.8 bpm wide at that
+ride's numbers, about four seconds of curve.
