@@ -259,10 +259,11 @@ with.
 
 Every threshold in `EffortKit` is behind a type that cannot be constructed
 without naming the recordings that set it, and **no such constant exists in this
-repository**. So `Calibration::Absent` is the only value the watch build can
-reach, the segmenter and the recovery analyser return
-`Unavailable::NotCalibrated`, and a saved session records `segmented: 0` —
-zero because nothing ran, not because nothing happened.
+repository**. So `segment::Calibration::Absent` and
+`window::Calibration::absent()` are the only values the watch build can reach,
+every cessation is counted `not_calibrated` rather than measured, and a saved
+session records `segmented: 0` — zero because nothing ran, not because nothing
+happened.
 
 The heart-rate figures are real, because they need no threshold, which makes the
 heart-rate baselines the one family that can start warming up today. No

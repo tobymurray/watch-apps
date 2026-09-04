@@ -240,7 +240,7 @@ minutes off court, so:
 | ~10–20 s | The filter and the short rest are the same duration | `NotMeasurableOnThisHardware` for `short`, `FixedWindowDrop` for `long` |
 | Longer | Nothing shorter than a whole game is measurable | `NotMeasurableOnThisHardware` for both, and the feature is withheld |
 
-`recovery::Formulation` carries all three outcomes, so whichever it is gets
+`window::Formulation` carries all three outcomes, so whichever it is gets
 written down as a calibration rather than argued about.
 
 ### And separately: is optical usable at all
@@ -257,7 +257,7 @@ question is answerable by comparing them within one recording:
 | Settling time | *(awaiting S1)* | *(awaiting S1)* |
 | Trust level distribution | *(awaiting S1)* | *(awaiting S1)* |
 
-The outcome is `recovery::SourcePolicy`: `ExternalOnly`, or
+The outcome is `hr::SourcePolicy`: `ExternalOnly`, or
 `EitherWithSourceRecorded` with every window carrying its source. Both are
 defensible; silently reporting a strap-quality number from wrist optical is not.
 

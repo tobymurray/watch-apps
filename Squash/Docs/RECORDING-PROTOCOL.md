@@ -394,9 +394,9 @@ Then check, in this order:
 `phase-a`'s report is the input to
 [`PHASE-A.md`](PHASE-A.md), which records the numbers and the verdict. Only then
 does a calibration get written: one `const` carrying a `Provenance` naming these
-recordings and the date. Until that constant exists, `Calibration::Absent` is the
-only value the watch build can construct, every metric returns
-`Unavailable::NotCalibrated`, and the ledger in
+recordings and the date. Until that constant exists, an absent
+calibration is the only value the watch build can construct, every metric
+returns `Unavailable::NotCalibrated`, and the ledger in
 [`FEASIBILITY-LEDGER.md`](FEASIBILITY-LEDGER.md) has no validated row.
 
 That is the intended state today, and it is why nothing is on screen.
