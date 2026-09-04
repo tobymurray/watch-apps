@@ -183,12 +183,20 @@ SharedLog::Status SharedLog::commit()
     buildPath(tmp, sizeof(tmp), ".tmp");
     buildPath(bak, sizeof(bak), ".bak");
 
-    // Best-effort, the same as the firmware's own algorithm: losing the backup
-    // does not block the commit, because the commit is a rename that does not
-    // depend on it.
+    // Best-effort: losing the backup must not block the commit.
     if (mFs.exist(path)) {
         mFs.remove(bak);
         mFs.rename(path, bak);
+    }
+
+    // FIRMWARE: rename onto an existing path fails on FatFs, so the target has
+    // to be clear first -- proven by Squash, which hit it and left the finding
+    // in Squash/Software/Libs/Sources/SquashEngine.cpp. The rotation above has
+    // usually moved the file already; this is what covers the rotation having
+    // failed, which would otherwise turn a lost backup into a lost ride. The
+    // instant with no file at all is survivable: an absent log is a first ride.
+    if (mFs.exist(path)) {
+        mFs.remove(path);
     }
 
     if (!mFs.rename(tmp, path)) {
