@@ -858,6 +858,46 @@ seconds), and half a zone width confirmed at **0.49 zw** against Ride A's 0.43.
 It is kept as a design, unbuilt, because the argument against it is about worth
 rather than correctness — and if that changes, none of it needs re-deriving.
 
+### What the two rides gave the recovery feature: a negative result
+
+Both rides were pulled with `recovery.log`, and between them they produced
+**no recovery measurement at all**:
+
+```
+1788574210 cease hr=124 pct=67 active=2627 -> armed
+1788574211 discard too_easy hr=123 pct=67
+1788578206 cease hr=105 pct=57 active=2700 -> armed
+1788578207 discard too_easy hr=105 pct=57
+```
+
+**One `cease` per ride, both at the end.** Ninety minutes of real training at a
+real maximum, and the rider paused mid-ride exactly zero times — then finished
+each ride with a cooldown, so the only window that ever opened was at 67% and
+57% of maximum, well under the 80% floor.
+
+This contradicts
+[the claim that Ride A never needs running again](RECOVERY-FIELD-TEST.md#ride-a-never-needs-running-again):
+"the measurement happens on every pause of every ride ... ordinary training is
+the way to get the rest". Two ordinary rides got none.
+
+And it is **not the failure that document predicted**. It expected the window to
+arm and then not survive, because "60 seconds of sitting still is longer than
+anyone waits". The window never armed at a qualifying intensity in the first
+place: a rider ends a session by cooling down, not by stopping dead at the top
+of an effort. Ride A got two measurements because its protocol *told* the rider
+to press R1 at the peak — which is exactly what ordinary training does not do.
+
+What that means for the feature is an open question this document should not
+pretend to settle. The honest options are that it is reachable only on rides
+that happen to end hard, that it wants a prompt the paused screen does not have,
+or that a pause is the wrong trigger. Nothing here chooses between them. What is
+now measured is that **the yield from ordinary training is zero for two rides**,
+where the design assumed it would accumulate.
+
+The useful by-catch: `too_easy` has now fired twice **at a real maximum**, where
+before it had fired once on Ride A and otherwise only against synthetic ones.
+The 80% floor is doing what it was written to do on real data.
+
 ### The caveat that outranks the rest: this is all wrist optical
 
 **Every measurement in this experiment came from the wrist sensor**, because the
