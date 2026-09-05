@@ -819,22 +819,70 @@ whose peak landed 18 seconds into this one. The mark is accurate and the rider
 would still misread it, because at that timescale heart rate has come loose from
 effort altogether.
 
-### The decision: build it, and say what it is not for
+### The decision: do not build it
 
-**The ghost tick earns its place.** At 60-second efforts it reads rising 72% of
-the time with a median gap of a third of a zone, and the 20-second p90 of 0.49
-zw confirms the half-a-zone scale without a new number. Horizons still barely
-disagree — 15 s against 20 s conflict on **1%** of moving seconds, as on Ride A —
-so **one mark, not a trail**. The 45-second horizon's conflict rose from 6% to
-11%, which argues against a second mark rather than for one.
+**The ghost tick is not worth its place.** It would be accurate everywhere and
+useful nowhere anybody asked for.
 
-**And 20-second sprints are out of its scope, permanently.** The peak arrives
-15–28 seconds after the effort ends; that is physiology, and the honest response
-is to add nothing for it rather than to tune a horizon that cannot exist. A
-rider doing 20-second efforts should watch the clock, which the screen already
-shows at the largest size that fits.
+Go back to what was actually complained about. The heart rate on screen is
+"sticky and then jumps", it "really lags" going into a hard effort, and for
+20-second sprints it is "basically useless". The measurements answer all three,
+and a trend mark addresses none of them:
 
-Nothing here overturns
-[the design](HR-TREND-PROMPT.md#2-the-design-that-came-out-of-it): no threshold
-was invented, the unit stays the zone width, and the horizon stays fixed at
-20 s. What changed is that its limit is now measured rather than suspected.
+- **"Sticky and then jumps"** is not this app. `HrHold` engaged for 6 seconds
+  out of 1143 on Ride A, and the raw signal moves in 1 bpm steps.
+- **"Lags going into a hard effort"** is the body. A trend mark does not reduce
+  lag; it displays rate of change, which is a different quantity.
+- **"20-second sprints"** is settled above: the peak lands 15–28 s after the
+  effort ends, and a 20-second mark points *down* 42% of the time while the
+  rider sprints.
+
+What would be left is a mark that reads rising 72% of the time during a
+60-second effort — telling a rider who is mid-effort that they are working. They
+know. **A display earns its place by changing a decision**, and no measurement
+here shows this one would change any.
+
+The honesty contract has a sibling this experiment nearly walked past: it is not
+enough to source the number on the glass. **This work measured that the mark
+would be correct. It never measured that it would help**, and the one case where
+help was actually claimed measured out negative. Shipping on "accurate and
+plausibly nice" is how a 240×240 panel fills up with things nobody reads — which
+is the argument [the README](../README.md#what-it-does-not-do) already makes
+against a trend view and a verdict.
+
+The design in
+[`HR-TREND-PROMPT.md`](HR-TREND-PROMPT.md#2-the-design-that-came-out-of-it) is
+sound and is not the problem: no thresholds, the zone width as its unit, one
+mark rather than a trail (15 s against 20 s conflict on **1%** of moving
+seconds), and half a zone width confirmed at **0.49 zw** against Ride A's 0.43.
+It is kept as a design, unbuilt, because the argument against it is about worth
+rather than correctness — and if that changes, none of it needs re-deriving.
+
+### What would change the answer
+
+- **A rider asking for it after using the app**, rather than a display proposed
+  to fix a lag it cannot fix. That is the evidence never gathered here.
+- **A measurement that it changes behaviour** — a rider holding a zone more
+  steadily with the mark than without. That is a different experiment and a
+  harder one, and nothing in this document is a substitute for it.
+- **A steady-state use it was never tested against.** Every number here comes
+  from intervals and ramps. Holding a zone for an hour is where a slow drift
+  might be worth seeing before the digits move, and that was not measured.
+
+### What the experiment produced instead
+
+Worth stating, because "do not build it" reads like a dead end and this was not
+one:
+
+- **The sprint question is closed**, with numbers, so the next reader does not
+  reopen it. A 20-second effort has no heart-rate feedback, and the screen
+  already shows the clock at the largest size that fits.
+- **[The lap split](../README.md#the-split-and-the-one-banner-slot) was built**,
+  and it is the thing that actually helps an interval session: it tells the
+  rider something they do not know, at a moment they cannot count for
+  themselves.
+- **Ride A's record is no longer the only copy**, and its rise/fall skew is
+  understood as an artefact of descending while paused rather than a property of
+  riding.
+- **`Tools/hr_trend.py` exists**, so the next ride is one command rather than an
+  afternoon.
