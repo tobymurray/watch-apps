@@ -887,8 +887,9 @@ place: a rider ends a session by cooling down, not by stopping dead at the top
 of an effort. Ride A got two measurements because its protocol *told* the rider
 to press R1 at the peak — which is exactly what ordinary training does not do.
 
-What that means for the feature is an open question this document should not
-pretend to settle. The honest options are that it is reachable only on rides
+What that means for the feature is worked through in
+[`RECOVERY-AS-A-MODE.md`](RECOVERY-AS-A-MODE.md), which prices one measurement
+in full rather than settling it here. The honest options are that it is reachable only on rides
 that happen to end hard, that it wants a prompt the paused screen does not have,
 or that a pause is the wrong trigger. Nothing here chooses between them. What is
 now measured is that **the yield from ordinary training is zero for two rides**,

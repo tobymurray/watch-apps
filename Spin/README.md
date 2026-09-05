@@ -431,6 +431,13 @@ than opened per line — a FatFs open/write/flush/close every second would land
 inside the same tick the window is measured on, and a logger that changed the
 measurement would be worse than no logger.
 
+**The claim that a pause costs nothing did not survive the field.** Two ordinary
+rides at a real maximum ceased at 67% and 57% of it, with no mid-ride pause at
+all, and produced nothing: a rider ends a session by cooling down, not by
+stopping dead at the top of an effort. What the measurement actually asks of a
+rider, and what it returns for it, is priced in
+[`Docs/RECOVERY-AS-A-MODE.md`](Docs/RECOVERY-AS-A-MODE.md).
+
 This is a diagnostic for the first hardware sessions, not a feature.
 [`Docs/RECOVERY-FIELD-RESULTS.md`](Docs/RECOVERY-FIELD-RESULTS.md) is what those
 sessions found — every discard reason but `source_changed` has now fired on the
