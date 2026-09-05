@@ -6,14 +6,17 @@
 
 #include "DebugLog.hpp"
 #include "LiveSettings.hpp"
+#include "SDK/Messages/CommandMessages.hpp"
+
 #include "SettingsPersist.hpp"
-#include "SettingsSplice.hpp"
 
 namespace FirmwareGate
 {
 
 namespace
 {
+
+constexpr uint32_t kSettingsTimeoutMs = 1000;
 
 // The 4MB bank this part executes from: a signature is a load, so it is
 // bounded to somewhere a load belongs.
@@ -51,10 +54,11 @@ bool signaturesMatch(SDK::Interface::IFileSystem &fs, const SettingsAddresses::A
 
 } // namespace
 
-const SettingsAddresses::AddressSet *resolve(SDK::Interface::IFileSystem &fs, uint32_t kernelAbi,
+const SettingsAddresses::AddressSet *resolve(SDK::Kernel &kernel, uint32_t kernelAbi,
                                              Outcome &outcome)
 {
     outcome = Outcome::UnknownFirmware;
+    SDK::Interface::IFileSystem &fs = kernel.fs;
 
     DebugLog::appendf(fs, "gate: kernel ABI %lu, built against %d",
                        static_cast<unsigned long>(kernelAbi), KERNEL_INTERFACE_VERSION);
@@ -80,30 +84,27 @@ const SettingsAddresses::AddressSet *resolve(SDK::Interface::IFileSystem &fs, ui
         return nullptr;
     }
 
-    // Before trying to read it: a commit interrupted by power loss leaves the
-    // only settings file under this app's scratch name, and refusing for want
-    // of a file this app moved would strand it there for good.
-    SettingsPersist::recoverInterruptedCommit(fs, *candidate);
+    auto *settings = kernel.comm.allocateMessage<SDK::Message::RequestSystemSettings>();
+    if (settings == nullptr) {
+        DebugLog::append(fs, "gate: could not allocate RequestSystemSettings -- refusing");
+        outcome = Outcome::SettingsUnreadable;
+        return nullptr;
+    }
+    const bool answered = kernel.comm.sendMessage(settings, kSettingsTimeoutMs) &&
+                          settings->getResult() == SDK::MessageResult::SUCCESS;
+    const uint32_t kernelActivity = settings->activityMin;
+    const uint32_t kernelSteps    = settings->steps;
+    kernel.comm.releaseMessage(settings);
 
-    char buf[SettingsPersist::kBufferCapacity];
-    size_t len = 0;
-    if (SettingsPersist::readSettingsFile(fs, *candidate, buf, len) != SettingsPersist::Status::Ok) {
-        DebugLog::append(fs, "gate: could not read settings.json to cross-check -- refusing");
+    if (!answered) {
+        DebugLog::append(fs, "gate: the kernel would not report its settings -- refusing");
         outcome = Outcome::SettingsUnreadable;
         return nullptr;
     }
 
-    bool fileNotifications = false;
-    uint32_t fileWatchFaceId = 0;
-    if (!SettingsSplice::readNotifications(buf, len, fileNotifications) ||
-        !SettingsSplice::readUnsigned(buf, len, "watchFaceId", 11, fileWatchFaceId)) {
-        DebugLog::append(fs, "gate: settings.json is not the shape this app understands -- refusing");
+    if (!LiveSettings::matchesKernel(fs, *candidate, kernelActivity, kernelSteps)) {
+        DebugLog::append(fs, "gate: the struct does not hold what the kernel reports -- refusing");
         outcome = Outcome::SettingsUnreadable;
-        return nullptr;
-    }
-
-    if (!LiveSettings::matchesFile(fs, *candidate, fileNotifications, fileWatchFaceId)) {
-        DebugLog::append(fs, "gate: the live struct disagrees with the file -- refusing");
         return nullptr;
     }
 

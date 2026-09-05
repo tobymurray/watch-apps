@@ -2,7 +2,12 @@ cmake_minimum_required(VERSION 3.21)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build")
 
 set(APP_NAME "NotifyToggle")
-set(APP_USER_NAME "NotifyToggle")
+# What the watch's launcher prints under the icon, where "NotifyToggle" ran off
+# the edge. Stock names there sit at ten characters or fewer.
+set(APP_USER_NAME "Notify")
+# Pinned so shortening the launcher name does not rename the artifact: the
+# manifest's "binary", the phone's OTA flow and the CI release zip all key on it.
+set(APP_FILE_NAME "NotifyToggle")
 set(APP_TYPE "Utility")
 set(DEV_ID "UNA")
 # Assigned by UNA and stable for the life of the app: it is how the mobile app

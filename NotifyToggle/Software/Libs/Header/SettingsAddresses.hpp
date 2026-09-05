@@ -69,6 +69,12 @@ struct AddressSet {
     size_t    phoneNotificationsOffset;
     size_t    watchFaceIdOffset;
 
+    /// Daily goals, which this app never writes and the kernel also reports
+    /// through the supported RequestSystemSettings message -- so the same live
+    /// value can be reached two independent ways and compared.
+    size_t    activityMinutesOffset;
+    size_t    stepsOffset;
+
     // --- SettingsPersist: the kernel's internal, non-virtual File class ---
     uintptr_t fileOpenAddr;
     uintptr_t fileReadAddr;

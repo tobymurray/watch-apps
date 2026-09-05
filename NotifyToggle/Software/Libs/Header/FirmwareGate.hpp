@@ -27,7 +27,7 @@
 
 #include <cstdint>
 
-#include "SDK/Interfaces/IFileSystem.hpp"
+#include "SDK/Kernel/Kernel.hpp"
 
 #include "SettingsAddresses.hpp"
 
@@ -36,10 +36,12 @@ namespace FirmwareGate
 
 /// Why `resolve` answered as it did. The two failures are different problems
 /// for the wearer: one is a firmware this app cannot work with, the other is a
-/// firmware it can and a settings file it cannot.
+/// firmware it can whose settings it could not confirm.
 enum class Outcome {
     Accepted,
     UnknownFirmware,
+    /// The kernel would not report the settings it is asked for, or what it
+    /// reported does not match the struct.
     SettingsUnreadable,
 };
 
@@ -47,10 +49,10 @@ enum class Outcome {
 /// could not be established -- in which case nothing raw may be read or
 /// written, not even a read.
 ///
-/// Reads only. Proving the write primitives is left to the first write, so
-/// launching the app touches nothing on the watch -- see
-/// SettingsPersist::validatePrimitives.
-const SettingsAddresses::AddressSet *resolve(SDK::Interface::IFileSystem &fs, uint32_t kernelAbi,
+/// Touches no file at all: the checks are a flash read and a supported message,
+/// so an install that never turns saving on never calls a File primitive.
+/// Proving those is left to the first write -- SettingsPersist::validatePrimitives.
+const SettingsAddresses::AddressSet *resolve(SDK::Kernel &kernel, uint32_t kernelAbi,
                                              Outcome &outcome);
 
 } // namespace FirmwareGate

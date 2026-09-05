@@ -41,6 +41,11 @@ constexpr AddressSet kFirmware_1_4_0 = {
     .settingsStructBase       = 0x20010cb0u,
     .phoneNotificationsOffset = 5u,
     .watchFaceIdOffset        = 8u,
+    // Read out of the constructor at 0x080abbb4, which stores the documented
+    // defaults 30 and 5000 at objectBase+0x20/+0x24; the same function's
+    // `str.w r3, [r0], #8` is what puts the struct 8 bytes past the object.
+    .activityMinutesOffset    = 0x18u,
+    .stepsOffset              = 0x1cu,
     .fileOpenAddr             = 0x0809b254u | 1u,
     .fileReadAddr             = 0x0809b4e8u | 1u,
     .fileWriteAddr            = 0x0809b334u | 1u,
@@ -104,6 +109,8 @@ constexpr bool isWellFormed(const AddressSet &a)
            a.settingsStructBase >= kSramBase && a.settingsStructBase < kSramEnd &&
            a.phoneNotificationsOffset < kMaxStructOffset &&
            a.watchFaceIdOffset < kMaxStructOffset &&
+           a.activityMinutesOffset < kMaxStructOffset &&
+           a.stepsOffset < kMaxStructOffset &&
            isThumbCode(a.fileOpenAddr) && isThumbCode(a.fileReadAddr) &&
            isThumbCode(a.fileWriteAddr) && isThumbCode(a.fileCloseAddr) &&
            isThumbCode(a.fileReleaseAddr) && isThumbCode(a.setPathAddr) &&

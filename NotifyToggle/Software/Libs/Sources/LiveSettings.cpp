@@ -99,23 +99,39 @@ Status writeNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAdd
     return Status::Ok;
 }
 
-bool matchesFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
-                 bool fileNotifications, uint32_t fileWatchFaceId)
+namespace
 {
-    const uint8_t rawFlag = notificationsByte(addrs);
-    const uint64_t liveFace = readWatchFaceIdRaw(addrs);
+uint32_t readU32(const SettingsAddresses::AddressSet &addrs, size_t offset)
+{
+    const volatile uint8_t *src =
+        reinterpret_cast<volatile uint8_t *>(addrs.settingsStructBase + offset);
+    uint32_t value = 0;
+    for (int i = 0; i < 4; ++i) {
+        value |= static_cast<uint32_t>(src[i]) << (8 * i);
+    }
+    return value;
+}
+} // namespace
 
-    const bool flagAgrees = (rawFlag == (fileNotifications ? 1u : 0u));
-    const bool faceAgrees = (liveFace == fileWatchFaceId);
+bool matchesKernel(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                   uint32_t kernelActivityMinutes, uint32_t kernelSteps)
+{
+    const uint32_t liveActivity = readU32(addrs, addrs.activityMinutesOffset);
+    const uint32_t liveSteps    = readU32(addrs, addrs.stepsOffset);
+
+    const bool activityAgrees = (liveActivity == kernelActivityMinutes);
+    const bool stepsAgrees    = (liveSteps == kernelSteps);
 
     DebugLog::appendf(fs,
-                       "cross-check: notifications live=%u file=%u (%s), watchFaceId live=%llu file=%lu (%s)",
-                       rawFlag, fileNotifications ? 1u : 0u, flagAgrees ? "agree" : "DISAGREE",
-                       static_cast<unsigned long long>(liveFace),
-                       static_cast<unsigned long>(fileWatchFaceId),
-                       faceAgrees ? "agree" : "DISAGREE");
+                       "cross-check: activityMinutes raw=%lu kernel=%lu (%s), steps raw=%lu kernel=%lu (%s)",
+                       static_cast<unsigned long>(liveActivity),
+                       static_cast<unsigned long>(kernelActivityMinutes),
+                       activityAgrees ? "agree" : "DISAGREE",
+                       static_cast<unsigned long>(liveSteps),
+                       static_cast<unsigned long>(kernelSteps),
+                       stepsAgrees ? "agree" : "DISAGREE");
 
-    return flagAgrees && faceAgrees;
+    return activityAgrees && stepsAgrees;
 }
 
 } // namespace LiveSettings

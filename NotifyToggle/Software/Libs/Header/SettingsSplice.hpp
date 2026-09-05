@@ -19,7 +19,6 @@
 #define SETTINGS_SPLICE_HPP
 
 #include <cstddef>
-#include <cstdint>
 
 namespace SettingsSplice
 {
@@ -138,60 +137,6 @@ inline const char *findObject(const char *begin, const char *end, const char *na
 }
 
 } // namespace detail
-
-/// Reads `phone.notifications` out of `buf` without changing it. False if the
-/// file does not have the shape this app understands.
-inline bool readNotifications(const char *buf, size_t len, bool &out)
-{
-    const char *const end = buf + len;
-
-    const char *const phone = detail::findObject(buf, end, "phone", 5);
-    if (phone == nullptr) {
-        return false;
-    }
-    const char *const phoneEnd = detail::objectEnd(phone, end);
-    if (phoneEnd == nullptr) {
-        return false;
-    }
-    const char *value = detail::findValue(phone, phoneEnd, "notifications", 13);
-    if (value == nullptr) {
-        return false;
-    }
-    if (detail::matches(value, phoneEnd, detail::kTrue, detail::kTrueLen)) {
-        out = true;
-        return true;
-    }
-    if (detail::matches(value, phoneEnd, detail::kFalse, detail::kFalseLen)) {
-        out = false;
-        return true;
-    }
-    return false;
-}
-
-/// Reads a top-level unsigned integer field, for cross-checking a live struct
-/// against the file the kernel loaded it from. False if absent or not a plain
-/// non-negative integer.
-inline bool readUnsigned(const char *buf, size_t len, const char *name, size_t nameLen, uint32_t &out)
-{
-    const char *const end = buf + len;
-
-    const char *value = detail::findValue(buf, end, name, nameLen);
-    if (value == nullptr || value >= end || *value < '0' || *value > '9') {
-        return false;
-    }
-
-    uint32_t acc = 0;
-    while (value < end && *value >= '0' && *value <= '9') {
-        const uint32_t digit = static_cast<uint32_t>(*value - '0');
-        if (acc > (0xFFFFFFFFu - digit) / 10u) {
-            return false;
-        }
-        acc = acc * 10u + digit;
-        ++value;
-    }
-    out = acc;
-    return true;
-}
 
 /// Rewrites `phone.notifications` in `buf` (`len` bytes, `capacity` available)
 /// to `newEnabled`, adjusting `len` for the true/false length delta. `buf` is

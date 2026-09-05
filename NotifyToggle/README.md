@@ -115,18 +115,34 @@ steps, and refuses outright at any of them:
    object, a file of known length whose size field reads back, a content
    round-trip, rename and delete answering differently for present and absent
    files.
-4. **The live struct, against the file.** The `notifications` byte and
-   `watchFaceId` read through the raw pointer must both match what
-   `2:/settings.json` says. Two independent sources agreeing is the evidence
-   that the struct base is the settings struct; a range check on one field is
-   not, because zeroed memory passes it.
+4. **The live struct, against the kernel's own account of it.**
+   `dailyGoals.activityMinutes` and `dailyGoals.steps`, read straight out of
+   the struct, must match what `RequestSystemSettings` reports — a supported
+   message, and one this watch answers. Two independent paths to the same live
+   value agreeing is the evidence that the struct base is the settings struct;
+   a range check on one field is not, because zeroed memory passes it.
+
+   Both are fields this app never writes, and **both sides are live**. An
+   earlier version compared the struct against `2:/settings.json` instead, and
+   that was wrong in a way one launch on a watch found: with saving off the app
+   deliberately changes the live flag without writing the file, so the two
+   disagree by design from the first press until the next reboot — and the gate
+   refused on every launch after the first. Anything the phone app rewrites
+   would have done the same. Comparing live to live cannot drift.
+
+   The two offsets come from the settings constructor at `0x080abbb4`, which
+   stores the documented defaults 30 and 5000 at `objectBase+0x20`/`+0x24`;
+   the same function's `str.w r3, [r0], #8` is what puts the struct eight bytes
+   past the object, and its `strb` of 1 at `objectBase+13` re-derives the
+   notifications offset for free.
 
 Step 3 does not run at launch in either mode: it writes scratch files, and
 opening an app should not spend a wearer's flash on a write nobody asked for.
-It runs once, before the first save. So launching the app reads and never
-writes — the one exception being a settings file left under this app's scratch
-name by a commit that lost power mid-way, which is put back rather than
-stranded there.
+It runs once, before the first save. Steps 1, 2 and 4 are a flash read and a
+message, so **an install that never turns saving on never calls a File
+primitive at all** — it only ever reads two RAM addresses. A settings file left
+under this app's scratch name by a commit that lost power mid-way is put back
+before the next write rather than stranded there.
 
 The last two failures are told apart on screen, because they are different
 problems: a firmware this app cannot work with says so, and a firmware it can
@@ -153,7 +169,7 @@ only ever moves cannot tell them apart:
 | Live value could not be read | Amber pill, knob centred, `?` |
 | Flipped, but the file was not written | Amber pill, knob on the live side, `NOT SAVED`, footer `REVERTS ON REBOOT` |
 | Saving is switched off (the default) | Ordinary green/grey pill and `ON`/`OFF`, footer `REVERTS ON REBOOT` |
-| Firmware known, `settings.json` not | No pill, `SETTINGS?`, footer `UNREADABLE FILE` |
+| Firmware known, its settings unconfirmed | No pill, `SETTINGS?`, footer `UNREADABLE FILE` |
 | The firmware gate refused | No pill at all, `UNSUPPORTED`, footer `NEEDS WATCH 1.4.0` |
 
 The last two are the ones that matter. A change that took effect live but never
@@ -208,7 +224,7 @@ From real builds against `apps-v1.4.0` in CI's toolchain image (linker map
 section headers, 600 KiB GUI RAM window, code executing from RAM):
 
 ```
-GUI      .text 48,068   .data 540   .bss 58,528   .stack 10,240   .uapp 56,284
+GUI      .text 47,844   .data 564   .bss 58,536   .stack 10,240   .uapp 56,108
 Service  .text  2,180   .data  36   .bss    556   .stack 10,240
 ```
 

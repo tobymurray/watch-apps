@@ -68,12 +68,6 @@ Status persistNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsA
 bool recoverInterruptedCommit(SDK::Interface::IFileSystem &fs,
                               const SettingsAddresses::AddressSet &addrs);
 
-/// Reads the current `2:/settings.json` into `outBuf`, which must have room for
-/// kBufferCapacity bytes. Public because the firmware gate cross-checks the
-/// live struct against this file before trusting either.
-Status readSettingsFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
-                        char *outBuf, size_t &outLen);
-
 /// Proves `addrs`'s File primitives are the functions they are supposed to be,
 /// by exercising them against this app's own scratch paths: a path written
 /// through setPath and read back out of the object, a file of known length

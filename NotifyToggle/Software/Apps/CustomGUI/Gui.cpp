@@ -74,7 +74,7 @@ extern const SDK::Interface::IKernel *gIKernel;
 bool Gui::resolveFirmwareSupport()
 {
     FirmwareGate::Outcome outcome = FirmwareGate::Outcome::UnknownFirmware;
-    mAddresses = FirmwareGate::resolve(mKernel.fs, gIKernel->version, outcome);
+    mAddresses = FirmwareGate::resolve(mKernel, gIKernel->version, outcome);
     mGateOutcome = outcome;
     if (!mAddresses) {
         LOG_ERROR("firmware not verified for this build -- refusing every raw address\n");

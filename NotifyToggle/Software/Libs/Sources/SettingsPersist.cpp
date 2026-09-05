@@ -281,6 +281,11 @@ Status persistNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsA
 {
     DebugLog::appendf(fs, "persist: requested notifications=%s", newEnabled ? "true" : "false");
 
+    // Before reading: a commit interrupted by power loss left the only settings
+    // file under this app's scratch name, and reading would fail for want of a
+    // file this app moved.
+    recoverInterruptedCommit(fs, addrs);
+
     if (!objectSizeInRange(addrs)) {
         DebugLog::appendf(fs,
                            "persist: File layout out of range -- objectSize=%zu pathOff=%zu pathSize=%zu sizeOff=%zu",
@@ -358,15 +363,6 @@ bool recoverInterruptedCommit(SDK::Interface::IFileSystem &fs,
     const int ret = fileRename(kSettingsPrevPath, kSettingsPath);
     DebugLog::appendf(fs, "recover: no settings.json but a scratch copy exists; rename back -> %d", ret);
     return ret != 0;
-}
-
-Status readSettingsFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
-                        char *outBuf, size_t &outLen)
-{
-    if (!objectSizeInRange(addrs)) {
-        return Status::SizeOutOfRange;
-    }
-    return readCurrentFile(fs, addrs, outBuf, outLen);
 }
 
 bool validatePrimitives(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs)

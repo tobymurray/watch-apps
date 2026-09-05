@@ -49,13 +49,13 @@ Status readNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddr
 /// the live value already matches.
 Status writeNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, bool newEnabled);
 
-/// True if the live struct agrees with the file the kernel parsed it from, on
-/// both the flag this app writes and a second field it never touches. Two
-/// independent sources agreeing is the evidence that `settingsStructBase`
-/// really is the settings struct -- a range check on one field is not, because
-/// zeroed memory passes it.
-bool matchesFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
-                 bool fileNotifications, uint32_t fileWatchFaceId);
+/// True if two fields read straight out of the struct match what the kernel
+/// reports for them through RequestSystemSettings. Both sides are live, so
+/// nothing can drift them apart -- unlike a comparison against settings.json,
+/// which this app itself diverges the moment it flips the flag without saving.
+/// Neither field is one this app ever writes.
+bool matchesKernel(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                   uint32_t kernelActivityMinutes, uint32_t kernelSteps);
 
 } // namespace LiveSettings
 
