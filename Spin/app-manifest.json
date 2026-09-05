@@ -96,11 +96,22 @@
       "id": "autoLapMinutes",
       "type": "int",
       "label": "Auto lap",
-      "description": "Split the ride into laps this many minutes apart, with a buzz at each one. 0 records the ride as a single lap.",
+      "description": "Split the ride into laps this many minutes apart, with a buzz at each one. 0 records the ride as a single lap. Ignored on a ride with an interval session, which sets its own laps.",
       "default": 0,
       "min": 0,
       "max": 60,
       "unit": "min"
+    },
+    {
+      "id": "intervals",
+      "type": "string",
+      "label": "Interval session",
+      "description": "Durations like 45s or 10m, commas between, 6x(20s,40s) to repeat, and @1-8 for how hard to go. The watch buzzes and takes a lap at every step. 0s for off.",
+      "default": "0s",
+      "minLength": 2,
+      "maxLength": 128,
+      "pattern": "(\\d{1,2}x\\(\\d{1,3}[sm](@[1-8])?(,\\d{1,3}[sm](@[1-8])?){1,3}\\)|\\d{1,3}[sm](@[1-8])?)(,(\\d{1,2}x\\(\\d{1,3}[sm](@[1-8])?(,\\d{1,3}[sm](@[1-8])?){1,3}\\)|\\d{1,3}[sm](@[1-8])?)){0,40}",
+      "validationMessage": "Like 10m,6x(20s@5,40s@2),5m — durations, Nx(...) to repeat, @1-8 for effort."
     },
     {
       "id": "targetMinutes",

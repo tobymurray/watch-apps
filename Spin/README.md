@@ -544,7 +544,8 @@ a change takes effect on the next ride rather than the next reinstall.
 
 | Setting | Default | Does |
 |---|---|---|
-| `autoLapMinutes` | 0 (off) | Split the ride into laps this many minutes apart, with a buzz at each. Measured on active time, so a paused ride does not come back to an immediate lap. |
+| `autoLapMinutes` | 0 (off) | Split the ride into laps this many minutes apart, with a buzz at each. Measured on active time, so a paused ride does not come back to an immediate lap. Ignored on a ride that has a session. |
+| `intervals` | `0s` (off) | An interval session the watch drives: `5m@2,6x(20s@5,40s@2),6m@2`. Durations in `s` or `m`, commas between, `Nx(...)` to repeat. **The number after `@` is an instruction, not a target** — how hard to go, on the same 1–8 ladder as your zones, never something the ride is scored against. |
 | `targetMinutes` | 0 (off) | Buzz once at this many minutes and say `TARGET MET` on the screen. |
 | `keepScreenLit` | off | Hold the backlight on for the whole ride. |
 | `energyInKilojoules` | off | Show energy as kJ instead of kcal. Display only. |

@@ -15,11 +15,15 @@ using SDK::AppConfig;
 // Every value here must match app-manifest.json exactly; CI compares them, and
 // the checker reads this file as TEXT -- see AppConfigFields.hpp.
 //
-// 0 means off for both integer fields rather than a separate toggle: there is
-// no useful reading of "auto-lap every 0 minutes".
+// 0 is off for both integer fields, and "0s" for the interval session, rather
+// than a separate toggle each: there is no useful reading of "auto-lap every 0
+// minutes" or of a session made of one step of no seconds.
 const AppConfig::Field kFields[] = {
     // Past an hour a lap split stops being a split and the ride is the lap.
     AppConfig::intField("autoLapMinutes", 0, 0, 60),
+    // The pattern lives only in the manifest, so the phone is the only thing
+    // that ever checks it; the parser treats this value as untrusted text.
+    AppConfig::stringField("intervals", "0s", 2, 128),
     // Five hours: longer than any indoor session, short enough that a mistyped
     // value is visibly a mistake.
     AppConfig::intField("targetMinutes", 0, 0, 300),

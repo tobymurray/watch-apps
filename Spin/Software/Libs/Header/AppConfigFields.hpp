@@ -35,6 +35,7 @@ constexpr char kConfigFile[] = "app_config.json";
 /// renders.
 enum Index : size_t {
     kAutoLapMinutes = 0,
+    kIntervals,
     kTargetMinutes,
     kKeepScreenLit,
     kEnergyInKilojoules,
@@ -54,6 +55,9 @@ enum Index : size_t {
 /// Matches the ceiling of the kernel's own threshold table,
 /// RequestSystemSettings::skMaxHearRateTh.
 constexpr size_t kMaxZones = 8;
+
+/// The declared maxLength of "intervals", plus the terminator getString adds.
+constexpr size_t kIntervalsBufferBytes = 129;
 
 
 extern const SDK::AppConfig::Field kFields[];
