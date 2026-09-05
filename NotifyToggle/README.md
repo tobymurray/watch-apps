@@ -168,7 +168,7 @@ only ever moves cannot tell them apart:
 | Read and saved | Green/grey pill, `ON` or `OFF` |
 | Live value could not be read | Amber pill, knob centred, `?` |
 | Flipped, but the file was not written | Amber pill, knob on the live side, `NOT SAVED`, footer `REVERTS ON REBOOT` |
-| Saving is switched off (the default) | Ordinary green/grey pill and `ON`/`OFF`, then `SAVING IS OFF` / `TURN ON IN APP` |
+| Saving is switched off (the default) | Ordinary green/grey pill and `ON`/`OFF`, footer `REVERTS ON REBOOT` |
 | Firmware known, its settings unconfirmed | No pill, `SETTINGS?`, footer `UNREADABLE FILE` |
 | The firmware gate refused | No pill at all, `UNSUPPORTED`, footer `NEEDS WATCH 1.4.0` |
 
