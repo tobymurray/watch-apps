@@ -23,6 +23,10 @@
 
 #include "SDK/AppConfig/AppConfig.hpp"
 
+#include "EventLog.hpp"
+#include "SharedLog.hpp"
+#include "SpinEngine.hpp"
+
 #include "ActivityWriter.hpp"
 #include "AppConfigFields.hpp"
 #include "HrHold.hpp"
@@ -60,6 +64,11 @@ private:
 
     static constexpr std::time_t skSecondsPerMinute = 60;
 
+    /// How long a closed lap's split stays on the riding screen. Long enough
+    /// to read with the wrist moving, and well clear of the next rep in the
+    /// shortest structure anyone rides -- 20 s hard against 40 s easy.
+    static constexpr std::time_t skLapSplitSeconds = 5;
+
     /// Fallback when the watch's profile carries no weight. The calorie model
     /// is proportional to it, so a wrong weight scales the estimate rather than
     /// breaking it -- but it is why the figure is an estimate.
@@ -67,6 +76,21 @@ private:
 
     static constexpr size_t skMaxZones    = SpinConfig::kMaxZones;
     static constexpr size_t skZoneBuckets = skMaxZones + 1;
+
+    /// A bare filename, so it lands in this app's own directory where USB can
+    /// read it. Diagnostic only; see Docs/RECOVERY-FIELD-TEST.md.
+    static constexpr const char *skEventLogFile = "recovery.log";
+
+    /// Ticks a second apart are only logged while PAUSED, where the window is;
+    /// riding gets one line this often instead, which is enough to see the
+    /// shape of the ride without filling the card.
+    static constexpr std::time_t skActiveLogPeriod = 30;
+
+    /// Names ../SharedData/spin_sessions.json and appears inside it.
+    static constexpr const char *skLogApp   = "Spin";
+    /// What the entries are, for a reader merging several apps' logs. The same
+    /// pair of words the FIT session carries as sport and sub_sport.
+    static constexpr const char *skLogSport = "indoor_cycling";
 
     // Three places size a zone-bucket array and every one of them is indexed by
     // hrZone, which runs to mZoneCount. Track::Data::zoneSeconds was left at 6
@@ -77,6 +101,10 @@ private:
                   "Track::Data::zoneSeconds is not the size the Service indexes");
     static_assert(ActivityWriter::kZoneBuckets == skZoneBuckets,
                   "ActivityWriter's zone arrays are not the size the Service fills");
+    static_assert(SPIN_MAX_ZONE_BUCKETS == skZoneBuckets,
+                  "the engine's zone arrays are not the size the Service fills");
+    static_assert(SPIN_MAX_ZONES == skMaxZones,
+                  "the engine's zone ladder is not the size the Service fills");
 
     // -- Infrastructure -------------------------------------------------------
 
@@ -85,6 +113,15 @@ private:
     CustomMessage::Sender mGuiSender;
 
     ActivityWriter mActivityWriter;
+
+    /// The record of the series, as opposed to the record of the ride. Written
+    /// once, after the .fit is closed; see EffortKit/README.md for the schema.
+    Spin::SharedLog mSharedLog;
+
+    /// Why a recovery window did what it did, in a file, because LOG_* needs a
+    /// debug UART adapter this watch is not usually attached to.
+    Spin::EventLog mEventLog;
+    std::time_t        mLastActiveLogUtc = 0;
 
     // -- Configuration --------------------------------------------------------
     // Values the wearer set on their phone, read through SDK::AppConfig from
@@ -159,12 +196,22 @@ private:
     /// only be shown one it could not explain.
     float       mLapCalories        = 0.0f;
     float       mLapRestingCalories = 0.0f;
+    /// Active seconds of the lap just closed, held so the split survives the
+    /// lap counter being reset under it.
+    uint16_t    mLastLapSeconds     = 0;
 
     /// Turns a tick into the span of active time it is responsible for, so
     /// zone seconds and calories total the ride rather than exceeding it by
     /// one. See SecondsAccrual.hpp.
     SecondsAccrual mAccrual;
     std::time_t mLapZoneSeconds[skZoneBuckets] = {};
+
+    /// The measurements this ride produced. The newest are kept, because the
+    /// pause at the end of a ride is the one that happens every ride and so is
+    /// the one comparable across them.
+    SpinRecovery mRecoveries[SPIN_MAX_RECOVERIES] = {};
+    uint8_t mRecoveryCount     = 0;
+    uint8_t mRecoveriesDropped = 0;
 
     // -- Lifecycle ------------------------------------------------------------
 
@@ -185,6 +232,14 @@ private:
     /// A lap the wearer asked for, as opposed to one auto-lap produced.
     void lapTrack();
     void saveLap();
+    /// Keep a completed measurement, dropping the oldest if there is no room.
+    void keepRecovery(const SpinRecovery& measurement);
+    /// One line per second while paused, one every skActiveLogPeriod while
+    /// riding, so a window can be reconstructed from the file afterwards.
+    void logSecond(std::time_t utc, bool trusted);
+    /// Fold the finished ride into ../SharedData; @p saved is whether the .fit
+    /// landed, and nothing is written when it did not.
+    void recordSession(bool saved, uint16_t workKilojoules);
     void updateHrDerivedMetrics();
     uint8_t hrZoneFor(float hr) const;
     uint8_t hrZoneFractionFor(float hr, uint8_t zone) const;

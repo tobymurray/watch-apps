@@ -1,0 +1,1229 @@
+1788483397 start version=0.8.0-14-165ab48 max_hr=184 zones=5 weight=90
+1788483397 A hr=0 trust=0 zone=0 pct=0
+1788483397 untrusted
+1788483427 A hr=88 trust=1 zone=0 pct=48
+1788483457 A hr=88 trust=3 zone=0 pct=48
+1788483487 A hr=94 trust=3 zone=1 pct=51
+1788483517 A hr=88 trust=1 zone=0 pct=48
+1788483517 cease hr=88 pct=48 active=120 -> too_short
+1788483518 P hr=88 trust=1 zone=0 pct=48
+1788483519 P hr=88 trust=2 zone=0 pct=48
+1788483520 P hr=87 trust=2 zone=0 pct=47
+1788483521 P hr=88 trust=2 zone=0 pct=48
+1788483522 P hr=89 trust=2 zone=0 pct=48
+1788483523 P hr=89 trust=2 zone=0 pct=48
+1788483524 P hr=89 trust=2 zone=0 pct=48
+1788483525 P hr=89 trust=1 zone=0 pct=48
+1788483526 P hr=90 trust=2 zone=0 pct=49
+1788483527 P hr=90 trust=2 zone=0 pct=49
+1788483528 P hr=91 trust=1 zone=0 pct=49
+1788483529 P hr=91 trust=1 zone=0 pct=49
+1788483530 P hr=92 trust=1 zone=0 pct=50
+1788483531 P hr=92 trust=1 zone=1 pct=50
+1788483532 P hr=92 trust=2 zone=1 pct=50
+1788483533 P hr=92 trust=2 zone=1 pct=50
+1788483534 P hr=93 trust=2 zone=1 pct=51
+1788483535 P hr=92 trust=3 zone=1 pct=50
+1788483536 P hr=92 trust=3 zone=1 pct=50
+1788483537 P hr=92 trust=3 zone=1 pct=50
+1788483538 P hr=91 trust=3 zone=1 pct=49
+1788483539 P hr=90 trust=3 zone=0 pct=49
+1788483540 P hr=89 trust=3 zone=0 pct=48
+1788483541 P hr=89 trust=3 zone=0 pct=48
+1788483542 P hr=89 trust=3 zone=0 pct=48
+1788483543 P hr=89 trust=3 zone=0 pct=48
+1788483544 P hr=89 trust=3 zone=0 pct=48
+1788483545 P hr=88 trust=3 zone=0 pct=48
+1788483546 P hr=88 trust=3 zone=0 pct=48
+1788483547 P hr=88 trust=3 zone=0 pct=48
+1788483548 P hr=88 trust=3 zone=0 pct=48
+1788483549 P hr=88 trust=3 zone=0 pct=48
+1788483550 P hr=88 trust=3 zone=0 pct=48
+1788483580 A hr=92 trust=3 zone=1 pct=50
+1788483610 A hr=91 trust=3 zone=1 pct=49
+1788483640 A hr=93 trust=2 zone=1 pct=51
+1788483670 A hr=93 trust=2 zone=1 pct=51
+1788483700 A hr=99 trust=3 zone=1 pct=54
+1788483730 A hr=97 trust=3 zone=1 pct=53
+1788483760 A hr=98 trust=3 zone=1 pct=53
+1788483790 A hr=99 trust=1 zone=1 pct=54
+1788483820 A hr=100 trust=3 zone=1 pct=54
+1788483850 A hr=96 trust=1 zone=1 pct=52
+1788483850 cease hr=96 pct=52 active=420 -> armed
+1788483851 P hr=97 trust=3 zone=1 pct=53
+1788483851 discard too_easy hr=97 pct=53
+1788483852 P hr=97 trust=3 zone=1 pct=53
+1788483853 P hr=97 trust=3 zone=1 pct=53
+1788483854 P hr=97 trust=3 zone=1 pct=53
+1788483855 P hr=97 trust=3 zone=1 pct=53
+1788483856 P hr=97 trust=2 zone=1 pct=53
+1788483857 P hr=95 trust=2 zone=1 pct=52
+1788483858 P hr=94 trust=2 zone=1 pct=51
+1788483859 P hr=94 trust=2 zone=1 pct=51
+1788483860 P hr=94 trust=2 zone=1 pct=51
+1788483861 P hr=94 trust=1 zone=1 pct=51
+1788483862 P hr=94 trust=3 zone=1 pct=51
+1788483863 P hr=93 trust=3 zone=1 pct=51
+1788483864 P hr=93 trust=3 zone=1 pct=51
+1788483865 P hr=93 trust=3 zone=1 pct=51
+1788483866 P hr=93 trust=3 zone=1 pct=51
+1788483867 P hr=91 trust=3 zone=1 pct=49
+1788483868 P hr=91 trust=3 zone=0 pct=49
+1788483869 P hr=91 trust=3 zone=0 pct=49
+1788483870 P hr=91 trust=3 zone=0 pct=49
+1788483871 P hr=91 trust=3 zone=0 pct=49
+1788483872 P hr=91 trust=3 zone=0 pct=49
+1788483873 P hr=92 trust=3 zone=0 pct=50
+1788483874 P hr=92 trust=3 zone=1 pct=50
+1788483875 P hr=91 trust=3 zone=1 pct=49
+1788483876 P hr=89 trust=3 zone=0 pct=48
+1788483877 P hr=89 trust=3 zone=0 pct=48
+1788483878 P hr=89 trust=3 zone=0 pct=48
+1788483879 P hr=89 trust=3 zone=0 pct=48
+1788483880 P hr=89 trust=3 zone=0 pct=48
+1788483881 P hr=89 trust=3 zone=0 pct=48
+1788483882 P hr=88 trust=1 zone=0 pct=48
+1788483912 A hr=98 trust=3 zone=1 pct=53
+1788483942 A hr=107 trust=2 zone=1 pct=58
+1788483972 A hr=122 trust=3 zone=2 pct=66
+1788484002 A hr=121 trust=3 zone=2 pct=66
+1788484032 A hr=128 trust=2 zone=2 pct=70
+1788484062 A hr=139 trust=3 zone=3 pct=76
+1788484092 A hr=145 trust=2 zone=3 pct=79
+1788484122 A hr=148 trust=2 zone=4 pct=80
+1788484152 A hr=158 trust=3 zone=4 pct=86
+1788484182 A hr=161 trust=2 zone=4 pct=88
+1788484182 cease hr=161 pct=88 active=720 -> armed
+1788484183 P hr=161 trust=2 zone=4 pct=88
+1788484184 P hr=161 trust=2 zone=4 pct=88
+1788484185 P hr=160 trust=2 zone=4 pct=87
+1788484186 P hr=159 trust=2 zone=4 pct=86
+1788484187 P hr=159 trust=2 zone=4 pct=86
+1788484188 P hr=159 trust=2 zone=4 pct=86
+1788484189 P hr=160 trust=1 zone=4 pct=87
+1788484190 P hr=160 trust=1 zone=4 pct=87
+1788484191 P hr=161 trust=1 zone=4 pct=88
+1788484192 P hr=161 trust=2 zone=4 pct=88
+1788484193 P hr=162 trust=2 zone=4 pct=88
+1788484194 P hr=161 trust=2 zone=4 pct=88
+1788484195 P hr=161 trust=2 zone=4 pct=88
+1788484196 P hr=161 trust=2 zone=4 pct=88
+1788484197 P hr=159 trust=2 zone=4 pct=86
+1788484198 P hr=159 trust=2 zone=4 pct=86
+1788484199 P hr=158 trust=2 zone=4 pct=86
+1788484200 P hr=157 trust=2 zone=4 pct=85
+1788484201 P hr=156 trust=2 zone=4 pct=85
+1788484202 P hr=156 trust=2 zone=4 pct=85
+1788484203 P hr=157 trust=1 zone=4 pct=85
+1788484204 P hr=157 trust=2 zone=4 pct=85
+1788484205 P hr=158 trust=1 zone=4 pct=86
+1788484206 P hr=158 trust=2 zone=4 pct=86
+1788484207 P hr=156 trust=2 zone=4 pct=85
+1788484208 P hr=156 trust=2 zone=4 pct=85
+1788484209 P hr=156 trust=2 zone=4 pct=85
+1788484210 P hr=155 trust=2 zone=4 pct=84
+1788484211 P hr=155 trust=2 zone=4 pct=84
+1788484212 P hr=154 trust=2 zone=4 pct=84
+1788484213 P hr=154 trust=1 zone=4 pct=84
+1788484214 P hr=154 trust=1 zone=4 pct=84
+1788484215 P hr=155 trust=2 zone=4 pct=84
+1788484216 P hr=153 trust=2 zone=4 pct=83
+1788484217 P hr=151 trust=2 zone=4 pct=82
+1788484218 P hr=150 trust=3 zone=4 pct=82
+1788484219 P hr=150 trust=3 zone=4 pct=82
+1788484220 P hr=150 trust=3 zone=4 pct=82
+1788484221 P hr=149 trust=3 zone=4 pct=81
+1788484222 P hr=148 trust=3 zone=4 pct=80
+1788484223 P hr=147 trust=3 zone=4 pct=80
+1788484224 P hr=147 trust=3 zone=4 pct=80
+1788484225 P hr=146 trust=3 zone=4 pct=79
+1788484226 P hr=146 trust=3 zone=3 pct=79
+1788484227 P hr=146 trust=2 zone=3 pct=79
+1788484228 P hr=146 trust=2 zone=3 pct=79
+1788484229 P hr=145 trust=2 zone=3 pct=79
+1788484230 P hr=144 trust=3 zone=3 pct=78
+1788484231 P hr=144 trust=3 zone=3 pct=78
+1788484232 P hr=144 trust=3 zone=3 pct=78
+1788484233 P hr=144 trust=3 zone=3 pct=78
+1788484234 P hr=145 trust=3 zone=3 pct=79
+1788484235 P hr=146 trust=3 zone=3 pct=79
+1788484236 P hr=144 trust=3 zone=3 pct=78
+1788484237 P hr=143 trust=3 zone=3 pct=78
+1788484238 P hr=143 trust=3 zone=3 pct=78
+1788484239 P hr=142 trust=3 zone=3 pct=77
+1788484240 P hr=142 trust=3 zone=3 pct=77
+1788484241 P hr=143 trust=2 zone=3 pct=78
+1788484242 P hr=144 trust=3 zone=3 pct=78
+1788484243 P hr=144 trust=3 zone=3 pct=78
+1788484243 recovery hr0=161 hr_end=144 drop=17 window=60 trusted=61 pct=88 src=1 curve=161,162,157,154,147,144,144
+1788484244 P hr=144 trust=3 zone=3 pct=78
+1788484245 P hr=144 trust=3 zone=3 pct=78
+1788484246 P hr=143 trust=3 zone=3 pct=78
+1788484247 P hr=142 trust=3 zone=3 pct=77
+1788484248 P hr=142 trust=3 zone=3 pct=77
+1788484249 P hr=142 trust=3 zone=3 pct=77
+1788484250 P hr=140 trust=3 zone=3 pct=76
+1788484251 P hr=140 trust=3 zone=3 pct=76
+1788484252 P hr=140 trust=3 zone=3 pct=76
+1788484253 P hr=139 trust=3 zone=3 pct=76
+1788484254 P hr=138 trust=3 zone=3 pct=75
+1788484255 P hr=136 trust=3 zone=3 pct=74
+1788484256 P hr=135 trust=3 zone=3 pct=73
+1788484257 P hr=135 trust=3 zone=3 pct=73
+1788484258 P hr=134 trust=3 zone=3 pct=73
+1788484259 P hr=134 trust=3 zone=3 pct=73
+1788484260 P hr=134 trust=3 zone=3 pct=73
+1788484261 P hr=134 trust=3 zone=3 pct=73
+1788484262 P hr=135 trust=3 zone=3 pct=73
+1788484263 P hr=135 trust=3 zone=3 pct=73
+1788484264 P hr=135 trust=2 zone=3 pct=73
+1788484265 P hr=135 trust=2 zone=3 pct=73
+1788484266 P hr=135 trust=2 zone=3 pct=73
+1788484267 P hr=135 trust=2 zone=3 pct=73
+1788484268 P hr=135 trust=3 zone=3 pct=73
+1788484269 P hr=135 trust=3 zone=3 pct=73
+1788484270 P hr=135 trust=3 zone=3 pct=73
+1788484271 P hr=135 trust=3 zone=3 pct=73
+1788484272 P hr=135 trust=3 zone=3 pct=73
+1788484273 P hr=135 trust=3 zone=3 pct=73
+1788484274 P hr=134 trust=3 zone=3 pct=73
+1788484275 P hr=133 trust=3 zone=3 pct=72
+1788484276 P hr=133 trust=3 zone=3 pct=72
+1788484277 P hr=133 trust=1 zone=3 pct=72
+1788484278 P hr=132 trust=3 zone=3 pct=72
+1788484279 P hr=131 trust=3 zone=3 pct=71
+1788484280 P hr=130 trust=3 zone=3 pct=71
+1788484310 A hr=127 trust=3 zone=2 pct=69
+1788484340 A hr=122 trust=3 zone=2 pct=66
+1788484370 A hr=123 trust=3 zone=2 pct=67
+1788484400 A hr=121 trust=3 zone=2 pct=66
+1788484430 A hr=132 trust=3 zone=3 pct=72
+1788484460 A hr=136 trust=2 zone=3 pct=74
+1788484490 A hr=142 trust=2 zone=3 pct=77
+1788484520 A hr=148 trust=2 zone=4 pct=80
+1788484550 A hr=152 trust=1 zone=4 pct=83
+1788484580 A hr=162 trust=2 zone=4 pct=88
+1788484581 cease hr=161 pct=88 active=1021 -> armed
+1788484582 P hr=161 trust=2 zone=4 pct=88
+1788484583 P hr=161 trust=2 zone=4 pct=88
+1788484584 P hr=161 trust=2 zone=4 pct=88
+1788484585 P hr=161 trust=2 zone=4 pct=88
+1788484586 P hr=161 trust=2 zone=4 pct=88
+1788484587 P hr=161 trust=2 zone=4 pct=88
+1788484588 P hr=161 trust=2 zone=4 pct=88
+1788484589 P hr=161 trust=1 zone=4 pct=88
+1788484590 P hr=161 trust=1 zone=4 pct=88
+1788484591 P hr=162 trust=2 zone=4 pct=88
+1788484592 P hr=162 trust=2 zone=4 pct=88
+1788484593 P hr=162 trust=2 zone=4 pct=88
+1788484594 P hr=160 trust=2 zone=4 pct=87
+1788484595 P hr=160 trust=2 zone=4 pct=87
+1788484596 P hr=160 trust=2 zone=4 pct=87
+1788484597 P hr=160 trust=2 zone=4 pct=87
+1788484598 P hr=160 trust=1 zone=4 pct=87
+1788484599 P hr=161 trust=2 zone=4 pct=88
+1788484600 P hr=159 trust=2 zone=4 pct=86
+1788484601 P hr=159 trust=2 zone=4 pct=86
+1788484602 P hr=159 trust=2 zone=4 pct=86
+1788484603 P hr=158 trust=2 zone=4 pct=86
+1788484604 P hr=157 trust=2 zone=4 pct=85
+1788484605 P hr=156 trust=2 zone=4 pct=85
+1788484606 P hr=157 trust=1 zone=4 pct=85
+1788484607 P hr=158 trust=2 zone=4 pct=86
+1788484608 P hr=158 trust=2 zone=4 pct=86
+1788484609 P hr=156 trust=2 zone=4 pct=85
+1788484610 P hr=156 trust=1 zone=4 pct=85
+1788484611 P hr=157 trust=2 zone=4 pct=85
+1788484612 P hr=154 trust=2 zone=4 pct=84
+1788484613 P hr=153 trust=2 zone=4 pct=83
+1788484614 P hr=153 trust=2 zone=4 pct=83
+1788484615 P hr=153 trust=2 zone=4 pct=83
+1788484616 P hr=152 trust=2 zone=4 pct=83
+1788484617 P hr=151 trust=3 zone=4 pct=82
+1788484618 P hr=150 trust=3 zone=4 pct=82
+1788484619 P hr=149 trust=3 zone=4 pct=81
+1788484620 P hr=149 trust=3 zone=4 pct=81
+1788484621 P hr=147 trust=2 zone=4 pct=80
+1788484622 P hr=147 trust=3 zone=4 pct=80
+1788484623 P hr=146 trust=3 zone=4 pct=79
+1788484624 P hr=145 trust=3 zone=3 pct=79
+1788484625 P hr=142 trust=2 zone=3 pct=77
+1788484626 P hr=142 trust=2 zone=3 pct=77
+1788484627 P hr=140 trust=2 zone=3 pct=76
+1788484628 P hr=141 trust=1 zone=3 pct=77
+1788484629 P hr=141 trust=1 zone=3 pct=77
+1788484630 P hr=144 trust=2 zone=3 pct=78
+1788484631 P hr=144 trust=2 zone=3 pct=78
+1788484632 P hr=144 trust=3 zone=3 pct=78
+1788484633 P hr=144 trust=3 zone=3 pct=78
+1788484634 P hr=144 trust=3 zone=3 pct=78
+1788484635 P hr=144 trust=3 zone=3 pct=78
+1788484636 P hr=142 trust=2 zone=3 pct=77
+1788484637 P hr=140 trust=2 zone=3 pct=76
+1788484638 P hr=140 trust=2 zone=3 pct=76
+1788484639 P hr=140 trust=3 zone=3 pct=76
+1788484640 P hr=141 trust=3 zone=3 pct=77
+1788484641 P hr=139 trust=3 zone=3 pct=76
+1788484642 P hr=138 trust=3 zone=3 pct=75
+1788484642 recovery hr0=161 hr_end=138 drop=23 window=60 trusted=61 pct=88 src=1 curve=161,162,159,154,147,144,138
+1788484643 P hr=137 trust=3 zone=3 pct=74
+1788484644 P hr=137 trust=3 zone=3 pct=74
+1788484645 P hr=135 trust=3 zone=3 pct=73
+1788484646 P hr=134 trust=3 zone=3 pct=73
+1788484647 P hr=134 trust=3 zone=3 pct=73
+1788484648 P hr=134 trust=3 zone=3 pct=73
+1788484649 P hr=135 trust=3 zone=3 pct=73
+1788484650 P hr=135 trust=3 zone=3 pct=73
+1788484651 P hr=135 trust=3 zone=3 pct=73
+1788484652 P hr=134 trust=3 zone=3 pct=73
+1788484653 P hr=134 trust=1 zone=3 pct=73
+1788484654 P hr=133 trust=3 zone=3 pct=72
+1788484655 P hr=132 trust=3 zone=3 pct=72
+1788484656 P hr=132 trust=3 zone=3 pct=72
+1788484657 P hr=132 trust=3 zone=3 pct=72
+1788484658 P hr=131 trust=3 zone=3 pct=71
+1788484659 P hr=130 trust=3 zone=3 pct=71
+1788484660 P hr=129 trust=3 zone=3 pct=70
+1788484661 P hr=129 trust=3 zone=3 pct=70
+1788484662 P hr=129 trust=3 zone=3 pct=70
+1788484663 P hr=129 trust=3 zone=3 pct=70
+1788484664 P hr=129 trust=3 zone=3 pct=70
+1788484665 P hr=128 trust=3 zone=3 pct=70
+1788484666 P hr=126 trust=2 zone=2 pct=68
+1788484667 P hr=126 trust=2 zone=2 pct=68
+1788484668 P hr=126 trust=2 zone=2 pct=68
+1788484669 P hr=126 trust=1 zone=2 pct=68
+1788484670 P hr=127 trust=2 zone=2 pct=69
+1788484671 P hr=127 trust=3 zone=2 pct=69
+1788484672 P hr=126 trust=3 zone=2 pct=68
+1788484673 P hr=125 trust=3 zone=2 pct=68
+1788484674 P hr=125 trust=3 zone=2 pct=68
+1788484675 P hr=124 trust=3 zone=2 pct=67
+1788484676 P hr=124 trust=3 zone=2 pct=67
+1788484677 P hr=124 trust=3 zone=2 pct=67
+1788484678 P hr=124 trust=2 zone=2 pct=67
+1788484679 P hr=123 trust=2 zone=2 pct=67
+1788484680 P hr=123 trust=2 zone=2 pct=67
+1788484681 P hr=122 trust=3 zone=2 pct=66
+1788484711 A hr=121 trust=3 zone=2 pct=66
+1788484741 A hr=122 trust=2 zone=2 pct=66
+1788484771 A hr=119 trust=3 zone=2 pct=65
+1788484801 A hr=113 trust=3 zone=2 pct=61
+1788484802 cease hr=114 pct=62 active=1142 -> too_short
+1788484803 P hr=114 trust=3 zone=2 pct=62
+1788484804 P hr=114 trust=3 zone=2 pct=62
+1788484805 P hr=114 trust=3 zone=2 pct=62
+1788484806 P hr=114 trust=3 zone=2 pct=62
+1788484807 P hr=115 trust=3 zone=2 pct=63
+1788484808 P hr=114 trust=2 zone=2 pct=62
+1788484809 P hr=112 trust=2 zone=2 pct=61
+1788484810 P hr=111 trust=2 zone=2 pct=60
+1788484810 session status=0 recoveries=2 dropped=0 active=1142 hr_avg=116 work_kj=160 trimp=35
+1788484810 stop saved=1 discard=0
+1788486694 start version=0.8.0-14-165ab48 max_hr=100 zones=5 weight=90
+1788486695 A hr=76 trust=1 zone=0 pct=76
+1788486725 A hr=74 trust=3 zone=3 pct=74
+1788486755 A hr=75 trust=2 zone=3 pct=75
+1788486785 A hr=74 trust=3 zone=3 pct=74
+1788486815 A hr=79 trust=2 zone=3 pct=79
+1788486845 A hr=75 trust=3 zone=3 pct=75
+1788486875 A hr=78 trust=2 zone=3 pct=78
+1788486905 A hr=99 trust=3 zone=5 pct=99
+1788486913 cease hr=101 pct=101 active=218 -> armed
+1788486914 P hr=101 trust=3 zone=5 pct=101
+1788486915 P hr=101 trust=1 zone=5 pct=101
+1788486916 P hr=101 trust=1 zone=5 pct=101
+1788486917 P hr=101 trust=1 zone=5 pct=101
+1788486918 P hr=102 trust=1 zone=5 pct=102
+1788486919 P hr=102 trust=2 zone=5 pct=102
+1788486920 P hr=102 trust=2 zone=5 pct=102
+1788486921 P hr=102 trust=1 zone=5 pct=102
+1788486922 P hr=103 trust=1 zone=5 pct=103
+1788486923 P hr=101 trust=2 zone=5 pct=101
+1788486924 P hr=99 trust=3 zone=5 pct=99
+1788486925 P hr=100 trust=3 zone=5 pct=100
+1788486926 P hr=100 trust=3 zone=5 pct=100
+1788486927 P hr=100 trust=3 zone=5 pct=100
+1788486928 P hr=101 trust=2 zone=5 pct=101
+1788486929 P hr=102 trust=2 zone=5 pct=102
+1788486929 resume -> effort_resumed
+1788486959 A hr=83 trust=3 zone=4 pct=83
+1788486989 A hr=68 trust=2 zone=2 pct=68
+1788487019 A hr=69 trust=1 zone=2 pct=69
+1788487049 A hr=71 trust=3 zone=2 pct=71
+1788487079 A hr=75 trust=3 zone=3 pct=75
+1788487109 A hr=69 trust=3 zone=3 pct=69
+1788487139 A hr=73 trust=2 zone=3 pct=73
+1788487169 A hr=107 trust=2 zone=5 pct=107
+1788487199 A hr=86 trust=3 zone=4 pct=86
+1788487201 cease hr=87 pct=87 active=490 -> armed
+1788487202 P hr=87 trust=3 zone=4 pct=87
+1788487202 discard already_falling hr=87 pct=87
+1788487203 P hr=87 trust=3 zone=4 pct=87
+1788487204 P hr=87 trust=3 zone=4 pct=87
+1788487205 P hr=86 trust=3 zone=4 pct=86
+1788487206 P hr=86 trust=3 zone=4 pct=86
+1788487207 P hr=83 trust=3 zone=4 pct=83
+1788487208 P hr=83 trust=3 zone=4 pct=83
+1788487209 P hr=83 trust=3 zone=4 pct=83
+1788487210 P hr=82 trust=2 zone=4 pct=82
+1788487211 P hr=85 trust=2 zone=4 pct=85
+1788487212 P hr=85 trust=2 zone=4 pct=85
+1788487213 P hr=86 trust=2 zone=4 pct=86
+1788487214 P hr=87 trust=1 zone=4 pct=87
+1788487215 P hr=87 trust=1 zone=4 pct=87
+1788487216 P hr=88 trust=2 zone=4 pct=88
+1788487217 P hr=88 trust=2 zone=4 pct=88
+1788487218 P hr=89 trust=2 zone=4 pct=89
+1788487219 P hr=89 trust=2 zone=4 pct=89
+1788487220 P hr=90 trust=2 zone=4 pct=90
+1788487221 P hr=90 trust=2 zone=5 pct=90
+1788487222 P hr=90 trust=2 zone=5 pct=90
+1788487223 P hr=88 trust=3 zone=5 pct=88
+1788487224 P hr=86 trust=2 zone=4 pct=86
+1788487225 P hr=83 trust=3 zone=4 pct=83
+1788487226 P hr=80 trust=3 zone=4 pct=80
+1788487227 P hr=80 trust=3 zone=4 pct=80
+1788487228 P hr=78 trust=3 zone=4 pct=78
+1788487229 P hr=76 trust=3 zone=3 pct=76
+1788487230 P hr=74 trust=3 zone=3 pct=74
+1788487231 P hr=74 trust=3 zone=3 pct=74
+1788487232 P hr=73 trust=3 zone=3 pct=73
+1788487233 P hr=73 trust=3 zone=3 pct=73
+1788487234 P hr=71 trust=3 zone=3 pct=71
+1788487235 P hr=70 trust=3 zone=3 pct=70
+1788487236 P hr=69 trust=3 zone=3 pct=69
+1788487237 P hr=68 trust=3 zone=2 pct=68
+1788487238 P hr=68 trust=3 zone=2 pct=68
+1788487239 P hr=68 trust=3 zone=2 pct=68
+1788487240 P hr=67 trust=3 zone=2 pct=67
+1788487241 P hr=70 trust=3 zone=2 pct=70
+1788487242 P hr=70 trust=3 zone=3 pct=70
+1788487243 P hr=71 trust=3 zone=3 pct=71
+1788487244 P hr=70 trust=3 zone=3 pct=70
+1788487245 P hr=70 trust=3 zone=3 pct=70
+1788487246 P hr=69 trust=3 zone=3 pct=69
+1788487247 P hr=68 trust=3 zone=2 pct=68
+1788487248 P hr=67 trust=1 zone=2 pct=67
+1788487249 P hr=67 trust=3 zone=2 pct=67
+1788487250 P hr=67 trust=3 zone=2 pct=67
+1788487251 P hr=67 trust=3 zone=2 pct=67
+1788487252 P hr=67 trust=3 zone=2 pct=67
+1788487282 A hr=68 trust=1 zone=2 pct=68
+1788487312 A hr=69 trust=2 zone=2 pct=69
+1788487342 A hr=91 trust=1 zone=5 pct=91
+1788487372 A hr=105 trust=0 zone=5 pct=105
+1788487372 untrusted
+1788487402 A hr=67 trust=2 zone=2 pct=67
+1788487432 A hr=68 trust=3 zone=2 pct=68
+1788487462 A hr=79 trust=1 zone=3 pct=79
+1788487477 cease hr=100 pct=100 active=715 -> armed
+1788487478 P hr=99 trust=1 zone=5 pct=99
+1788487479 P hr=99 trust=1 zone=5 pct=99
+1788487480 P hr=99 trust=2 zone=5 pct=99
+1788487481 P hr=101 trust=2 zone=5 pct=101
+1788487482 P hr=100 trust=2 zone=5 pct=100
+1788487483 P hr=99 trust=2 zone=5 pct=99
+1788487484 P hr=99 trust=3 zone=5 pct=99
+1788487485 P hr=99 trust=3 zone=5 pct=99
+1788487486 P hr=98 trust=3 zone=5 pct=98
+1788487487 P hr=97 trust=3 zone=5 pct=97
+1788487488 P hr=96 trust=3 zone=5 pct=96
+1788487489 P hr=96 trust=3 zone=5 pct=96
+1788487490 P hr=96 trust=3 zone=5 pct=96
+1788487491 P hr=96 trust=3 zone=5 pct=96
+1788487492 P hr=96 trust=3 zone=5 pct=96
+1788487493 P hr=96 trust=3 zone=5 pct=96
+1788487494 P hr=96 trust=3 zone=5 pct=96
+1788487495 P hr=96 trust=3 zone=5 pct=96
+1788487496 P hr=95 trust=3 zone=5 pct=95
+1788487497 P hr=95 trust=3 zone=5 pct=95
+1788487498 P hr=94 trust=2 zone=5 pct=94
+1788487499 P hr=95 trust=2 zone=5 pct=95
+1788487500 P hr=94 trust=2 zone=5 pct=94
+1788487501 P hr=0 trust=0 zone=5 pct=0
+1788487501 untrusted
+1788487502 P hr=0 trust=0 zone=5 pct=0
+1788487502 untrusted
+1788487503 P hr=0 trust=0 zone=5 pct=0
+1788487503 untrusted
+1788487504 P hr=0 trust=0 zone=5 pct=0
+1788487504 untrusted
+1788487505 P hr=0 trust=0 zone=5 pct=0
+1788487505 untrusted
+1788487506 P hr=0 trust=0 zone=5 pct=0
+1788487506 untrusted
+1788487507 P hr=0 trust=0 zone=5 pct=0
+1788487507 untrusted
+1788487508 P hr=0 trust=0 zone=5 pct=0
+1788487508 untrusted
+1788487509 P hr=0 trust=0 zone=5 pct=0
+1788487509 untrusted
+1788487510 P hr=0 trust=0 zone=5 pct=0
+1788487510 untrusted
+1788487511 P hr=0 trust=0 zone=5 pct=0
+1788487511 untrusted
+1788487512 P hr=0 trust=0 zone=0 pct=0
+1788487512 untrusted
+1788487513 P hr=0 trust=0 zone=0 pct=0
+1788487513 untrusted
+1788487514 P hr=0 trust=0 zone=0 pct=0
+1788487514 untrusted
+1788487515 P hr=0 trust=0 zone=0 pct=0
+1788487515 untrusted
+1788487516 P hr=0 trust=0 zone=0 pct=0
+1788487516 untrusted
+1788487517 P hr=0 trust=0 zone=0 pct=0
+1788487517 untrusted
+1788487518 P hr=0 trust=0 zone=0 pct=0
+1788487518 untrusted
+1788487519 P hr=0 trust=0 zone=0 pct=0
+1788487519 untrusted
+1788487520 P hr=0 trust=0 zone=0 pct=0
+1788487520 untrusted
+1788487521 P hr=0 trust=0 zone=0 pct=0
+1788487521 untrusted
+1788487522 P hr=0 trust=0 zone=0 pct=0
+1788487522 untrusted
+1788487523 P hr=0 trust=0 zone=0 pct=0
+1788487523 untrusted
+1788487524 P hr=0 trust=0 zone=0 pct=0
+1788487524 untrusted
+1788487525 P hr=0 trust=0 zone=0 pct=0
+1788487525 untrusted
+1788487526 P hr=0 trust=0 zone=0 pct=0
+1788487526 untrusted
+1788487527 P hr=0 trust=0 zone=0 pct=0
+1788487527 untrusted
+1788487528 P hr=0 trust=0 zone=0 pct=0
+1788487528 untrusted
+1788487529 P hr=0 trust=0 zone=0 pct=0
+1788487529 untrusted
+1788487530 P hr=79 trust=1 zone=0 pct=79
+1788487531 P hr=79 trust=1 zone=3 pct=79
+1788487532 P hr=80 trust=1 zone=3 pct=80
+1788487533 P hr=79 trust=1 zone=4 pct=79
+1788487533 resume -> effort_resumed
+1788487563 A hr=76 trust=3 zone=3 pct=76
+1788487593 A hr=67 trust=1 zone=2 pct=67
+1788487623 A hr=69 trust=3 zone=3 pct=69
+1788487653 A hr=71 trust=1 zone=3 pct=71
+1788487683 A hr=71 trust=3 zone=3 pct=71
+1788487713 A hr=70 trust=3 zone=3 pct=70
+1788487743 A hr=0 trust=0 zone=0 pct=0
+1788487743 untrusted
+1788487747 cease hr=0 pct=0 active=929 -> no_baseline_history
+1788487748 P hr=0 trust=0 zone=0 pct=0
+1788487748 untrusted
+1788487749 P hr=0 trust=0 zone=0 pct=0
+1788487749 untrusted
+1788487750 P hr=0 trust=0 zone=0 pct=0
+1788487750 untrusted
+1788487751 P hr=0 trust=0 zone=0 pct=0
+1788487751 untrusted
+1788487752 P hr=0 trust=0 zone=0 pct=0
+1788487752 untrusted
+1788487753 P hr=0 trust=0 zone=0 pct=0
+1788487753 untrusted
+1788487754 P hr=0 trust=0 zone=0 pct=0
+1788487754 untrusted
+1788487755 P hr=0 trust=0 zone=0 pct=0
+1788487755 untrusted
+1788487756 P hr=0 trust=0 zone=0 pct=0
+1788487756 untrusted
+1788487757 P hr=0 trust=0 zone=0 pct=0
+1788487757 untrusted
+1788487758 P hr=0 trust=0 zone=0 pct=0
+1788487758 untrusted
+1788487759 P hr=0 trust=0 zone=0 pct=0
+1788487759 untrusted
+1788487760 P hr=0 trust=0 zone=0 pct=0
+1788487760 untrusted
+1788487761 P hr=0 trust=0 zone=0 pct=0
+1788487761 untrusted
+1788487762 P hr=0 trust=0 zone=0 pct=0
+1788487762 untrusted
+1788487763 P hr=0 trust=0 zone=0 pct=0
+1788487763 untrusted
+1788487764 P hr=71 trust=2 zone=0 pct=71
+1788487765 P hr=70 trust=2 zone=3 pct=70
+1788487766 P hr=70 trust=2 zone=3 pct=70
+1788487767 P hr=71 trust=2 zone=3 pct=71
+1788487768 P hr=71 trust=2 zone=3 pct=71
+1788487769 P hr=68 trust=1 zone=3 pct=68
+1788487770 P hr=68 trust=1 zone=2 pct=68
+1788487771 P hr=67 trust=1 zone=2 pct=67
+1788487772 P hr=69 trust=2 zone=2 pct=69
+1788487773 P hr=69 trust=1 zone=2 pct=69
+1788487774 P hr=69 trust=1 zone=2 pct=69
+1788487775 P hr=69 trust=1 zone=2 pct=69
+1788487776 P hr=70 trust=1 zone=2 pct=70
+1788487777 P hr=70 trust=1 zone=3 pct=70
+1788487778 P hr=70 trust=2 zone=3 pct=70
+1788487779 P hr=69 trust=2 zone=3 pct=69
+1788487780 P hr=68 trust=2 zone=2 pct=68
+1788487810 A hr=71 trust=1 zone=3 pct=71
+1788487840 A hr=67 trust=3 zone=2 pct=67
+1788487870 A hr=67 trust=3 zone=2 pct=67
+1788487900 A hr=67 trust=3 zone=2 pct=67
+1788487930 A hr=71 trust=0 zone=3 pct=71
+1788487930 untrusted
+1788487949 cease hr=100 pct=100 active=1098 -> too_short
+1788487950 P hr=100 trust=3 zone=5 pct=100
+1788487951 P hr=99 trust=2 zone=5 pct=99
+1788487952 P hr=99 trust=2 zone=5 pct=99
+1788487953 P hr=100 trust=1 zone=5 pct=100
+1788487954 P hr=100 trust=1 zone=5 pct=100
+1788487955 P hr=100 trust=1 zone=5 pct=100
+1788487956 P hr=101 trust=1 zone=5 pct=101
+1788487957 P hr=101 trust=1 zone=5 pct=101
+1788487958 P hr=101 trust=1 zone=5 pct=101
+1788487959 P hr=101 trust=0 zone=5 pct=101
+1788487959 untrusted
+1788487960 P hr=101 trust=1 zone=5 pct=101
+1788487961 P hr=101 trust=1 zone=5 pct=101
+1788487962 P hr=102 trust=2 zone=5 pct=102
+1788487963 P hr=98 trust=1 zone=5 pct=98
+1788487964 P hr=99 trust=1 zone=5 pct=99
+1788487965 P hr=100 trust=1 zone=5 pct=100
+1788487966 P hr=100 trust=1 zone=5 pct=100
+1788487967 P hr=100 trust=1 zone=5 pct=100
+1788487968 P hr=101 trust=1 zone=5 pct=101
+1788487969 P hr=102 trust=1 zone=5 pct=102
+1788487970 P hr=104 trust=1 zone=5 pct=104
+1788487971 P hr=105 trust=1 zone=5 pct=105
+1788487972 P hr=105 trust=1 zone=5 pct=105
+1788487973 P hr=105 trust=1 zone=5 pct=105
+1788487974 P hr=105 trust=0 zone=5 pct=105
+1788487974 untrusted
+1788487975 P hr=104 trust=1 zone=5 pct=104
+1788487976 P hr=104 trust=1 zone=5 pct=104
+1788487977 P hr=95 trust=3 zone=5 pct=95
+1788487978 P hr=95 trust=3 zone=5 pct=95
+1788487979 P hr=91 trust=3 zone=5 pct=91
+1788487980 P hr=89 trust=3 zone=5 pct=89
+1788487981 P hr=88 trust=1 zone=4 pct=88
+1788487982 P hr=82 trust=3 zone=4 pct=82
+1788487983 P hr=78 trust=3 zone=4 pct=78
+1788487984 P hr=78 trust=3 zone=3 pct=78
+1788487985 P hr=77 trust=3 zone=3 pct=77
+1788487986 P hr=76 trust=3 zone=3 pct=76
+1788487987 P hr=75 trust=3 zone=3 pct=75
+1788487988 P hr=75 trust=3 zone=3 pct=75
+1788487989 P hr=74 trust=1 zone=3 pct=74
+1788487990 P hr=74 trust=1 zone=3 pct=74
+1788487991 P hr=74 trust=1 zone=3 pct=74
+1788487992 P hr=75 trust=1 zone=3 pct=75
+1788487993 P hr=73 trust=1 zone=3 pct=73
+1788487994 P hr=73 trust=3 zone=3 pct=73
+1788487994 session status=0 recoveries=0 dropped=0 active=1098 hr_avg=76 work_kj=0 trimp=56
+1788487994 stop saved=1 discard=0
+1788489897 start version=0.8.0-14-165ab48 max_hr=100 zones=5 weight=90
+1788489898 A hr=114 trust=1 zone=0 pct=114
+1788489928 A hr=124 trust=1 zone=5 pct=124
+1788489958 A hr=127 trust=1 zone=5 pct=127
+1788489988 A hr=141 trust=0 zone=5 pct=141
+1788489988 untrusted
+1788490018 A hr=154 trust=1 zone=5 pct=154
+1788490048 A hr=155 trust=0 zone=5 pct=155
+1788490048 untrusted
+1788490078 A hr=157 trust=2 zone=5 pct=157
+1788490108 A hr=155 trust=1 zone=5 pct=155
+1788490119 cease hr=157 pct=157 active=221 -> armed
+1788490120 P hr=157 trust=1 zone=5 pct=157
+1788490121 P hr=157 trust=1 zone=5 pct=157
+1788490122 P hr=156 trust=1 zone=5 pct=156
+1788490123 P hr=158 trust=1 zone=5 pct=158
+1788490123 end -> ride_ended
+1788490123 stop saved=0 discard=1
+1788490140 start version=0.8.0-14-165ab48 max_hr=100 zones=5 weight=90
+1788490140 A hr=0 trust=0 zone=0 pct=0
+1788490140 untrusted
+1788490149 cease hr=120 pct=120 active=9 -> too_short
+1788490150 P hr=120 trust=1 zone=5 pct=120
+1788490151 P hr=119 trust=1 zone=5 pct=119
+1788490152 P hr=110 trust=1 zone=5 pct=110
+1788490152 stop saved=0 discard=1
+1788490172 start version=0.8.0-14-165ab48 max_hr=100 zones=5 weight=90
+1788490172 A hr=0 trust=0 zone=0 pct=0
+1788490172 untrusted
+1788490172 cease hr=69 pct=69 active=0 -> too_short
+1788490173 P hr=69 trust=1 zone=0 pct=69
+1788490174 P hr=68 trust=2 zone=2 pct=68
+1788490175 P hr=68 trust=2 zone=2 pct=68
+1788490176 P hr=65 trust=2 zone=2 pct=65
+1788490177 P hr=64 trust=1 zone=2 pct=64
+1788490178 P hr=63 trust=2 zone=2 pct=63
+1788490179 P hr=63 trust=2 zone=2 pct=63
+1788490180 P hr=62 trust=1 zone=2 pct=62
+1788490181 P hr=62 trust=1 zone=2 pct=62
+1788490182 P hr=62 trust=1 zone=2 pct=62
+1788490183 P hr=61 trust=1 zone=2 pct=61
+1788490184 P hr=61 trust=1 zone=2 pct=61
+1788490185 P hr=60 trust=1 zone=2 pct=60
+1788490186 P hr=59 trust=0 zone=2 pct=59
+1788490186 untrusted
+1788490187 P hr=59 trust=0 zone=2 pct=59
+1788490187 untrusted
+1788490188 P hr=63 trust=2 zone=2 pct=63
+1788490189 P hr=67 trust=3 zone=2 pct=67
+1788490190 P hr=65 trust=2 zone=2 pct=65
+1788490191 P hr=62 trust=1 zone=2 pct=62
+1788490192 P hr=62 trust=1 zone=2 pct=62
+1788490193 P hr=63 trust=1 zone=2 pct=63
+1788490194 P hr=61 trust=1 zone=2 pct=61
+1788490195 P hr=62 trust=3 zone=2 pct=62
+1788490196 P hr=63 trust=3 zone=2 pct=63
+1788490197 P hr=63 trust=3 zone=2 pct=63
+1788490198 P hr=63 trust=3 zone=2 pct=63
+1788490199 P hr=63 trust=3 zone=2 pct=63
+1788490200 P hr=63 trust=3 zone=2 pct=63
+1788490201 P hr=66 trust=3 zone=2 pct=66
+1788490202 P hr=66 trust=3 zone=2 pct=66
+1788490203 P hr=66 trust=3 zone=2 pct=66
+1788490204 P hr=64 trust=3 zone=2 pct=64
+1788490205 P hr=64 trust=3 zone=2 pct=64
+1788490206 P hr=66 trust=1 zone=2 pct=66
+1788490207 P hr=67 trust=3 zone=2 pct=67
+1788490208 P hr=68 trust=3 zone=2 pct=68
+1788490209 P hr=68 trust=1 zone=2 pct=68
+1788490210 P hr=69 trust=3 zone=2 pct=69
+1788490211 P hr=69 trust=3 zone=2 pct=69
+1788490212 P hr=67 trust=2 zone=2 pct=67
+1788490213 P hr=65 trust=1 zone=2 pct=65
+1788490214 P hr=65 trust=1 zone=2 pct=65
+1788490215 P hr=65 trust=1 zone=2 pct=65
+1788490216 P hr=67 trust=3 zone=2 pct=67
+1788490217 P hr=67 trust=3 zone=2 pct=67
+1788490218 P hr=69 trust=3 zone=2 pct=69
+1788490219 P hr=70 trust=3 zone=2 pct=70
+1788490220 P hr=70 trust=3 zone=3 pct=70
+1788490221 P hr=69 trust=1 zone=3 pct=69
+1788490222 P hr=69 trust=1 zone=2 pct=69
+1788490223 P hr=69 trust=1 zone=2 pct=69
+1788490224 P hr=69 trust=3 zone=2 pct=69
+1788490225 P hr=69 trust=2 zone=2 pct=69
+1788490226 P hr=69 trust=2 zone=2 pct=69
+1788490227 P hr=69 trust=3 zone=2 pct=69
+1788490228 P hr=69 trust=3 zone=2 pct=69
+1788490229 P hr=69 trust=3 zone=2 pct=69
+1788490230 P hr=69 trust=3 zone=2 pct=69
+1788490231 P hr=70 trust=3 zone=2 pct=70
+1788490232 P hr=70 trust=3 zone=3 pct=70
+1788490233 P hr=70 trust=3 zone=3 pct=70
+1788490234 P hr=70 trust=3 zone=3 pct=70
+1788490235 P hr=70 trust=3 zone=3 pct=70
+1788490236 P hr=70 trust=3 zone=3 pct=70
+1788490237 P hr=70 trust=3 zone=3 pct=70
+1788490238 P hr=70 trust=3 zone=3 pct=70
+1788490239 P hr=70 trust=3 zone=3 pct=70
+1788490240 P hr=70 trust=3 zone=3 pct=70
+1788490241 P hr=70 trust=3 zone=3 pct=70
+1788490242 P hr=70 trust=2 zone=3 pct=70
+1788490243 P hr=70 trust=1 zone=3 pct=70
+1788490244 P hr=68 trust=1 zone=3 pct=68
+1788490245 P hr=68 trust=1 zone=2 pct=68
+1788490246 P hr=68 trust=2 zone=2 pct=68
+1788490247 P hr=68 trust=2 zone=2 pct=68
+1788490248 P hr=69 trust=3 zone=2 pct=69
+1788490249 P hr=69 trust=3 zone=2 pct=69
+1788490250 P hr=69 trust=3 zone=2 pct=69
+1788490251 P hr=69 trust=3 zone=2 pct=69
+1788490252 P hr=69 trust=3 zone=2 pct=69
+1788490253 P hr=68 trust=3 zone=2 pct=68
+1788490254 P hr=67 trust=3 zone=2 pct=67
+1788490255 P hr=66 trust=3 zone=2 pct=66
+1788490256 P hr=66 trust=3 zone=2 pct=66
+1788490257 P hr=66 trust=3 zone=2 pct=66
+1788490258 P hr=66 trust=3 zone=2 pct=66
+1788490259 P hr=66 trust=1 zone=2 pct=66
+1788490260 P hr=67 trust=3 zone=2 pct=67
+1788490261 P hr=67 trust=3 zone=2 pct=67
+1788490262 P hr=67 trust=3 zone=2 pct=67
+1788490263 P hr=67 trust=1 zone=2 pct=67
+1788490264 P hr=67 trust=1 zone=2 pct=67
+1788490265 P hr=67 trust=3 zone=2 pct=67
+1788490266 P hr=67 trust=3 zone=2 pct=67
+1788490267 P hr=67 trust=3 zone=2 pct=67
+1788490268 P hr=68 trust=3 zone=2 pct=68
+1788490269 P hr=68 trust=3 zone=2 pct=68
+1788490270 P hr=68 trust=3 zone=2 pct=68
+1788490271 P hr=68 trust=3 zone=2 pct=68
+1788490272 P hr=68 trust=3 zone=2 pct=68
+1788490273 P hr=68 trust=3 zone=2 pct=68
+1788490274 P hr=68 trust=3 zone=2 pct=68
+1788490275 P hr=67 trust=3 zone=2 pct=67
+1788490276 P hr=67 trust=3 zone=2 pct=67
+1788490277 P hr=67 trust=3 zone=2 pct=67
+1788490278 P hr=68 trust=3 zone=2 pct=68
+1788490279 P hr=68 trust=3 zone=2 pct=68
+1788490280 P hr=69 trust=2 zone=2 pct=69
+1788490310 A hr=70 trust=2 zone=3 pct=70
+1788490340 A hr=70 trust=1 zone=3 pct=70
+1788490370 A hr=71 trust=1 zone=3 pct=71
+1788490400 A hr=69 trust=3 zone=2 pct=69
+1788490430 A hr=71 trust=3 zone=3 pct=71
+1788490460 A hr=104 trust=3 zone=5 pct=104
+1788490479 cease hr=98 pct=98 active=199 -> armed
+1788490480 P hr=98 trust=2 zone=5 pct=98
+1788490481 P hr=98 trust=2 zone=5 pct=98
+1788490482 P hr=98 trust=2 zone=5 pct=98
+1788490483 P hr=97 trust=1 zone=5 pct=97
+1788490484 P hr=97 trust=1 zone=5 pct=97
+1788490485 P hr=97 trust=1 zone=5 pct=97
+1788490486 P hr=96 trust=1 zone=5 pct=96
+1788490487 P hr=96 trust=1 zone=5 pct=96
+1788490488 P hr=96 trust=2 zone=5 pct=96
+1788490489 P hr=94 trust=1 zone=5 pct=94
+1788490490 P hr=91 trust=1 zone=5 pct=91
+1788490491 P hr=91 trust=1 zone=5 pct=91
+1788490492 P hr=91 trust=1 zone=5 pct=91
+1788490493 P hr=91 trust=1 zone=5 pct=91
+1788490494 P hr=90 trust=2 zone=5 pct=90
+1788490495 P hr=90 trust=3 zone=5 pct=90
+1788490496 P hr=89 trust=3 zone=5 pct=89
+1788490497 P hr=90 trust=1 zone=4 pct=90
+1788490498 P hr=90 trust=1 zone=5 pct=90
+1788490499 P hr=90 trust=1 zone=5 pct=90
+1788490500 P hr=89 trust=1 zone=5 pct=89
+1788490501 P hr=89 trust=1 zone=4 pct=89
+1788490502 P hr=0 trust=0 zone=4 pct=0
+1788490502 untrusted
+1788490503 P hr=0 trust=0 zone=4 pct=0
+1788490503 untrusted
+1788490504 P hr=0 trust=0 zone=4 pct=0
+1788490504 untrusted
+1788490505 P hr=0 trust=0 zone=4 pct=0
+1788490505 untrusted
+1788490506 P hr=0 trust=0 zone=4 pct=0
+1788490506 untrusted
+1788490507 P hr=0 trust=0 zone=4 pct=0
+1788490507 untrusted
+1788490508 P hr=0 trust=0 zone=4 pct=0
+1788490508 untrusted
+1788490509 P hr=0 trust=0 zone=4 pct=0
+1788490509 untrusted
+1788490510 P hr=0 trust=0 zone=4 pct=0
+1788490510 untrusted
+1788490511 P hr=0 trust=0 zone=4 pct=0
+1788490511 untrusted
+1788490512 P hr=0 trust=0 zone=4 pct=0
+1788490512 untrusted
+1788490513 P hr=0 trust=0 zone=0 pct=0
+1788490513 untrusted
+1788490514 P hr=0 trust=0 zone=0 pct=0
+1788490514 untrusted
+1788490515 P hr=0 trust=0 zone=0 pct=0
+1788490515 untrusted
+1788490516 P hr=0 trust=0 zone=0 pct=0
+1788490516 untrusted
+1788490517 P hr=0 trust=0 zone=0 pct=0
+1788490517 untrusted
+1788490518 P hr=0 trust=0 zone=0 pct=0
+1788490518 untrusted
+1788490519 P hr=0 trust=0 zone=0 pct=0
+1788490519 untrusted
+1788490520 P hr=0 trust=0 zone=0 pct=0
+1788490520 untrusted
+1788490521 P hr=0 trust=0 zone=0 pct=0
+1788490521 untrusted
+1788490522 P hr=0 trust=0 zone=0 pct=0
+1788490522 untrusted
+1788490523 P hr=0 trust=0 zone=0 pct=0
+1788490523 untrusted
+1788490524 P hr=0 trust=0 zone=0 pct=0
+1788490524 untrusted
+1788490525 P hr=0 trust=0 zone=0 pct=0
+1788490525 untrusted
+1788490526 P hr=0 trust=0 zone=0 pct=0
+1788490526 untrusted
+1788490527 P hr=0 trust=0 zone=0 pct=0
+1788490527 untrusted
+1788490528 P hr=0 trust=0 zone=0 pct=0
+1788490528 untrusted
+1788490529 P hr=0 trust=0 zone=0 pct=0
+1788490529 untrusted
+1788490530 P hr=0 trust=0 zone=0 pct=0
+1788490530 untrusted
+1788490531 P hr=0 trust=0 zone=0 pct=0
+1788490531 untrusted
+1788490532 P hr=70 trust=2 zone=0 pct=70
+1788490533 P hr=70 trust=2 zone=3 pct=70
+1788490534 P hr=70 trust=2 zone=3 pct=70
+1788490535 P hr=70 trust=2 zone=3 pct=70
+1788490536 P hr=70 trust=2 zone=3 pct=70
+1788490537 P hr=69 trust=2 zone=3 pct=69
+1788490538 P hr=69 trust=2 zone=2 pct=69
+1788490539 P hr=69 trust=1 zone=2 pct=69
+1788490540 P hr=68 trust=2 zone=2 pct=68
+1788490540 discard dropout hr=68 pct=68
+1788490541 P hr=68 trust=2 zone=2 pct=68
+1788490542 P hr=68 trust=2 zone=2 pct=68
+1788490543 P hr=68 trust=2 zone=2 pct=68
+1788490544 P hr=68 trust=2 zone=2 pct=68
+1788490545 P hr=69 trust=2 zone=2 pct=69
+1788490546 P hr=69 trust=2 zone=2 pct=69
+1788490547 P hr=69 trust=2 zone=2 pct=69
+1788490548 P hr=69 trust=1 zone=2 pct=69
+1788490549 P hr=69 trust=1 zone=2 pct=69
+1788490550 P hr=69 trust=1 zone=2 pct=69
+1788490551 P hr=69 trust=1 zone=2 pct=69
+1788490552 P hr=71 trust=1 zone=2 pct=71
+1788490553 P hr=71 trust=1 zone=3 pct=71
+1788490554 P hr=71 trust=1 zone=3 pct=71
+1788490555 P hr=73 trust=2 zone=3 pct=73
+1788490585 A hr=71 trust=2 zone=3 pct=71
+1788490615 A hr=65 trust=1 zone=2 pct=65
+1788490645 A hr=68 trust=1 zone=2 pct=68
+1788490675 A hr=65 trust=2 zone=2 pct=65
+1788490705 A hr=66 trust=3 zone=2 pct=66
+1788490735 A hr=68 trust=3 zone=2 pct=68
+1788490765 A hr=68 trust=1 zone=2 pct=68
+1788490795 A hr=66 trust=1 zone=2 pct=66
+1788490825 A hr=106 trust=3 zone=5 pct=106
+1788490825 cease hr=106 pct=106 active=469 -> armed
+1788490826 P hr=106 trust=3 zone=5 pct=106
+1788490827 P hr=106 trust=3 zone=5 pct=106
+1788490828 P hr=105 trust=2 zone=5 pct=105
+1788490829 P hr=104 trust=3 zone=5 pct=104
+1788490830 P hr=102 trust=3 zone=5 pct=102
+1788490831 P hr=102 trust=2 zone=5 pct=102
+1788490832 P hr=101 trust=2 zone=5 pct=101
+1788490833 P hr=101 trust=2 zone=5 pct=101
+1788490834 P hr=101 trust=2 zone=5 pct=101
+1788490835 P hr=102 trust=2 zone=5 pct=102
+1788490836 P hr=101 trust=1 zone=5 pct=101
+1788490837 P hr=101 trust=1 zone=5 pct=101
+1788490838 P hr=95 trust=3 zone=5 pct=95
+1788490839 P hr=95 trust=2 zone=5 pct=95
+1788490840 P hr=95 trust=2 zone=5 pct=95
+1788490841 P hr=94 trust=2 zone=5 pct=94
+1788490842 P hr=93 trust=3 zone=5 pct=93
+1788490843 P hr=93 trust=3 zone=5 pct=93
+1788490844 P hr=92 trust=3 zone=5 pct=92
+1788490845 P hr=90 trust=3 zone=5 pct=90
+1788490846 P hr=90 trust=3 zone=5 pct=90
+1788490847 P hr=87 trust=2 zone=5 pct=87
+1788490848 P hr=83 trust=3 zone=4 pct=83
+1788490849 P hr=81 trust=3 zone=4 pct=81
+1788490850 P hr=81 trust=2 zone=4 pct=81
+1788490851 P hr=79 trust=2 zone=4 pct=79
+1788490852 P hr=79 trust=2 zone=3 pct=79
+1788490853 P hr=78 trust=2 zone=3 pct=78
+1788490854 P hr=75 trust=3 zone=3 pct=75
+1788490855 P hr=73 trust=3 zone=3 pct=73
+1788490856 P hr=73 trust=3 zone=3 pct=73
+1788490857 P hr=74 trust=3 zone=3 pct=74
+1788490858 P hr=76 trust=2 zone=3 pct=76
+1788490859 P hr=76 trust=1 zone=3 pct=76
+1788490860 P hr=76 trust=2 zone=3 pct=76
+1788490861 P hr=74 trust=2 zone=3 pct=74
+1788490861 end -> ride_ended
+1788490861 session status=0 recoveries=0 dropped=0 active=469 hr_avg=71 work_kj=0 trimp=20
+1788490861 stop saved=1 discard=0
+1788491787 start version=0.8.0-14-165ab48 max_hr=100 zones=5 weight=90
+1788491787 A hr=0 trust=0 zone=0 pct=0
+1788491787 untrusted
+1788491817 A hr=93 trust=1 zone=5 pct=93
+1788491839 cease hr=95 pct=95 active=52 -> too_short
+1788491840 P hr=94 trust=1 zone=5 pct=94
+1788491841 P hr=93 trust=0 zone=5 pct=93
+1788491841 untrusted
+1788491841 stop saved=0 discard=1
+1788491851 start version=0.8.0-14-165ab48 max_hr=100 zones=5 weight=90
+1788491852 A hr=94 trust=1 zone=0 pct=94
+1788491882 A hr=68 trust=3 zone=2 pct=68
+1788491912 A hr=70 trust=1 zone=3 pct=70
+1788491942 A hr=70 trust=2 zone=3 pct=70
+1788491972 A hr=65 trust=2 zone=2 pct=65
+1788492002 A hr=69 trust=3 zone=2 pct=69
+1788492032 A hr=65 trust=3 zone=2 pct=65
+1788492062 A hr=67 trust=3 zone=2 pct=67
+1788492092 A hr=67 trust=1 zone=2 pct=67
+1788492113 cease hr=108 pct=108 active=261 -> armed
+1788492114 P hr=107 trust=2 zone=5 pct=107
+1788492115 P hr=105 trust=2 zone=5 pct=105
+1788492116 P hr=102 trust=2 zone=5 pct=102
+1788492117 P hr=101 trust=2 zone=5 pct=101
+1788492118 P hr=100 trust=2 zone=5 pct=100
+1788492119 P hr=100 trust=2 zone=5 pct=100
+1788492120 P hr=98 trust=2 zone=5 pct=98
+1788492121 P hr=98 trust=2 zone=5 pct=98
+1788492122 P hr=98 trust=2 zone=5 pct=98
+1788492123 P hr=98 trust=2 zone=5 pct=98
+1788492124 P hr=96 trust=2 zone=5 pct=96
+1788492125 P hr=95 trust=2 zone=5 pct=95
+1788492126 P hr=93 trust=3 zone=5 pct=93
+1788492127 P hr=92 trust=2 zone=5 pct=92
+1788492128 P hr=92 trust=2 zone=5 pct=92
+1788492129 P hr=91 trust=2 zone=5 pct=91
+1788492130 P hr=83 trust=3 zone=5 pct=83
+1788492131 P hr=83 trust=3 zone=4 pct=83
+1788492132 P hr=82 trust=3 zone=4 pct=82
+1788492133 P hr=81 trust=3 zone=4 pct=81
+1788492134 P hr=81 trust=3 zone=4 pct=81
+1788492135 P hr=82 trust=3 zone=4 pct=82
+1788492136 P hr=81 trust=3 zone=4 pct=81
+1788492137 P hr=81 trust=3 zone=4 pct=81
+1788492138 P hr=79 trust=3 zone=4 pct=79
+1788492139 P hr=78 trust=2 zone=3 pct=78
+1788492140 P hr=78 trust=2 zone=3 pct=78
+1788492141 P hr=77 trust=2 zone=3 pct=77
+1788492142 P hr=77 trust=2 zone=3 pct=77
+1788492143 P hr=75 trust=3 zone=3 pct=75
+1788492144 P hr=74 trust=3 zone=3 pct=74
+1788492145 P hr=73 trust=3 zone=3 pct=73
+1788492146 P hr=73 trust=3 zone=3 pct=73
+1788492147 P hr=73 trust=3 zone=3 pct=73
+1788492148 P hr=72 trust=3 zone=3 pct=72
+1788492149 P hr=72 trust=3 zone=3 pct=72
+1788492150 P hr=71 trust=3 zone=3 pct=71
+1788492151 P hr=70 trust=3 zone=3 pct=70
+1788492152 P hr=70 trust=3 zone=3 pct=70
+1788492153 P hr=69 trust=3 zone=3 pct=69
+1788492154 P hr=68 trust=3 zone=2 pct=68
+1788492155 P hr=68 trust=3 zone=2 pct=68
+1788492156 P hr=69 trust=3 zone=2 pct=69
+1788492157 P hr=70 trust=3 zone=2 pct=70
+1788492158 P hr=70 trust=3 zone=3 pct=70
+1788492159 P hr=71 trust=3 zone=3 pct=71
+1788492160 P hr=71 trust=3 zone=3 pct=71
+1788492161 P hr=71 trust=3 zone=3 pct=71
+1788492162 P hr=71 trust=3 zone=3 pct=71
+1788492163 P hr=70 trust=3 zone=3 pct=70
+1788492164 P hr=70 trust=3 zone=3 pct=70
+1788492165 P hr=69 trust=3 zone=3 pct=69
+1788492166 P hr=69 trust=3 zone=2 pct=69
+1788492167 P hr=69 trust=3 zone=2 pct=69
+1788492168 P hr=69 trust=3 zone=2 pct=69
+1788492169 P hr=70 trust=3 zone=2 pct=70
+1788492170 P hr=70 trust=3 zone=3 pct=70
+1788492171 P hr=70 trust=3 zone=3 pct=70
+1788492172 P hr=70 trust=3 zone=3 pct=70
+1788492173 P hr=69 trust=3 zone=3 pct=69
+1788492174 P hr=68 trust=3 zone=2 pct=68
+1788492174 recovery hr0=107 hr_end=68 drop=39 window=60 trusted=61 pct=107 src=1 curve=107,96,81,74,68,70,68
+1788492175 P hr=67 trust=3 zone=2 pct=67
+1788492176 P hr=67 trust=3 zone=2 pct=67
+1788492177 P hr=67 trust=2 zone=2 pct=67
+1788492178 P hr=66 trust=3 zone=2 pct=66
+1788492179 P hr=66 trust=3 zone=2 pct=66
+1788492180 P hr=66 trust=3 zone=2 pct=66
+1788492181 P hr=65 trust=3 zone=2 pct=65
+1788492182 P hr=65 trust=3 zone=2 pct=65
+1788492183 P hr=65 trust=3 zone=2 pct=65
+1788492184 P hr=65 trust=3 zone=2 pct=65
+1788492185 P hr=65 trust=3 zone=2 pct=65
+1788492186 P hr=64 trust=3 zone=2 pct=64
+1788492187 P hr=64 trust=3 zone=2 pct=64
+1788492188 P hr=64 trust=3 zone=2 pct=64
+1788492189 P hr=64 trust=3 zone=2 pct=64
+1788492190 P hr=64 trust=3 zone=2 pct=64
+1788492191 P hr=64 trust=3 zone=2 pct=64
+1788492192 P hr=64 trust=3 zone=2 pct=64
+1788492193 P hr=63 trust=1 zone=2 pct=63
+1788492194 P hr=63 trust=1 zone=2 pct=63
+1788492195 P hr=63 trust=1 zone=2 pct=63
+1788492225 A hr=65 trust=3 zone=2 pct=65
+1788492255 A hr=80 trust=2 zone=4 pct=80
+1788492285 A hr=64 trust=1 zone=2 pct=64
+1788492315 A hr=60 trust=2 zone=2 pct=60
+1788492345 A hr=60 trust=3 zone=2 pct=60
+1788492375 A hr=67 trust=3 zone=2 pct=67
+1788492405 A hr=62 trust=3 zone=2 pct=62
+1788492435 A hr=61 trust=3 zone=2 pct=61
+1788492465 A hr=63 trust=1 zone=2 pct=63
+1788492495 A hr=98 trust=1 zone=5 pct=98
+1788492525 A hr=103 trust=3 zone=5 pct=103
+1788492525 cease hr=103 pct=103 active=591 -> armed
+1788492526 P hr=103 trust=2 zone=5 pct=103
+1788492527 P hr=103 trust=2 zone=5 pct=103
+1788492528 P hr=105 trust=2 zone=5 pct=105
+1788492529 P hr=105 trust=2 zone=5 pct=105
+1788492530 P hr=105 trust=2 zone=5 pct=105
+1788492531 P hr=105 trust=1 zone=5 pct=105
+1788492532 P hr=104 trust=1 zone=5 pct=104
+1788492533 P hr=104 trust=1 zone=5 pct=104
+1788492534 P hr=103 trust=1 zone=5 pct=103
+1788492535 P hr=96 trust=3 zone=5 pct=96
+1788492536 P hr=96 trust=3 zone=5 pct=96
+1788492537 P hr=96 trust=3 zone=5 pct=96
+1788492538 P hr=92 trust=3 zone=5 pct=92
+1788492539 P hr=90 trust=3 zone=5 pct=90
+1788492540 P hr=89 trust=3 zone=5 pct=89
+1788492541 P hr=86 trust=3 zone=4 pct=86
+1788492542 P hr=86 trust=3 zone=4 pct=86
+1788492543 P hr=85 trust=3 zone=4 pct=85
+1788492544 P hr=84 trust=3 zone=4 pct=84
+1788492545 P hr=80 trust=3 zone=4 pct=80
+1788492546 P hr=80 trust=3 zone=4 pct=80
+1788492547 P hr=79 trust=3 zone=4 pct=79
+1788492548 P hr=79 trust=3 zone=3 pct=79
+1788492549 P hr=78 trust=3 zone=3 pct=78
+1788492550 P hr=77 trust=3 zone=3 pct=77
+1788492551 P hr=77 trust=3 zone=3 pct=77
+1788492552 P hr=76 trust=3 zone=3 pct=76
+1788492553 P hr=77 trust=3 zone=3 pct=77
+1788492554 P hr=77 trust=3 zone=3 pct=77
+1788492555 P hr=75 trust=1 zone=3 pct=75
+1788492556 P hr=76 trust=1 zone=3 pct=76
+1788492557 P hr=76 trust=1 zone=3 pct=76
+1788492558 P hr=75 trust=1 zone=3 pct=75
+1788492559 P hr=74 trust=1 zone=3 pct=74
+1788492560 P hr=74 trust=1 zone=3 pct=74
+1788492561 P hr=73 trust=1 zone=3 pct=73
+1788492562 P hr=73 trust=1 zone=3 pct=73
+1788492563 P hr=88 trust=1 zone=3 pct=88
+1788492564 P hr=88 trust=1 zone=4 pct=88
+1788492565 P hr=85 trust=1 zone=4 pct=85
+1788492566 P hr=85 trust=1 zone=4 pct=85
+1788492567 P hr=79 trust=2 zone=4 pct=79
+1788492568 P hr=72 trust=3 zone=3 pct=72
+1788492569 P hr=71 trust=3 zone=3 pct=71
+1788492570 P hr=70 trust=3 zone=3 pct=70
+1788492571 P hr=69 trust=3 zone=3 pct=69
+1788492572 P hr=69 trust=3 zone=2 pct=69
+1788492573 P hr=68 trust=2 zone=2 pct=68
+1788492574 P hr=71 trust=1 zone=2 pct=71
+1788492575 P hr=71 trust=1 zone=3 pct=71
+1788492576 P hr=71 trust=1 zone=3 pct=71
+1788492577 P hr=71 trust=3 zone=3 pct=71
+1788492578 P hr=71 trust=3 zone=3 pct=71
+1788492579 P hr=68 trust=3 zone=3 pct=68
+1788492580 P hr=66 trust=3 zone=2 pct=66
+1788492581 P hr=65 trust=2 zone=2 pct=65
+1788492582 P hr=64 trust=2 zone=2 pct=64
+1788492583 P hr=65 trust=1 zone=2 pct=65
+1788492584 P hr=65 trust=1 zone=2 pct=65
+1788492585 P hr=65 trust=1 zone=2 pct=65
+1788492586 P hr=65 trust=2 zone=2 pct=65
+1788492586 recovery hr0=103 hr_end=65 drop=38 window=60 trusted=61 pct=103 src=1 curve=103,96,80,76,85,71,65
+1788492587 P hr=65 trust=3 zone=2 pct=65
+1788492588 P hr=63 trust=3 zone=2 pct=63
+1788492589 P hr=63 trust=3 zone=2 pct=63
+1788492590 P hr=63 trust=3 zone=2 pct=63
+1788492591 P hr=63 trust=3 zone=2 pct=63
+1788492592 P hr=63 trust=3 zone=2 pct=63
+1788492593 P hr=63 trust=1 zone=2 pct=63
+1788492594 P hr=63 trust=1 zone=2 pct=63
+1788492624 A hr=59 trust=3 zone=1 pct=59
+1788492654 A hr=62 trust=1 zone=2 pct=62
+1788492684 A hr=62 trust=2 zone=2 pct=62
+1788492714 A hr=60 trust=3 zone=2 pct=60
+1788492744 A hr=61 trust=3 zone=2 pct=61
+1788492774 A hr=62 trust=2 zone=2 pct=62
+1788492804 A hr=65 trust=1 zone=2 pct=65
+1788492834 A hr=70 trust=0 zone=2 pct=70
+1788492834 untrusted
+1788492864 A hr=77 trust=1 zone=3 pct=77
+1788492892 cease hr=114 pct=114 active=889 -> armed
+1788492893 P hr=114 trust=2 zone=5 pct=114
+1788492894 P hr=113 trust=2 zone=5 pct=113
+1788492895 P hr=113 trust=2 zone=5 pct=113
+1788492896 P hr=113 trust=1 zone=5 pct=113
+1788492897 P hr=114 trust=1 zone=5 pct=114
+1788492898 P hr=114 trust=1 zone=5 pct=114
+1788492899 P hr=114 trust=1 zone=5 pct=114
+1788492900 P hr=111 trust=1 zone=5 pct=111
+1788492901 P hr=104 trust=2 zone=5 pct=104
+1788492902 P hr=102 trust=2 zone=5 pct=102
+1788492903 P hr=104 trust=2 zone=5 pct=104
+1788492904 P hr=104 trust=2 zone=5 pct=104
+1788492905 P hr=104 trust=2 zone=5 pct=104
+1788492906 P hr=104 trust=2 zone=5 pct=104
+1788492907 P hr=104 trust=1 zone=5 pct=104
+1788492908 P hr=103 trust=1 zone=5 pct=103
+1788492909 P hr=98 trust=1 zone=5 pct=98
+1788492910 P hr=98 trust=1 zone=5 pct=98
+1788492911 P hr=97 trust=2 zone=5 pct=97
+1788492912 P hr=95 trust=3 zone=5 pct=95
+1788492913 P hr=94 trust=3 zone=5 pct=94
+1788492914 P hr=89 trust=3 zone=5 pct=89
+1788492915 P hr=89 trust=3 zone=4 pct=89
+1788492916 P hr=89 trust=1 zone=4 pct=89
+1788492917 P hr=86 trust=3 zone=4 pct=86
+1788492918 P hr=86 trust=2 zone=4 pct=86
+1788492919 P hr=85 trust=2 zone=4 pct=85
+1788492920 P hr=84 trust=2 zone=4 pct=84
+1788492921 P hr=84 trust=2 zone=4 pct=84
+1788492922 P hr=84 trust=1 zone=4 pct=84
+1788492923 P hr=81 trust=2 zone=4 pct=81
+1788492924 P hr=81 trust=2 zone=4 pct=81
+1788492925 P hr=81 trust=3 zone=4 pct=81
+1788492926 P hr=80 trust=3 zone=4 pct=80
+1788492927 P hr=80 trust=3 zone=4 pct=80
+1788492928 P hr=80 trust=3 zone=4 pct=80
+1788492929 P hr=79 trust=3 zone=4 pct=79
+1788492930 P hr=79 trust=3 zone=3 pct=79
+1788492931 P hr=79 trust=3 zone=3 pct=79
+1788492932 P hr=78 trust=3 zone=3 pct=78
+1788492933 P hr=78 trust=3 zone=3 pct=78
+1788492934 P hr=79 trust=3 zone=3 pct=79
+1788492935 P hr=78 trust=2 zone=3 pct=78
+1788492936 P hr=77 trust=1 zone=3 pct=77
+1788492937 P hr=75 trust=2 zone=3 pct=75
+1788492938 P hr=72 trust=3 zone=3 pct=72
+1788492939 P hr=72 trust=3 zone=3 pct=72
+1788492940 P hr=71 trust=3 zone=3 pct=71
+1788492941 P hr=69 trust=3 zone=3 pct=69
+1788492942 P hr=66 trust=3 zone=2 pct=66
+1788492943 P hr=67 trust=3 zone=2 pct=67
+1788492944 P hr=65 trust=3 zone=2 pct=65
+1788492945 P hr=65 trust=3 zone=2 pct=65
+1788492946 P hr=65 trust=3 zone=2 pct=65
+1788492947 P hr=64 trust=2 zone=2 pct=64
+1788492948 P hr=64 trust=2 zone=2 pct=64
+1788492949 P hr=63 trust=2 zone=2 pct=63
+1788492950 P hr=63 trust=3 zone=2 pct=63
+1788492951 P hr=64 trust=3 zone=2 pct=64
+1788492952 P hr=64 trust=3 zone=2 pct=64
+1788492953 P hr=64 trust=2 zone=2 pct=64
+1788492953 recovery hr0=114 hr_end=64 drop=50 window=60 trusted=61 pct=114 src=1 curve=114,104,94,81,78,67,64
+1788492954 P hr=63 trust=1 zone=2 pct=63
+1788492955 P hr=63 trust=1 zone=2 pct=63
+1788492956 P hr=60 trust=1 zone=2 pct=60
+1788492957 P hr=59 trust=2 zone=2 pct=59
+1788492958 P hr=59 trust=2 zone=1 pct=59
+1788492959 P hr=60 trust=2 zone=1 pct=60
+1788492960 P hr=62 trust=2 zone=2 pct=62
+1788492961 P hr=62 trust=2 zone=2 pct=62
+1788492962 P hr=61 trust=1 zone=2 pct=61
+1788492963 P hr=61 trust=1 zone=2 pct=61
+1788492964 P hr=61 trust=1 zone=2 pct=61
+1788492965 P hr=61 trust=1 zone=2 pct=61
+1788492966 P hr=60 trust=1 zone=2 pct=60
+1788492967 P hr=61 trust=1 zone=2 pct=61
+1788492967 session status=0 recoveries=2 dropped=1 active=889 hr_avg=69 work_kj=0 trimp=37
+1788492967 stop saved=1 discard=0
+1788494926 start version=0.8.0-14-165ab48 max_hr=100 zones=5 weight=90
+1788494927 A hr=0 trust=0 zone=0 pct=0
+1788494927 untrusted
+1788494957 A hr=92 trust=1 zone=5 pct=92
+1788494987 A hr=73 trust=2 zone=3 pct=73
+1788495017 A hr=68 trust=3 zone=2 pct=68
+1788495047 A hr=77 trust=1 zone=3 pct=77
+1788495077 A hr=83 trust=0 zone=4 pct=83
+1788495077 untrusted
+1788495107 A hr=69 trust=1 zone=3 pct=69
+1788495137 A hr=62 trust=3 zone=2 pct=62
+1788495167 A hr=63 trust=3 zone=2 pct=63
+1788495197 A hr=67 trust=2 zone=2 pct=67
+1788495227 A hr=64 trust=2 zone=2 pct=64
+1788495257 A hr=64 trust=1 zone=2 pct=64
+1788495287 A hr=59 trust=2 zone=1 pct=59
+1788495317 A hr=65 trust=2 zone=2 pct=65
+1788495347 A hr=64 trust=2 zone=2 pct=64
+1788495377 A hr=66 trust=1 zone=2 pct=66
+1788495407 A hr=60 trust=1 zone=1 pct=60
+1788495437 A hr=60 trust=2 zone=2 pct=60
+1788495467 A hr=62 trust=2 zone=2 pct=62
+1788495497 A hr=64 trust=3 zone=2 pct=64
+1788495527 A hr=68 trust=2 zone=2 pct=68
+1788495557 A hr=62 trust=3 zone=2 pct=62
+1788495587 A hr=76 trust=3 zone=3 pct=76
+1788495600 cease hr=66 pct=66 active=673 -> armed
+1788495601 P hr=67 trust=2 zone=2 pct=67
+1788495601 discard too_easy hr=67 pct=67
+1788495602 P hr=67 trust=1 zone=2 pct=67
+1788495603 P hr=67 trust=2 zone=2 pct=67
+1788495603 stop saved=0 discard=1

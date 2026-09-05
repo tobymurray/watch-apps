@@ -217,6 +217,11 @@ pub struct Frame {
     pub work_kj: u16,
     /// kJ the calorie model suggests; 0 = draw no reference.
     pub work_estimate_kj: u16,
+    /// Active seconds of the lap just closed; 0 = draw no split. The Service
+    /// decides how long it stays non-zero, so this side owns no clock.
+    pub last_lap_s: u16,
+    /// Which lap `last_lap_s` belongs to; laps closed so far.
+    pub lap_number: u16,
     pub screen: u8,
     pub strap: u8,
     pub hr_source: u8,
@@ -248,6 +253,8 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(Frame, energy));
     let h = fnv1a(h, core::mem::offset_of!(Frame, work_kj));
     let h = fnv1a(h, core::mem::offset_of!(Frame, work_estimate_kj));
+    let h = fnv1a(h, core::mem::offset_of!(Frame, last_lap_s));
+    let h = fnv1a(h, core::mem::offset_of!(Frame, lap_number));
     let h = fnv1a(h, core::mem::offset_of!(Frame, screen));
     let h = fnv1a(h, core::mem::offset_of!(Frame, strap));
     let h = fnv1a(h, core::mem::offset_of!(Frame, hr_source));
@@ -265,7 +272,7 @@ pub extern "C" fn spin_gui_abi_fingerprint() -> u32 {
     abi_fingerprint()
 }
 
-const _: () = assert!(core::mem::size_of::<Frame>() == 28);
+const _: () = assert!(core::mem::size_of::<Frame>() == 32);
 const _: () = assert!(core::mem::align_of::<Frame>() == 4);
 const _: () = assert!(core::mem::offset_of!(Frame, elapsed_s) == 0);
 const _: () = assert!(core::mem::offset_of!(Frame, hr_bpm) == 4);
@@ -274,16 +281,18 @@ const _: () = assert!(core::mem::offset_of!(Frame, target_minutes) == 8);
 const _: () = assert!(core::mem::offset_of!(Frame, energy) == 10);
 const _: () = assert!(core::mem::offset_of!(Frame, work_kj) == 12);
 const _: () = assert!(core::mem::offset_of!(Frame, work_estimate_kj) == 14);
-const _: () = assert!(core::mem::offset_of!(Frame, screen) == 16);
-const _: () = assert!(core::mem::offset_of!(Frame, strap) == 17);
-const _: () = assert!(core::mem::offset_of!(Frame, hr_source) == 18);
-const _: () = assert!(core::mem::offset_of!(Frame, saved_ok) == 19);
-const _: () = assert!(core::mem::offset_of!(Frame, target_reached) == 20);
-const _: () = assert!(core::mem::offset_of!(Frame, hr_zone) == 21);
-const _: () = assert!(core::mem::offset_of!(Frame, zone_count) == 22);
-const _: () = assert!(core::mem::offset_of!(Frame, has_zones) == 23);
-const _: () = assert!(core::mem::offset_of!(Frame, energy_is_kj) == 24);
-const _: () = assert!(core::mem::offset_of!(Frame, hr_zone_fraction) == 25);
+const _: () = assert!(core::mem::offset_of!(Frame, last_lap_s) == 16);
+const _: () = assert!(core::mem::offset_of!(Frame, lap_number) == 18);
+const _: () = assert!(core::mem::offset_of!(Frame, screen) == 20);
+const _: () = assert!(core::mem::offset_of!(Frame, strap) == 21);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_source) == 22);
+const _: () = assert!(core::mem::offset_of!(Frame, saved_ok) == 23);
+const _: () = assert!(core::mem::offset_of!(Frame, target_reached) == 24);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_zone) == 25);
+const _: () = assert!(core::mem::offset_of!(Frame, zone_count) == 26);
+const _: () = assert!(core::mem::offset_of!(Frame, has_zones) == 27);
+const _: () = assert!(core::mem::offset_of!(Frame, energy_is_kj) == 28);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_zone_fraction) == 29);
 
 // -- Geometry ----------------------------------------------------------------
 
@@ -351,7 +360,7 @@ fn draw_button_hint(fb: &mut FrameBuf, deg: f32, text: &str, color: Abgr2222) {
     let label = label_face();
     let (x, align, ty) = hint_anchor(deg);
     // Lifted half a line so the word straddles the mark.
-    draw_text(fb, &label, text, x, ty - 6, align, color);
+    draw_text(fb, label, text, x, ty - 6, align, color);
 }
 
 /// A hint in the answer face. Only the discard screen uses it.
@@ -359,7 +368,7 @@ fn draw_button_answer(fb: &mut FrameBuf, deg: f32, text: &str, color: Abgr2222) 
     draw_button_tick(fb, deg, color);
     let answer = bold_face(ANSWER_H);
     let (x, align, ty) = hint_anchor(deg);
-    draw_text(fb, &answer, text, x, ty - 9, align, color);
+    draw_text(fb, answer, text, x, ty - 9, align, color);
 }
 
 const CLOCK_Y: i32 = 70;
@@ -558,11 +567,11 @@ fn draw_ready(fb: &mut FrameBuf, frame: &Frame) {
     let has_target = frame.target_minutes > 0;
     let top = if has_target { 70 } else { 84 };
 
-    draw_centered(fb, &title, "SPIN", top, WHITE);
+    draw_centered(fb, title, "SPIN", top, WHITE);
 
     // A rule the width of the word, so the strap line does not read as a
     // subtitle of the app name.
-    let w = text_width(&title, "SPIN") as i32;
+    let w = text_width(title, "SPIN") as i32;
     fill_rect(fb, CENTER_X - w / 2, top + 38, w, 2, DIM);
 
     draw_zone_ring(fb, 0, frame.zone_count, frame.has_zones != 0);
@@ -571,14 +580,14 @@ fn draw_ready(fb: &mut FrameBuf, frame: &Frame) {
     let connected = frame.strap == STRAP_CONNECTED;
     let heart = if connected { RED } else { DIM };
     let text = strap_text(frame.strap);
-    let text_w = text_width(&label, text) as i32;
+    let text_w = text_width(label, text) as i32;
     let group_w = HEART_W + HEART_GAP + text_w;
     let left = CENTER_X - group_w / 2;
 
     draw_heart(fb, left, top + 54, heart);
     draw_text(
         fb,
-        &label,
+        label,
         text,
         left + HEART_W + HEART_GAP,
         top + 52,
@@ -592,14 +601,14 @@ fn draw_ready(fb: &mut FrameBuf, frame: &Frame) {
         let y = top + 78;
         let mut buf = [0u8; 12];
         let minutes = u32_to_str(frame.target_minutes as u32, &mut buf);
-        let label_w = text_width(&label, "TARGET") as i32;
-        let value_w = text_width(&label, minutes) as i32;
-        let unit_w = text_width(&label, "MIN") as i32;
+        let label_w = text_width(label, "TARGET") as i32;
+        let value_w = text_width(label, minutes) as i32;
+        let unit_w = text_width(label, "MIN") as i32;
         let left = CENTER_X - (label_w + WORD_GAP + value_w + WORD_GAP + unit_w) / 2;
         let value_x = left + label_w + WORD_GAP;
-        draw_text(fb, &label, "TARGET", left, y, Align::Left, DIM);
-        draw_text(fb, &label, minutes, value_x, y, Align::Left, WHITE);
-        draw_text(fb, &label, "MIN", value_x + value_w + WORD_GAP, y,
+        draw_text(fb, label, "TARGET", left, y, Align::Left, DIM);
+        draw_text(fb, label, minutes, value_x, y, Align::Left, WHITE);
+        draw_text(fb, label, "MIN", value_x + value_w + WORD_GAP, y,
                   Align::Left, DIM);
     }
 
@@ -607,17 +616,40 @@ fn draw_ready(fb: &mut FrameBuf, frame: &Frame) {
     draw_button_hint(fb, BUTTON_R2_DEG, "EXIT", DIM);
 }
 
+/// The lap just closed: its number dim, its time bright, in the banner slot.
+///
+/// The time is formatted by the same `format_duration` the ride clock uses, so
+/// a split and the clock above it can never disagree about what 1:04 means.
+fn draw_lap_split(fb: &mut FrameBuf, number: u16, seconds: u16, y: i32) {
+    let label = label_face();
+    let mut num_buf = [0u8; 12];
+    let mut time_buf = [0u8; 12];
+    let number_text = u32_to_str(number as u32, &mut num_buf);
+    let time_text = format_duration(seconds as u32, &mut time_buf);
+
+    let lap_w = text_width(label, "LAP") as i32;
+    let number_w = text_width(label, number_text) as i32;
+    let time_w = text_width(label, time_text) as i32;
+    let left = CENTER_X - (lap_w + WORD_GAP + number_w + WORD_GAP + time_w) / 2;
+    let number_x = left + lap_w + WORD_GAP;
+
+    draw_text(fb, label, "LAP", left, y, Align::Left, DIM);
+    draw_text(fb, label, number_text, number_x, y, Align::Left, DIM);
+    draw_text(fb, label, time_text, number_x + number_w + WORD_GAP, y,
+              Align::Left, WHITE);
+}
+
 /// Draws the clock at the largest face that fits, returning the height it used.
 fn render_clock(fb: &mut FrameBuf, text: &str, y: i32, color: Abgr2222) -> i32 {
     for h in [CLOCK_XL_H, CLOCK_L_H] {
         let face = number_face(h);
-        if text_width(&face, text) <= CLOCK_MAX_W {
-            draw_centered(fb, &face, text, y, color);
+        if text_width(face, text) <= CLOCK_MAX_W {
+            draw_centered(fb, face, text, y, color);
             return h;
         }
     }
     let face = number_face(CLOCK_M_H);
-    draw_centered(fb, &face, text, y, color);
+    draw_centered(fb, face, text, y, color);
     CLOCK_M_H
 }
 
@@ -631,13 +663,16 @@ fn draw_riding(fb: &mut FrameBuf, frame: &Frame) {
     // from a running one without reading the banner.
     render_clock(fb, text, CLOCK_Y, if paused { DIM } else { WHITE });
 
-    // One slot, two things that can want it. Paused wins: it is the state the
-    // wearer can act on, and the target having been met stays true for the rest
-    // of the ride while a pause is the thing happening right now.
+    // One slot, three things that can want it, ordered by how long each stays
+    // true. Paused wins: it is the state the wearer can act on. A split is the
+    // thing that just happened and is gone in seconds, where the target having
+    // been met stays true for the rest of the ride.
     if paused {
-        draw_centered(fb, &label, "PAUSED", PAUSED_BANNER_Y, AMBER);
+        draw_centered(fb, label, "PAUSED", PAUSED_BANNER_Y, AMBER);
+    } else if frame.last_lap_s > 0 {
+        draw_lap_split(fb, frame.lap_number, frame.last_lap_s, PAUSED_BANNER_Y);
     } else if frame.target_reached != 0 {
-        draw_centered(fb, &label, "TARGET MET", PAUSED_BANNER_Y, WHITE);
+        draw_centered(fb, label, "TARGET MET", PAUSED_BANNER_Y, WHITE);
     }
 
     draw_hr_row(fb, frame.hr_bpm, frame.hr_source, HR_ROW_Y);
@@ -838,11 +873,11 @@ fn draw_hr_row(fb: &mut FrameBuf, bpm: u16, hr_source: u8, y: i32) {
     };
 
     let number_w = if has_beat {
-        text_width(&number, text) as i32
+        text_width(number, text) as i32
     } else {
-        text_width(&label, text) as i32
+        text_width(label, text) as i32
     };
-    let unit_w = text_width(&label, "BPM") as i32;
+    let unit_w = text_width(label, "BPM") as i32;
     let group_w = HEART_W + HEART_GAP + number_w + WORD_GAP + unit_w;
     let left = CENTER_X - group_w / 2;
 
@@ -850,13 +885,13 @@ fn draw_hr_row(fb: &mut FrameBuf, bpm: u16, hr_source: u8, y: i32) {
 
     let text_x = left + HEART_W + HEART_GAP;
     if has_beat {
-        draw_text(fb, &number, text, text_x, y - 2, Align::Left, WHITE);
+        draw_text(fb, number, text, text_x, y - 2, Align::Left, WHITE);
     } else {
-        draw_text(fb, &label, text, text_x, y + 4, Align::Left, DIM);
+        draw_text(fb, label, text, text_x, y + 4, Align::Left, DIM);
     }
     draw_text(
         fb,
-        &label,
+        label,
         "BPM",
         text_x + number_w + WORD_GAP,
         y + 8,
@@ -874,7 +909,7 @@ fn draw_saved(fb: &mut FrameBuf, frame: &Frame) {
     let ok = frame.saved_ok != 0;
     draw_centered(
         fb,
-        &heading,
+        heading,
         if ok { "SAVED" } else { "NOT SAVED" },
         HEADING_Y,
         if ok { WHITE } else { AMBER },
@@ -888,9 +923,9 @@ fn draw_saved(fb: &mut FrameBuf, frame: &Frame) {
     if frame.avg_hr_bpm > 0 {
         let mut hr_buf = [0u8; 12];
         let hr = u32_to_str(frame.avg_hr_bpm as u32, &mut hr_buf);
-        draw_value_row(fb, &label, "AVG", hr, "BPM", 132, WHITE);
+        draw_value_row(fb, label, "AVG", hr, "BPM", 132, WHITE);
     } else {
-        draw_centered(fb, &label, "NO HEART RATE", 132, DIM);
+        draw_centered(fb, label, "NO HEART RATE", 132, DIM);
     }
 
     // Always drawn: 0 is a real answer for a very short ride, and an absent row
@@ -898,7 +933,7 @@ fn draw_saved(fb: &mut FrameBuf, frame: &Frame) {
     let mut energy_buf = [0u8; 12];
     let energy = u32_to_str(frame.energy as u32, &mut energy_buf);
     let unit = if frame.energy_is_kj != 0 { "KJ" } else { "KCAL" };
-    draw_value_row(fb, &label, "", energy, unit, 156, WHITE);
+    draw_value_row(fb, label, "", energy, unit, 156, WHITE);
 
     draw_button_hint(fb, BUTTON_R2_DEG, "DONE", WHITE);
 }
@@ -945,8 +980,8 @@ fn draw_confirm_discard(fb: &mut FrameBuf) {
     // Unbroken, so it cannot be mistaken for the zone dial at a glance.
     fill_arc(fb, RING_INNER_OFF, RING_OUTER, 0.0, 360.0, RED);
 
-    draw_centered(fb, &heading, "DISCARD", 92, WHITE);
-    draw_centered(fb, &label, "THIS RIDE?", 122, DIM);
+    draw_centered(fb, heading, "DISCARD", 92, WHITE);
+    draw_centered(fb, label, "THIS RIDE?", 122, DIM);
 
     draw_button_answer(fb, BUTTON_R1_DEG, "YES", RED);
     draw_button_answer(fb, BUTTON_R2_DEG, "NO", WHITE);
@@ -973,16 +1008,16 @@ fn draw_enter_work(fb: &mut FrameBuf, frame: &Frame) {
 
     // Named for where the number comes from, so it cannot be confused with the
     // app's own calorie figure.
-    draw_centered(fb, &heading, "BIKE KJ", ENTER_WORK_HEADING_Y, WHITE);
+    draw_centered(fb, heading, "BIKE KJ", ENTER_WORK_HEADING_Y, WHITE);
 
     let mut buf = [0u8; 12];
     let value = u32_to_str(frame.work_kj as u32, &mut buf);
-    draw_centered(fb, &value_font, value, ENTER_WORK_VALUE_Y, WHITE);
+    draw_centered(fb, value_font, value, ENTER_WORK_VALUE_Y, WHITE);
 
     if frame.work_estimate_kj > 0 {
         let mut est_buf = [0u8; 12];
         let est = u32_to_str(frame.work_estimate_kj as u32, &mut est_buf);
-        draw_value_row(fb, &label, "ESTIMATE", est, "KJ", ENTER_WORK_ESTIMATE_Y, DIM);
+        draw_value_row(fb, label, "ESTIMATE", est, "KJ", ENTER_WORK_ESTIMATE_Y, DIM);
     }
 
     let mut hundreds_buf = [0u8; 12];
@@ -1000,8 +1035,8 @@ fn draw_discarded(fb: &mut FrameBuf) {
     let heading = bold_face(HEADING_H);
     let label = label_face();
 
-    draw_centered(fb, &heading, "DISCARDED", 96, AMBER);
-    draw_centered(fb, &label, "NOTHING WAS SAVED", 126, DIM);
+    draw_centered(fb, heading, "DISCARDED", 96, AMBER);
+    draw_centered(fb, label, "NOTHING WAS SAVED", 126, DIM);
     draw_button_hint(fb, BUTTON_R2_DEG, "DONE", WHITE);
 }
 
@@ -1103,10 +1138,10 @@ mod tests {
             let text = format_duration(seconds, &mut buf);
             let chosen = heights
                 .iter()
-                .find(|h| text_width(&number_face(**h), text) <= CLOCK_MAX_W)
+                .find(|h| text_width(number_face(**h), text) <= CLOCK_MAX_W)
                 .unwrap_or(&CLOCK_M_H);
             assert!(
-                text_width(&number_face(*chosen), text) <= CLOCK_MAX_W,
+                text_width(number_face(*chosen), text) <= CLOCK_MAX_W,
                 "{text} does not fit even at the smallest height"
             );
         }
@@ -1202,6 +1237,71 @@ mod tests {
 
     fn banner_rows(buf: &[u8]) -> Vec<u8> {
         rows(buf, PAUSED_BANNER_Y as u32, PAUSED_BANNER_Y as u32 + 16)
+    }
+
+    /// The C++ half computes this from `spin_gui.h` with the same walk; a
+    /// disagreement is what `Gui::run()` refuses to start on, so pinning the
+    /// value here catches a one-sided edit before the watch does.
+    #[test]
+    fn the_abi_fingerprint_is_the_one_the_header_computes() {
+        assert_eq!(spin_gui_abi_fingerprint(), 332_628_000);
+    }
+
+    #[test]
+    fn a_split_is_drawn_only_while_the_service_says_so() {
+        // 0 is the whole signal: the Service zeroes it once the split is stale,
+        // and a lap of no seconds is never saved, so 0 cannot be a real one.
+        let mut none = frame(SCREEN_RIDING);
+        none.elapsed_s = 645;
+        let mut showing = none;
+        showing.lap_number = 3;
+        showing.last_lap_s = 64;
+
+        assert_ne!(banner_rows(&draw(&none)), banner_rows(&draw(&showing)));
+
+        // The lap number alone changes nothing: `last_lap_s` is the switch.
+        let mut numbered_only = none;
+        numbered_only.lap_number = 3;
+        assert_eq!(banner_rows(&draw(&none)), banner_rows(&draw(&numbered_only)));
+    }
+
+    #[test]
+    fn a_split_outranks_the_target_and_a_pause_outranks_both() {
+        // Ordered by how long each stays true: a split is gone in seconds, the
+        // target stays met for the rest of the ride, and a pause is the state
+        // the wearer can act on.
+        let mut met = frame(SCREEN_RIDING);
+        met.elapsed_s = 2700;
+        met.target_minutes = 45;
+        met.target_reached = 1;
+
+        let split = Frame { lap_number: 6, last_lap_s: 183, ..met };
+        let paused = Frame { screen: SCREEN_PAUSED, ..split };
+
+        assert_ne!(banner_rows(&draw(&met)), banner_rows(&draw(&split)),
+                   "the split has to displace TARGET MET");
+
+        // Paused says the same thing whether or not a split was pending.
+        let paused_plain = Frame { lap_number: 0, last_lap_s: 0, ..paused };
+        assert_eq!(banner_rows(&draw(&paused)), banner_rows(&draw(&paused_plain)));
+    }
+
+    #[test]
+    fn a_split_reads_as_the_clock_does() {
+        // Same formatter as the ride clock, so 64 seconds is 1:04 in both and
+        // the two can never disagree about what a number means.
+        let mut a = frame(SCREEN_RIDING);
+        a.elapsed_s = 645;
+        a.lap_number = 3;
+        a.last_lap_s = 64;
+
+        let mut b = a;
+        b.last_lap_s = 65;
+        assert_ne!(banner_rows(&draw(&a)), banner_rows(&draw(&b)),
+                   "a second has to be visible in the split");
+
+        let mut buf = [0u8; 12];
+        assert_eq!(format_duration(64, &mut buf), "1:04");
     }
 
     #[test]
@@ -1465,7 +1565,7 @@ mod tests {
     #[test]
     fn the_discard_answers_are_bolder_than_an_ordinary_hint() {
         // They are the one place a misread costs the wearer their ride.
-        assert!(text_width(&bold_face(ANSWER_H), "YES") > text_width(&label_face(), "YES"),
+        assert!(text_width(bold_face(ANSWER_H), "YES") > text_width(label_face(), "YES"),
                 "the answers should be drawn larger than an ordinary label");
 
         // Part-covered RED appears nowhere else on this screen -- the ring and

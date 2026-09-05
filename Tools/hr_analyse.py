@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Measure the HEART_RATE_EX stream from the pulled squash recordings.
 
-Answers, from this repository's own data, the four things TrainKit's gates
+Answers, from this repository's own data, the four things the recovery gates
 currently assume from other people's protocols:
   - the sample interval, and whether a 1 Hz consumer ever sees a gap
   - how often the kernel reports an untrusted reading, and in what run lengths

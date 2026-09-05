@@ -429,7 +429,7 @@ mod tests {
             let mut c = Canvas::rect(&mut buf, W, H);
             let m = SEMIBOLD_20_ASCII.draw(&mut c, text, x, 120, align, WHITE);
             let first_lit_col = (0..240).find(|&x| (0..240).any(|y| buf[(y * 240 + x) as usize] != 0)).unwrap();
-            assert_eq!(first_lit_col as i32, expected_left_pen + m.ink_left, "{align:?}");
+            assert_eq!(first_lit_col, expected_left_pen + m.ink_left, "{align:?}");
         }
     }
 
@@ -517,7 +517,7 @@ mod tests {
         let mut buf = vec![0u8; (W * H) as usize];
         let mut c = Canvas::rect(&mut buf, W, H);
         SEMIBOLD_20_ASCII.draw_top(&mut c, "H", 20, 50, Align::Left, WHITE);
-        let first_row = (0..240).find(|&y| (0..240).any(|x| buf[(y * 240 + x) as usize] != 0)).unwrap();
+        let first_row = (0..240).find(|&y| (0..240).any(|x| buf[y * 240 + x] != 0)).unwrap();
         assert!(first_row >= 50 && first_row < 50 + SEMIBOLD_20_ASCII.ascent as usize);
     }
 }

@@ -23,6 +23,44 @@
 
 namespace ZoneLadder {
 
+/// Split the watch's own threshold list into zone floors and the maximum.
+///
+/// FIRMWARE: `heartRateCount` counts zones rather than thresholds -- the SDK
+/// header's own "4 thresholds = 5 zones" -- so the list holds one fewer value
+/// than that, and the last of those is 100% of maximum rather than a floor
+/// anyone could be in. Measured on this watch: six thresholds in settings.json
+/// came back as six floors and a maximum of 0, which is what
+/// `heartRateTh[heartRateCount - 1]` reads only if that index is 6.
+/// Falsified by a recovery.log start line reporting max_hr=0 beside a
+/// non-empty ladder.
+///
+/// @param sent   how many thresholds @p thresholds has room for, since a count
+///               this side does not trust cannot be allowed to read past it.
+/// @param maxHr  set to the top threshold, and left alone when there is none.
+/// @return how many floors were written to @p out.
+inline uint8_t fromWatch(const uint8_t *thresholds, size_t sent, uint8_t zoneCount,
+                         uint8_t *out, size_t capacity, uint8_t &maxHr)
+{
+    if (thresholds == nullptr || out == nullptr || zoneCount < 2 || sent == 0) {
+        return 0;
+    }
+
+    size_t present = static_cast<size_t>(zoneCount) - 1;
+    if (present > sent) {
+        present = sent;
+    }
+    maxHr = thresholds[present - 1];
+
+    size_t floorCount = present - 1;
+    if (floorCount > capacity) {
+        floorCount = capacity;
+    }
+    for (size_t i = 0; i < floorCount; ++i) {
+        out[i] = thresholds[i];
+    }
+    return static_cast<uint8_t>(floorCount);
+}
+
 /// Fill @p out with @p count floors spread over [maxHr/2, maxHr].
 /// @return false, leaving @p out untouched, when there is nothing to spread.
 inline bool floors(uint8_t maxHr, uint8_t count, uint8_t *out, size_t capacity)

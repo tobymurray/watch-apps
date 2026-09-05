@@ -23,12 +23,54 @@ namespace {
 /// ride to record and staying resident only costs battery.
 constexpr uint32_t kGuiInitTimeoutSec = 5;
 
+// The shared log's fields are narrower than the Service's own, so all three of
+// these saturate rather than wrapping: an 18-hour ride would otherwise record
+// as a short one.
+
+uint16_t clampU16(float v)
+{
+    if (v <= 0.0f) { return 0; }
+    return (v >= 65535.0f) ? 65535u : static_cast<uint16_t>(v + 0.5f);
+}
+
+uint16_t clampSeconds(std::time_t s)
+{
+    if (s <= 0) { return 0; }
+    return (s >= 65535) ? 65535u : static_cast<uint16_t>(s);
+}
+
+uint8_t clampU8(float v)
+{
+    if (v <= 0.0f) { return 0; }
+    return (v >= 255.0f) ? 255u : static_cast<uint8_t>(v + 0.5f);
+}
+
+/// A heart rate as a percentage of the watch's maximum, for the diagnostic log
+/// only; 0 when the watch has no maximum.
+unsigned pctOfMax(float bpm, uint8_t maxHr)
+{
+    if (maxHr == 0 || bpm <= 0.0f) {
+        return 0;
+    }
+    return static_cast<unsigned>(bpm * 100.0f / static_cast<float>(maxHr) + 0.5f);
+}
+
 } // namespace
+
+extern "C" void spin_engine_host_panic(const uint8_t* msg, uint32_t len)
+{
+    // Named so a hung Service is traceable to the crate. Everything the engine
+    // does runs after the .fit is closed, so the ride itself is already safe.
+    LOG_ERROR("Engine panic: %.*s\n", static_cast<int>(len),
+              reinterpret_cast<const char*>(msg));
+}
 
 Service::Service(SDK::Kernel &kernel)
     : mKernel(kernel)
     , mGuiSender(kernel)
     , mActivityWriter(mKernel, "Activity")
+    , mSharedLog(mKernel.fs, skLogApp, skLogSport)
+    , mEventLog(mKernel.fs, skEventLogFile)
     , mSensorHr(SDK::Sensor::Type::HEART_RATE_EX, skSamplePeriod, skSampleLatency)
     , mSensorWristMotion(SDK::Sensor::Type::WRIST_MOTION)
     , mTimeTracker(kernel.sys)
@@ -45,6 +87,15 @@ Service::~Service()
 void Service::run()
 {
     LOG_INFO("Started\n");
+
+    // A stale libspin_engine.a against a changed struct is silent until it
+    // writes a file whose numbers are in the wrong fields -- and that file is
+    // one another app reads. Both sides walk their own offsets, so a drift on
+    // either is caught here rather than in the file.
+    if (spin_engine_abi_fingerprint() != spin_abi::fingerprint()) {
+        LOG_ERROR("Engine ABI mismatch; refusing to start\n");
+        return;
+    }
 
     mTimeTracker.init();
 
@@ -251,24 +302,13 @@ void Service::loadSystemSettings()
         mWeightKg = msg->weightKg;
     }
 
-    // FIRMWARE: the watch reports N thresholds as the boundaries of N-1 zones,
-    // its ladder being 50/60/70/80/90/100% of maximum -- so the last is the
-    // maximum, not a floor. Dropping it turns the list into floors.
-    uint8_t count = msg->heartRateCount;
-    if (count > 0) {
-        mSystemMaxHr = msg->heartRateTh[count - 1];
-        --count;
-    }
-    if (count > skMaxZones) {
-        count = skMaxZones;
-    }
-    for (uint8_t i = 0; i < count; ++i) {
-        mSystemZoneFloor[i] = msg->heartRateTh[i];
-    }
-    mSystemZoneCount = count;
+    mSystemZoneCount = ZoneLadder::fromWatch(
+        msg->heartRateTh, SDK::Message::RequestSystemSettings::skMaxHearRateTh,
+        msg->heartRateCount, mSystemZoneFloor, skMaxZones, mSystemMaxHr);
 
-    LOG_INFO("System: %.1f kg, %u zone floors from the watch\n",
-             static_cast<double>(mWeightKg), static_cast<unsigned>(mSystemZoneCount));
+    LOG_INFO("System: %.1f kg, %u zone floors and a %u bpm maximum from the watch\n",
+             static_cast<double>(mWeightKg), static_cast<unsigned>(mSystemZoneCount),
+             static_cast<unsigned>(mSystemMaxHr));
 }
 
 void Service::applyZoneConfig()
@@ -469,6 +509,24 @@ void Service::startTrack(std::time_t utc)
     }
     mSessionNotEmpty = false;
 
+    // The watch's own maximum, which is what every measurement's intensity is
+    // recorded against. 0 means it has none, and the engine measures nothing.
+    spin_engine_start(mSystemMaxHr);
+    mRecoveryCount     = 0;
+    mRecoveriesDropped = 0;
+
+    mEventLog.open();
+    mLastActiveLogUtc = 0;
+    // The build first. A stale .uapp left beside a new one keeps the old one
+    // booting and nothing says so, so an app that cannot name its own build
+    // cannot be debugged over USB -- see Docs/INSTALLING.md.
+    mEventLog.line("%u start version=%s max_hr=%u zones=%u weight=%u",
+                   static_cast<uint32_t>(utc), BUILD_VERSION,
+                   static_cast<unsigned>(mSystemMaxHr),
+                   static_cast<unsigned>(mZoneCount),
+                   static_cast<unsigned>(mWeightKg + 0.5f));
+    mEventLog.sync();
+
     connectSensors();
 
     ActivityWriter::AppInfo info{};
@@ -503,6 +561,41 @@ void Service::processTrack()
     mTrackData.avgHR    = mHrCounter.getAverage();
     mTrackData.maxHR    = mHrCounter.getMaximum();
 
+    // The measured reading and the strict gate, not the held one: a recovery
+    // measurement is a measurement, and a held second is a display convenience.
+    // Fed while PAUSED as well as ACTIVE, which is the whole reason a pause is
+    // a window at all -- see EffortKit/src/window.rs.
+    // The kernel's own 0-3 confidence, passed through rather than collapsed to
+    // a yes/no: the calibration decides how far the sensor is believed, and
+    // `trusted_s` then counts seconds that met that floor rather than seconds
+    // this Service called trusted. Zero when the reading itself is out of
+    // range, which is not a question about confidence.
+    const bool sane = mHrCounter.getCurrent() > skHrMinValid &&
+                      mTrackData.hrTrustLevel <= skHrTrustMax;
+    const uint8_t hrTrust =
+        sane ? static_cast<uint8_t>(mTrackData.hrTrustLevel) : 0u;
+
+    const uint8_t step = spin_engine_second(mTimeCounter.getCurrent(), mHrCounter.getCurrent(),
+        hrTrust, hrTrust > 0 ? mHrSource : SPIN_HR_SOURCE_NONE,
+        static_cast<uint32_t>(mTimeCounter.getValueActive()));
+    logSecond(mTimeCounter.getCurrent(), trusted);
+
+    if (step == SPIN_STEP_COMPLETED) {
+        SpinRecovery measurement{};
+        if (spin_engine_take(&measurement)) {
+            keepRecovery(measurement);
+        }
+    } else if (step == SPIN_STEP_DISCARDED) {
+        const uint8_t reason = spin_engine_last_discard();
+        LOG_INFO("Recovery discarded: reason %u\n", static_cast<unsigned>(reason));
+        mEventLog.line("%u discard %s hr=%.0f pct=%u",
+                       static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                       spin_engine_discard_name(reason),
+                       static_cast<double>(mHrCounter.getCurrent()),
+                       pctOfMax(mHrCounter.getCurrent(), mSystemMaxHr));
+        mEventLog.sync();
+    }
+
     updateHrDerivedMetrics();
 
     if (mTrackState == Track::State::ACTIVE) {
@@ -526,6 +619,12 @@ void Service::processTrack()
             notifyLapEnd();
         }
     }
+
+    // The split, while it is still worth showing. Decided here because the
+    // Service owns every derived fact and the GUI owns no timer; the lap clock
+    // resets with the lap, so it is already "seconds since the lap".
+    mTrackData.lastLapSeconds =
+        (mTimeCounter.getLapValueActive() < skLapSplitSeconds) ? mLastLapSeconds : 0;
 
     mGuiSender.trackData(mTrackData);
 }
@@ -560,6 +659,7 @@ void Service::saveLap()
 
     mActivityWriter.addLap(fitLap);
     mTrackData.lapNum++;
+    mLastLapSeconds = static_cast<uint16_t>(mTimeCounter.getLapValueActive());
 
     LOG_INFO("Lap %u saved: %u / %u s, HR %.0f / %.0f bpm\n",
              static_cast<unsigned>(mTrackData.lapNum),
@@ -610,12 +710,35 @@ void Service::pauseTrack(bool pause)
         mTimeCounter.pause();
         mHrCounter.pause();
         mActivityWriter.pause(mTimeCounter.getCurrent());
+        // The one moment effort has stopped and the sensor is still connected.
+        // It covers the end of a ride too, because the ride stays paused
+        // through the kilojoule screen until TRACK_STOP.
+        const uint8_t ceased =
+            spin_engine_cease();
+        const uint8_t why = spin_engine_last_discard();
+        mEventLog.line("%u cease hr=%.0f pct=%u active=%u -> %s",
+                       static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                       static_cast<double>(mHrCounter.getCurrent()),
+                       pctOfMax(mHrCounter.getCurrent(), mSystemMaxHr),
+                       static_cast<uint32_t>(mTimeCounter.getValueActive()),
+                       ceased == SPIN_STEP_DISCARDED
+                           ? spin_engine_discard_name(why) : "armed");
+        mEventLog.sync();
+        if (ceased == SPIN_STEP_DISCARDED) {
+            LOG_INFO("Recovery not attempted: reason %u\n", static_cast<unsigned>(why));
+        }
         mTrackState = Track::State::PAUSED;
         LOG_INFO("Ride paused. UTC: %u\n", static_cast<uint32_t>(mTimeCounter.getCurrent()));
     } else if (!pause && mTrackState == Track::State::PAUSED) {
         mTimeCounter.resume();
         mHrCounter.resume();
         mActivityWriter.resume(mTimeCounter.getCurrent());
+        if (spin_engine_resume() == SPIN_STEP_DISCARDED) {
+            mEventLog.line("%u resume -> %s",
+                           static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                           spin_engine_discard_name(
+                               spin_engine_last_discard()));
+        }
         mTrackState = Track::State::ACTIVE;
         LOG_INFO("Ride resumed. UTC: %u\n", static_cast<uint32_t>(mTimeCounter.getCurrent()));
     } else {
@@ -629,6 +752,14 @@ void Service::stopTrack(bool discard, uint16_t workKilojoules)
 {
     if (mTrackState == Track::State::INACTIVE) {
         return;
+    }
+
+    // Before anything else: the sensor goes at the end of this function, so a
+    // window still open here can never close.
+    if (spin_engine_end() == SPIN_STEP_DISCARDED) {
+        mEventLog.line("%u end -> %s", static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                       spin_engine_discard_name(
+                           spin_engine_last_discard()));
     }
 
     bool saved = false;
@@ -694,11 +825,138 @@ void Service::stopTrack(bool discard, uint16_t workKilojoules)
         LOG_INFO("Work: %u kJ from the bike\n", static_cast<unsigned>(workKilojoules));
     }
 
+    recordSession(saved, workKilojoules);
+    // After the session line, and before disconnect(): the file is the evidence
+    // for everything above it and must be on storage when the app goes.
+    mEventLog.line("%u stop saved=%u discard=%u",
+                   static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                   static_cast<unsigned>(saved), static_cast<unsigned>(discard));
+    mEventLog.close();
+
     mGuiSender.trackState(mTrackState);
     mGuiSender.rideSaved(mTimeCounter.getValueActive(), mHrCounter.getAverage(),
                          mTrackData.calories, saved, discard);
 
     disconnect();
+}
+
+void Service::logSecond(std::time_t utc, bool trusted)
+{
+    // Every second while paused, because that is where a window runs and the
+    // file is the only way to see one afterwards; a ride would be 3,600 lines,
+    // so riding gets one line every skActiveLogPeriod instead.
+    if (mTrackState != Track::State::PAUSED &&
+        utc - mLastActiveLogUtc < skActiveLogPeriod) {
+        return;
+    }
+    mLastActiveLogUtc = utc;
+
+    mEventLog.line("%u %c hr=%.0f trust=%.0f zone=%u pct=%u",
+                   static_cast<uint32_t>(utc),
+                   mTrackState == Track::State::PAUSED ? 'P' : 'A',
+                   static_cast<double>(mHrCounter.getCurrent()),
+                   static_cast<double>(mTrackData.hrTrustLevel),
+                   static_cast<unsigned>(mTrackData.hrZone),
+                   pctOfMax(mHrCounter.getCurrent(), mSystemMaxHr));
+    if (!trusted) {
+        // Marked rather than dropped, because an untrusted second is exactly
+        // what the window's 90% gate counts.
+        mEventLog.line("%u untrusted", static_cast<uint32_t>(utc));
+    }
+}
+
+void Service::keepRecovery(const SpinRecovery& measurement)
+{
+    LOG_INFO("Recovery: %u -> %u bpm over %u s, %u%% of maximum\n",
+             static_cast<unsigned>(measurement.hr0),
+             static_cast<unsigned>(measurement.hr_end),
+             static_cast<unsigned>(measurement.window_s),
+             static_cast<unsigned>(measurement.hr0_pct_max));
+
+    mEventLog.line(
+        "%u recovery hr0=%u hr_end=%u drop=%u window=%u trusted=%u pct=%u "
+        "src=%u curve=%u,%u,%u,%u,%u,%u,%u",
+        static_cast<uint32_t>(mTimeCounter.getCurrent()),
+        static_cast<unsigned>(measurement.hr0),
+        static_cast<unsigned>(measurement.hr_end),
+        static_cast<unsigned>(measurement.hr0 - measurement.hr_end),
+        static_cast<unsigned>(measurement.window_s),
+        static_cast<unsigned>(measurement.trusted_s),
+        static_cast<unsigned>(measurement.hr0_pct_max),
+        static_cast<unsigned>(measurement.source),
+        static_cast<unsigned>(measurement.curve[0]),
+        static_cast<unsigned>(measurement.curve[1]),
+        static_cast<unsigned>(measurement.curve[2]),
+        static_cast<unsigned>(measurement.curve[3]),
+        static_cast<unsigned>(measurement.curve[4]),
+        static_cast<unsigned>(measurement.curve[5]),
+        static_cast<unsigned>(measurement.curve[6]));
+    mEventLog.sync();
+
+    if (mRecoveryCount < SPIN_MAX_RECOVERIES) {
+        mRecoveries[mRecoveryCount++] = measurement;
+        return;
+    }
+
+    // The newest win, because the pause at the end of a ride is the one that
+    // happens every ride and so the one comparable across them.
+    for (size_t i = 1; i < SPIN_MAX_RECOVERIES; ++i) {
+        mRecoveries[i - 1] = mRecoveries[i];
+    }
+    mRecoveries[SPIN_MAX_RECOVERIES - 1] = measurement;
+    if (mRecoveriesDropped < 255) {
+        ++mRecoveriesDropped;
+    }
+}
+
+void Service::recordSession(bool saved, uint16_t workKilojoules)
+{
+    // Only alongside a .fit that landed, so the two records can never disagree
+    // about whether a ride exists. A discarded ride is one the wearer threw
+    // away, and this is not a way to keep it.
+    if (!saved) {
+        return;
+    }
+
+    SpinSessionRecord entry{};
+    entry.start_utc = static_cast<uint32_t>(
+        mTimeCounter.getCurrent() - mTimeCounter.getValueTotal());
+    entry.active_s  = static_cast<uint32_t>(mTimeCounter.getValueActive());
+    entry.elapsed_s = static_cast<uint32_t>(mTimeCounter.getValueTotal());
+    entry.kcal      = clampU16(mTrackData.calories);
+    entry.work_kj   = workKilojoules;
+    for (size_t i = 0; i < skZoneBuckets; ++i) {
+        entry.zone_s[i] = clampSeconds(mTrackData.zoneSeconds[i]);
+    }
+    for (size_t i = 0; i < skMaxZones; ++i) {
+        entry.zone_floor[i] = mZoneFloor[i];
+    }
+    entry.hr_avg         = clampU8(mHrCounter.getAverage());
+    entry.hr_max         = clampU8(mHrCounter.getMaximum());
+    entry.hr_max_setting = mSystemMaxHr;
+    entry.weight_kg      = clampU8(mWeightKg);
+    entry.zone_count     = mZoneCount;
+    entry.recovery_count     = mRecoveryCount;
+    entry.recoveries_dropped = mRecoveriesDropped;
+    for (size_t i = 0; i < mRecoveryCount; ++i) {
+        entry.recoveries[i] = mRecoveries[i];
+    }
+
+    const Spin::SharedLog::Status status = mSharedLog.record(entry);
+    LOG_INFO("Session log: status %u, %u recoveries (%u dropped)\n",
+             static_cast<unsigned>(status),
+             static_cast<unsigned>(mRecoveryCount),
+             static_cast<unsigned>(mRecoveriesDropped));
+
+    const int32_t trimp = spin_edwards_trimp(&entry);
+    mEventLog.line("%u session status=%u recoveries=%u dropped=%u active=%u "
+                   "hr_avg=%u work_kj=%u trimp=%d",
+                   static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                   static_cast<unsigned>(status),
+                   static_cast<unsigned>(mRecoveryCount),
+                   static_cast<unsigned>(mRecoveriesDropped),
+                   entry.active_s, static_cast<unsigned>(entry.hr_avg),
+                   static_cast<unsigned>(entry.work_kj), trimp);
 }
 
 void Service::setCapabilities()

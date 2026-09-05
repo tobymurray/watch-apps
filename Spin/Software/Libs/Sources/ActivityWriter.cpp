@@ -53,6 +53,14 @@ constexpr uint32_t kTimeInHrZoneScale = 1000;
 /// total_work is defined in JOULES, and the wearer enters kilojoules.
 constexpr uint32_t kJoulesPerKilojoule = 1000;
 
+/// A heart rate for the file, rounded rather than truncated and held below the
+/// uint8 invalid value of 255.
+uint8_t beats(float bpm)
+{
+    if (bpm <= 0.0f) { return 0; }
+    return (bpm >= 254.0f) ? 254u : static_cast<uint8_t>(bpm + 0.5f);
+}
+
 /// Work over ACTIVE seconds, not elapsed: a ride paused for ten minutes did no
 /// work in them. Rounds rather than truncating, which would lose up to a watt
 /// in the same direction every ride -- a bias, not noise.
@@ -63,7 +71,7 @@ uint16_t averageWatts(uint32_t joules, std::time_t activeSeconds)
     }
     const uint64_t seconds = static_cast<uint64_t>(activeSeconds);
     const uint64_t watts   = (static_cast<uint64_t>(joules) + seconds / 2) / seconds;
-    constexpr uint64_t kMaxWatts = 65535;   // the field is a uint16
+    constexpr uint64_t kMaxWatts = 65534;   // 65535 is the uint16 invalid value
     return static_cast<uint16_t>(watts > kMaxWatts ? kMaxWatts : watts);
 }
 
@@ -312,8 +320,8 @@ void ActivityWriter::addLap(const LapData& lap)
      .u32(static_cast<uint32_t>(lap.elapsed * 1000))
      .u32(static_cast<uint32_t>(lap.duration * 1000))
      .u16(0)  // message_index
-     .u8(static_cast<uint8_t>(lap.hrAvg))
-     .u8(static_cast<uint8_t>(lap.hrMax))
+     .u8(beats(lap.hrAvg))
+     .u8(beats(lap.hrMax))
      .u16(static_cast<uint16_t>(lap.calories + 0.5f));
     // Still a native field: time_in_hr_zone is the last one in the definition.
     writeZoneSeconds(d, lap.zoneSeconds);
@@ -373,8 +381,8 @@ bool ActivityWriter::stop(const TrackData& track)
         // ride went.
         .u8(static_cast<uint8_t>(fit::Sport::Cycling))
         .u8(static_cast<uint8_t>(fit::SubSport::IndoorCycling))
-        .u8(static_cast<uint8_t>(track.hrAvg))
-        .u8(static_cast<uint8_t>(track.hrMax))
+        .u8(beats(track.hrAvg))
+        .u8(beats(track.hrMax))
         .u16(static_cast<uint16_t>(track.calories + 0.5f))
         .u16(static_cast<uint16_t>(track.metabolicCalories + 0.5f));
     writeZoneSeconds(session, track.zoneSeconds);

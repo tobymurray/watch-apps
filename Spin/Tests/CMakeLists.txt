@@ -65,3 +65,61 @@ target_include_directories(spin-activitywriter-tests PRIVATE
 
 target_link_libraries(spin-activitywriter-tests PRIVATE GTest::gtest_main)
 add_test(NAME spin-activitywriter-tests COMMAND spin-activitywriter-tests)
+
+# Getting the two files onto storage, which is the half of the feature the Rust
+# deliberately knows nothing about. Links the release staticlib because the JSON
+# round-trip goes through it; ENGINE_LIB is built by the app's CMake or by
+# `cargo build --release` in the shim.
+set(ENGINE_DIR "${CMAKE_CURRENT_LIST_DIR}/../Software/Libs/rust")
+find_library(ENGINE_LIB spin_engine
+    PATHS "${ENGINE_DIR}/target/release"
+    NO_DEFAULT_PATH
+)
+if(ENGINE_LIB)
+    add_executable(spin-sharedlog-tests
+        SharedLog_test.cpp
+        "${CMAKE_CURRENT_LIST_DIR}/../Software/Libs/Sources/SharedLog.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/../Software/Libs/Sources/EventLog.cpp"
+        "${UNA_SDK_ROOT}/Tests/Host/support/KernelTestDoubles.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/UnaLogger/Logger.cpp"
+    )
+    target_include_directories(spin-sharedlog-tests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/../Software/Libs/Header"
+        "${UNA_SDK_ROOT}/Libs/Header"
+        "${UNA_SDK_ROOT}/Tests/Host/support"
+    )
+    target_link_libraries(spin-sharedlog-tests PRIVATE GTest::gtest_main ${ENGINE_LIB})
+    add_test(NAME spin-sharedlog-tests COMMAND spin-sharedlog-tests)
+else()
+    message(WARNING
+        "libspin_engine.a not found under ${ENGINE_DIR}/target/release: the "
+        "shared-log and diagnostic-log tests are skipped. Run "
+        "`cargo build --release` in Spin/Software/Libs/rust and re-configure."
+    )
+endif()
+
+# The recovery detector and the load arithmetic are Rust in the shared
+# EffortKit crate, and the C ABI over them is Rust in this app's shim, so
+# `ctest` shells out to cargo rather than leaving either uncovered here. Only
+# when cargo is on the host: a machine without it should still be able to run
+# the suites above.
+find_program(CARGO_EXECUTABLE cargo)
+if(CARGO_EXECUTABLE)
+    add_test(NAME effortkit-tests
+        COMMAND ${CARGO_EXECUTABLE} test --features std
+    )
+    set_tests_properties(effortkit-tests PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/../../EffortKit"
+    )
+    add_test(NAME spin-engine-tests
+        COMMAND ${CARGO_EXECUTABLE} test --features std
+    )
+    set_tests_properties(spin-engine-tests PROPERTIES
+        WORKING_DIRECTORY "${ENGINE_DIR}"
+    )
+else()
+    message(WARNING
+        "cargo not found: the recovery gates, the shared log's bounds and the "
+        "C ABI over them will not run here. CI runs them separately."
+    )
+endif()

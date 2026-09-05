@@ -147,6 +147,15 @@ uses, and a second copy is a second thing to keep in step. The watch reports its
 ladder as 50/60/70/80/90/100% of maximum heart rate, so the last value is the
 maximum rather than a floor and Spin drops it to get five floors.
 
+`heartRateCount` in that message is a count of **zones, not thresholds** — the
+SDK header says so itself, in the comment `4 thresholds = 5 zones` — so the
+array holds one fewer value than the count and reading `heartRateTh[count - 1]`
+lands on a slot the firmware never filled. It reads 0 there, which is a maximum
+heart rate of zero and a ladder one zone too long, and it cost the first desk
+run of the recovery feature: every window was discarded as `no_max_hr` on a
+watch that had a maximum set the whole time. `ZoneLadder::fromWatch` owns the
+split now, against the ladder the watch actually sent.
+
 **`hrZoneCount` defaults to 5**, because five is what almost everyone means by
 heart-rate zones and it is what the watch itself ships. Set it to anything from
 2 to 8 for a model the watch cannot express — a three-zone polarised split, or a
@@ -373,6 +382,133 @@ holds a thousand times that.
   honestly divided between auto-lap splits; apportioning it by time would be
   inventing a distribution, which is the per-record argument one level up.
 
+## How fast your heart falls when you stop
+
+When you pause, Spin measures the fall in your heart rate over the next sixty
+seconds and writes it down. No setting, no button, and nothing on the screen.
+
+**The pause is the only window this watch has.** `Service::stopTrack()` ends
+with `disconnect()`, which releases the heart-rate sensor — there is no heart
+rate after a ride ends, and the textbook "measure for 60 s after effort ceases"
+cannot be run there without keeping a BLE link and an optical sensor alive after
+you think you are finished. A pause costs nothing: effort has stopped, the
+sensor is connected, `processTrack()` keeps running, and because the ride stays
+paused through the kilojoule screen until `TRACK_STOP`, **the end of a ride is
+already a pause**. A lap is not, because nothing tells this app you stopped
+pedalling at one.
+
+A measurement that could not mean anything is **discarded, not written small**.
+It needs a maximum heart rate the watch actually knows, a heart rate at
+cessation at or above 80% of it, three minutes of uninterrupted effort before
+it, a heart rate that was not already falling, 90% of the window's seconds
+carrying a reading the watch stands behind, and **one sensor throughout** —
+across 34 minutes of `HEART_RATE_EX` pulled off this watch, 14% of 60-second
+windows begin and end on different sensors, and the strap and the wrist differ
+by a 95th-percentile 16 bpm where both report at once, which is the size of the
+whole measurement — the file's own gate, not
+`HrHold`'s, because a held second is a display convenience and a measurement is
+a measurement. Each one is recorded with the context that makes it comparable to
+the next: the heart rate it started from in bpm and as a fraction of maximum,
+the window length actually used, how many seconds were trusted, and a
+seven-point curve at ten-second intervals.
+
+**Nothing is drawn.** Buchheit (2014) puts this measurement's typical error at
+about 25% with a signal-to-noise ratio of 1.3, so one number on its own is
+noise, and there is no honest way to put a single noisy number on a 240×240
+panel without it reading as a verdict. It is written for a later reader instead.
+
+### Watching it work
+
+`LOG_*` on this watch reaches a debug UART adapter and nothing else, so on real
+hardware a discarded measurement would be invisible — a ride that measured
+nothing and a ride whose windows were all correctly declined would look
+identical. So the Service also writes **`recovery.log`** into its own folder,
+where USB can read it: one line per event, one line a second while paused, and
+the reason by name whenever a window produces nothing.
+
+It appends across rides, stops at 128 KiB, and is held open for the ride rather
+than opened per line — a FatFs open/write/flush/close every second would land
+inside the same tick the window is measured on, and a logger that changed the
+measurement would be worse than no logger.
+
+**The claim that a pause costs nothing did not survive the field.** Two ordinary
+rides at a real maximum ceased at 67% and 57% of it, with no mid-ride pause at
+all, and produced nothing: a rider ends a session by cooling down, not by
+stopping dead at the top of an effort. What the measurement actually asks of a
+rider, and what it returns for it, is priced in
+[`Docs/RECOVERY-AS-A-MODE.md`](Docs/RECOVERY-AS-A-MODE.md).
+
+This is a diagnostic for the first hardware sessions, not a feature.
+[`Docs/RECOVERY-FIELD-RESULTS.md`](Docs/RECOVERY-FIELD-RESULTS.md) is what those
+sessions found — every discard reason but `source_changed` has now fired on the
+watch — and [`Docs/RECOVERY-FIELD-TEST.md`](Docs/RECOVERY-FIELD-TEST.md) is what
+is left to run, and what to check in any run.
+
+### What it cannot tell you
+
+The full list, with its sources, is in [EffortKit's README](../EffortKit/README.md#what-this-cannot-tell-you).
+The one that matters most on a bike:
+
+**It is dominated by what you do next, and the watch cannot see that.** In the
+same athletes, Barak et al. (2011) measured a recovery time constant of 52.5 s
+sitting still against 74.1 s pedalling gently — 41% slower for moving rather
+than sitting — and 32.0 s lying down. A rider who does a proper Z4→Z3→Z2
+cooldown will look **worse** than one who sprints and steps off. Spin knows the
+ride was paused; it does not know whether you kept turning the pedals.
+
+It is also not a fitness score, not comparable between people, and confounded by
+the same posture, heat, hydration, caffeine, sleep and time-of-day that make raw
+heart rate a poor fitness signal — which is why
+[the kilojoule screen](#the-kilojoules-the-bike-knows) exists at all. Heart-rate
+variability would be better founded and is not available: SDK 1.4.0's
+`HeartRateEx` gives one arbitrated beat and a confidence, once a second, and the
+beat-to-beat pathway is an unlanded experimental PR.
+
+## A record that outlives the ride
+
+Every saved ride also appends a line to **`../SharedData/spin_sessions.json`** —
+when, how long, average and maximum heart rate, time in each zone, the ladder
+those zones were, the kilojoules if you entered them, and every recovery
+measurement with its context. It is the record of the *series*, where the `.fit`
+is the record of the ride, and nothing that belongs in one is duplicated in the
+other.
+
+`../SharedData/` is the SDK's own convention rather than an invention: the
+stride calibration Running and Treadmill share lives at
+`../SharedData/stride.json`. The file is versioned, capped at 20 sessions and
+16 KiB, and committed through a `.tmp` written with `flush()` and `close()`
+folded into the result and then renamed over the live file — so a power loss
+mid-write leaves either the old file or the new one. It is written **only when
+the `.fit` landed**, so the two records can never disagree about whether a ride
+happened.
+
+Footprint of the Service, from CI's toolchain image, before and after the crate
+was linked:
+
+```
+             .text    .data     .bss     .uapp
+without      68,584    1,732   11,776   121,800
+with         91,128    1,732   12,096   144,840
+```
+
+The 288 bytes of RAM are the detector; the 16 KiB the log is read into is heap,
+transient, and only alive after the `.fit` is closed. Most of the flash is
+`compiler_builtins` arriving with the first Rust archive this Service has ever
+linked rather than the crate's own code — about 6 KB of it is the engine.
+
+The schema is documented as a table, with units, in
+[EffortKit's README](../EffortKit/README.md#shareddataapp_sessionsjson--the-series), because the point of the folder is
+that something else reads it. That something is not this app: a training log on
+a 240×240 reflective panel would be a worse version of a thing that already
+exists, which is the same argument
+[the kilojoule screen](#the-kilojoules-the-bike-knows) already makes.
+
+Spin also writes `edwards_trimp` when — and only when — the zone ladder is the
+one Edwards' weights are defined over (five zones at 50/60/70/80/90% of
+maximum), which is what the watch's own default ladder is. Set three zones, or
+type your own floors, and the field is **absent** rather than extended to a
+model it was never written for.
+
 ## What the phone shows
 
 `customMeasures` in [`app-manifest.json`](app-manifest.json) is the mechanism by
@@ -454,7 +590,7 @@ an accidental exit would cost the ride.
 | Screen | Shows | L1 | L2 | R1 | R2 |
 |---|---|---|---|---|---|
 | Ready | strap status, target if set | | | **START** | **EXIT** |
-| Riding | clock, heart rate, zone | | | pause | **LAP** |
+| Riding | clock, heart rate, zone, a split after each lap | | | pause | **LAP** |
 | Paused | dimmed clock, `PAUSED` | **SAVE** | **DISCARD** | resume | |
 | Bike kJ | the number being built | **+100** | **+10** | **SAVE** | **SKIP** |
 | Saved / discarded | what happened | | | done | **DONE** |
@@ -474,6 +610,30 @@ since the labelled button should be the unfamiliar one. Resume when paused gets
 the mark alone for the same reason — it was PAUSE a second earlier. The two
 endings of a ride get words, because choosing between them is the whole reason
 that screen exists.
+
+### The split, and the one banner slot
+
+Pressing R2 buzzes the wrist and closes a lap in the file, and for a few seconds
+it also writes the lap's own time under the clock — `LAP 3  1:04`, the number
+dim and the time bright. Without it the button's whole feedback is a buzz, and a
+wearer lapping an interval session cannot tell a registered press from a missed
+one, let alone read the split they pressed for.
+
+It lands in the same slot as `PAUSED` and `TARGET MET`, and the three are
+ordered by **how long each stays true**. Paused wins: it is the state the wearer
+can act on. A split beats the target, because the split is the thing that just
+happened and is gone in seconds where the target stays met for the rest of the
+ride.
+
+The Service decides when a split has gone stale and sends `last_lap_s` as 0 once
+it has, so **the GUI still owns no clock** — the same property the ride timer
+already has. The lap clock resets with the lap, so it is already "seconds since
+the lap" and no new timer was needed. A lap of no seconds is never saved, so 0
+carries the absence and the ABI needs no second flag.
+
+The dwell is five seconds: long enough to read with the wrist moving, and well
+clear of the next repetition in the shortest structure anyone rides — 20 seconds
+hard against 40 seconds easy.
 
 **R2 mid-ride is the one place the "R2 leaves" rule does not hold**, and it is a
 deliberate trade: R2 is the lap button on the SDK's own activity apps
@@ -576,7 +736,8 @@ GUI draws snapshots:
 ```
 HEART_RATE_EX ─┐
    the clock ──┤→ Service.cpp ──CustomMessage──→ Gui.cpp ──spin_gui_frame──→ lib.rs
- app_config ───┤                                                             (pixels)
+ app_config ───┤       │                                                     (pixels)
+               │       └→ engine ──────→ ../SharedData/spin_sessions.json
                └→ ActivityWriter → .fit
 ```
 
@@ -645,6 +806,12 @@ Deliberately, and the first two are firmware limits rather than choices:
 - **No distance or speed.** There is no honest way to produce either without a
   trainer, and a fabricated distance is worse than an absent one. The FIT file
   omits both rather than writing zeros.
+- **No trend view, and no verdict.** Rides accumulate in
+  [`../SharedData`](#a-record-that-outlives-the-ride) for something else to
+  read; nothing on the watch draws them. A recovery measurement's typical error
+  is about 25% of itself, so a single number on the glass would read as a
+  judgement the data cannot support — and a training log on a 240×240
+  reflective panel is a worse version of a thing that already exists.
 - **No structured intervals — no workout to follow.** The SDK's profile carries
   `Workout` and `WorkoutStep`, so the file side is reachable; the hard part is
   where a workout would come from. `configFields` caps at 32 flat scalar fields
@@ -673,7 +840,10 @@ compiled against.
 ## Building
 
 Needs `$UNA_SDK` pointing at an `apps-v1.4.0` checkout, and `cargo` with the
-`thumbv8m.main-none-eabihf` target installed:
+`thumbv8m.main-none-eabihf` target installed. Two Rust archives are built, not
+one: `libspin_gui.a` for the GUI and [`libspin_engine.a`](Software/Libs/rust) for the
+Service. They stay separate because they land in different ELFs — two archives
+each carrying a `#[panic_handler]` would collide if they landed in one.
 
 ```sh
 rustup target add thumbv8m.main-none-eabihf
@@ -696,7 +866,22 @@ CMake project — from what the directory holds.
 
 ## Tests
 
-Two suites, because they cover two different things.
+Three suites, because they cover three different things.
+
+**Whether a recovery measurement counts, and what the shared log says** —
+[`../EffortKit`](../EffortKit), Rust. Every gate in
+[§ How fast your heart falls](#how-fast-your-heart-falls-when-you-stop) has a
+test named after it, and the log's byte bound is a measured number rather than
+an argued one. `ctest` shells out to cargo for them, so running the host suite
+below covers them without knowing they are Rust:
+
+```sh
+cd EffortKit && cargo test --features std
+```
+
+That is also the only host coverage the Service side of this feature has:
+`Service.cpp` is compiled by the app build and by nothing else, which is why the
+detector and the load arithmetic live in a crate rather than in it.
 
 **What gets written** — [`Tests/`](Tests), host C++. Encodes a whole ride with
 the real `ActivityWriter` against the SDK's in-memory filesystem and decodes it

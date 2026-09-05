@@ -41,6 +41,11 @@ typedef struct {
     uint16_t energy;         /* already in the display unit below, rounded */
     uint16_t work_kj;          /* kJ built so far, 0 = nothing said */
     uint16_t work_estimate_kj; /* kJ the calorie model suggests, 0 = no row */
+    /* The split to show: active seconds of the lap just closed, 0 = show none.
+       The Service decides how long that stays non-zero, so this screen needs no
+       clock; a lap of no seconds is never saved, so 0 cannot be a real one. */
+    uint16_t last_lap_s;
+    uint16_t lap_number;     /* which lap last_lap_s belongs to; laps closed so far */
     uint8_t  screen;         /* one of the SPIN_GUI_SCREEN_* values above */
     uint8_t  strap;          /* one of the SPIN_GUI_STRAP_* values above */
     uint8_t  hr_source;      /* one of the SPIN_GUI_HR_* values above */
@@ -101,6 +106,8 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(spin_gui_frame, energy));
     h = fnv1a(h, offsetof(spin_gui_frame, work_kj));
     h = fnv1a(h, offsetof(spin_gui_frame, work_estimate_kj));
+    h = fnv1a(h, offsetof(spin_gui_frame, last_lap_s));
+    h = fnv1a(h, offsetof(spin_gui_frame, lap_number));
     h = fnv1a(h, offsetof(spin_gui_frame, screen));
     h = fnv1a(h, offsetof(spin_gui_frame, strap));
     h = fnv1a(h, offsetof(spin_gui_frame, hr_source));
@@ -115,7 +122,7 @@ constexpr uint32_t fingerprint()
 
 } // namespace spin_gui_abi
 
-static_assert(sizeof(spin_gui_frame) == 28, "spin_gui_frame size changed");
+static_assert(sizeof(spin_gui_frame) == 32, "spin_gui_frame size changed");
 static_assert(alignof(spin_gui_frame) == 4, "spin_gui_frame alignment changed");
 static_assert(offsetof(spin_gui_frame, elapsed_s) == 0, "elapsed_s moved");
 static_assert(offsetof(spin_gui_frame, hr_bpm) == 4, "hr_bpm moved");
@@ -124,16 +131,18 @@ static_assert(offsetof(spin_gui_frame, target_minutes) == 8, "target_minutes mov
 static_assert(offsetof(spin_gui_frame, energy) == 10, "energy moved");
 static_assert(offsetof(spin_gui_frame, work_kj) == 12, "work_kj moved");
 static_assert(offsetof(spin_gui_frame, work_estimate_kj) == 14, "work_estimate_kj moved");
-static_assert(offsetof(spin_gui_frame, screen) == 16, "screen moved");
-static_assert(offsetof(spin_gui_frame, strap) == 17, "strap moved");
-static_assert(offsetof(spin_gui_frame, hr_source) == 18, "hr_source moved");
-static_assert(offsetof(spin_gui_frame, saved_ok) == 19, "saved_ok moved");
-static_assert(offsetof(spin_gui_frame, target_reached) == 20, "target_reached moved");
-static_assert(offsetof(spin_gui_frame, hr_zone) == 21, "hr_zone moved");
-static_assert(offsetof(spin_gui_frame, zone_count) == 22, "zone_count moved");
-static_assert(offsetof(spin_gui_frame, has_zones) == 23, "has_zones moved");
-static_assert(offsetof(spin_gui_frame, energy_is_kj) == 24, "energy_is_kj moved");
-static_assert(offsetof(spin_gui_frame, hr_zone_fraction) == 25, "hr_zone_fraction moved");
+static_assert(offsetof(spin_gui_frame, last_lap_s) == 16, "last_lap_s moved");
+static_assert(offsetof(spin_gui_frame, lap_number) == 18, "lap_number moved");
+static_assert(offsetof(spin_gui_frame, screen) == 20, "screen moved");
+static_assert(offsetof(spin_gui_frame, strap) == 21, "strap moved");
+static_assert(offsetof(spin_gui_frame, hr_source) == 22, "hr_source moved");
+static_assert(offsetof(spin_gui_frame, saved_ok) == 23, "saved_ok moved");
+static_assert(offsetof(spin_gui_frame, target_reached) == 24, "target_reached moved");
+static_assert(offsetof(spin_gui_frame, hr_zone) == 25, "hr_zone moved");
+static_assert(offsetof(spin_gui_frame, zone_count) == 26, "zone_count moved");
+static_assert(offsetof(spin_gui_frame, has_zones) == 27, "has_zones moved");
+static_assert(offsetof(spin_gui_frame, energy_is_kj) == 28, "energy_is_kj moved");
+static_assert(offsetof(spin_gui_frame, hr_zone_fraction) == 29, "hr_zone_fraction moved");
 #endif
 
 #endif // SPIN_GUI_H

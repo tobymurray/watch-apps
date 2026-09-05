@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """How often does the arbitrated source change inside a 60 s window?
 
-TrainKit's Recovery struct records no source at all. If the kernel switches
-between the strap and the wrist mid-window, hr0 and hr_end can come from
-different sensors, and the difference between them is then partly a difference
-between instruments.
+If the kernel switches between the strap and the wrist mid-window, hr0 and
+hr_end can come from different sensors, and the difference between them is then
+partly a difference between instruments. This is what measured the 14% that
+made `source_changed` a discard reason rather than a footnote.
 """
 import csv
 import glob

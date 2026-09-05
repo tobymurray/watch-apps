@@ -48,6 +48,13 @@ fn at(mut f: Frame, zone: u8, fraction: u8) -> Frame {
     f
 }
 
+/// The banner a closed lap leaves for a few seconds.
+fn split(mut f: Frame, lap_number: u16, last_lap_s: u16) -> Frame {
+    f.lap_number = lap_number;
+    f.last_lap_s = last_lap_s;
+    f
+}
+
 /// `work_estimate_kj` of 0 draws no reference row.
 fn enter_work(work_kj: u16, work_estimate_kj: u16) -> Frame {
     Frame { screen: SCREEN_ENTER_WORK, work_kj, work_estimate_kj, ..Frame::default() }
@@ -94,6 +101,25 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
         // Mid-ride with zones, where both live buttons show at once: the mark
         // alone for pause, and the named one for lap.
         ("riding_lap_hint", in_zone(riding(SCREEN_RIDING, 640, 151, HR_EXTERNAL), 4)),
+        // The split, in the seconds after R2. The three-digit lap and the
+        // over-an-hour split are the widest this row gets.
+        ("lap_split", split(in_zone(riding(SCREEN_RIDING, 645, 152, HR_EXTERNAL), 4), 3, 64)),
+        ("lap_split_short", split(riding(SCREEN_RIDING, 26, 96, HR_OPTICAL), 1, 20)),
+        ("lap_split_widest", split(in_zone(riding(SCREEN_RIDING, 7300, 149, HR_EXTERNAL), 3), 128, 3705)),
+        // A split outranks the target banner: it is gone in seconds where the
+        // target stays met for the rest of the ride.
+        (
+            "lap_split_over_target",
+            split(
+                Frame {
+                    target_minutes: 45,
+                    target_reached: 1,
+                    ..in_zone(riding(SCREEN_RIDING, 2700, 144, HR_EXTERNAL), 3)
+                },
+                6,
+                183,
+            ),
+        ),
         // The arc in the bottom gap, partly filled.
         (
             "riding_target_half",
