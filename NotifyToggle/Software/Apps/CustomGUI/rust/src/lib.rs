@@ -233,6 +233,9 @@ const LABEL_BASELINE_Y: i32 = PILL_Y + PILL_H + 32;
 /// footer is 117 px in its face; two rows up buys it six pixels of bezel each
 /// side. Re-measure with `textkit`'s `measure` example if the string or face changes.
 const FOOTER_BASELINE_Y: i32 = 220;
+/// A second hint row, only used where one line cannot both name the setting and
+/// say where to change it. Above the footer, where the lit chord is wider.
+const FOOTER_2ND_BASELINE_Y: i32 = 205;
 
 /// Poppins SemiBold for every word, Regular for the button hint, from the atlases
 /// TextKit generates; `Docs/TEXT.md` at the repo root is why these and not others.
@@ -310,11 +313,13 @@ fn draw(fb: &mut FrameBuf, state: &State) {
 
     // The hint stays put even from the unknown state -- it is "try again", not
     // "disabled". A change that will not last spends the line on that instead.
-    let footer = match state.status() {
-        Status::NotSaved | Status::LiveOnly => FOOTER_NOT_SAVED,
-        _ => FOOTER,
-    };
-    text(fb, HINT_FACE, footer, PANEL_CX, FOOTER_BASELINE_Y, CHROME);
+    if state.status() == Status::LiveOnly {
+        text(fb, HINT_FACE, HINT_SAVING_OFF, PANEL_CX, FOOTER_2ND_BASELINE_Y, CHROME);
+        text(fb, HINT_FACE, HINT_TURN_ON, PANEL_CX, FOOTER_BASELINE_Y, CHROME);
+    } else {
+        let footer = if state.status() == Status::NotSaved { FOOTER_NOT_SAVED } else { FOOTER };
+        text(fb, HINT_FACE, footer, PANEL_CX, FOOTER_BASELINE_Y, CHROME);
+    }
 }
 
 const TITLE: &str = "NOTIFICATIONS";
@@ -328,6 +333,10 @@ const FOOTER_NOT_SAVED: &str = "REVERTS ON REBOOT";
 const FOOTER_UNSUPPORTED: &str = "NEEDS WATCH 1.4.0";
 const LABEL_NO_SETTINGS: &str = "SETTINGS?";
 const FOOTER_NO_SETTINGS: &str = "UNREADABLE FILE";
+/// Saving being off is a setting, not a limit of the app, and a wearer who
+/// only reads that the change "reverts" has no reason to think otherwise.
+const HINT_SAVING_OFF: &str = "SAVING IS OFF";
+const HINT_TURN_ON: &str = "TURN ON IN APP";
 
 pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {
     if width == 0 || height == 0 {
@@ -481,7 +490,8 @@ mod tests {
                   LABEL_NO_SETTINGS] {
             assert!(WORD_FACE.covers(s), "{s:?} has a character the word face lacks");
         }
-        for s in [FOOTER, FOOTER_NOT_SAVED, FOOTER_UNSUPPORTED, FOOTER_NO_SETTINGS] {
+        for s in [FOOTER, FOOTER_NOT_SAVED, FOOTER_UNSUPPORTED, FOOTER_NO_SETTINGS,
+                  HINT_SAVING_OFF, HINT_TURN_ON] {
             assert!(HINT_FACE.covers(s), "{s:?} has a character the hint face lacks");
         }
     }
@@ -501,6 +511,28 @@ mod tests {
                     assert!(lit || buf[(y * W as i32 + x) as usize] == GROUND.0, "({x},{y}) lit behind the bezel");
                 }
             }
+        }
+    }
+
+    /// Writes every screen out so they can be looked at rather than reasoned
+    /// about; the assertions above say what must be true, this says what it
+    /// looks like.
+    #[test]
+    fn dump_every_screen() {
+        let dir = std::path::Path::new("/tmp/notify-screens");
+        if std::fs::create_dir_all(dir).is_err() {
+            return;
+        }
+        for (name, st) in [("on", on()), ("off", off()), ("live_only", live_only()),
+                           ("not_saved", not_saved()), ("unknown", unknown()),
+                           ("unsupported", unsupported()), ("no_settings", no_settings())] {
+            let buf = frame(&st);
+            let mut ppm = format!("P6\n{W} {H}\n255\n").into_bytes();
+            for b in &buf {
+                let (r, g, bl) = (((b >> 0) & 3) * 85, ((b >> 2) & 3) * 85, ((b >> 4) & 3) * 85);
+                ppm.extend_from_slice(&[r, g, bl]);
+            }
+            let _ = std::fs::write(dir.join(format!("{name}.ppm")), ppm);
         }
     }
 
