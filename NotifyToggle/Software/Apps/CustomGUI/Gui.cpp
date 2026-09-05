@@ -1,10 +1,15 @@
 #include "Gui.hpp"
 
+#include "SDK/Interfaces/IKernel.hpp"
 #include "SDK/Kernel/KernelProviderGUI.hpp"
 #include "SDK/Messages/CommandMessages.hpp"
 #include "SDK/Messages/MessageTypes.hpp"
 
+#include "SDK/AppConfig/AppConfig.hpp"
+
+#include "AppConfigFields.hpp"
 #include "DebugLog.hpp"
+#include "FirmwareGate.hpp"
 #include "LiveSettings.hpp"
 #include "SettingsPersist.hpp"
 #include "notify_toggle_gui.h"
@@ -52,61 +57,42 @@ void Gui::queryDisplayConfig()
         mWidth  = kFallbackWidth;
         mHeight = kFallbackHeight;
     }
+    // The panel this app is built for reports 6 (ABGR2222: six colour bits and
+    // two of alpha, one byte a pixel). Anything wanting more than a byte would
+    // have the kernel read past the end of mFrameBuf.
+    mDisplayUsable = mColorDepth <= kMaxBitsPerPixel;
+    if (!mDisplayUsable) {
+        LOG_ERROR("Panel wants %ubpp; this renderer only writes one byte per pixel\n",
+                  mColorDepth);
+    }
     LOG_INFO("Display %dx%d @ %ubpp\n", mWidth, mHeight, mColorDepth);
 }
 
-// Queries the watch's actual running firmware version via a supported SDK
-// message -- never assumed, and never taken from the manifest's
-// minKernelVersion, which is only a floor the phone's install flow checks
-// (see SettingsAddresses.hpp for why an exact match matters here: a future
-// firmware that still satisfies that floor could have moved every address
-// this app depends on). Resolves mAddresses for that exact version, or
-// leaves it null -- and every LiveSettings/SettingsPersist call site below
-// refuses outright when it's null, rather than touching a single raw
-// address on a firmware this app hasn't been reverse-engineered against.
+// The loader patches this to the running kernel (system.cpp), and its `version`
+// is the ABI that kernel presents -- the only account of itself a kernel gives
+// a running app on this firmware. FirmwareGate.hpp says why that is a floor
+// rather than an identity, and what has to pass before it is believed.
+extern const SDK::Interface::IKernel *gIKernel;
+
 bool Gui::resolveFirmwareSupport()
 {
-    auto *info = mKernel.comm.allocateMessage<SDK::Message::RequestSystemInfo>();
-    if (!info) {
-        LOG_ERROR("resolveFirmwareSupport: could not allocate RequestSystemInfo\n");
-        return false;
+    mAddresses = FirmwareGate::resolve(mKernel.fs, gIKernel->version, mSaveToSettings);
+    if (!mAddresses) {
+        LOG_ERROR("firmware not verified for this build -- refusing every raw address\n");
     }
-
-    bool ok = false;
-    if (mKernel.comm.sendMessage(info, kResponseTimeoutMs) &&
-        info->getResult() == SDK::MessageResult::SUCCESS) {
-        DebugLog::appendf(mKernel.fs, "firmwareVersion=%s", info->firmwareVersion);
-        mAddresses = SettingsAddresses::resolve(info->firmwareVersion);
-        ok = (mAddresses != nullptr);
-        if (!ok) {
-            LOG_ERROR("firmware %s not reverse-engineered for this app -- refusing to touch settings.json\n",
-                       info->firmwareVersion);
-            DebugLog::appendf(mKernel.fs, "unsupported firmware %s -- refusing", info->firmwareVersion);
-        }
-    } else {
-        LOG_ERROR("resolveFirmwareSupport: could not query RequestSystemInfo\n");
-        DebugLog::append(mKernel.fs, "could not query firmware version -- refusing");
-    }
-
-    mKernel.comm.releaseMessage(info);
-    return ok;
+    return mAddresses != nullptr;
 }
 
-// Reads the kernel's live, in-RAM WatchSettings.phone.notifications byte
-// directly (see LiveSettings.hpp for the address derivation and why the
-// SDK's sandboxed filesystem API is conclusively unreachable to
-// settings.json on this firmware -- LiveSettings.hpp's own doc comment has
-// the full story; the file-based approach that first ruled it out is gone
-// from this tree now, kept only in git history and in
-// Docs/Investigations/2026-08-31-live-settings-persistence/).
-// Called at startup, after every toggle, and periodically while
-// the app sits open, so what this screen shows is never more than
-// kReReadEveryTicks ticks stale relative to the live value.
+// Reads the kernel's live, in-RAM `phone.notifications` byte (LiveSettings.hpp
+// has the derivation) and works out what the screen is entitled to claim.
+// Called at startup, after every toggle, and every kReReadEveryTicks while the
+// app sits open, so an external change shows up without a relaunch.
 void Gui::refreshLiveState()
 {
     if (!mAddresses) {
         mState.enabled = 0;
         mState.known   = 0;
+        mState.status  = NOTIFY_TOGGLE_STATUS_UNSUPPORTED;
         return;
     }
 
@@ -121,6 +107,18 @@ void Gui::refreshLiveState()
 
     mState.enabled = enabled ? 1 : 0;
     mState.known   = known ? 1 : 0;
+    DebugLog::appendf(mKernel.fs, "live read -> status=%d enabled=%d known=%d",
+                       static_cast<int>(status), mState.enabled, mState.known);
+
+    if (!known) {
+        mState.status = NOTIFY_TOGGLE_STATUS_UNREADABLE;
+    } else if (mPersistFailed) {
+        mState.status = NOTIFY_TOGGLE_STATUS_NOT_SAVED;
+    } else if (!mSaveToSettings) {
+        mState.status = NOTIFY_TOGGLE_STATUS_LIVE_ONLY;
+    } else {
+        mState.status = NOTIFY_TOGGLE_STATUS_OK;
+    }
 }
 
 void Gui::applyCapabilities(bool enabled)
@@ -141,6 +139,8 @@ void Gui::toggle()
         LOG_WARNING("toggle: firmware not supported; not touching settings.json\n");
         return;
     }
+
+    mPersistFailed = false;
 
     // LiveSettings::writeNotificationsFlag reads fresh internally too (never
     // trusts mState), but the desired value has to be computed from a fresh
@@ -165,16 +165,22 @@ void Gui::toggle()
     refreshLiveState();
     applyCapabilities(mState.enabled != 0);
 
-    // Best-effort: persist to 2:/settings.json so the change survives a
-    // reboot, not just this power-on. A failure here does not undo or block
-    // the live change above, which already succeeded and is what the user
-    // just saw take effect -- it's logged for diagnosis via the same
-    // DebugLog channel everything else in this app uses.
+    if (!mSaveToSettings) {
+        DebugLog::append(mKernel.fs, "R1: saving is off, leaving settings.json alone");
+        return;
+    }
+
+    // The live change above has already taken effect and is what the wearer
+    // just saw, so a failure here does not undo it -- but it does change what
+    // the screen is allowed to say, because the setting reverts at the next
+    // reboot.
     const auto persistStatus = SettingsPersist::persistNotificationsFlag(mKernel.fs, *mAddresses, desired);
     if (persistStatus != SettingsPersist::Status::Ok) {
         LOG_ERROR("toggle: persist to settings.json failed (status=%d); live value still changed\n",
                    static_cast<int>(persistStatus));
         DebugLog::appendf(mKernel.fs, "R1 persist FAILED: status=%d", static_cast<int>(persistStatus));
+        mPersistFailed = true;
+        refreshLiveState();
     } else {
         DebugLog::append(mKernel.fs, "R1 persist OK");
     }
@@ -182,7 +188,7 @@ void Gui::toggle()
 
 void Gui::renderAndPush()
 {
-    if (!mResumed) {
+    if (!mResumed || !mDisplayUsable) {
         return;
     }
 
@@ -212,17 +218,28 @@ void Gui::run()
         mKernel.sys.exit(1);
         return;
     }
-    DebugLog::append(mKernel.fs, "ABI fingerprint OK");
+    DebugLog::appendf(mKernel.fs, "ABI fingerprint OK (0x%08X)",
+                       static_cast<unsigned>(notify_toggle_abi_fingerprint()));
 
     queryDisplayConfig();
-    DebugLog::appendf(mKernel.fs, "display %dx%d @%ubpp", mWidth, mHeight, mColorDepth);
+    DebugLog::appendf(mKernel.fs, "display %dx%d @%ubpp usable=%d", mWidth, mHeight, mColorDepth,
+                       mDisplayUsable ? 1 : 0);
 
-    // Gates every LiveSettings/SettingsPersist call for the rest of this
-    // run: on an unsupported firmware, mAddresses stays null and the app
-    // still launches, still shows a screen, still lets R2 back out -- it
-    // just can never read or write the real flag, and says so via the same
-    // "unknown" state refreshLiveState() already shows for any other
-    // fail-closed case.
+    // On an unsupported firmware the app still launches and R2 still backs
+    // out; it just says so on screen instead of drawing a switch it cannot
+    // move.
+    // Read before the gate, because it decides how much of the gate has to run
+    // and whether the write path is ever entered. Not in the constructor: the
+    // SDK documents that reading it can log, and a log line from a constructor
+    // is a trap in the simulator.
+    {
+        SDK::AppConfig config(mKernel, NotifyToggleConfig::kConfigFile, NotifyToggleConfig::kFields);
+        mSaveToSettings = config.getBool(NotifyToggleConfig::kSaveToSettings);
+        DebugLog::appendf(mKernel.fs, "config: loaded=%d saveToSettings=%d (set by the wearer=%d)",
+                           config.isLoaded() ? 1 : 0, mSaveToSettings ? 1 : 0,
+                           config.has(NotifyToggleConfig::kSaveToSettings) ? 1 : 0);
+    }
+
     resolveFirmwareSupport();
 
     refreshLiveState();
@@ -297,8 +314,8 @@ void Gui::run()
                     toggle();
                     LOG_INFO("Toggled: notifications now %s (known=%d)\n",
                              mState.enabled ? "ON" : "OFF", mState.known);
-                    DebugLog::appendf(mKernel.fs, "R1 result: enabled=%d known=%d",
-                                       mState.enabled, mState.known);
+                    DebugLog::appendf(mKernel.fs, "R1 result: enabled=%d known=%d screenStatus=%d",
+                                       mState.enabled, mState.known, mState.status);
                     renderAndPush();
                 }
                 msg->setResult(SDK::MessageResult::SUCCESS);

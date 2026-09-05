@@ -1,10 +1,12 @@
 #ifndef GUI_HPP
 #define GUI_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 #include "SDK/Kernel/Kernel.hpp"
 
+#include "DebugLog.hpp"
 #include "SettingsAddresses.hpp"
 #include "notify_toggle_gui.h"
 
@@ -29,6 +31,7 @@ private:
     static constexpr uint32_t kBytesPerPixel     = 1;
     static constexpr uint32_t kMaxPixels         = 240u * 240u;
     static constexpr uint32_t kResponseTimeoutMs = 1000;
+    static constexpr uint8_t  kMaxBitsPerPixel   = 8;
 
     // Stretch goal: notice the live value changing out from under this app
     // (e.g. the phone app writing the same struct while this screen is open)
@@ -44,7 +47,19 @@ private:
     int16_t  mHeight     = 0;
     uint8_t  mColorDepth = 8;
     bool     mResumed    = false;
+    // The renderer writes one byte per pixel; a panel wanting more would have
+    // the kernel read past mFrameBuf, so frames are withheld instead.
+    bool     mDisplayUsable = true;
     uint32_t mTicksSinceRead = 0;
+
+    // Sticky until the next R1, so the periodic re-read cannot quietly turn a
+    // change that never reached the file back into a confident ON.
+    bool mPersistFailed = false;
+
+    // The wearer's answer to "also write this to the watch's settings file".
+    // False until the config says otherwise, so an install that nobody
+    // configures never writes anything.
+    bool mSaveToSettings = false;
 
     notify_toggle_state mState{};
 

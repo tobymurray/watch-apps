@@ -1,5 +1,7 @@
 #include "DebugLog.hpp"
 
+#if NOTIFY_TOGGLE_DEBUG_LOG
+
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -12,25 +14,17 @@ namespace
 constexpr size_t kLineCap = 256;
 constexpr size_t kLogPathCap = 32;
 char sLogPath[kLogPathCap] = "debug.log";
-// Diagnostic session cap, not a rotation policy: this file is a temporary
-// aid, so once it's this big something is looping and the right fix is to
-// stop, not to keep growing it. ~64K is generous for one debug session's
-// worth of the periodic re-read poll.
+// A cap, not a rotation policy: past this something is looping, and the right
+// answer is to stop rather than to keep filling the wearer's storage.
 constexpr size_t kMaxLogFileBytes = 64 * 1024;
 
 // Static, not local: this runs on the GUI task's 10 KB stack, called from
-// deep inside LiveSettings/SettingsPersist's own read/write paths, which
-// have their own on-stack File objects and read/write buffers. One shared
-// scratch line is safe because nothing here is reentrant or concurrent --
-// single-threaded app, and each of these functions finishes writing and
-// returns before anything else could reuse it.
+// paths that already hold their own File object and file buffer. One shared
+// line is safe because nothing here is reentrant -- single-threaded app, and
+// each call finishes before anything else could reuse it.
 char sLineBuf[kLineCap];
-SDK::Interface::IFileSystem::ObjectInfo sDirItem;
+bool sSaidFull = false;
 
-/// Writes exactly `len` bytes of `text` plus a trailing newline. Does not
-/// itself copy `text` anywhere -- the caller decides whether that needs a
-/// buffer at all (append() doesn't; appendf()/appendBytes() format directly
-/// into sLineBuf, so there is exactly one buffer in play, not one per call).
 void writeLine(SDK::Interface::IFileSystem &fs, const char *text, size_t len)
 {
     auto file = fs.file(sLogPath);
@@ -45,6 +39,16 @@ void writeLine(SDK::Interface::IFileSystem &fs, const char *text, size_t len)
     }
     const size_t currentSize = file->size();
     if (currentSize >= kMaxLogFileBytes) {
+        // One line over the cap, once: a log that simply stopped would read as
+        // a run that stopped, which is the wrong thing to conclude from it.
+        if (!sSaidFull) {
+            sSaidFull = true;
+            static constexpr char kFull[] = "--- log full; later lines dropped ---\n";
+            file->seek(currentSize);
+            size_t n = 0;
+            file->write(kFull, sizeof(kFull) - 1, n);
+            file->flush();
+        }
         file->close();
         return;
     }
@@ -84,121 +88,6 @@ void appendf(SDK::Interface::IFileSystem &fs, const char *fmt, ...)
     writeLine(fs, sLineBuf, len);
 }
 
-void appendBytes(SDK::Interface::IFileSystem &fs, const char *prefix, const char *data, size_t len)
-{
-    size_t n = 0;
-    for (const char *p = prefix; *p != '\0' && n < sizeof(sLineBuf) - 6; ++p) {
-        sLineBuf[n++] = *p;
-    }
-    sLineBuf[n++] = ':';
-    sLineBuf[n++] = ' ';
-
-    const size_t capped = (len < 150) ? len : 150;
-    for (size_t i = 0; i < capped && n < sizeof(sLineBuf) - 4; ++i) {
-        const char c = data[i];
-        sLineBuf[n++] = (c >= 32 && c < 127) ? c : '.';
-    }
-    if (len > capped) {
-        sLineBuf[n++] = '.';
-        sLineBuf[n++] = '.';
-        sLineBuf[n++] = '.';
-    }
-    writeLine(fs, sLineBuf, n);
-}
-
-void listDirectory(SDK::Interface::IFileSystem &fs, const char *path)
-{
-    appendf(fs, "listdir %s :", path);
-
-    auto dir = fs.dir(path);
-    if (!dir || !dir->open()) {
-        append(fs, "  (could not open)");
-        return;
-    }
-
-    int count = 0;
-    while (dir->readNext(sDirItem)) {
-        appendf(fs, "  %s%s (%zu bytes) hidden=%d system=%d",
-                sDirItem.name, sDirItem.isDir ? "/" : "", sDirItem.size,
-                sDirItem.isHidden ? 1 : 0, sDirItem.isSystem ? 1 : 0);
-        if (++count >= 40) {
-            append(fs, "  ...(truncated)");
-            break;
-        }
-    }
-    if (count == 0) {
-        append(fs, "  (empty)");
-    }
-    dir->close();
-}
-
-void probeDriveRoots(SDK::Interface::IFileSystem &fs)
-{
-    append(fs, "probing numbered drive roots (read-only: exist() + listing)");
-    static constexpr const char *kRoots[] = { "0:/", "1:/", "2:/", "3:/" };
-    for (const char *root : kRoots) {
-        const bool rootExists = fs.exist(root);
-        appendf(fs, "exist(%s)=%d", root, rootExists ? 1 : 0);
-        if (rootExists) {
-            listDirectory(fs, root);
-        }
-
-        // Also try the specific file this app actually wants, at this root,
-        // without ever opening it for writing.
-        char settingsAtRoot[24];
-        std::snprintf(settingsAtRoot, sizeof(settingsAtRoot), "%ssettings.json", root);
-        appendf(fs, "exist(%s)=%d", settingsAtRoot, fs.exist(settingsAtRoot) ? 1 : 0);
-    }
-}
-
-void probeSharedData(SDK::Interface::IFileSystem &fs)
-{
-    append(fs, "probing SharedData spellings (read-only: exist(), then listing if present)");
-    static constexpr const char *kCandidates[] = {
-        "../SharedData/",
-        "../SharedData",
-        "../../SharedData/",
-        "SharedData/",
-    };
-    for (const char *candidate : kCandidates) {
-        const bool candidateExists = fs.exist(candidate);
-        appendf(fs, "exist(%s)=%d", candidate, candidateExists ? 1 : 0);
-        if (candidateExists) {
-            listDirectory(fs, candidate);
-        }
-    }
-}
-
-void probeTwoHopResolution(SDK::Interface::IFileSystem &fs)
-{
-    // "../SharedData/" (one leading ".." plus a real subpath) resolved
-    // correctly; bare "../" and "../../" (nothing after the dots) did not --
-    // they both hit whatever this firmware's parser does with a totally bare
-    // "..", which turned out to be unrelated to real parent-directory
-    // resolution. So a bare "../../" was never a valid test of "does a
-    // second real hop work". This checks with real subpaths instead, on
-    // known-from-BLE-FTS-research targets two real hops up from this app's
-    // own directory: "Apps/" itself (very recognisable -- sibling app
-    // folders) and a route into and back out of it that never leaves a bare
-    // ".." floating with nothing after it anywhere in the string.
-    append(fs, "probing two-hop resolution with real subpaths (not bare '..')");
-    listDirectory(fs, "../../Apps/");
-    listDirectory(fs, "../../Apps/../");
-
-    // One ".." (in "../SharedData/") resolves correctly; every two-".."
-    // arrangement tried so far falls back to the same wrong fixed volume.
-    // This checks whether it's specifically "a second '..' token anywhere",
-    // or whether leading with a real name before any dots changes anything.
-    append(fs, "probing whether leading-token shape changes two-hop resolution");
-    static constexpr const char *kShapes[] = {
-        "/../settings.json",
-        "./../settings.json",
-        "Apps/../../settings.json",
-        "../Apps/../settings.json",
-    };
-    for (const char *shape : kShapes) {
-        appendf(fs, "exist(%s)=%d", shape, fs.exist(shape) ? 1 : 0);
-    }
-}
-
 } // namespace DebugLog
+
+#endif // NOTIFY_TOGGLE_DEBUG_LOG

@@ -8,17 +8,35 @@
 extern "C" {
 #endif
 
+/* Why the last read or write ended where it did. The renderer draws a
+   different screen for each, because every one of them has a different answer
+   to "what happens to my setting now?" and a switch that just moves cannot
+   tell them apart. */
+enum {
+    /* The live flag was read, and any write was also saved to settings.json. */
+    NOTIFY_TOGGLE_STATUS_OK = 0,
+    /* This watch's firmware is not in SettingsAddresses' table, so nothing is
+       read or written at all. */
+    NOTIFY_TOGGLE_STATUS_UNSUPPORTED = 1,
+    /* The live flag could not be confirmed, so `enabled` means nothing. */
+    NOTIFY_TOGGLE_STATUS_UNREADABLE = 2,
+    /* The live flag changed and took effect, but settings.json was not
+       written: `enabled` is true now and will revert on the next reboot. */
+    NOTIFY_TOGGLE_STATUS_NOT_SAVED = 3,
+    /* Saving is switched off in the app's settings, so the flag is live only
+       and reverts on the next reboot. Nothing went wrong. */
+    NOTIFY_TOGGLE_STATUS_LIVE_ONLY = 4
+};
+
 /* Everything the renderer needs to draw one frame. This is a read-only view
    of the real watch-wide notifications flag (settings.json), not app state:
-   `known` is 0 whenever the last attempt to read or write that file did not
-   confirm a value (missing file, unexpected shape, a write that failed) --
-   the renderer must show an explicit "unknown" state rather than guess, the
-   same fail-closed rule LiveSettings.cpp and SettingsPersist.cpp apply to
-   the live struct and the file itself. */
+   `known` is 0 whenever the last attempt to read that flag did not confirm a
+   value, and `status` says what to tell the wearer about it. */
 typedef struct {
     uint8_t enabled;   /* 0 or 1: last confirmed value of the real flag */
     uint8_t known;     /* 0 or 1: whether `enabled` is actually trustworthy */
-    uint8_t _pad[2];
+    uint8_t status;    /* one of NOTIFY_TOGGLE_STATUS_* */
+    uint8_t _pad[1];
 } notify_toggle_state;
 
 /* FNV-1a over the layout as the linked Rust core sees it. A size alone passes
@@ -55,6 +73,7 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, alignof(notify_toggle_state));
     h = fnv1a(h, offsetof(notify_toggle_state, enabled));
     h = fnv1a(h, offsetof(notify_toggle_state, known));
+    h = fnv1a(h, offsetof(notify_toggle_state, status));
     h = fnv1a(h, offsetof(notify_toggle_state, _pad));
     return h;
 }
@@ -68,7 +87,8 @@ static_assert(sizeof(notify_toggle_state) == 4, "notify_toggle_state size change
 static_assert(alignof(notify_toggle_state) == 1, "notify_toggle_state alignment changed");
 static_assert(offsetof(notify_toggle_state, enabled) == 0, "enabled moved");
 static_assert(offsetof(notify_toggle_state, known) == 1, "known moved");
-static_assert(offsetof(notify_toggle_state, _pad) == 2, "_pad moved");
+static_assert(offsetof(notify_toggle_state, status) == 2, "status moved");
+static_assert(offsetof(notify_toggle_state, _pad) == 3, "_pad moved");
 #endif
 
 #endif // NOTIFY_TOGGLE_GUI_H

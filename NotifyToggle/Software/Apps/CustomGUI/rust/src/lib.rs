@@ -29,6 +29,38 @@ fn on_panic(info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
+/// What the last read or write actually achieved. The screen is different for
+/// each, because each leaves the wearer's setting somewhere different.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Status {
+    /// Read, and any write also reached settings.json.
+    Ok,
+    /// This firmware is not in the address table; nothing was read or written.
+    Unsupported,
+    /// The live flag could not be confirmed, so `enabled` means nothing.
+    Unreadable,
+    /// The live flag changed and took effect, but the file was not written.
+    NotSaved,
+    /// Saving is switched off, so the flag is live only. Nothing went wrong,
+    /// which is why this draws in the ordinary colours and only the footer
+    /// differs.
+    LiveOnly,
+}
+
+impl Status {
+    /// Anything unrecognised reads as `Unreadable`, so a value this build does
+    /// not know about cannot be drawn as a confident answer.
+    fn from_u8(raw: u8) -> Status {
+        match raw {
+            0 => Status::Ok,
+            1 => Status::Unsupported,
+            3 => Status::NotSaved,
+            4 => Status::LiveOnly,
+            _ => Status::Unreadable,
+        }
+    }
+}
+
 /// Mirrors `notify_toggle_state` (`notify_toggle_gui.h`) field for field.
 /// This is a read-only view of the real watch-wide notifications flag, not
 /// app state of its own -- `known` says whether `enabled` is actually
@@ -38,7 +70,8 @@ fn on_panic(info: &core::panic::PanicInfo) -> ! {
 pub struct State {
     pub enabled: u8,
     pub known: u8,
-    pub _pad: [u8; 2],
+    pub status: u8,
+    pub _pad: [u8; 1],
 }
 
 impl State {
@@ -48,6 +81,10 @@ impl State {
 
     fn is_known(&self) -> bool {
         self.known != 0
+    }
+
+    fn status(&self) -> Status {
+        Status::from_u8(self.status)
     }
 }
 
@@ -216,12 +253,18 @@ fn text(fb: &mut FrameBuf, face: &Face, s: &str, x: i32, baseline: i32, color: A
 }
 
 fn draw_toggle(fb: &mut FrameBuf, state: &State) {
+    let side = if state.is_enabled() { KNOB_ON_CX } else { KNOB_OFF_CX };
+    // NotSaved keeps the knob on the side the live value really is -- that part
+    // is true right now -- and drops the confident green for the same amber an
+    // unreadable value gets, because both mean "do not rely on this".
     let (accent, knob_cx) = if !state.is_known() {
         (UNKNOWN_ACCENT, KNOB_UNKNOWN_CX)
+    } else if state.status() == Status::NotSaved {
+        (UNKNOWN_ACCENT, side)
     } else if state.is_enabled() {
-        (ON_ACCENT, KNOB_ON_CX)
+        (ON_ACCENT, side)
     } else {
-        (OFF_ACCENT, KNOB_OFF_CX)
+        (OFF_ACCENT, side)
     };
 
     let pill = RoundedRectangle::new(
@@ -241,10 +284,20 @@ fn draw_toggle(fb: &mut FrameBuf, state: &State) {
 fn draw(fb: &mut FrameBuf, state: &State) {
     text(fb, WORD_FACE, TITLE, PANEL_CX, TITLE_BASELINE_Y, HEADING);
 
+    // No switch at all on an unsupported firmware: R1 cannot move it, so
+    // drawing one invites the press that does nothing.
+    if state.status() == Status::Unsupported {
+        text(fb, WORD_FACE, LABEL_UNSUPPORTED, PANEL_CX, LABEL_BASELINE_Y, UNKNOWN_ACCENT);
+        text(fb, HINT_FACE, FOOTER_UNSUPPORTED, PANEL_CX, FOOTER_BASELINE_Y, CHROME);
+        return;
+    }
+
     draw_toggle(fb, state);
 
     let (label, label_color) = if !state.is_known() {
         (LABEL_UNKNOWN, UNKNOWN_ACCENT)
+    } else if state.status() == Status::NotSaved {
+        (LABEL_NOT_SAVED, UNKNOWN_ACCENT)
     } else if state.is_enabled() {
         (LABEL_ON, ON_ACCENT)
     } else {
@@ -253,16 +306,25 @@ fn draw(fb: &mut FrameBuf, state: &State) {
     text(fb, WORD_FACE, label, PANEL_CX, LABEL_BASELINE_Y, label_color);
 
     // R1 always attempts a fresh read-and-toggle (Gui.cpp re-reads the real
-    // file before deciding what to write), so the hint stays the same even
-    // from the unknown state -- it is "try again", not "disabled".
-    text(fb, HINT_FACE, FOOTER, PANEL_CX, FOOTER_BASELINE_Y, CHROME);
+    // value before deciding what to write), so the hint stays the same even
+    // from the unknown state -- it is "try again", not "disabled". A change
+    // that did not reach the file spends the line on the consequence instead.
+    let footer = match state.status() {
+        Status::NotSaved | Status::LiveOnly => FOOTER_NOT_SAVED,
+        _ => FOOTER,
+    };
+    text(fb, HINT_FACE, footer, PANEL_CX, FOOTER_BASELINE_Y, CHROME);
 }
 
 const TITLE: &str = "NOTIFICATIONS";
 const LABEL_ON: &str = "ON";
 const LABEL_OFF: &str = "OFF";
 const LABEL_UNKNOWN: &str = "?";
+const LABEL_NOT_SAVED: &str = "NOT SAVED";
+const LABEL_UNSUPPORTED: &str = "UNSUPPORTED";
 const FOOTER: &str = "R1 TOGGLE  R2 BACK";
+const FOOTER_NOT_SAVED: &str = "REVERTS ON REBOOT";
+const FOOTER_UNSUPPORTED: &str = "NEEDS WATCH 1.4.0";
 
 pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {
     if width == 0 || height == 0 {
@@ -293,6 +355,7 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::align_of::<State>());
     let h = fnv1a(h, core::mem::offset_of!(State, enabled));
     let h = fnv1a(h, core::mem::offset_of!(State, known));
+    let h = fnv1a(h, core::mem::offset_of!(State, status));
     fnv1a(h, core::mem::offset_of!(State, _pad))
 }
 
@@ -311,7 +374,8 @@ const _: () = assert!(core::mem::size_of::<State>() == 4);
 const _: () = assert!(core::mem::align_of::<State>() == 1);
 const _: () = assert!(core::mem::offset_of!(State, enabled) == 0);
 const _: () = assert!(core::mem::offset_of!(State, known) == 1);
-const _: () = assert!(core::mem::offset_of!(State, _pad) == 2);
+const _: () = assert!(core::mem::offset_of!(State, status) == 2);
+const _: () = assert!(core::mem::offset_of!(State, _pad) == 3);
 
 /// # Safety
 /// `buf` must point to at least `buf_len` writable bytes and `state` to a valid
@@ -341,15 +405,37 @@ mod tests {
     const C_STRUCT_ALIGN: usize = 1;
 
     fn on() -> State {
-        State { enabled: 1, known: 1, _pad: [0; 2] }
+        State { enabled: 1, known: 1, status: 0, _pad: [0; 1] }
     }
 
     fn off() -> State {
-        State { enabled: 0, known: 1, _pad: [0; 2] }
+        State { enabled: 0, known: 1, status: 0, _pad: [0; 1] }
     }
 
     fn unknown() -> State {
-        State { enabled: 0, known: 0, _pad: [0; 2] }
+        State { enabled: 0, known: 0, status: 2, _pad: [0; 1] }
+    }
+
+    fn not_saved() -> State {
+        State { enabled: 1, known: 1, status: 3, _pad: [0; 1] }
+    }
+
+    fn live_only() -> State {
+        State { enabled: 1, known: 1, status: 4, _pad: [0; 1] }
+    }
+
+    fn unsupported() -> State {
+        State { enabled: 0, known: 0, status: 1, _pad: [0; 1] }
+    }
+
+    fn frame(state: &State) -> Vec<u8> {
+        let mut buf = vec![0u8; (W * H) as usize];
+        render(&mut buf, W, H, state);
+        buf
+    }
+
+    fn px(buf: &[u8], x: i32, y: i32) -> u8 {
+        buf[(y as u32 * W + x as u32) as usize]
     }
 
     #[test]
@@ -384,10 +470,12 @@ mod tests {
     /// find one would be on a wrist; this finds it here instead.
     #[test]
     fn every_word_has_a_glyph_in_its_face() {
-        for s in [TITLE, LABEL_ON, LABEL_OFF, LABEL_UNKNOWN] {
+        for s in [TITLE, LABEL_ON, LABEL_OFF, LABEL_UNKNOWN, LABEL_NOT_SAVED, LABEL_UNSUPPORTED] {
             assert!(WORD_FACE.covers(s), "{s:?} has a character the word face lacks");
         }
-        assert!(HINT_FACE.covers(FOOTER));
+        for s in [FOOTER, FOOTER_NOT_SAVED, FOOTER_UNSUPPORTED] {
+            assert!(HINT_FACE.covers(s), "{s:?} has a character the hint face lacks");
+        }
     }
 
     /// The panel is round and the buffer is square; a footer that fits the buffer
@@ -395,7 +483,7 @@ mod tests {
     #[test]
     fn nothing_is_drawn_outside_the_bezel() {
         let n = (W * H) as usize;
-        for state in [on(), off(), unknown()] {
+        for state in [on(), off(), unknown(), not_saved(), unsupported(), live_only()] {
             let mut buf = vec![0u8; n];
             render(&mut buf, W, H, &state);
             for y in 0..H as i32 {
@@ -436,6 +524,72 @@ mod tests {
 
         assert_eq!(px(&buf_off, KNOB_OFF_CX, KNOB_CY), KNOB.0, "OFF: knob should be on the left");
         assert_ne!(px(&buf_off, KNOB_ON_CX, KNOB_CY), KNOB.0, "OFF: right side should not be the knob");
+    }
+
+    /// The failure this app shipped without: a save that never reached the file
+    /// drew exactly the same confident green as one that did.
+    #[test]
+    fn not_saved_is_visually_distinct_from_a_saved_on() {
+        let saved = frame(&on());
+        let unsaved = frame(&not_saved());
+        assert_ne!(saved, unsaved, "NOT SAVED draws the same frame as a saved ON");
+
+        let fill = px(&unsaved, PANEL_CX, PILL_Y + 6);
+        assert_eq!(fill, UNKNOWN_ACCENT.0, "an unsaved change must not read as confident");
+        assert_ne!(fill, ON_ACCENT.0);
+    }
+
+    /// The knob still has to tell the truth about the live value, which really
+    /// did change -- it is the persistence that did not.
+    #[test]
+    fn not_saved_still_shows_which_way_the_live_value_went() {
+        let buf = frame(&not_saved());
+        assert_eq!(px(&buf, KNOB_ON_CX, KNOB_CY), KNOB.0);
+        assert_ne!(px(&buf, KNOB_OFF_CX, KNOB_CY), KNOB.0);
+    }
+
+    /// An unsupported firmware cannot move anything, so there must be no switch
+    /// on screen to invite the press -- and no ON/OFF anywhere to be believed.
+    #[test]
+    fn unsupported_draws_no_switch_at_all() {
+        let buf = frame(&unsupported());
+        for x in [KNOB_ON_CX, KNOB_OFF_CX, KNOB_UNKNOWN_CX] {
+            assert_ne!(px(&buf, x, KNOB_CY), KNOB.0, "drew a knob at {x}");
+        }
+        for accent in [ON_ACCENT.0, OFF_ACCENT.0] {
+            assert_ne!(px(&buf, PANEL_CX, PILL_Y + 6), accent);
+        }
+    }
+
+    /// Saving being off is a choice, not a fault: the switch has to look exactly
+    /// as confident as it does when saving is on, with only the footer saying
+    /// the change will not outlast a restart.
+    #[test]
+    fn live_only_looks_normal_but_says_it_reverts() {
+        let saved = frame(&on());
+        let live = frame(&live_only());
+        assert_eq!(px(&live, PANEL_CX, PILL_Y + 6), ON_ACCENT.0, "should not look like a fault");
+        assert_eq!(px(&live, KNOB_ON_CX, KNOB_CY), KNOB.0);
+        assert_ne!(saved, live, "the footer has to differ");
+    }
+
+    #[test]
+    fn every_status_draws_a_different_screen() {
+        let frames = [frame(&on()), frame(&not_saved()), frame(&unknown()), frame(&unsupported()),
+                      frame(&live_only())];
+        for i in 0..frames.len() {
+            for j in (i + 1)..frames.len() {
+                assert_ne!(frames[i], frames[j], "states {i} and {j} draw identically");
+            }
+        }
+    }
+
+    /// A status byte this build does not know about must fall back to the
+    /// unreadable screen rather than to a confident ON.
+    #[test]
+    fn an_unrecognised_status_is_not_drawn_as_confident() {
+        let odd = State { enabled: 1, known: 1, status: 200, _pad: [0; 1] };
+        assert_eq!(odd.status(), Status::Unreadable);
     }
 
     #[test]

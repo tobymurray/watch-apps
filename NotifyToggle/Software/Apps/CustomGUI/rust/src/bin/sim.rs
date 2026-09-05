@@ -43,10 +43,10 @@ fn main() {
     let mut display = SimulatorDisplay::<Rgb888>::new(Size::new(W, H));
     let mut window = Window::new("NotifyToggle sim (240x240, ABGR2222, round)", &output);
 
-    println!("Interactive sim. SPACE/R1 = toggle, U = unknown state, ESC/R2 = quit.");
+    println!("Interactive sim. SPACE/R1 = toggle, U = unreadable, N = not saved, L = live only, F = unsupported firmware, ESC/R2 = quit.");
 
     let mut buf = vec![0u8; (W * H) as usize];
-    let mut st = State { enabled: 1, known: 1, _pad: [0; 2] };
+    let mut st = State { enabled: 1, known: 1, status: 0, _pad: [0; 1] };
 
     notify_toggle_gui::render(&mut buf, W, H, &st);
     blit(&mut display, &buf);
@@ -59,14 +59,34 @@ fn main() {
                 SimulatorEvent::KeyDown { keycode, .. } => match keycode {
                     Keycode::Space | Keycode::Return => {
                         st.known = 1;
+                        st.status = 0;
                         st.enabled = if st.enabled == 0 { 1 } else { 0 };
                         notify_toggle_gui::render(&mut buf, W, H, &st);
                         blit(&mut display, &buf);
                     }
-                    // Previews the "could not confirm the file" state Gui.cpp
-                    // falls back to on a failed read or write.
+                    // The three screens a wrist only reaches by something going
+                    // wrong, each previewable here on purpose.
                     Keycode::U => {
                         st.known = 0;
+                        st.status = 2;
+                        notify_toggle_gui::render(&mut buf, W, H, &st);
+                        blit(&mut display, &buf);
+                    }
+                    Keycode::N => {
+                        st.known = 1;
+                        st.status = 3;
+                        notify_toggle_gui::render(&mut buf, W, H, &st);
+                        blit(&mut display, &buf);
+                    }
+                    Keycode::L => {
+                        st.known = 1;
+                        st.status = 4;
+                        notify_toggle_gui::render(&mut buf, W, H, &st);
+                        blit(&mut display, &buf);
+                    }
+                    Keycode::F => {
+                        st.known = 0;
+                        st.status = 1;
                         notify_toggle_gui::render(&mut buf, W, H, &st);
                         blit(&mut display, &buf);
                     }

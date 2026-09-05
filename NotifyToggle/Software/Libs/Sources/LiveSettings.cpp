@@ -105,4 +105,23 @@ Status writeNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAdd
     return Status::Ok;
 }
 
+bool matchesFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                 bool fileNotifications, uint32_t fileWatchFaceId)
+{
+    const uint8_t rawFlag = notificationsByte(addrs);
+    const uint64_t liveFace = readWatchFaceIdRaw(addrs);
+
+    const bool flagAgrees = (rawFlag == (fileNotifications ? 1u : 0u));
+    const bool faceAgrees = (liveFace == fileWatchFaceId);
+
+    DebugLog::appendf(fs,
+                       "cross-check: notifications live=%u file=%u (%s), watchFaceId live=%llu file=%lu (%s)",
+                       rawFlag, fileNotifications ? 1u : 0u, flagAgrees ? "agree" : "DISAGREE",
+                       static_cast<unsigned long long>(liveFace),
+                       static_cast<unsigned long>(fileWatchFaceId),
+                       faceAgrees ? "agree" : "DISAGREE");
+
+    return flagAgrees && faceAgrees;
+}
+
 } // namespace LiveSettings

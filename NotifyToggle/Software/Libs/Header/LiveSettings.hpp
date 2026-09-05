@@ -1,54 +1,29 @@
 /**
  ******************************************************************************
  * @file    LiveSettings.hpp
- * @brief   Direct read/write of the kernel's live, in-RAM WatchSettings
- *          struct -- specifically the `phone.notifications` field -- via a
- *          raw pointer. This is not a supported SDK mechanism.
+ * @brief   Direct read/write of the kernel's live, in-RAM `phone.notifications`
+ *          byte via a raw pointer. Not a supported SDK mechanism.
  ******************************************************************************
  *
- * The supported route (open "../../settings.json" through Kernel::fs) was
- * tried first and conclusively failed -- that attempt no longer lives in
- * this tree (see git history and
- * Docs/Investigations/2026-08-31-live-settings-persistence/ for the record),
- * but the reason still matters: static disassembly of this exact unit's
- * verified kernel 1.4.0 flash dump (una-sdk/firmware-dumps/1.4.0,
- * CRC-checked) shows FileSystemGuard::getFullPath implements exactly one
- * relative-path escape -- a hardcoded literal match on "../SharedData" --
- * and rejects every other ".." path outright, logging
- * "Rejected/invalid path!". settings.json is not reachable through the
- * app-facing sandboxed filesystem at all, on this firmware.
+ * The supported route does not exist: `FileSystemGuard::getFullPath` allows
+ * exactly one relative-path escape, a hardcoded match on "../SharedData", and
+ * rejects every other ".." path. `2:/settings.json` is unreachable through the
+ * app-facing filesystem on this firmware -- confirmed by disassembly of a
+ * CRC-verified 1.4.0 dump, and on a watch, where `exist("2:/")` and every
+ * two-hop spelling returned false.
  *
- * This is the fallback: UNA apps run **privileged** with the MPU switched
- * off (confirmed both by the SDK's own investigation docs and by this
- * unit's own dump_context.txt: CONTROL=0x6 -> nPRIV=0), so a running app
- * can read and write arbitrary memory with a plain pointer -- no fault. The
- * kernel's own settings loader parses settings.json once at boot into a
- * fixed, compile-time-constant struct address; this reads/writes that live
- * struct directly.
+ * This is the fallback: UNA apps run privileged with the MPU off (this unit's
+ * own boot state, CONTROL=0x6 -> nPRIV=0), so a plain pointer reaches the
+ * struct the kernel parses settings.json into at boot.
  *
- * ADDRESSES: not hardcoded here. Every function below takes a
- * `SettingsAddresses::AddressSet` -- the caller resolves that once, from the
- * watch's actual running firmware version (queried via a supported SDK
- * message, `SDK::Message::RequestSystemInfo`, never assumed), and refuses to
- * call anything here at all if that firmware hasn't been reverse-engineered
- * yet. See SettingsAddresses.hpp for why (a live signature scanner that
- * might lock onto the wrong address was considered and rejected) and for
- * the 1.4.0 entry's own address-by-address derivation (traced by hand from
- * the verified 1.4.0 dump, cross-checked against a live value and a second
- * code path -- not guessed), which used to live in this comment before this
- * module stopped being single-firmware-only.
+ * Addresses are never hardcoded here -- every function takes an AddressSet the
+ * caller resolved from the running firmware, and refuses to be called at all
+ * on a firmware that has none (SettingsAddresses.hpp).
  *
- * WHAT THIS ALONE DOES NOT DO: persist the change across a reboot -- that's
- * SettingsPersist.hpp, a separate step this module knows nothing about. This
- * is a live, immediate, in-memory change only.
- *
- * WHAT THIS DOES NOT DO EITHER: take the kernel's own settings mutex before
- * writing (a lock/unlock pair was observed guarding this struct in the
- * kernel's own code, at a separate address). A race against the kernel
- * writing the same struct at the same instant is possible in principle; it
- * is accepted here as a small, bounded risk for a discrete, user-triggered,
- * infrequent action, not attempted to be closed by calling another
- * unverified internal function.
+ * WHAT THIS DOES NOT DO: take the kernel's settings mutex before writing. A
+ * race against the kernel writing the same struct is possible in principle,
+ * and is accepted as a bounded risk for a user-triggered, infrequent action
+ * rather than closed by calling another unverified internal function.
  ******************************************************************************
  */
 
@@ -56,6 +31,8 @@
 #define LIVE_SETTINGS_HPP
 
 #include "SDK/Interfaces/IFileSystem.hpp"
+
+#include <cstdint>
 
 #include "SettingsAddresses.hpp"
 
@@ -70,21 +47,23 @@ enum class Status {
     ReadbackMismatch,        ///< Write only: the byte didn't read back as what was just written.
 };
 
-/// Read-only: reads the live `phone.notifications` byte and a nearby
-/// cross-check field (`watchFaceId`), refusing (Status other than Ok) rather
-/// than trusting a value that doesn't look like what this address should
-/// hold. `addrs` is the caller's already-resolved SettingsAddresses::AddressSet
-/// for the watch's actual running firmware -- never guessed, never a default,
-/// see SettingsAddresses.hpp. `fs` is used only to write diagnostic log lines
-/// (DebugLog), the same debug.log/gui-debug.log/service-debug.log mechanism
-/// used everywhere else tonight -- there being no wired-up debug UART to log
-/// to instead.
+/// Reads the live `phone.notifications` byte and a nearby cross-check field
+/// (`watchFaceId`), refusing rather than trusting a value that does not look
+/// like what this address should hold. `fs` is used only for DebugLog.
 Status readNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, bool &outEnabled);
 
 /// Reads fresh, refuses under the same conditions as readNotificationsFlag,
 /// and only then writes -- skipping the write entirely (Status::NoChange) if
 /// the live value already matches.
 Status writeNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, bool newEnabled);
+
+/// True if the live struct agrees with the file the kernel parsed it from, on
+/// both the flag this app writes and a second field it never touches. Two
+/// independent sources agreeing is the evidence that `settingsStructBase`
+/// really is the settings struct -- a range check on one field is not, because
+/// zeroed memory passes it.
+bool matchesFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                 bool fileNotifications, uint32_t fileWatchFaceId);
 
 } // namespace LiveSettings
 

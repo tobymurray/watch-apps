@@ -30,6 +30,14 @@ include(${LIBS_PATH}/libs.cmake)
 project(${APP_NAME})
 una_app_setup_version(BUILD_VERSION ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Off for anything a wearer installs: with it on, the app writes diagnostics
+# into its own directory on the watch. See DebugLog.hpp.
+option(NOTIFY_TOGGLE_DEBUG_LOG "Write diagnostic logs to the watch's filesystem" OFF)
+if(NOTIFY_TOGGLE_DEBUG_LOG)
+    message(STATUS "NotifyToggle: debug logging ON -- not a shippable build")
+    add_compile_definitions(NOTIFY_TOGGLE_DEBUG_LOG=1)
+endif()
+
 set(RUST_TARGET "thumbv8m.main-none-eabihf")
 set(RUST_LIB "${RUST_CRATE_DIR}/target/${RUST_TARGET}/release/libnotify_toggle_gui.a")
 
@@ -48,14 +56,12 @@ add_custom_target(notify_toggle_gui_rust ALL
     VERBATIM
 )
 
-# The toggle is read, drawn, flipped and persisted entirely from the GUI
-# process (see Gui.cpp / LiveSettings.cpp / SettingsPersist.cpp), via raw
-# pointers into the kernel's own live struct and internal File primitives --
-# not through SDK::Kernel::fs, which cannot reach settings.json on this
-# firmware at all (see the README for why). There is no SDK::AppConfig or
-# JSON dependency anywhere in this app.
+# Named, not ${LIBS_SOURCES}: the Service half neither reads nor writes the
+# setting, so linking LiveSettings/SettingsPersist into it would carry every
+# raw address into a binary that has no use for one.
 set(SERVICE_SOURCES
-    ${LIBS_SOURCES}
+    ${LIBS_PATH}/Sources/Service.cpp
+    ${LIBS_PATH}/Sources/DebugLog.cpp
     ${UNA_SDK_SOURCES_COMMON}
     ${UNA_SDK_SOURCES_APPSYSTEM}
 )
@@ -69,17 +75,21 @@ una_app_build_service(${APP_NAME}Service.elf)
 set(GUI_SOURCES
     $ENV{UNA_SDK}/Libs/Source/AppSystem/EntryPoint/CustomGUI/main.cpp
     ${CUSTOMGUI_PATH}/Gui.cpp
-    # Not all of LIBS_SOURCES: Service.cpp's own read-only probes have no
-    # reason to run twice, and no reason to be linked into the GUI binary too.
     ${LIBS_PATH}/Sources/DebugLog.cpp
+    ${LIBS_PATH}/Sources/FirmwareGate.cpp
     ${LIBS_PATH}/Sources/SettingsAddresses.cpp
     ${LIBS_PATH}/Sources/LiveSettings.cpp
     ${LIBS_PATH}/Sources/SettingsPersist.cpp
     ${UNA_SDK_SOURCES_COMMON}
+    # The one declared setting is read through SDK::AppConfig, which needs JSON
+    # in the same link.
+    ${UNA_SDK_SOURCES_JSON}
+    ${UNA_SDK_SOURCES_APPCONFIG}
 )
 set(GUI_INCLUDE_DIRS
     ${LIBS_INCLUDE_DIRS}
     ${UNA_SDK_INCLUDE_DIRS_COMMON}
+    ${UNA_SDK_INCLUDE_DIRS_JSON}
     ${CUSTOMGUI_PATH}
 )
 

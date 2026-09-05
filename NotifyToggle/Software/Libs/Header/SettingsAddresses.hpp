@@ -5,27 +5,29 @@
  *          and SettingsPersist.cpp need. Not a supported SDK mechanism.
  ******************************************************************************
  *
- * Every address here is specific to one exact kernel build -- there is no
- * general formula from a version number to an address, only a one-time
- * reverse-engineering pass per firmware (disassembly, cross-checked against
- * a real caller and a live value, the same discipline documented in
- * una-sdk's `research` branch,
- * `Docs/Investigations/2026-08-31-live-settings-persistence/README.md`, and
- * this app's own copy of that investigation).
+ * There is no formula from a version number to an address, only a
+ * reverse-engineering pass per firmware build, so this is a table with one
+ * row per version that has actually had that pass run against it, and a
+ * lookup that returns nothing -- never a guess -- for anything else.
  *
- * A live, on-device signature scanner that tried to *find* these addresses
- * at runtime instead was considered and rejected: a scanner that silently
- * locks onto the wrong address on an unexpected firmware build is a worse
- * failure than refusing to run at all, and it would throw away exactly the
- * "confirmed via a real caller, not just a byte-pattern match" standard the
- * whole investigation held itself to. So: one verified entry per firmware
- * version, added only after doing the RE work for that version, and a
- * lookup that returns nothing -- not a guess -- for anything not listed.
+ * EVIDENCE, and its limits:
+ * `Docs/Investigations/2026-08-31-live-settings-persistence/FINDINGS.md`
+ * records the derivation of `settingsStructBase`, `phoneNotificationsOffset`
+ * and `watchFaceIdOffset` only, from a CRC-verified 1.4.0 flash dump. The
+ * `File` addresses, the object layout and the exists/delete/rename entries
+ * below have no written derivation anywhere in this repository. They were
+ * exercised once, on the author's own unit, on 2026-09-01. That is one watch
+ * and one build.
  *
- * Growing this to a new firmware version means: dump and CRC-verify that
- * firmware's flash, re-derive every field below the same way 1.4.0's were
- * derived (register-level evidence, a real caller, a live cross-check where
- * possible), add a new entry, and leave every existing entry untouched.
+ * Adding a row means doing that firmware's own pass -- dump, disassemble,
+ * confirm against a real caller -- and writing the derivation down. Never by
+ * extrapolating from a neighbouring version.
+ *
+ * ONE ROW PER ABI, enforced below. Two firmware versions sharing an ABI cannot
+ * be told apart at runtime by anything this app can read, so a second row for
+ * the same ABI would be unreachable: supporting that needs byte signatures at
+ * each address to pick between them, which this app deliberately does not
+ * carry yet.
  ******************************************************************************
  */
 
@@ -38,10 +40,42 @@
 namespace SettingsAddresses
 {
 
+/// Bytes this app expects to find at one address, so a firmware that moved the
+/// function can be refused by *reading* rather than by calling it. 16 bytes is
+/// about eight Thumb instructions -- every one of these is unique in the 4MB
+/// image except setPath's, which appears twice, and that costs nothing here
+/// because this verifies a known address rather than searching for one.
+constexpr size_t kSignatureBytes = 16;
+
+struct Signature {
+    uintptr_t address;   ///< Thumb bit cleared: this is a load, not a call.
+    uint8_t   bytes[kSignatureBytes];
+};
+
+/// Fixed order, so a row's signatures can be checked against the addresses they
+/// claim to fingerprint rather than merely counted.
+enum SignatureIndex {
+    kSigOpen, kSigRead, kSigWrite, kSigClose, kSigRelease,
+    kSigSetPath, kSigExists, kSigDelete, kSigRename,
+    kSignatureCount
+};
+
 /// Everything LiveSettings.cpp and SettingsPersist.cpp need, for one exact
 /// firmware build. Addresses for the internal `File` class methods already
 /// carry the Thumb bit (see SettingsPersist.hpp) -- callable as-is.
 struct AddressSet {
+    /// The KERNEL_INTERFACE_VERSION this row was derived under, and the key it
+    /// is looked up by: it is the only version the kernel exposes to a running
+    /// app (`gIKernel->version`; REQUEST_SYSTEM_INFO is declared in the SDK
+    /// headers but answered FAIL by kernel 1.4.0, confirmed on a watch).
+    uint32_t abi;
+
+    /// The firmware the row was actually derived and verified on. Provenance
+    /// for logs, never a lookup key -- one ABI spans several firmware versions
+    /// (abi_kernel_map.json maps an ABI to the *minimum* firmware providing
+    /// it), so this cannot be recovered at runtime.
+    const char *derivedFrom;
+
     // --- LiveSettings: the kernel's live, in-RAM WatchSettings struct ---
     uintptr_t settingsStructBase;
     size_t    phoneNotificationsOffset;
@@ -71,15 +105,20 @@ struct AddressSet {
     size_t pathBufferOffset;
     size_t pathBufferSize;
     size_t fileSizeFieldOffset;
+
+    // --- FirmwareGate: what has to be at those addresses before any of them
+    // is called. settingsStructBase has no entry: it is RAM, whose contents
+    // are the wearer's settings rather than a fixed pattern, so the file
+    // cross-check is its evidence instead. ---
+    const Signature *signatures;
+    size_t           signatureCount;
 };
 
-/// Looks up the verified address set for `firmwareVersion` (an exact
-/// string match against SDK::Message::RequestSystemInfo's own
-/// `firmwareVersion` field, e.g. "1.4.0" -- not a `>=` floor comparison,
-/// unlike the manifest's `minKernelVersion`). Returns nullptr for any
-/// version not in the table, including anything newer -- there is no
-/// assumption that a later firmware keeps the same layout.
-const AddressSet *resolve(const char *firmwareVersion);
+/// The row derived under kernel ABI `abi`, or nullptr if none. An ABI is a
+/// coarse key -- it spans every firmware version that ships that interface --
+/// so a row it returns is a candidate, not a verdict: FirmwareGate.hpp then
+/// has to prove the addresses actually behave before anything calls them.
+const AddressSet *resolve(uint32_t abi);
 
 } // namespace SettingsAddresses
 
