@@ -9,7 +9,7 @@
   "appVersion": "0.4.1",
   "minKernelVersion": "1.4.0",
   "requiredHardware": [],
-  "description": "One switch for the watch's phone-notification setting: R1 flips it, R2 leaves. The change takes effect immediately and lasts until the watch restarts. Turn on \"Save to watch settings\" below and it is written to the watch's own settings file so it survives a restart -- that path reaches into firmware internals, so it works on watch software 1.4.0 and is off until you ask for it. On firmware it does not recognise the app says so on screen and changes nothing.",
+  "description": "Turns phone notifications on or off from your wrist \u2014 the same watch-wide setting the phone app controls. The change applies at once and reverts when the watch restarts, unless you switch on Save to watch settings. Saving needs watch software 1.4.0 exactly; on any other version the app says so on screen and changes nothing.",
   "id": "26FBAA925F61BA27",
   "stravaExport": false,
   "supportsLaps": false,
@@ -26,7 +26,7 @@
       "id": "saveToSettings",
       "type": "bool",
       "label": "Save to watch settings",
-      "description": "Off: the switch takes effect now and reverts when the watch restarts. On: it is also saved to the watch's settings file so it survives a restart, which needs firmware this app recognises exactly.",
+      "description": "Off: the switch works now and reverts when the watch restarts. On: it is also written to the watch's settings file, so it lasts. The app checks the firmware first and refuses if it cannot verify it.",
       "default": false
     }
   ]
