@@ -858,6 +858,48 @@ seconds), and half a zone width confirmed at **0.49 zw** against Ride A's 0.43.
 It is kept as a design, unbuilt, because the argument against it is about worth
 rather than correctness — and if that changes, none of it needs re-deriving.
 
+### The caveat that outranks the rest: this is all wrist optical
+
+**Every measurement in this experiment came from the wrist sensor**, because the
+strap has been unavailable since [its two-minute
+disconnect](RECOVERY-FIELD-TEST.md#the-strap-and-why-ride-c-is-deferred) was
+reported on 2026-09-03. The wearer's own experience is that a strap is more
+responsive and catches peaks the wrist misses, and this document cannot refute
+that.
+
+What the repository's only paired data can say — the four Squash recordings that
+carry `hr_optical` and `hr_external` on the same second, 453 paired seconds:
+
+| | |
+|---|---|
+| best-aligning lag, per recording | **6 s**, 0 s, 0 s, and one uncorrelated (r=0.02, the accessory-flap test) |
+| 20 s excursion, median / p90 | optical **3.75 / 11.25** bpm, external **2.00 / 5.75** |
+
+**No consistent lead**, and the optical swings *wider* rather than narrower —
+which is near-certainly the wrist being noisier rather than sharper, since these
+are 64–110 bpm and [the regime where trust=1 is 24% and a 15 bpm excursion was
+recorded](#the-excursion-belongs-to-this-regime-not-to-the-sensor). It is the
+wrong intensity to answer the question, and it is all there is.
+
+**What it does bound is the timing.** Take the largest lead in that table at
+face value — 6 s — and a sprint's peak moves from +18 s after the effort ended
+to +12 s. Still after. The strap would have to lead by about **18 seconds** to
+put the peak inside a 20-second sprint, which is three times the largest lead
+ever measured here and implausible against a cardiac time constant near 30 s.
+So the sprint conclusion is robust to a faster sensor.
+
+**What it does not bound is amplitude.** If the wrist smooths the peak rather
+than merely delaying it, a strap would show a sharper and possibly earlier one,
+and the ghost tick's 42%-falling-during-a-sprint could look different. Nothing
+here tests that.
+
+The clean experiment is the same interval session with a strap that holds a
+connection: every `record` already carries `hr_source`, `hr_optical` **and**
+`hr_external`, so one ride yields both sensors on the same seconds at sprint
+intensity — a within-ride comparison needing no second session. That is the
+measurement to make before this decision is treated as final, and it is blocked
+on the same firmware as `source_changed`.
+
 ### What would change the answer
 
 - **A rider asking for it after using the app**, rather than a display proposed
@@ -868,6 +910,8 @@ rather than correctness — and if that changes, none of it needs re-deriving.
 - **A steady-state use it was never tested against.** Every number here comes
   from intervals and ramps. Holding a zone for an hour is where a slow drift
   might be worth seeing before the digits move, and that was not measured.
+- **The strap**, per the section above — the one caveat that could move the
+  sprint numbers themselves rather than the judgement built on them.
 
 ### What the experiment produced instead
 
