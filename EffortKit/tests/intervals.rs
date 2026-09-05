@@ -257,6 +257,68 @@ fn every_byte_in_every_position_of_a_real_session_terminates() {
     }
 }
 
+/// xorshift64*, so the corpus is the same on every machine and every run: a
+/// fuzz that finds something has to be reproducible from the seed alone.
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+
+    fn byte(&mut self) -> u8 {
+        (self.next() >> 33) as u8
+    }
+}
+
+#[test]
+fn arbitrary_bytes_of_any_length_up_to_the_field_terminate() {
+    // The value is plaintext on a FAT volume readable over USB and BLE, so this
+    // is the real input space: any bytes, any length the field allows. Every one
+    // must parse or be refused -- no panic, no unbounded loop, no allocation.
+    let mut rng = Rng(0x5EED_1234_ABCD_0001);
+    let mut parsed = 0;
+    for _ in 0..200_000 {
+        let len = (rng.next() % (MAX_TEXT as u64 + 1)) as usize;
+        let mut buf = [0u8; MAX_TEXT];
+        for b in buf.iter_mut().take(len) {
+            *b = rng.byte();
+        }
+        if Session::parse(&buf[..len]).is_ok() {
+            parsed += 1;
+        }
+    }
+    // Uniform bytes almost never spell a session; this only says the loop ran.
+    assert!(parsed < 200_000);
+}
+
+#[test]
+fn arbitrary_strings_over_the_grammars_alphabet_terminate() {
+    // The same, but drawn only from bytes the grammar has a use for, so the
+    // parser is actually taken down its own paths rather than rejected at the
+    // first character.
+    const ALPHABET: &[u8] = b"0123456789smx(),@";
+    let mut rng = Rng(0x5EED_1234_ABCD_0002);
+    let mut parsed = 0;
+    for _ in 0..200_000 {
+        let len = (rng.next() % (MAX_TEXT as u64 + 1)) as usize;
+        let mut buf = [0u8; MAX_TEXT];
+        for b in buf.iter_mut().take(len) {
+            *b = ALPHABET[(rng.next() % ALPHABET.len() as u64) as usize];
+        }
+        if let Ok(s) = Session::parse(&buf[..len]) {
+            parsed += 1;
+            // Anything that parsed has to survive the round trip as well, which
+            // is where a value the renderer cannot express would show up.
+            assert_eq!(Session::parse(rendered(&s).as_bytes()), Ok(s));
+        }
+    }
+    assert!(parsed > 0, "the alphabet has to produce some real sessions");
+}
+
 // -- The round trip -----------------------------------------------------------
 
 #[test]
