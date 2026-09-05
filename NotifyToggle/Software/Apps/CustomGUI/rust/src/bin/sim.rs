@@ -43,7 +43,7 @@ fn main() {
     let mut display = SimulatorDisplay::<Rgb888>::new(Size::new(W, H));
     let mut window = Window::new("NotifyToggle sim (240x240, ABGR2222, round)", &output);
 
-    println!("Interactive sim. SPACE/R1 = toggle, U = unreadable, N = not saved, L = live only, F = unsupported firmware, ESC/R2 = quit.");
+    println!("Interactive sim. SPACE/R1 = toggle, U = unreadable, N = not saved, L = live only, S = unreadable settings, F = unsupported firmware, ESC/R2 = quit.");
 
     let mut buf = vec![0u8; (W * H) as usize];
     let mut st = State { enabled: 1, known: 1, status: 0, _pad: [0; 1] };
@@ -81,6 +81,12 @@ fn main() {
                     Keycode::L => {
                         st.known = 1;
                         st.status = 4;
+                        notify_toggle_gui::render(&mut buf, W, H, &st);
+                        blit(&mut display, &buf);
+                    }
+                    Keycode::S => {
+                        st.known = 0;
+                        st.status = 5;
                         notify_toggle_gui::render(&mut buf, W, H, &st);
                         blit(&mut display, &buf);
                     }

@@ -43,6 +43,8 @@ pub enum Status {
     NotSaved,
     /// Saving is switched off, so the flag is live only. Nothing went wrong.
     LiveOnly,
+    /// The firmware is known but settings.json could not be read or understood.
+    NoSettings,
 }
 
 impl Status {
@@ -54,6 +56,7 @@ impl Status {
             1 => Status::Unsupported,
             3 => Status::NotSaved,
             4 => Status::LiveOnly,
+            5 => Status::NoSettings,
             _ => Status::Unreadable,
         }
     }
@@ -281,9 +284,14 @@ fn draw(fb: &mut FrameBuf, state: &State) {
 
     // No switch at all on an unsupported firmware: R1 cannot move it, so
     // drawing one invites the press that does nothing.
-    if state.status() == Status::Unsupported {
-        text(fb, WORD_FACE, LABEL_UNSUPPORTED, PANEL_CX, LABEL_BASELINE_Y, UNKNOWN_ACCENT);
-        text(fb, HINT_FACE, FOOTER_UNSUPPORTED, PANEL_CX, FOOTER_BASELINE_Y, CHROME);
+    // Neither can be moved by R1, so neither draws a switch to invite the press.
+    if let Some((label, footer)) = match state.status() {
+        Status::Unsupported => Some((LABEL_UNSUPPORTED, FOOTER_UNSUPPORTED)),
+        Status::NoSettings => Some((LABEL_NO_SETTINGS, FOOTER_NO_SETTINGS)),
+        _ => None,
+    } {
+        text(fb, WORD_FACE, label, PANEL_CX, LABEL_BASELINE_Y, UNKNOWN_ACCENT);
+        text(fb, HINT_FACE, footer, PANEL_CX, FOOTER_BASELINE_Y, CHROME);
         return;
     }
 
@@ -318,6 +326,8 @@ const LABEL_UNSUPPORTED: &str = "UNSUPPORTED";
 const FOOTER: &str = "R1 TOGGLE  R2 BACK";
 const FOOTER_NOT_SAVED: &str = "REVERTS ON REBOOT";
 const FOOTER_UNSUPPORTED: &str = "NEEDS WATCH 1.4.0";
+const LABEL_NO_SETTINGS: &str = "SETTINGS?";
+const FOOTER_NO_SETTINGS: &str = "UNREADABLE FILE";
 
 pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {
     if width == 0 || height == 0 {
@@ -417,6 +427,10 @@ mod tests {
         State { enabled: 1, known: 1, status: 4, _pad: [0; 1] }
     }
 
+    fn no_settings() -> State {
+        State { enabled: 0, known: 0, status: 5, _pad: [0; 1] }
+    }
+
     fn unsupported() -> State {
         State { enabled: 0, known: 0, status: 1, _pad: [0; 1] }
     }
@@ -463,10 +477,11 @@ mod tests {
     /// find one would be on a wrist; this finds it here instead.
     #[test]
     fn every_word_has_a_glyph_in_its_face() {
-        for s in [TITLE, LABEL_ON, LABEL_OFF, LABEL_UNKNOWN, LABEL_NOT_SAVED, LABEL_UNSUPPORTED] {
+        for s in [TITLE, LABEL_ON, LABEL_OFF, LABEL_UNKNOWN, LABEL_NOT_SAVED, LABEL_UNSUPPORTED,
+                  LABEL_NO_SETTINGS] {
             assert!(WORD_FACE.covers(s), "{s:?} has a character the word face lacks");
         }
-        for s in [FOOTER, FOOTER_NOT_SAVED, FOOTER_UNSUPPORTED] {
+        for s in [FOOTER, FOOTER_NOT_SAVED, FOOTER_UNSUPPORTED, FOOTER_NO_SETTINGS] {
             assert!(HINT_FACE.covers(s), "{s:?} has a character the hint face lacks");
         }
     }
@@ -476,7 +491,8 @@ mod tests {
     #[test]
     fn nothing_is_drawn_outside_the_bezel() {
         let n = (W * H) as usize;
-        for state in [on(), off(), unknown(), not_saved(), unsupported(), live_only()] {
+        for state in [on(), off(), unknown(), not_saved(), unsupported(), live_only(),
+                      no_settings()] {
             let mut buf = vec![0u8; n];
             render(&mut buf, W, H, &state);
             for y in 0..H as i32 {
@@ -566,10 +582,21 @@ mod tests {
         assert_ne!(saved, live, "the footer has to differ");
     }
 
+    /// A firmware this app knows, with a settings file it does not, must not tell
+    /// the wearer to change their watch software -- that is not the problem.
+    #[test]
+    fn no_settings_draws_no_switch_and_does_not_blame_the_firmware() {
+        let buf = frame(&no_settings());
+        for x in [KNOB_ON_CX, KNOB_OFF_CX, KNOB_UNKNOWN_CX] {
+            assert_ne!(px(&buf, x, KNOB_CY), KNOB.0, "drew a knob at {x}");
+        }
+        assert_ne!(buf, frame(&unsupported()), "reads as the firmware being wrong");
+    }
+
     #[test]
     fn every_status_draws_a_different_screen() {
         let frames = [frame(&on()), frame(&not_saved()), frame(&unknown()), frame(&unsupported()),
-                      frame(&live_only())];
+                      frame(&live_only()), frame(&no_settings())];
         for i in 0..frames.len() {
             for j in (i + 1)..frames.len() {
                 assert_ne!(frames[i], frames[j], "states {i} and {j} draw identically");

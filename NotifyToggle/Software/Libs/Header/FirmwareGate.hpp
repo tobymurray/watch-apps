@@ -34,17 +34,24 @@
 namespace FirmwareGate
 {
 
+/// Why `resolve` answered as it did. The two failures are different problems
+/// for the wearer: one is a firmware this app cannot work with, the other is a
+/// firmware it can and a settings file it cannot.
+enum class Outcome {
+    Accepted,
+    UnknownFirmware,
+    SettingsUnreadable,
+};
+
 /// The addresses this app may use on the running firmware, or nullptr if that
 /// could not be established -- in which case nothing raw may be read or
 /// written, not even a read.
 ///
-/// `wantsPersistence` says whether the wearer asked for settings.json to be
-/// written (AppConfigFields.hpp). With it false the scratch-file check is
-/// skipped, because reading settings.json and finding it agrees with the live
-/// struct already proves every primitive that mode uses -- and skipping it is
-/// what makes the default configuration write nothing to the watch at all.
+/// Reads only. Proving the write primitives is left to the first write, so
+/// launching the app touches nothing on the watch -- see
+/// SettingsPersist::validatePrimitives.
 const SettingsAddresses::AddressSet *resolve(SDK::Interface::IFileSystem &fs, uint32_t kernelAbi,
-                                             bool wantsPersistence);
+                                             Outcome &outcome);
 
 } // namespace FirmwareGate
 

@@ -55,6 +55,19 @@ enum class Status {
 /// for DebugLog, there being no wired-up debug UART.
 Status persistNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, bool newEnabled);
 
+/// Puts back a settings file left aside by a commit that never finished.
+///
+/// The rollback inside a commit only covers a rename that returned an error;
+/// losing power between the two renames leaves the scratch copy holding the
+/// only settings file on the watch, and every later launch refusing because it
+/// cannot read one. This is the exception to writing nothing when saving is
+/// off: it moves back a file this app moved, and only when the real one is
+/// missing.
+///
+/// True if it recovered something.
+bool recoverInterruptedCommit(SDK::Interface::IFileSystem &fs,
+                              const SettingsAddresses::AddressSet &addrs);
+
 /// Reads the current `2:/settings.json` into `outBuf`, which must have room for
 /// kBufferCapacity bytes. Public because the firmware gate cross-checks the
 /// live struct against this file before trusting either.

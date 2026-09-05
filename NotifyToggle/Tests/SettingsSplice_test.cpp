@@ -312,3 +312,50 @@ TEST(SettingsRead, ReaderAndWriterAgreeOnTheSameField)
 }
 
 } // namespace
+
+namespace
+{
+
+/// The same characters appear in a string value, and only the colon after them
+/// says which one was a key. Stopping at the first match made a settings file
+/// that merely contained the word refuse to be read at all.
+TEST(SettingsScan, LooksPastAValueThatLooksLikeTheKey)
+{
+    const auto out = splice(R"({"a":"phone","phone":{"notifications":false}})", true);
+    ASSERT_EQ(out.result, SettingsSplice::Result::Ok);
+    EXPECT_EQ(out.text, R"({"a":"phone","phone":{"notifications":true}})");
+}
+
+TEST(SettingsScan, LooksPastANotificationsValueInsidePhone)
+{
+    const auto out = splice(R"({"phone":{"a":"notifications","notifications":false}})", true);
+    ASSERT_EQ(out.result, SettingsSplice::Result::Ok);
+    EXPECT_EQ(out.text, R"({"phone":{"a":"notifications","notifications":true}})");
+}
+
+TEST(SettingsScan, ReadsPastAWatchFaceIdValue)
+{
+    const std::string f = R"({"a":"watchFaceId","watchFaceId":7})";
+    uint32_t id = 0;
+    ASSERT_TRUE(SettingsSplice::readUnsigned(f.data(), f.size(), "watchFaceId", 11, id));
+    EXPECT_EQ(id, 7u);
+}
+
+TEST(SettingsScan, ReadsNotificationsPastALookalikeValue)
+{
+    const std::string f = R"({"a":"phone","phone":{"notifications":true}})";
+    bool value = false;
+    ASSERT_TRUE(SettingsSplice::readNotifications(f.data(), f.size(), value));
+    EXPECT_TRUE(value);
+}
+
+/// A key whose value is the wrong shape is not searched past: two `phone` keys
+/// would be a file this app does not understand, and guessing which to edit is
+/// worse than refusing.
+TEST(SettingsScan, DoesNotSearchPastAPhoneKeyThatIsNotAnObject)
+{
+    EXPECT_EQ(splice(R"({"phone":"none","phone":{"notifications":false}})", true).result,
+              SettingsSplice::Result::FieldNotFound);
+}
+
+} // namespace

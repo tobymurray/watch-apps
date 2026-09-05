@@ -121,9 +121,18 @@ steps, and refuses outright at any of them:
    that the struct base is the settings struct; a range check on one field is
    not, because zeroed memory passes it.
 
-With saving off — the default — steps 3 and 4 collapse into one: reading
-`settings.json` exercises every primitive that mode ever calls, and the
-cross-check is what says it worked. Nothing is written to the watch at all.
+Step 3 does not run at launch in either mode: it writes scratch files, and
+opening an app should not spend a wearer's flash on a write nobody asked for.
+It runs once, before the first save. So launching the app reads and never
+writes — the one exception being a settings file left under this app's scratch
+name by a commit that lost power mid-way, which is put back rather than
+stranded there.
+
+The last two failures are told apart on screen, because they are different
+problems: a firmware this app cannot work with says so, and a firmware it can
+with a settings file it cannot understand says that instead. Telling someone to
+change their watch software when that is not the fault is worse than saying
+nothing.
 
 Only one row per ABI is possible, and a `static_assert` enforces it: nothing
 this app can read at runtime tells two same-ABI firmware versions apart, so a
@@ -144,6 +153,7 @@ only ever moves cannot tell them apart:
 | Live value could not be read | Amber pill, knob centred, `?` |
 | Flipped, but the file was not written | Amber pill, knob on the live side, `NOT SAVED`, footer `REVERTS ON REBOOT` |
 | Saving is switched off (the default) | Ordinary green/grey pill and `ON`/`OFF`, footer `REVERTS ON REBOOT` |
+| Firmware known, `settings.json` not | No pill, `SETTINGS?`, footer `UNREADABLE FILE` |
 | The firmware gate refused | No pill at all, `UNSUPPORTED`, footer `NEEDS WATCH 1.4.0` |
 
 The last two are the ones that matter. A change that took effect live but never
@@ -198,7 +208,7 @@ From real builds against `apps-v1.4.0` in CI's toolchain image (linker map
 section headers, 600 KiB GUI RAM window, code executing from RAM):
 
 ```
-GUI      .text 47,780   .data 540   .bss 58,528   .stack 10,240   .uapp 55,996
+GUI      .text 48,068   .data 540   .bss 58,528   .stack 10,240   .uapp 56,284
 Service  .text  2,180   .data  36   .bss    556   .stack 10,240
 ```
 

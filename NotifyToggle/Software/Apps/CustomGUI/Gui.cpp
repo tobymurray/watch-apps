@@ -73,7 +73,9 @@ extern const SDK::Interface::IKernel *gIKernel;
 
 bool Gui::resolveFirmwareSupport()
 {
-    mAddresses = FirmwareGate::resolve(mKernel.fs, gIKernel->version, mSaveToSettings);
+    FirmwareGate::Outcome outcome = FirmwareGate::Outcome::UnknownFirmware;
+    mAddresses = FirmwareGate::resolve(mKernel.fs, gIKernel->version, outcome);
+    mGateOutcome = outcome;
     if (!mAddresses) {
         LOG_ERROR("firmware not verified for this build -- refusing every raw address\n");
     }
@@ -86,7 +88,9 @@ void Gui::refreshLiveState()
     if (!mAddresses) {
         mState.enabled = 0;
         mState.known   = 0;
-        mState.status  = NOTIFY_TOGGLE_STATUS_UNSUPPORTED;
+        mState.status  = (mGateOutcome == FirmwareGate::Outcome::SettingsUnreadable)
+                             ? NOTIFY_TOGGLE_STATUS_NO_SETTINGS
+                             : NOTIFY_TOGGLE_STATUS_UNSUPPORTED;
         return;
     }
 
@@ -157,6 +161,20 @@ void Gui::toggle()
 
     if (!mSaveToSettings) {
         DebugLog::append(mKernel.fs, "R1: saving is off, leaving settings.json alone");
+        return;
+    }
+
+    // Deferred to here, not done at launch: the check writes scratch files, and
+    // opening the app should not cost the wearer's flash a write it never asked
+    // for. Once per run is enough -- the firmware cannot change under a run.
+    if (!mPrimitivesChecked) {
+        mPrimitivesChecked = true;
+        mPrimitivesOk = SettingsPersist::validatePrimitives(mKernel.fs, *mAddresses);
+    }
+    if (!mPrimitivesOk) {
+        LOG_ERROR("toggle: the File primitives did not behave; not writing\n");
+        mPersistFailed = true;
+        refreshLiveState();
         return;
     }
 

@@ -52,11 +52,12 @@ bool signaturesMatch(SDK::Interface::IFileSystem &fs, const SettingsAddresses::A
 } // namespace
 
 const SettingsAddresses::AddressSet *resolve(SDK::Interface::IFileSystem &fs, uint32_t kernelAbi,
-                                             bool wantsPersistence)
+                                             Outcome &outcome)
 {
-    DebugLog::appendf(fs, "gate: kernel ABI %lu, built against %d, saving %s",
-                       static_cast<unsigned long>(kernelAbi), KERNEL_INTERFACE_VERSION,
-                       wantsPersistence ? "ON" : "off");
+    outcome = Outcome::UnknownFirmware;
+
+    DebugLog::appendf(fs, "gate: kernel ABI %lu, built against %d",
+                       static_cast<unsigned long>(kernelAbi), KERNEL_INTERFACE_VERSION);
 
     // system.cpp already exits on an ABI below this, so the case left is a
     // newer interface, which none of these addresses were derived against.
@@ -79,21 +80,16 @@ const SettingsAddresses::AddressSet *resolve(SDK::Interface::IFileSystem &fs, ui
         return nullptr;
     }
 
-    // Reading the file below already exercises everything the read-only mode
-    // calls, so only the mode that writes has to prove the write path.
-    if (wantsPersistence) {
-        if (!SettingsPersist::validatePrimitives(fs, *candidate)) {
-            DebugLog::append(fs, "gate: the File primitives did not behave -- refusing");
-            return nullptr;
-        }
-    } else {
-        DebugLog::append(fs, "gate: saving is off, so the write path is neither used nor tested");
-    }
+    // Before trying to read it: a commit interrupted by power loss leaves the
+    // only settings file under this app's scratch name, and refusing for want
+    // of a file this app moved would strand it there for good.
+    SettingsPersist::recoverInterruptedCommit(fs, *candidate);
 
     char buf[SettingsPersist::kBufferCapacity];
     size_t len = 0;
     if (SettingsPersist::readSettingsFile(fs, *candidate, buf, len) != SettingsPersist::Status::Ok) {
         DebugLog::append(fs, "gate: could not read settings.json to cross-check -- refusing");
+        outcome = Outcome::SettingsUnreadable;
         return nullptr;
     }
 
@@ -102,6 +98,7 @@ const SettingsAddresses::AddressSet *resolve(SDK::Interface::IFileSystem &fs, ui
     if (!SettingsSplice::readNotifications(buf, len, fileNotifications) ||
         !SettingsSplice::readUnsigned(buf, len, "watchFaceId", 11, fileWatchFaceId)) {
         DebugLog::append(fs, "gate: settings.json is not the shape this app understands -- refusing");
+        outcome = Outcome::SettingsUnreadable;
         return nullptr;
     }
 
@@ -111,6 +108,7 @@ const SettingsAddresses::AddressSet *resolve(SDK::Interface::IFileSystem &fs, ui
     }
 
     DebugLog::append(fs, "gate: firmware accepted");
+    outcome = Outcome::Accepted;
     return candidate;
 }
 

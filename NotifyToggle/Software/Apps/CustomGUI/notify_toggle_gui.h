@@ -25,7 +25,10 @@ enum {
     NOTIFY_TOGGLE_STATUS_NOT_SAVED = 3,
     /* Saving is switched off in the app's settings, so the flag is live only
        and reverts on the next reboot. Nothing went wrong. */
-    NOTIFY_TOGGLE_STATUS_LIVE_ONLY = 4
+    NOTIFY_TOGGLE_STATUS_LIVE_ONLY = 4,
+    /* The firmware is one this app knows, but `2:/settings.json` could not be
+       read or is not the shape it understands. Nothing was touched. */
+    NOTIFY_TOGGLE_STATUS_NO_SETTINGS = 5
 };
 
 /* Everything the renderer needs to draw one frame. This is a read-only view

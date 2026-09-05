@@ -341,6 +341,25 @@ Status persistNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsA
     return Status::Ok;
 }
 
+bool recoverInterruptedCommit(SDK::Interface::IFileSystem &fs,
+                              const SettingsAddresses::AddressSet &addrs)
+{
+    if (!objectSizeInRange(addrs)) {
+        return false;
+    }
+
+    const auto fileExists = reinterpret_cast<FileExistsFn>(addrs.fileExistsAddr);
+    const auto fileRename = reinterpret_cast<FileRenameFn>(addrs.fileRenameAddr);
+
+    if (fileExists(kSettingsPath) || !fileExists(kSettingsPrevPath)) {
+        return false;
+    }
+
+    const int ret = fileRename(kSettingsPrevPath, kSettingsPath);
+    DebugLog::appendf(fs, "recover: no settings.json but a scratch copy exists; rename back -> %d", ret);
+    return ret != 0;
+}
+
 Status readSettingsFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
                         char *outBuf, size_t &outLen)
 {

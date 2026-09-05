@@ -7,6 +7,7 @@
 #include "SDK/Kernel/Kernel.hpp"
 
 #include "DebugLog.hpp"
+#include "FirmwareGate.hpp"
 #include "SettingsAddresses.hpp"
 #include "notify_toggle_gui.h"
 
@@ -60,6 +61,12 @@ private:
     // False until the config says otherwise, so an install that nobody
     // configures never writes anything.
     bool mSaveToSettings = false;
+
+    // Whether the write primitives have been proved this run, and the answer.
+    FirmwareGate::Outcome mGateOutcome = FirmwareGate::Outcome::UnknownFirmware;
+
+    bool mPrimitivesChecked = false;
+    bool mPrimitivesOk      = false;
 
     notify_toggle_state mState{};
 

@@ -56,10 +56,12 @@ inline bool matches(const char *p, const char *end, const char *needle, size_t n
     return true;
 }
 
-/// Start of the quoted key `name` within [begin, end), or null.
-inline char *findKey(char *begin, char *end, const char *name, size_t nameLen)
+/// Start of the quoted token `name` at or after `begin`, or null. A match is
+/// only a candidate: the same characters appear in a string *value* too, and
+/// only the colon after them says which one this was.
+inline const char *findQuoted(const char *begin, const char *end, const char *name, size_t nameLen)
 {
-    for (char *p = begin; p < end; ++p) {
+    for (const char *p = begin; p < end; ++p) {
         if (*p != '"' || !matches(p + 1, end, name, nameLen)) {
             continue;
         }
@@ -73,11 +75,11 @@ inline char *findKey(char *begin, char *end, const char *name, size_t nameLen)
 /// End of the object that opens at `open` (which must point at '{'), one past
 /// its closing brace, or null if the braces never balance. Skips braces and
 /// escapes inside strings so a value can contain either.
-inline char *objectEnd(char *open, char *end)
+inline const char *objectEnd(const char *open, const char *end)
 {
     int depth = 0;
     bool inString = false;
-    for (char *p = open; p < end; ++p) {
+    for (const char *p = open; p < end; ++p) {
         if (inString) {
             if (*p == '\\') {
                 ++p;
@@ -100,31 +102,38 @@ inline char *objectEnd(char *open, char *end)
 }
 
 /// Start of the value for key `name` within [begin, end), past the colon and
-/// any whitespace, or null.
-inline char *findScalarValue(char *begin, char *end, const char *name, size_t nameLen)
+/// any whitespace, or null. Keeps looking past a token that turned out to be a
+/// string value rather than a key -- `{"a":"phone","phone":{...}}` has both,
+/// and stopping at the first would miss the real one.
+inline const char *findValue(const char *begin, const char *end, const char *name, size_t nameLen)
 {
-    char *key = findKey(begin, end, name, nameLen);
-    if (key == nullptr) {
-        return nullptr;
+    for (const char *search = begin; search < end;) {
+        const char *key = findQuoted(search, end, name, nameLen);
+        if (key == nullptr) {
+            return nullptr;
+        }
+        const char *p = key + 1 + nameLen + 1;
+        while (p < end && isSpace(*p)) {
+            ++p;
+        }
+        if (p < end && *p == ':') {
+            ++p;
+            while (p < end && isSpace(*p)) {
+                ++p;
+            }
+            return p < end ? p : nullptr;
+        }
+        search = key + 1;
     }
-    char *p = key + 1 + nameLen + 1;
-    while (p < end && isSpace(*p)) {
-        ++p;
-    }
-    if (p >= end || *p != ':') {
-        return nullptr;
-    }
-    ++p;
-    while (p < end && isSpace(*p)) {
-        ++p;
-    }
-    return p < end ? p : nullptr;
+    return nullptr;
 }
 
 /// Start of the object that is the value of key `name`, pointing at its '{'.
-inline char *findObjectValue(char *begin, char *end, const char *name, size_t nameLen)
+/// A `name` whose value is not an object is not searched past: the file is then
+/// not the shape this app knows how to edit.
+inline const char *findObject(const char *begin, const char *end, const char *name, size_t nameLen)
 {
-    char *value = findScalarValue(begin, end, name, nameLen);
+    const char *value = findValue(begin, end, name, nameLen);
     return (value != nullptr && *value == '{') ? value : nullptr;
 }
 
@@ -134,18 +143,17 @@ inline char *findObjectValue(char *begin, char *end, const char *name, size_t na
 /// file does not have the shape this app understands.
 inline bool readNotifications(const char *buf, size_t len, bool &out)
 {
-    char *const begin = const_cast<char *>(buf);
-    char *const end   = begin + len;
+    const char *const end = buf + len;
 
-    char *const phone = detail::findObjectValue(begin, end, "phone", 5);
+    const char *const phone = detail::findObject(buf, end, "phone", 5);
     if (phone == nullptr) {
         return false;
     }
-    char *const phoneEnd = detail::objectEnd(phone, end);
+    const char *const phoneEnd = detail::objectEnd(phone, end);
     if (phoneEnd == nullptr) {
         return false;
     }
-    char *value = detail::findScalarValue(phone, phoneEnd, "notifications", 13);
+    const char *value = detail::findValue(phone, phoneEnd, "notifications", 13);
     if (value == nullptr) {
         return false;
     }
@@ -165,10 +173,9 @@ inline bool readNotifications(const char *buf, size_t len, bool &out)
 /// non-negative integer.
 inline bool readUnsigned(const char *buf, size_t len, const char *name, size_t nameLen, uint32_t &out)
 {
-    char *const begin = const_cast<char *>(buf);
-    char *const end   = begin + len;
+    const char *const end = buf + len;
 
-    char *value = detail::findScalarValue(begin, end, name, nameLen);
+    const char *value = detail::findValue(buf, end, name, nameLen);
     if (value == nullptr || value >= end || *value < '0' || *value > '9') {
         return false;
     }
@@ -195,20 +202,21 @@ inline bool readUnsigned(const char *buf, size_t len, const char *name, size_t n
 inline Result setNotifications(char *buf, size_t &len, size_t capacity, bool newEnabled,
                                size_t *valueOffsetOut = nullptr)
 {
-    char *const end = buf + len;
+    const char *const end = buf + len;
 
-    char *const phone = detail::findObjectValue(buf, end, "phone", 5);
+    const char *const phone = detail::findObject(buf, end, "phone", 5);
     if (phone == nullptr) {
         return Result::FieldNotFound;
     }
-    char *const phoneEnd = detail::objectEnd(phone, end);
+    const char *const phoneEnd = detail::objectEnd(phone, end);
     if (phoneEnd == nullptr) {
         return Result::FieldNotFound;
     }
-    char *value = detail::findScalarValue(phone, phoneEnd, "notifications", 13);
-    if (value == nullptr) {
+    const char *const found = detail::findValue(phone, phoneEnd, "notifications", 13);
+    if (found == nullptr) {
         return Result::FieldNotFound;
     }
+    char *const value = buf + (found - buf);
 
     size_t oldLen = 0;
     if (detail::matches(value, phoneEnd, detail::kTrue, detail::kTrueLen)) {
