@@ -1,6 +1,6 @@
 # EffortKit — heart-rate recovery, session structure, and a record that outlives the session
 
-Three things, for any activity app on this watch:
+Four things, for any activity app on this watch:
 
 1. **Measure heart-rate recovery** after effort, only when it can mean something.
 2. **Keep a bounded cross-app record** in `../SharedData/`, so training load and
@@ -9,6 +9,8 @@ Three things, for any activity app on this watch:
 3. **Give a segmenting app what it needs** — epoch features, a hysteresis
    segmenter, and robust per-user baselines — without a non-segmenting app
    paying for any of it.
+4. **Read the session a wearer asked for**, out of the one config string a phone
+   can hand a watch — [below](#the-session-a-wearer-asked-for).
 
 Rust, `no_std`, no allocator, no SDK types, no clock and no filesystem, so
 everything it decides can be checked by `cargo test` without a kernel.
@@ -53,6 +55,36 @@ the "a crate whose every consumer uses half of it" objection with a number
 rather than an argument.
 
 ---
+
+## The session a wearer asked for
+
+[`intervals`](src/intervals.rs) is the odd module here: everything else measures
+what happened, and this one reads what was *prescribed*. One line of text —
+`5m@2,6x(20s@5,40s@2),6m@2` — becomes a list of steps a Service can drive a
+wrist alert and an automatic lap from. The EBNF is at the top of the module and
+the corpus is [`tests/intervals.rs`](tests/intervals.rs).
+
+**`@n` is an instruction and never a compliance check.** It indexes the zone
+ladder the wearer already configured, in the sense a pace cue does; nothing here
+or downstream may compare it against a measured heart rate. Measured on one real
+interval ride at a maximum of 184: in nine of eleven correctly ridden efforts the
+recovery averaged a *higher* heart rate than the work it was recovering from, and
+five of six all-out 20-second sprints spent at most four of their twenty seconds
+above zone 3. A verdict that is wrong in that pattern is worse than no verdict.
+The whole account is in
+[`Spin/Docs/INTERVAL-DSL-EVALUATION.md`](../Spin/Docs/INTERVAL-DSL-EVALUATION.md).
+
+**The text is untrusted.** `app-manifest.json`'s `pattern` is checked on the
+phone and never ships; the values file is plaintext on a FAT volume readable over
+USB and BLE. So `Session::parse` is total over arbitrary bytes: no panic, no
+unbounded loop, no allocation. `every_byte_in_every_position_of_a_real_session_terminates`
+is that claim as a test.
+
+**A session is iterated, not expanded.** MEASURED by searching item shapes
+against the field's 128-byte cap: the most steps one value can name is **2871**,
+in 126 bytes and 8 items. A flat array bounded by that costs 8.6 KB of `.bss` at
+three bytes a step; `Cursor` is **3 bytes** and walks the parsed form in place,
+whatever the repeat counts. The parsed `Session` is 740 bytes either way.
 
 ## What this cannot tell you
 

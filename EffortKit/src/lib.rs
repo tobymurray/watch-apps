@@ -8,7 +8,9 @@
 //! the bounded cross-app log; [`profile`], [`session`] and [`baseline`] are the
 //! app's own interior record and what normal looks like across sessions;
 //! [`epoch`] and [`segment`] reduce a raw IMU stream to the cessations a
-//! segmenting app feeds [`window`] with.
+//! segmenting app feeds [`window`] with. [`intervals`] stands apart: it is the
+//! session a wearer asked for rather than the one they rode, and it depends on
+//! nothing else here.
 //!
 //! WHAT OPENS A WINDOW IS AN INPUT, NOT A COMPONENT. Spin calls
 //! [`window::Detector::cease`] from a button and Squash calls it from
@@ -29,6 +31,7 @@ pub mod baseline;
 pub mod epoch;
 pub mod history;
 pub mod hr;
+pub mod intervals;
 pub mod json;
 pub mod load;
 pub mod profile;
