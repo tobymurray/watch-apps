@@ -1,4 +1,8 @@
-# NotifyToggle — turn phone notifications on or off, on the watch
+# Notify — turn phone notifications on or off, on the watch
+
+The launcher name is `Notify`; the directory, the binary and the CMake
+`APP_NAME` stay `NotifyToggle`. `Notify Toggle` was tried and clipped on the
+watch's app list.
 
 A utility app that does one thing: show a single centered switch, and let R1
 flip it — immediately, and durably. There is no second screen, no
@@ -52,46 +56,101 @@ version:
   `LiveSettings.cpp` uses that to read/write the live, in-RAM copy of
   `phone.notifications` directly — immediate effect, the moment R1 is
   pressed.
-- **Persisting that change to flash** turned out not to go through the
-  settings class's own `save()` method at all — it has zero callers
-  anywhere in the firmware; even the real phone app doesn't call it, it
-  just overwrites the whole file over Bluetooth. `SettingsPersist.cpp`
-  instead calls the kernel's internal, non-virtual `File` class directly
-  (the same open/read/write/close primitives the firmware's own
-  settings-backup logic already uses for this exact file) to read the real
-  current file content and splice in only the `notifications` field —
-  verified with an immediate readback, and confirmed live on the real
-  device to survive a full power cycle.
-- **The commit itself is crash-atomic**, replicating (not calling — see
-  below) the firmware's own tmp-file + backup-rotate + rename pattern:
-  write to `2:/settings.json.tmp`, best-effort rotate any existing real file
-  to `.bak`, then rename `.tmp` over the real path as the actual commit. The
+- **Persisting that change to flash** does not go through the settings
+  class's own `save()` method: it has zero callers anywhere in the firmware,
+  and the real phone app doesn't call it either — it overwrites the whole
+  file over Bluetooth. `SettingsPersist.cpp` instead calls the kernel's
+  internal, non-virtual `File` class directly to read the real file, splice
+  in only `phone.notifications`, and write it back, then re-reads to confirm.
+- **The commit moves the previous file aside and puts it back if anything
+  goes wrong.** FatFs will not rename onto a name that already exists, so the
+  order is: write `2:/settings.json.tmp`, move the current file to
+  `2:/settings.json.ntprev`, rename `.tmp` into place, then drop the scratch
+  copy. If the second rename fails, the previous file is moved straight back,
+  so the failure mode is "nothing changed", not "no settings file". The
+  firmware's own `settings.json.bak` is never touched — the firmware
+  maintains that one itself, and spending the wearer's only firmware-made
+  backup on this app's convenience is not this app's call to make. The
   firmware's own atomic-write functions (`0x0806dd54`/`0x0806de64`) turned
-  out to be tightly coupled to the live Settings object's own internal
-  state, not a portable primitive — register-evidenced and refused for
-  direct reuse, the same standard `Settings::save()` was refused by. The
-  general-purpose `exists`/`delete`/`rename` kernel utilities underneath it
-  (55/41/21 real callers found across the firmware image) are used directly
-  instead.
+  out to be tightly coupled to the live Settings object's internal state
+  rather than a portable primitive, so the general-purpose
+  `exists`/`delete`/`rename` kernel utilities underneath them (55/41/21 real
+  callers across the firmware image) are used directly instead.
 
-Everything above is specific to kernel 1.4.0 on this one unit — addresses
-that would need re-deriving, not assuming, on another watch or firmware
-version. This app never assumes it, either: `Software/Libs/Header/SettingsAddresses.hpp`
-holds a small table, one entry per firmware version this investigation has
-actually reverse-engineered and cross-validated (today: just `1.4.0`).
-`Gui.cpp` queries the watch's real running firmware version at startup
-(`SDK::Message::RequestSystemInfo`, a supported message — not the manifest's
-`minKernelVersion`, which is only a floor the phone's install flow checks, not
-an exact match), looks it up, and refuses to touch a single raw address —
-not just persistence, the live RAM read too — on anything not in the table.
-Growing this to support a new firmware version means doing that
-version's own RE pass and adding a row, never extrapolating from a
-neighboring one.
+**What a watch has actually run.** On 2026-09-05, on the author's unit: the
+firmware gate accepted, the live read/write worked, and three toggles were
+written to `2:/settings.json` and verified by readback. Turning the flag on and
+off again returned the file to a byte-identical state (content hash
+`0xAAD0F819` ↔ `0x18A1F0DE` and back), every field this app does not own was
+preserved exactly, and the firmware's own `settings.json.bak` was untouched
+throughout. **The setting then survived a full power cycle** — the kernel
+reloads the written file at boot, which is the whole point of the file write
+existing. Falsified by a run where the flag reads back differently after a
+reboot. Treat the address table as what it is: one watch, one firmware.
+
+Everything above is specific to one unit's kernel — addresses that would need
+re-deriving, not assuming, on another watch or firmware version. This app never
+assumes it either. `Software/Libs/Header/FirmwareGate.hpp` decides, in three
+steps, and refuses outright at any of them:
+
+1. **The kernel's ABI.** `gIKernel->version`, the version the loader patched in
+   — the only account of itself this kernel gives a running app.
+   `RequestSystemInfo` is declared in the SDK headers and answered `FAIL` by
+   kernel 1.4.0; `RequestSystemSettings` succeeds in the same run, so it is
+   that message and not the mechanism. The manifest's `minKernelVersion` is no
+   substitute: it is a floor the phone checks at install time, not something
+   the app can read.
+2. **The bytes at each address, read but never called.** An ABI is shared by
+   every firmware version that ships it (`abi_kernel_map.json` maps one to the
+   *minimum* firmware providing it), so the row an ABI selects is a candidate,
+   not a verdict. Each row carries 16 bytes recorded from the firmware it was
+   derived against, and they are compared before a single one of those
+   addresses executes — because on a part with no MPU a wrong address does not
+   return an error, it runs. A `static_assert` checks each signature is filed
+   under the address it fingerprints, so the two tables cannot drift apart.
+3. **The File primitives, proved rather than assumed** — but only when saving
+   is switched on, since that is the only mode that uses them for writing.
+   `SettingsPersist::validatePrimitives` exercises them against this app's own
+   scratch paths: a path written through `setPath` and read back out of the
+   object, a file of known length whose size field reads back, a content
+   round-trip, rename and delete answering differently for present and absent
+   files.
+4. **The live struct, against the file.** The `notifications` byte and
+   `watchFaceId` read through the raw pointer must both match what
+   `2:/settings.json` says. Two independent sources agreeing is the evidence
+   that the struct base is the settings struct; a range check on one field is
+   not, because zeroed memory passes it.
+
+With saving off — the default — steps 3 and 4 collapse into one: reading
+`settings.json` exercises every primitive that mode ever calls, and the
+cross-check is what says it worked. Nothing is written to the watch at all.
+
+Only one row per ABI is possible, and a `static_assert` enforces it: nothing
+this app can read at runtime tells two same-ABI firmware versions apart, so a
+second row could never be selected. Supporting that would need byte signatures
+at each address, which this app deliberately does not carry.
 
 ## Screen and buttons
 
 One screen: the word `NOTIFICATIONS`, a pill switch (green and right when on,
 grey and left when off), the current state as text, and a button hint.
+
+The screen has to be able to say four different things, because a switch that
+only ever moves cannot tell them apart:
+
+| What happened | What it draws |
+|---|---|
+| Read and saved | Green/grey pill, `ON` or `OFF` |
+| Live value could not be read | Amber pill, knob centred, `?` |
+| Flipped, but the file was not written | Amber pill, knob on the live side, `NOT SAVED`, footer `REVERTS ON REBOOT` |
+| Saving is switched off (the default) | Ordinary green/grey pill and `ON`/`OFF`, footer `REVERTS ON REBOOT` |
+| The firmware gate refused | No pill at all, `UNSUPPORTED`, footer `NEEDS WATCH 1.4.0` |
+
+The last two are the ones that matter. A change that took effect live but never
+reached `settings.json` is real right now and gone at the next reboot, and it
+used to draw exactly the same confident green as one that saved — the renderer
+test `not_saved_is_visually_distinct_from_a_saved_on` is what holds that line.
+An unsupported firmware draws no switch, because R1 cannot move one.
 
 The words are Poppins SemiBold 18 and the hint Poppins Regular 12, drawn from
 [`TextKit`](../TextKit)'s pre-rendered atlases rather than
@@ -106,12 +165,13 @@ in the crate is what found that, not a wrist.
 
 | Button | Does |
 |---|---|
-| R1 (`SW2`) | Toggle. Flips the live value, persists it to `settings.json`, and re-reads to confirm. |
+| R1 (`SW2`) | Toggle. Flips the live value, writes it to `settings.json`, and re-reads to confirm. Does nothing on an unsupported firmware. |
 | R2 (`SW4`) | Back — exits the app. |
 
 Unlike a capability scoped to "while this app runs," closing the app changes
-nothing: the watch-wide flag stays exactly where R1 left it, because that's
-genuinely what got written to flash.
+nothing: the watch-wide flag stays where R1 left it. Whether it also survives a
+reboot depends on the write having succeeded, which is why the screen says so
+either way.
 
 ## Building
 
@@ -127,42 +187,56 @@ cmake --build build
 
 The `.uapp` lands in `Output/`; deploy it per the SDK's `Docs/deploy.md`.
 
+`-DNOTIFY_TOGGLE_DEBUG_LOG=ON` adds diagnostic logging to a file in the app's
+own directory on the watch. It is off by default and belongs off in anything a
+wearer installs; it never logs file contents, because `settings.json` holds
+height, weight, gender and date of birth.
+
 ### Footprint
 
 From real builds against `apps-v1.4.0` in CI's toolchain image (linker map
 section headers, 600 KiB GUI RAM window, code executing from RAM):
 
 ```
-GUI, TextKit        .text 33,608   .data 148   .bss 58,432   .stack 10,240   .uapp 42,820
-GUI, MonoTextStyle  .text 31,980   .data 148   .bss 58,432   .stack 10,240   .uapp 41,188
-Service             .text  3,724   .data 176   .bss 11,324   (a near-empty stub — see below)
+GUI      .text 47,780   .data 540   .bss 58,528   .stack 10,240   .uapp 55,996
+Service  .text  2,180   .data  36   .bss    556   .stack 10,240
 ```
 
-The text port cost 1,628 bytes: 1,530 of TextKit code and 6,137 of two
-Poppins faces, less the `embedded-graphics` text path and mono fonts that
-left with it. Of the twelve faces TextKit generates, the linker kept the two
-this app names.
+`SDK::AppConfig` and the JSON reader it needs are 17.5 KB of that GUI `.text`,
+for one declared boolean — the price of the setting being something the
+companion app can present and explain rather than a build-time constant.
 
 `.bss` is mostly the 57,600-byte framebuffer, as on every CustomGUI app in
 this repo. There's no `SDK::AppConfig`/JSON dependency linked in at all —
-this app never reads or writes an app-scoped config file of its own, only
-the kernel's real settings struct and the real `settings.json`, both via raw
-pointers and a hand-derived internal `File` class. Re-derive the numbers
-from the map's own `Memory Configuration` block rather than trusting this
-table.
+this app never reads or writes an app-scoped config file of its own, only the
+kernel's real settings struct and the real `settings.json`, both via raw
+pointers and a hand-derived internal `File` class. Re-derive the numbers with
+`arm-none-eabi-size -A` rather than trusting this table.
 
 ## Why persistence lives in the GUI process
 
-Reading, drawing, flipping and persisting the toggle are all GUI-side,
-because R1 is a GUI-side event and there's no reason to hop to the Service
-process and back for a change that finishes in microseconds.
-`Software/Libs/Sources/Service.cpp` is not a pure stub — it runs a battery
-of read-only filesystem probes at startup (drive roots, `SharedData`
-spellings, two-hop `..` resolution) left over from the investigation that
-found the sandboxed API dead-ended, logged to `service-debug.log`. It never
-touches `settings.json` or the live struct itself.
+Reading, drawing, flipping and writing the toggle are all GUI-side, because R1
+is a GUI-side event and there's no reason to hop to the Service process and
+back for a change that finishes in microseconds.
+`Software/Libs/Sources/Service.cpp` is a stub that exists because the SDK's
+entry point requires both halves; it is not linked against `LiveSettings` or
+`SettingsPersist` at all, so no raw address reaches a binary with no use for
+one.
 
 ## Tests
+
+The splice — the part that decides which bytes of a real personal settings file
+get rewritten — is a header-only module with no SDK types, so it runs at a desk:
+
+```sh
+cmake -B build -S Tests && cmake --build build && ctest --test-dir build
+```
+
+Those cases are the file read off a real watch, a `notifications` key belonging
+to something other than `phone`, whitespace, braces inside string values,
+truncated JSON, and the one-byte growth from `true` to `false` against a full
+buffer. What they cannot cover is everything above them: the addresses, the
+`File` primitives and the commit rename only ever run on a watch.
 
 ```sh
 cd Software/Apps/CustomGUI/rust
@@ -201,7 +275,8 @@ cd Software/Apps/CustomGUI/rust
 cargo run --bin sim --features sim
 ```
 
-`SPACE` or `ENTER` toggles (matching R1), `ESC` or `BACKSPACE` quits
-(matching R2). It calls the same `notify_toggle_gui::render()` the firmware
-calls, into an identical buffer, so the framebuffer matches the device's by
-construction.
+`SPACE` or `ENTER` toggles (matching R1), `ESC` or `BACKSPACE` quits (matching
+R2). `U`, `N` and `F` preview the unreadable, not-saved and unsupported screens,
+which a wrist only reaches by something going wrong. It calls the same
+`notify_toggle_gui::render()` the firmware calls, into an identical buffer, so
+the framebuffer matches the device's by construction.
