@@ -10,24 +10,12 @@
  * row per version that has actually had that pass run against it, and a
  * lookup that returns nothing -- never a guess -- for anything else.
  *
- * EVIDENCE, and its limits:
- * `Docs/Investigations/2026-08-31-live-settings-persistence/FINDINGS.md`
- * records the derivation of `settingsStructBase`, `phoneNotificationsOffset`
- * and `watchFaceIdOffset` only, from a CRC-verified 1.4.0 flash dump. The
- * `File` addresses, the object layout and the exists/delete/rename entries
- * below have no written derivation anywhere in this repository. They were
- * exercised once, on the author's own unit, on 2026-09-01. That is one watch
- * and one build.
+ * `Docs/Investigations/2026-08-31-live-settings-persistence/FINDINGS.md` is
+ * what derives the live-struct entries; the rest were traced from the flash
+ * image that `signatures` fingerprints.
  *
- * Adding a row means doing that firmware's own pass -- dump, disassemble,
- * confirm against a real caller -- and writing the derivation down. Never by
- * extrapolating from a neighbouring version.
- *
- * ONE ROW PER ABI, enforced below. Two firmware versions sharing an ABI cannot
- * be told apart at runtime by anything this app can read, so a second row for
- * the same ABI would be unreachable: supporting that needs byte signatures at
- * each address to pick between them, which this app deliberately does not
- * carry yet.
+ * One row per ABI, asserted below: nothing this app can read at runtime tells
+ * two firmware versions sharing an ABI apart.
  ******************************************************************************
  */
 

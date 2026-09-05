@@ -43,11 +43,8 @@ set(RUST_LIB "${RUST_CRATE_DIR}/target/${RUST_TARGET}/release/libnotify_toggle_g
 
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
 
-# Always invoke cargo and let it decide whether to rebuild -- see
-# RustGuiPoc/Docs/FINDINGS.md ("Let cargo decide when to rebuild") for why an
-# OUTPUT/DEPENDS rule is the wrong shape here: it would have to restate
-# cargo's own inputs, and anything the list missed would silently link a
-# stale archive against a changed ABI.
+# Always invoke cargo and let it decide whether to rebuild; RustGuiPoc's
+# Docs/FINDINGS.md ("Let cargo decide when to rebuild") is why.
 add_custom_target(notify_toggle_gui_rust ALL
     COMMAND ${CARGO_EXECUTABLE} build --release --target ${RUST_TARGET}
     WORKING_DIRECTORY ${RUST_CRATE_DIR}

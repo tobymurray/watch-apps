@@ -41,9 +41,7 @@ pub enum Status {
     Unreadable,
     /// The live flag changed and took effect, but the file was not written.
     NotSaved,
-    /// Saving is switched off, so the flag is live only. Nothing went wrong,
-    /// which is why this draws in the ordinary colours and only the footer
-    /// differs.
+    /// Saving is switched off, so the flag is live only. Nothing went wrong.
     LiveOnly,
 }
 
@@ -61,10 +59,8 @@ impl Status {
     }
 }
 
-/// Mirrors `notify_toggle_state` (`notify_toggle_gui.h`) field for field.
-/// This is a read-only view of the real watch-wide notifications flag, not
-/// app state of its own -- `known` says whether `enabled` is actually
-/// trustworthy (see the C header for why that can be false).
+/// Mirrors `notify_toggle_state` (`notify_toggle_gui.h`) field for field: a
+/// read-only view of the real watch-wide flag, not app state of its own.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct State {
@@ -254,9 +250,8 @@ fn text(fb: &mut FrameBuf, face: &Face, s: &str, x: i32, baseline: i32, color: A
 
 fn draw_toggle(fb: &mut FrameBuf, state: &State) {
     let side = if state.is_enabled() { KNOB_ON_CX } else { KNOB_OFF_CX };
-    // NotSaved keeps the knob on the side the live value really is -- that part
-    // is true right now -- and drops the confident green for the same amber an
-    // unreadable value gets, because both mean "do not rely on this".
+    // NotSaved keeps the knob where the live value really is, which is true
+    // right now, and drops the confident green: do not rely on this.
     let (accent, knob_cx) = if !state.is_known() {
         (UNKNOWN_ACCENT, KNOB_UNKNOWN_CX)
     } else if state.status() == Status::NotSaved {
@@ -305,10 +300,8 @@ fn draw(fb: &mut FrameBuf, state: &State) {
     };
     text(fb, WORD_FACE, label, PANEL_CX, LABEL_BASELINE_Y, label_color);
 
-    // R1 always attempts a fresh read-and-toggle (Gui.cpp re-reads the real
-    // value before deciding what to write), so the hint stays the same even
-    // from the unknown state -- it is "try again", not "disabled". A change
-    // that did not reach the file spends the line on the consequence instead.
+    // The hint stays put even from the unknown state -- it is "try again", not
+    // "disabled". A change that will not last spends the line on that instead.
     let footer = match state.status() {
         Status::NotSaved | Status::LiveOnly => FOOTER_NOT_SAVED,
         _ => FOOTER,

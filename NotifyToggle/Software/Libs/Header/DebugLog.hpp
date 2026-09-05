@@ -5,13 +5,11 @@
  *          directory, for diagnosing on a watch with no debug UART.
  ******************************************************************************
  *
- * Off unless the build defines NOTIFY_TOGGLE_DEBUG_LOG=1, because a published
- * app has no business writing diagnostics to a wearer's watch. With it off
- * every call below compiles to nothing.
+ * Every call compiles to nothing unless the build defines
+ * NOTIFY_TOGGLE_DEBUG_LOG=1.
  *
- * Nothing here ever logs file contents: `2:/settings.json` holds height,
- * weight, gender and date of birth, and a diagnostic aid must not leave a
- * plaintext copy of them behind.
+ * Nothing here logs file contents: `2:/settings.json` holds height, weight,
+ * gender and date of birth.
  ******************************************************************************
  */
 

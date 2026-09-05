@@ -15,17 +15,14 @@ namespace FirmwareGate
 namespace
 {
 
-// The 4MB bank this part executes from. A signature is a load, so bounding it
-// to real flash is what keeps a malformed row from reading somewhere it should
-// not -- the compile-time checks in SettingsAddresses.cpp already refuse such a
-// row, and this is the runtime half of the same statement.
+// The 4MB bank this part executes from: a signature is a load, so it is
+// bounded to somewhere a load belongs.
 constexpr uintptr_t kFlashBase = 0x08000000u;
 constexpr uintptr_t kFlashEnd  = 0x08400000u;
 
-/// Reads the bytes at each address and compares them to what was recorded from
-/// the firmware this row was derived against. Nothing is called: a firmware
-/// that moved these functions is refused before a single one of them executes,
-/// which is the whole reason this runs before validatePrimitives.
+/// Compares the bytes at each address against what was recorded from the
+/// firmware the row was derived on. Nothing is called, which is what lets this
+/// refuse a moved function before anything executes.
 bool signaturesMatch(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs)
 {
     for (size_t i = 0; i < addrs.signatureCount; ++i) {
@@ -61,9 +58,8 @@ const SettingsAddresses::AddressSet *resolve(SDK::Interface::IFileSystem &fs, ui
                        static_cast<unsigned long>(kernelAbi), KERNEL_INTERFACE_VERSION,
                        wantsPersistence ? "ON" : "off");
 
-    // The SDK's own startup already exits on an ABI below what this app was
-    // built against, so the case left to catch here is a *newer* interface,
-    // against which none of these addresses were derived.
+    // system.cpp already exits on an ABI below this, so the case left is a
+    // newer interface, which none of these addresses were derived against.
     if (kernelAbi != static_cast<uint32_t>(KERNEL_INTERFACE_VERSION)) {
         DebugLog::append(fs, "gate: ABI is not the one this build was made for -- refusing");
         return nullptr;
@@ -76,16 +72,15 @@ const SettingsAddresses::AddressSet *resolve(SDK::Interface::IFileSystem &fs, ui
     }
     DebugLog::appendf(fs, "gate: candidate row derived on firmware %s", candidate->derivedFrom);
 
-    // Before anything is called: an ABI is shared by every firmware version
-    // that ships it, so this is what tells one of those apart from another.
+    // An ABI is shared by every firmware version that ships it, so this is what
+    // tells one of them from another -- and it runs before anything is called.
     if (!signaturesMatch(fs, *candidate)) {
         DebugLog::append(fs, "gate: this is not the firmware those addresses came from -- refusing");
         return nullptr;
     }
 
-    // Only the mode that writes has to prove the write path. Reading the file
-    // below exercises everything the read-only mode ever calls, and the
-    // cross-check is what says it worked.
+    // Reading the file below already exercises everything the read-only mode
+    // calls, so only the mode that writes has to prove the write path.
     if (wantsPersistence) {
         if (!SettingsPersist::validatePrimitives(fs, *candidate)) {
             DebugLog::append(fs, "gate: the File primitives did not behave -- refusing");

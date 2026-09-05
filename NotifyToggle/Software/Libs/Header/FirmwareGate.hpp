@@ -11,21 +11,14 @@
  * not the mechanism). What it does expose is `gIKernel->version`, the ABI the
  * loader patched in.
  *
- * An ABI is a floor, not an identity -- abi_kernel_map.json maps one to the
- * *minimum* firmware providing it, so ABI 3 is 1.4.0 or anything later that
- * kept the interface. So the ABI only selects a candidate row, and three
- * further checks have to pass before anything is trusted:
+ * An ABI is a floor rather than an identity: `abi_kernel_map.json` maps one to
+ * the *minimum* firmware providing it, so the row an ABI selects is a
+ * candidate that the checks in `resolve` still have to prove.
  *
- *   1. the bytes at each address are the ones recorded from the firmware the
- *      row was derived against -- read, never called
- *   2. the File primitives behave, proved against scratch paths
- *   3. the live struct agrees with `2:/settings.json` on two fields
- *
- * Check 1 comes first for the reason the whole ordering exists: 2 and 3 prove
- * the addresses by using them, and on a part with no MPU a wrong address does
- * not return an error, it runs. Reading the bytes first is what makes a
- * firmware this app has never seen a clean refusal rather than a jump into
- * whatever now lives there.
+ * Those checks run in the order they do because this part has no MPU: a wrong
+ * address does not return an error, it runs. Comparing the recorded bytes is a
+ * load, so it can go first and make an unrecognised firmware a refusal rather
+ * than a jump into whatever now lives there.
  ******************************************************************************
  */
 

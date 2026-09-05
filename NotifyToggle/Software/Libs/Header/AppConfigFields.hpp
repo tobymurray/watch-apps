@@ -4,9 +4,8 @@
  * @brief   The one setting this app declares, and the file it is read from.
  ******************************************************************************
  *
- * Declared in `app-manifest.json` as well; the companion app reads that copy to
- * build the prompt, and this copy is what the watch reads back. Both must agree
- * on the id, the type and the default, and nothing checks that for you.
+ * The same field is declared in `app-manifest.json`, and nothing checks that
+ * the two agree on id, type and default.
  ******************************************************************************
  */
 

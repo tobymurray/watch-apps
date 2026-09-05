@@ -18,10 +18,8 @@ char sLogPath[kLogPathCap] = "debug.log";
 // answer is to stop rather than to keep filling the wearer's storage.
 constexpr size_t kMaxLogFileBytes = 64 * 1024;
 
-// Static, not local: this runs on the GUI task's 10 KB stack, called from
-// paths that already hold their own File object and file buffer. One shared
-// line is safe because nothing here is reentrant -- single-threaded app, and
-// each call finishes before anything else could reuse it.
+// Static, not local: the callers already hold a File object and a file buffer
+// on the same stack, and nothing here is reentrant.
 char sLineBuf[kLineCap];
 bool sSaidFull = false;
 
@@ -31,9 +29,8 @@ void writeLine(SDK::Interface::IFileSystem &fs, const char *text, size_t len)
     if (!file) {
         return;
     }
-    // Write, no truncate: IFile::open's contract is "open-or-create WITHOUT
-    // truncating... position at start", so an explicit seek to the current
-    // end is what makes this an append rather than an overwrite from byte 0.
+    // IFile::open opens without truncating and positions at the start, so the
+    // seek is what makes this an append.
     if (!file->open(true, false)) {
         return;
     }

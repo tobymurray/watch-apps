@@ -10,13 +10,8 @@ namespace LiveSettings
 namespace
 {
 
-// watchFaceId is a small selection index, not a large/garbage-looking
-// 64-bit value; settings.json read "watchFaceId":0 on this unit. This is a
-// sanity bound, not an exact match -- the user can pick a different face --
-// so it exists only to catch "this address plainly isn't what we think it
-// is", not to assert a specific value. Not part of AddressSet: it's a
-// validation constant, not a derived address, and stays the same shape of
-// check regardless of which firmware's addresses are in play.
+// A bound, not a value: the wearer picks the face, so this only catches an
+// address that plainly is not the settings struct.
 constexpr uint64_t kWatchFaceIdSanityMax = 1000u;
 
 volatile uint8_t &notificationsByte(const SettingsAddresses::AddressSet &addrs)
@@ -36,9 +31,8 @@ uint64_t readWatchFaceIdRaw(const SettingsAddresses::AddressSet &addrs)
     return value;
 }
 
-/// Reads the live byte and cross-check field, and applies the same
-/// fail-closed checks readNotificationsFlag and writeNotificationsFlag both
-/// need. Never writes anything.
+/// Never writes: both public functions need the same refusals before either
+/// can trust the byte.
 Status readChecked(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, uint8_t &outRaw)
 {
     const uint8_t raw = notificationsByte(addrs);

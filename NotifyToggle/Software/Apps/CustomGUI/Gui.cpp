@@ -57,9 +57,8 @@ void Gui::queryDisplayConfig()
         mWidth  = kFallbackWidth;
         mHeight = kFallbackHeight;
     }
-    // The panel this app is built for reports 6 (ABGR2222: six colour bits and
-    // two of alpha, one byte a pixel). Anything wanting more than a byte would
-    // have the kernel read past the end of mFrameBuf.
+    // This panel reports 6 -- ABGR2222, six colour bits and two of alpha, one
+    // byte a pixel. More than a byte would have the kernel read past mFrameBuf.
     mDisplayUsable = mColorDepth <= kMaxBitsPerPixel;
     if (!mDisplayUsable) {
         LOG_ERROR("Panel wants %ubpp; this renderer only writes one byte per pixel\n",
@@ -68,10 +67,8 @@ void Gui::queryDisplayConfig()
     LOG_INFO("Display %dx%d @ %ubpp\n", mWidth, mHeight, mColorDepth);
 }
 
-// The loader patches this to the running kernel (system.cpp), and its `version`
-// is the ABI that kernel presents -- the only account of itself a kernel gives
-// a running app on this firmware. FirmwareGate.hpp says why that is a floor
-// rather than an identity, and what has to pass before it is believed.
+// Patched by the loader (system.cpp); `version` is the ABI the kernel presents,
+// which FirmwareGate.hpp treats as a floor rather than an identity.
 extern const SDK::Interface::IKernel *gIKernel;
 
 bool Gui::resolveFirmwareSupport()
@@ -83,10 +80,7 @@ bool Gui::resolveFirmwareSupport()
     return mAddresses != nullptr;
 }
 
-// Reads the kernel's live, in-RAM `phone.notifications` byte (LiveSettings.hpp
-// has the derivation) and works out what the screen is entitled to claim.
-// Called at startup, after every toggle, and every kReReadEveryTicks while the
-// app sits open, so an external change shows up without a relaunch.
+// Works out what the screen is entitled to claim about the live byte.
 void Gui::refreshLiveState()
 {
     if (!mAddresses) {
@@ -142,10 +136,6 @@ void Gui::toggle()
 
     mPersistFailed = false;
 
-    // LiveSettings::writeNotificationsFlag reads fresh internally too (never
-    // trusts mState), but the desired value has to be computed from a fresh
-    // read here regardless, since it is this call site that decides "the
-    // other value".
     bool current = false;
     if (LiveSettings::readNotificationsFlag(mKernel.fs, *mAddresses, current) != LiveSettings::Status::Ok) {
         LOG_WARNING("toggle: could not confirm the current value; not writing\n");
@@ -170,10 +160,8 @@ void Gui::toggle()
         return;
     }
 
-    // The live change above has already taken effect and is what the wearer
-    // just saw, so a failure here does not undo it -- but it does change what
-    // the screen is allowed to say, because the setting reverts at the next
-    // reboot.
+    // The live change is already what the wearer saw, so a failure here does not
+    // undo it -- it changes what the screen may claim, nothing else.
     const auto persistStatus = SettingsPersist::persistNotificationsFlag(mKernel.fs, *mAddresses, desired);
     if (persistStatus != SettingsPersist::Status::Ok) {
         LOG_ERROR("toggle: persist to settings.json failed (status=%d); live value still changed\n",
@@ -225,13 +213,8 @@ void Gui::run()
     DebugLog::appendf(mKernel.fs, "display %dx%d @%ubpp usable=%d", mWidth, mHeight, mColorDepth,
                        mDisplayUsable ? 1 : 0);
 
-    // On an unsupported firmware the app still launches and R2 still backs
-    // out; it just says so on screen instead of drawing a switch it cannot
-    // move.
-    // Read before the gate, because it decides how much of the gate has to run
-    // and whether the write path is ever entered. Not in the constructor: the
-    // SDK documents that reading it can log, and a log line from a constructor
-    // is a trap in the simulator.
+    // Read before the gate, which it decides how much of to run. Not in the
+    // constructor: reading it can log, and the simulator has no logger yet.
     {
         SDK::AppConfig config(mKernel, NotifyToggleConfig::kConfigFile, NotifyToggleConfig::kFields);
         mSaveToSettings = config.getBool(NotifyToggleConfig::kSaveToSettings);
@@ -243,10 +226,8 @@ void Gui::run()
     resolveFirmwareSupport();
 
     refreshLiveState();
-    // Applied immediately at startup, not just on a toggle: capabilities are
-    // scoped to "while this app is running" (IAppCapabilities.hpp), so
-    // reopening the app has to re-request whatever the real flag says now,
-    // not merely display it.
+    // IAppCapabilities scopes these to "while this app is running", so reopening
+    // has to re-request the flag rather than merely display it.
     if (mState.known) {
         applyCapabilities(mState.enabled != 0);
     }
@@ -279,9 +260,8 @@ void Gui::run()
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 mKernel.comm.releaseMessage(msg);
 
-                // Stretch goal: pick up an external change (e.g. the phone
-                // app writing the same live struct via BLE while this screen
-                // is open) without requiring a toggle or a relaunch.
+                // Something else can write the same struct while this screen is
+                // open, so the value is re-read rather than assumed unchanged.
                 if (++mTicksSinceRead >= kReReadEveryTicks) {
                     mTicksSinceRead = 0;
                     const uint8_t before = mState.enabled;

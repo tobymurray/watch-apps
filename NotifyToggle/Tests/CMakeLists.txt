@@ -1,12 +1,8 @@
 # Host tests for NotifyToggle, built out of tree like the app.
 #
-# One executable: the settings.json splice. It is the only part of the write
-# path that can run without a kernel, and it is the part that decides which
-# bytes of a real personal settings file get rewritten -- so it is the part
-# worth pinning at a desk rather than on a wrist.
-#
-# The addresses, the File primitives and the commit rename cannot be tested
-# here at all; nothing but the watch exercises those.
+# The splice is the only part of the write path that runs without a kernel, and
+# it decides which bytes of a real settings file get rewritten. The addresses,
+# the File primitives and the commit rename are exercised by nothing but a watch.
 
 cmake_minimum_required(VERSION 3.21)
 project(notifytoggle-host-tests CXX)

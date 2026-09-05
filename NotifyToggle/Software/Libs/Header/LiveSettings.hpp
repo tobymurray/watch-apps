@@ -16,14 +16,6 @@
  * own boot state, CONTROL=0x6 -> nPRIV=0), so a plain pointer reaches the
  * struct the kernel parses settings.json into at boot.
  *
- * Addresses are never hardcoded here -- every function takes an AddressSet the
- * caller resolved from the running firmware, and refuses to be called at all
- * on a firmware that has none (SettingsAddresses.hpp).
- *
- * WHAT THIS DOES NOT DO: take the kernel's settings mutex before writing. A
- * race against the kernel writing the same struct is possible in principle,
- * and is accepted as a bounded risk for a user-triggered, infrequent action
- * rather than closed by calling another unverified internal function.
  ******************************************************************************
  */
 

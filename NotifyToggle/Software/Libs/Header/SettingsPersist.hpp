@@ -11,15 +11,9 @@
  * kernel's own internal `File` primitives in-process, at addresses the caller
  * resolves from the watch's running firmware (SettingsAddresses.hpp).
  *
- * EVIDENCE, and its limits: `Docs/Investigations/2026-08-31-live-settings-
- * persistence/FINDINGS.md` records the derivation of the live struct address
- * only. The `File` addresses, the object layout and the exists/delete/rename
- * primitives this file calls are NOT recorded anywhere in this repository --
- * write that record before trusting them on a watch that is not the author's.
- *
- * The file is read, spliced (SettingsSplice.hpp) and written whole, rather
- * than regenerated from known fields: gender, dateOfBirth and version are not
- * characterized, and regenerating would drop whatever this app cannot name.
+ * The file is read, spliced and written whole rather than regenerated from
+ * known fields: gender, dateOfBirth and version are not characterized, and
+ * regenerating would drop whatever this app cannot name.
  ******************************************************************************
  */
 
