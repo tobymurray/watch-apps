@@ -108,6 +108,22 @@ pub fn member<'a>(obj: &'a [u8], key: &str) -> Option<&'a [u8]> {
     }
 }
 
+/// The bytes inside a JSON string, or `None` for anything else.
+///
+/// Refuses a value carrying a backslash: [`Writer::text`] never writes one, so
+/// an escape in the file came from something that is not this writer, and
+/// declining it is the same choice the rest of this module makes.
+pub fn as_text(v: &[u8]) -> Option<&[u8]> {
+    if v.len() < 2 || v[0] != b'"' || v[v.len() - 1] != b'"' {
+        return None;
+    }
+    let inner = &v[1..v.len() - 1];
+    if inner.contains(&b'\\') {
+        return None;
+    }
+    Some(inner)
+}
+
 /// Walks the items of a JSON array's text.
 pub struct Items<'a> {
     b: &'a [u8],

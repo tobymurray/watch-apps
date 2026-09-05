@@ -38,6 +38,7 @@ add_executable(spin-hrhold-tests
     HrHold_test.cpp
     ZoneLadder_test.cpp
     SecondsAccrual_test.cpp
+    Alerts_test.cpp
 )
 target_include_directories(spin-hrhold-tests PRIVATE "${APP_LIBS}/Header")
 target_link_libraries(spin-hrhold-tests PRIVATE GTest::gtest_main)
@@ -90,10 +91,34 @@ if(ENGINE_LIB)
     )
     target_link_libraries(spin-sharedlog-tests PRIVATE GTest::gtest_main ${ENGINE_LIB})
     add_test(NAME spin-sharedlog-tests COMMAND spin-sharedlog-tests)
+
+    # The prescription reaching the .fit as laps, decoded back out of the file
+    # rather than read off the writer. Needs the archive for the parser and the
+    # cursor, and the SDK's test reader for the decode.
+    add_executable(spin-intervals-fit-tests
+        Intervals_fit_test.cpp
+        "${CMAKE_CURRENT_LIST_DIR}/../Software/Libs/Sources/ActivityWriter.cpp"
+        "${UNA_SDK_ROOT}/Tests/Host/support/KernelTestDoubles.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/Fit/FitCrc.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/Fit/FitWriter.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/Fit/FitRecordCadence.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/Fit/RecordingMarker.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/JSON/JsonStreamWriter.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/UnaLogger/Logger.cpp"
+        "${UNA_SDK_ROOT}/Libs/Source/Wrappers/StdLibWrappers.c"
+    )
+    target_include_directories(spin-intervals-fit-tests PRIVATE
+        "${APP_LIBS}/Header"
+        "${UNA_SDK_ROOT}/Libs/Header"
+        "${UNA_SDK_ROOT}/Tests/Host"
+        "${UNA_SDK_ROOT}/Tests/Host/support"
+    )
+    target_link_libraries(spin-intervals-fit-tests PRIVATE GTest::gtest_main ${ENGINE_LIB})
+    add_test(NAME spin-intervals-fit-tests COMMAND spin-intervals-fit-tests)
 else()
     message(WARNING
         "libspin_engine.a not found under ${ENGINE_DIR}/target/release: the "
-        "shared-log and diagnostic-log tests are skipped. Run "
+        "shared-log, diagnostic-log and interval-to-.fit tests are skipped. Run "
         "`cargo build --release` in Spin/Software/Libs/rust and re-configure."
     )
 endif()

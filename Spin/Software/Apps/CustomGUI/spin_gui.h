@@ -62,6 +62,14 @@ typedef struct {
        measured across the whole ring drifts out of its own segment by the
        fifth one. Meaningless unless has_zones and hr_zone >= 1. */
     uint8_t  hr_zone_fraction;
+    /* The @n of the step just entered, 1..8; 0 = no session, no @n on the step,
+       or the marker has gone stale. What the wearer ASKED FOR, never a reading:
+       it must never be drawn beside hr_zone or coloured against it. */
+    uint8_t  step_effort;
+    /* Which repetition of its block the step is, 1-based, and how many the
+       block has. Both 0 outside a block. */
+    uint8_t  step_rep;
+    uint8_t  step_reps;
 } spin_gui_frame;
 
 uint32_t spin_gui_abi_fingerprint(void);
@@ -120,12 +128,15 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(spin_gui_frame, zone_count));
     h = fnv1a(h, offsetof(spin_gui_frame, has_zones));
     h = fnv1a(h, offsetof(spin_gui_frame, energy_is_kj));
-    return fnv1a(h, offsetof(spin_gui_frame, hr_zone_fraction));
+    h = fnv1a(h, offsetof(spin_gui_frame, hr_zone_fraction));
+    h = fnv1a(h, offsetof(spin_gui_frame, step_effort));
+    h = fnv1a(h, offsetof(spin_gui_frame, step_rep));
+    return fnv1a(h, offsetof(spin_gui_frame, step_reps));
 }
 
 } // namespace spin_gui_abi
 
-static_assert(sizeof(spin_gui_frame) == 32, "spin_gui_frame size changed");
+static_assert(sizeof(spin_gui_frame) == 36, "spin_gui_frame size changed");
 static_assert(alignof(spin_gui_frame) == 4, "spin_gui_frame alignment changed");
 static_assert(offsetof(spin_gui_frame, elapsed_s) == 0, "elapsed_s moved");
 static_assert(offsetof(spin_gui_frame, hr_bpm) == 4, "hr_bpm moved");
@@ -146,6 +157,9 @@ static_assert(offsetof(spin_gui_frame, zone_count) == 26, "zone_count moved");
 static_assert(offsetof(spin_gui_frame, has_zones) == 27, "has_zones moved");
 static_assert(offsetof(spin_gui_frame, energy_is_kj) == 28, "energy_is_kj moved");
 static_assert(offsetof(spin_gui_frame, hr_zone_fraction) == 29, "hr_zone_fraction moved");
+static_assert(offsetof(spin_gui_frame, step_effort) == 30, "step_effort moved");
+static_assert(offsetof(spin_gui_frame, step_rep) == 31, "step_rep moved");
+static_assert(offsetof(spin_gui_frame, step_reps) == 32, "step_reps moved");
 #endif
 
 #endif // SPIN_GUI_H

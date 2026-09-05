@@ -259,11 +259,40 @@ oldest and re-serialises until it fits, so **the newest session always lands**
 and `dropped` counts everything ever evicted. `start_utc` is the entry's
 identity, so a write retried after a failure replaces rather than appending.
 
+One session's fields, with their units. Anything absent was never measured or
+never asked for, which is a different thing from zero — `work_kj` and
+`prescription` are both omitted rather than written empty, for the reason the FIT
+file omits `total_work`:
+
+| Field | Unit | Is |
+|---|---|---|
+| `start_utc` | Unix seconds | the entry's identity |
+| `active_s`, `elapsed_s` | s | unpaused, and wall clock start to stop |
+| `hr_avg`, `hr_max` | bpm | over the session |
+| `hr_max_setting` | bpm | what the watch calls the wearer's maximum; 0 = none |
+| `weight_kg` | kg | what the calorie model used |
+| `kcal` | kcal | active |
+| `work_kj` | kJ | **absent** when nobody said |
+| `zone_count`, `zone_floors` | —, bpm | the ladder the zones below were counted against |
+| `zone_s` | s | `[0]` is below zone 1, `[i]` is zone `i` |
+| `edwards_trimp` | minute-weights | only for the ladder the weights are defined over |
+| `prescription` | — | the interval session the wearer **asked for**, as typed; **absent** when there was none |
+| `recoveries`, `recoveries_dropped` | — | the newest measurements, and how many did not fit |
+| `discarded` | — | per-reason counts, omitted entirely when none fired |
+
+`prescription` is what was asked for and never what was done: the laps in the
+`.fit` are the record of the ride, and **nothing here scores one against the
+other** — no `steps_completed`, no adherence figure. See
+[§ The session a wearer asked for](#the-session-a-wearer-asked-for).
+
 Measured in [`tests/history.rs`](tests/history.rs), not argued: twenty ordinary
-sessions are **9,306 bytes**; twenty as wide as a session can reachably be are
-**16,340** of the 16,384 available. With all fourteen discard reasons non-zero at
-once — a state the gates cannot actually reach — only 16 of the 20 fit, and the
-test pins that degradation too.
+sessions are **9,306 bytes**, and twenty carrying the longest prescription the
+field can hold are **12,226** of the 16,384 available. Every field at its ceiling
+*and* a full prescription is **15,428** bytes for only 16 of the 20 — that
+combination stopped fitting when the prescription landed, and it is not a state a
+wearer reaches (65,535 seconds in each of nine zone buckets is 163 hours). With
+all fourteen discard reasons non-zero at once as well, 14 fit. The tests pin all
+three.
 
 ### `<app>` profile — the interior
 

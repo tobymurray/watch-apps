@@ -268,6 +268,9 @@ fn the_widest_possible_log_fits_the_buffer() {
             source_changed: u16::MAX,
             source_not_accepted: u16::MAX,
         },
+        prescription: [b'1'; MAX_PRESCRIPTION],
+        prescription_len: MAX_PRESCRIPTION as u8,
+        reserved2: [0; 3],
     };
     for i in 0..MAX_SESSIONS {
         let mut s = wide;
@@ -280,14 +283,14 @@ fn the_widest_possible_log_fits_the_buffer() {
     assert!(n <= MAX_STORE_BYTES, "{n} bytes of {MAX_STORE_BYTES}");
 
     // MEASURED, not argued, and it does NOT reach the entry cap: with every
-    // one of the fourteen discard reasons non-zero at once, a session
-    // serialises to about 1,040 bytes and only 16 of the 20 fit. Every reason
-    // firing in one session is not a reachable state -- a kind that is not
-    // calibrated never reaches the gates, and no_max_hr is gated ahead of
-    // too_easy -- so this pins the degradation rather than a guarantee.
-    // The guarantee is the next test.
-    assert_eq!(h.sessions().len(), 16, "the widest log's entry count moved");
-    assert_eq!(h.dropped(), 4, "the oldest went, not the newest");
+    // one of the fourteen discard reasons non-zero at once and a full-length
+    // prescription, a session serialises to about 1,190 bytes and only 14 of
+    // the 20 fit. Every reason firing in one session is not a reachable state
+    // -- a kind that is not calibrated never reaches the gates, and no_max_hr
+    // is gated ahead of too_easy -- so this pins the degradation rather than a
+    // guarantee. The guarantee is two tests down.
+    assert_eq!(h.sessions().len(), 14, "the widest log's entry count moved");
+    assert_eq!(h.dropped(), 6, "the oldest went, not the newest");
     assert_eq!(
         h.sessions()[h.sessions().len() - 1].start_utc,
         u32::MAX - (MAX_SESSIONS as u32 - 1),
@@ -295,10 +298,16 @@ fn the_widest_possible_log_fits_the_buffer() {
     );
 }
 
-/// The guarantee: a session as wide as one can actually be still reaches the
-/// entry cap, so the byte cap is not what a real wearer ever meets.
+/// Every field at its ceiling, plus a full-length prescription.
+///
+/// This used to hold all twenty entries, and stopped when the prescription
+/// landed: 20 x 128 bytes of text is 2.6 KB against 44 bytes of headroom. It is
+/// still not a state a wearer reaches -- 65,535 seconds in each of nine zone
+/// buckets is 163 hours -- so what it pins is the degradation. The guarantee
+/// moved to the test below, which is an ordinary ride carrying the longest
+/// session anyone can type.
 #[test]
-fn the_widest_reachable_log_still_holds_every_entry() {
+fn the_widest_log_a_wearer_could_not_reach_drops_the_oldest() {
     let mut h = History::new();
     h.name(b"indoor_cycling_x", b"indoor_cycling_x");
     let mut wide = Session {
@@ -331,6 +340,7 @@ fn the_widest_reachable_log_still_holds_every_entry() {
         }; MAX_RECOVERIES],
         ..Session::EMPTY
     };
+    wide.set_prescription(&[b'1'; MAX_PRESCRIPTION]);
     // Five reasons at once is already more than any recorded session has
     // produced; the desk check of 2026-09-03 produced one and Ride A two.
     wide.discarded = DiscardCounts {
@@ -348,10 +358,31 @@ fn the_widest_reachable_log_still_holds_every_entry() {
     }
 
     let mut buf = [0u8; MAX_STORE_BYTES];
+    let n = h.save(&mut buf).expect("the newest session must always land");
+    // MEASURED. Re-run after changing any cap or adding a field.
+    assert_eq!(h.sessions().len(), 16, "the entry count at the ceiling moved");
+    assert_eq!(n, 15_428, "the widest log's size moved");
+    assert!(n <= MAX_STORE_BYTES, "{n} bytes of {MAX_STORE_BYTES}");
+}
+
+/// The guarantee, now that a session carries what was asked for as well as what
+/// happened: twenty ordinary rides, each carrying the longest prescription the
+/// field can hold, still reach the entry cap.
+#[test]
+fn twenty_prescribed_sessions_still_hold_every_entry() {
+    let mut h = History::new();
+    h.name(b"Spin", b"indoor_cycling");
+    for i in 0..MAX_SESSIONS {
+        let mut s = session(1_788_000_000 + i as u32);
+        s.set_prescription(&[b'1'; MAX_PRESCRIPTION]);
+        h.add(&s);
+    }
+    let mut buf = [0u8; MAX_STORE_BYTES];
     let n = h.save(&mut buf).expect("the entry cap must fit the byte cap");
     assert_eq!(h.sessions().len(), MAX_SESSIONS, "nothing was evicted");
-    // MEASURED. Re-run after changing any cap or adding a field.
-    assert_eq!(n, 16_340, "the widest reachable log's size moved");
+    // MEASURED: 12,226 of the 16,384 available, against 9,306 with no
+    // prescription. The real session of 2026-09-04 is 58 bytes, not 128.
+    assert_eq!(n, 12_226, "the prescribed log's size moved");
     assert!(n < MAX_STORE_BYTES, "{n} bytes of {MAX_STORE_BYTES}");
 }
 
@@ -367,6 +398,49 @@ fn an_ordinary_log_of_twenty_sessions_is_comfortable() {
     let mut buf = [0u8; MAX_STORE_BYTES];
     let n = h.save(&mut buf).expect("it fits");
     assert_eq!(n, 9_306, "the ordinary log's size moved");
+}
+
+#[test]
+fn what_was_asked_for_survives_the_round_trip() {
+    let mut h = History::new();
+    h.name(b"Spin", b"indoor_cycling");
+    let asked = b"5m@2,6x(20s@5,40s@2),6m@2,3x(1m@5,1m@2),7m@2,2x(4m@4,3m@2)";
+    let mut s = session(1_788_483_397);
+    s.set_prescription(asked);
+    h.add(&s);
+
+    let mut buf = [0u8; MAX_STORE_BYTES];
+    let n = h.save(&mut buf).expect("it fits");
+    let text = core::str::from_utf8(&buf[..n]).unwrap();
+    assert!(text.contains("\"prescription\":\"5m@2,6x(20s@5,40s@2)"));
+    // What was asked for, never what was done: no count of steps met, no
+    // adherence figure, nothing scoring the ride against it.
+    assert!(!text.contains("steps_completed"));
+    assert!(!text.contains("steps_met"));
+
+    let back = round_trip(&mut h);
+    assert_eq!(back.sessions()[0].prescription(), asked);
+}
+
+#[test]
+fn a_ride_with_no_session_writes_no_prescription() {
+    let mut h = History::new();
+    h.name(b"Spin", b"indoor_cycling");
+    h.add(&session(1_788_483_397));
+    let mut buf = [0u8; MAX_STORE_BYTES];
+    let n = h.save(&mut buf).expect("it fits");
+    // Absent rather than an empty string, for the reason work_kj is absent
+    // rather than zero: nobody asked for anything.
+    assert!(!core::str::from_utf8(&buf[..n]).unwrap().contains("prescription"));
+}
+
+#[test]
+fn a_prescription_longer_than_the_field_is_stored_as_none() {
+    // A value that does not fit is not a shorter session, and half a
+    // prescription is worse than no record of one.
+    let mut s = Session::EMPTY;
+    s.set_prescription(&[b'1'; MAX_PRESCRIPTION + 1]);
+    assert!(s.prescription().is_empty());
 }
 
 #[test]

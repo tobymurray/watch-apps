@@ -150,9 +150,14 @@ void Gui::buildFrame(spin_gui_frame &out) const
     out.has_zones        = mTrackData.hasZones ? 1u : 0u;
 
     // Taken as published, like the heart rate: the Service decides when a split
-    // has stopped being worth showing, so this side holds no clock.
+    // and a step marker have stopped being worth showing, so this side holds no
+    // clock.
     out.last_lap_s = mTrackData.lastLapSeconds;
     out.lap_number = static_cast<uint16_t>(mTrackData.lapNum);
+
+    out.step_effort = mTrackData.stepEffort;
+    out.step_rep    = mTrackData.stepRep;
+    out.step_reps   = mTrackData.stepReps;
 }
 
 void Gui::renderAndPush()

@@ -55,6 +55,15 @@ fn split(mut f: Frame, lap_number: u16, last_lap_s: u16) -> Frame {
     f
 }
 
+/// A step boundary: the same slot and the same dwell as the split, which the
+/// Service publishes alongside it.
+fn step(mut f: Frame, effort: u8, rep: u8, reps: u8) -> Frame {
+    f.step_effort = effort;
+    f.step_rep = rep;
+    f.step_reps = reps;
+    f
+}
+
 /// `work_estimate_kj` of 0 draws no reference row.
 fn enter_work(work_kj: u16, work_estimate_kj: u16) -> Frame {
     Frame { screen: SCREEN_ENTER_WORK, work_kj, work_estimate_kj, ..Frame::default() }
@@ -120,6 +129,39 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
                 183,
             ),
         ),
+        // The top of a step, in the seconds after the wrist buzzed. The word is
+        // an instruction and the dial is a measurement, and the two sit apart
+        // on purpose -- see draw_riding.
+        (
+            "step_all_out",
+            step(split(in_zone(riding(SCREEN_RIDING, 322, 121, HR_EXTERNAL), 2), 2, 300), 5, 1, 6),
+        ),
+        (
+            "step_easy_mid_set",
+            step(split(in_zone(riding(SCREEN_RIDING, 342, 168, HR_EXTERNAL), 4), 3, 20), 2, 4, 6),
+        ),
+        // Outside a block there is no repetition to name, so the word stands
+        // alone.
+        (
+            "step_no_repetition",
+            step(split(in_zone(riding(SCREEN_RIDING, 300, 104, HR_EXTERNAL), 1), 1, 300), 2, 0, 0),
+        ),
+        // The widest this row gets: the longest word and two-digit counts.
+        (
+            "step_widest",
+            step(split(in_zone(riding(SCREEN_RIDING, 1800, 174, HR_EXTERNAL), 5), 27, 30), 8, 13, 20),
+        ),
+        // Every word the ladder has, at the five-zone count they were written
+        // for.
+        ("step_word_1_of_5", step(riding(SCREEN_RIDING, 60, 96, HR_OPTICAL), 1, 0, 0)),
+        ("step_word_2_of_5", step(zones(riding(SCREEN_RIDING, 120, 112, HR_OPTICAL), 5, 2), 2, 0, 0)),
+        ("step_word_3_of_5", step(zones(riding(SCREEN_RIDING, 180, 134, HR_OPTICAL), 5, 3), 3, 0, 0)),
+        ("step_word_4_of_5", step(zones(riding(SCREEN_RIDING, 240, 152, HR_OPTICAL), 5, 4), 4, 0, 0)),
+        ("step_word_5_of_5", step(zones(riding(SCREEN_RIDING, 300, 176, HR_OPTICAL), 5, 5), 5, 0, 0)),
+        // The ends of the ladder, where five words are anchored to two zones
+        // and to eight.
+        ("step_word_top_of_2", step(zones(riding(SCREEN_RIDING, 90, 150, HR_OPTICAL), 2, 2), 2, 0, 0)),
+        ("step_word_6_of_8", step(zones(riding(SCREEN_RIDING, 90, 158, HR_OPTICAL), 8, 6), 6, 0, 0)),
         // The arc in the bottom gap, partly filled.
         (
             "riding_target_half",

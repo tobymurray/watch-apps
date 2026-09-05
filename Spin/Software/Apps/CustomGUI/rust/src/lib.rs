@@ -134,6 +134,18 @@ pub struct Frame {
     pub has_zones: u8,
     pub energy_is_kj: u8,
     pub hr_zone_fraction: u8,
+    /// The `@n` of the step just entered, 1..8; 0 = no session, no `@n` on the
+    /// step, or the marker has gone stale.
+    ///
+    /// What the wearer *asked for*, never a reading. It is not drawn beside the
+    /// dial and nothing is coloured against it: they are different quantities,
+    /// and a screen that invites the comparison invites a rider to conclude
+    /// they are failing.
+    pub step_effort: u8,
+    /// Which repetition of its block the step is, 1-based, and how many the
+    /// block has. Both 0 outside a block.
+    pub step_rep: u8,
+    pub step_reps: u8,
 }
 
 const FNV_OFFSET_BASIS: u32 = 0x811C_9DC5;
@@ -166,7 +178,10 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(Frame, zone_count));
     let h = fnv1a(h, core::mem::offset_of!(Frame, has_zones));
     let h = fnv1a(h, core::mem::offset_of!(Frame, energy_is_kj));
-    fnv1a(h, core::mem::offset_of!(Frame, hr_zone_fraction))
+    let h = fnv1a(h, core::mem::offset_of!(Frame, hr_zone_fraction));
+    let h = fnv1a(h, core::mem::offset_of!(Frame, step_effort));
+    let h = fnv1a(h, core::mem::offset_of!(Frame, step_rep));
+    fnv1a(h, core::mem::offset_of!(Frame, step_reps))
 }
 
 #[no_mangle]
@@ -174,7 +189,7 @@ pub extern "C" fn spin_gui_abi_fingerprint() -> u32 {
     abi_fingerprint()
 }
 
-const _: () = assert!(core::mem::size_of::<Frame>() == 32);
+const _: () = assert!(core::mem::size_of::<Frame>() == 36);
 const _: () = assert!(core::mem::align_of::<Frame>() == 4);
 const _: () = assert!(core::mem::offset_of!(Frame, elapsed_s) == 0);
 const _: () = assert!(core::mem::offset_of!(Frame, hr_bpm) == 4);
@@ -195,6 +210,9 @@ const _: () = assert!(core::mem::offset_of!(Frame, zone_count) == 26);
 const _: () = assert!(core::mem::offset_of!(Frame, has_zones) == 27);
 const _: () = assert!(core::mem::offset_of!(Frame, energy_is_kj) == 28);
 const _: () = assert!(core::mem::offset_of!(Frame, hr_zone_fraction) == 29);
+const _: () = assert!(core::mem::offset_of!(Frame, step_effort) == 30);
+const _: () = assert!(core::mem::offset_of!(Frame, step_rep) == 31);
+const _: () = assert!(core::mem::offset_of!(Frame, step_reps) == 32);
 
 // -- Geometry ----------------------------------------------------------------
 
@@ -540,6 +558,78 @@ fn draw_lap_split(fb: &mut FrameBuf, number: u16, seconds: u16, y: i32) {
               Align::Left, WHITE);
 }
 
+/// The five words `@n` maps to, easiest first.
+///
+/// A word rather than the number the wearer typed: `5` beside a dial reading
+/// zone 3 is a contradiction the rider has to resolve while out of breath, and
+/// the dial is the honest one -- it is a measurement. A word cannot be misread
+/// as a reading.
+///
+/// NOT MEASURED. Nobody has read one of these at 150 bpm. What has to be true
+/// of them is only that they say effort rather than a reading.
+const EFFORT_WORDS: [&str; 5] = ["EASY", "STEADY", "TEMPO", "HARD", "ALL OUT"];
+
+/// The word for `@effort` on a ladder of `zone_count` zones, or `None` when the
+/// step named no effort.
+///
+/// Anchored at its ends the way the dial's colours already are, so it works at
+/// any count from 2 to 8: `@1` is always `EASY` and the top zone is always
+/// `ALL OUT`, with the rest spread between. At eight zones two adjacent zones
+/// share a word, which is what anchoring five words to a longer ladder means,
+/// so a word is not enough to order two steps by. `Spin/README.md` prices that.
+///
+/// An effort above the ladder clamps to the top zone rather than being refused:
+/// the parser cannot see `hrZoneCount`, so `@8` on a five-zone ladder is a
+/// wearer asking for the hardest thing there is.
+fn effort_word(effort: u8, zone_count: u8) -> Option<&'static str> {
+    if effort == 0 {
+        return None;
+    }
+    // With no ladder set there is nothing to clamp against, and `@n` is written
+    // on a 1-8 scale, so that is the scale used.
+    let top = if zone_count >= 2 { zone_count as u32 } else { 8 };
+    let n = (effort as u32).min(top);
+    let i = ((n - 1) * 4 + (top - 1) / 2) / (top - 1);
+    Some(EFFORT_WORDS[(i as usize).min(EFFORT_WORDS.len() - 1)])
+}
+
+/// `3/6  ALL OUT` at the top of a step, in the split's own slot and shape: the
+/// repetition dim, the word bright.
+fn draw_step_marker(fb: &mut FrameBuf, rep: u8, reps: u8, word: &str, y: i32) {
+    let label = label_face();
+    let word_w = text_width(label, word) as i32;
+
+    if rep == 0 || reps == 0 {
+        draw_centered(fb, label, word, y, WHITE);
+        return;
+    }
+
+    let mut buf = [0u8; 12];
+    let count = format_rep(rep, reps, &mut buf);
+    let count_w = text_width(label, count) as i32;
+    let left = CENTER_X - (count_w + WORD_GAP + word_w) / 2;
+    draw_text(fb, label, count, left, y, Align::Left, DIM);
+    draw_text(fb, label, word, left + count_w + WORD_GAP, y, Align::Left, WHITE);
+}
+
+/// `rep/reps`, both at most 99 since a block repeats at most that many times.
+fn format_rep(rep: u8, reps: u8, buf: &mut [u8; 12]) -> &str {
+    let mut n = 0;
+    let push = |buf: &mut [u8; 12], n: &mut usize, v: u8| {
+        if v >= 10 {
+            buf[*n] = b'0' + v / 10;
+            *n += 1;
+        }
+        buf[*n] = b'0' + v % 10;
+        *n += 1;
+    };
+    push(buf, &mut n, rep);
+    buf[n] = b'/';
+    n += 1;
+    push(buf, &mut n, reps);
+    core::str::from_utf8(&buf[..n]).unwrap_or("")
+}
+
 /// Draws the clock at the largest face that fits, returning the height it used.
 fn render_clock(fb: &mut FrameBuf, text: &str, y: i32, color: Abgr2222) -> i32 {
     for h in [CLOCK_XL_H, CLOCK_L_H] {
@@ -564,12 +654,16 @@ fn draw_riding(fb: &mut FrameBuf, frame: &Frame) {
     // from a running one without reading the banner.
     render_clock(fb, text, CLOCK_Y, if paused { DIM } else { WHITE });
 
-    // One slot, three things that can want it, ordered by how long each stays
-    // true. Paused wins: it is the state the wearer can act on. A split is the
-    // thing that just happened and is gone in seconds, where the target having
-    // been met stays true for the rest of the ride.
+    // One slot, four things that can want it, ordered by how long each stays
+    // true. Paused wins: it is the state the wearer can act on. The step marker
+    // and the split are the same age -- both are the thing that just happened
+    // and both are gone in seconds -- so the more specific of the two goes
+    // first, and a step with no effort written on it falls through to the
+    // split. The target having been met stays true for the rest of the ride.
     if paused {
         draw_centered(fb, label, "PAUSED", PAUSED_BANNER_Y, AMBER);
+    } else if let Some(word) = effort_word(frame.step_effort, frame.zone_count) {
+        draw_step_marker(fb, frame.step_rep, frame.step_reps, word, PAUSED_BANNER_Y);
     } else if frame.last_lap_s > 0 {
         draw_lap_split(fb, frame.lap_number, frame.last_lap_s, PAUSED_BANNER_Y);
     } else if frame.target_reached != 0 {
@@ -1134,7 +1228,7 @@ mod tests {
     /// value here catches a one-sided edit before the watch does.
     #[test]
     fn the_abi_fingerprint_is_the_one_the_header_computes() {
-        assert_eq!(spin_gui_abi_fingerprint(), 332_628_000);
+        assert_eq!(spin_gui_abi_fingerprint(), 1_079_958_369);
     }
 
     #[test]
@@ -1174,6 +1268,117 @@ mod tests {
         // Paused says the same thing whether or not a split was pending.
         let paused_plain = Frame { lap_number: 0, last_lap_s: 0, ..paused };
         assert_eq!(banner_rows(&draw(&paused)), banner_rows(&draw(&paused_plain)));
+    }
+
+    #[test]
+    fn the_effort_ladder_is_anchored_at_both_ends() {
+        // Five words over any count from 2 to 8: @1 is always EASY and the top
+        // zone is always ALL OUT, whatever the wearer set hrZoneCount to.
+        for count in 2u8..=8 {
+            assert_eq!(effort_word(1, count), Some("EASY"), "count {count}");
+            assert_eq!(effort_word(count, count), Some("ALL OUT"), "count {count}");
+        }
+        // At five zones each zone gets its own word, which is the count the
+        // words were written for.
+        assert_eq!(
+            (1..=5).map(|n| effort_word(n, 5).unwrap()).collect::<Vec<_>>(),
+            EFFORT_WORDS.to_vec()
+        );
+        // At two, only the ends exist. At eight, adjacent zones share a word --
+        // which is why the wrist alert takes its direction from the number.
+        assert_eq!(effort_word(2, 2), Some("ALL OUT"));
+        assert_eq!(effort_word(2, 8), effort_word(3, 8));
+        assert_eq!(effort_word(6, 8), effort_word(7, 8));
+        // Never falls below EASY or above ALL OUT.
+        for count in 2u8..=8 {
+            for n in 1u8..=8 {
+                let w = effort_word(n, count).unwrap();
+                assert!(EFFORT_WORDS.contains(&w), "count {count}, @{n}");
+            }
+        }
+    }
+
+    #[test]
+    fn an_effort_above_the_ladder_clamps_to_its_top() {
+        // The parser cannot see hrZoneCount, so @8 on a five-zone ladder is a
+        // wearer asking for the hardest thing there is.
+        assert_eq!(effort_word(8, 5), effort_word(5, 5));
+        assert_eq!(effort_word(6, 5), Some("ALL OUT"));
+        // No ladder set: @n is written on a 1-8 scale, so that is the scale.
+        assert_eq!(effort_word(8, 0), Some("ALL OUT"));
+        assert_eq!(effort_word(1, 0), Some("EASY"));
+    }
+
+    #[test]
+    fn a_step_names_an_effort_and_never_a_number() {
+        // A screen reading `5` beside a dial reading zone 3 is a contradiction
+        // the rider has to resolve while out of breath.
+        for word in EFFORT_WORDS {
+            assert!(!word.chars().any(|c| c.is_ascii_digit()), "{word}");
+        }
+        // 0 is the whole switch: no session, no @n on this step, or the marker
+        // has gone stale.
+        assert_eq!(effort_word(0, 5), None);
+    }
+
+    #[test]
+    fn a_step_marker_outranks_the_split_and_a_pause_outranks_it() {
+        let mut split = frame(SCREEN_RIDING);
+        split.elapsed_s = 322;
+        split.zone_count = 5;
+        split.has_zones = 1;
+        split.lap_number = 2;
+        split.last_lap_s = 300;
+
+        let marked = Frame { step_effort: 5, step_rep: 1, step_reps: 6, ..split };
+        assert_ne!(banner_rows(&draw(&split)), banner_rows(&draw(&marked)),
+                   "the step marker has to displace the split");
+
+        // Paused says the same thing whether or not a step just started.
+        let paused = Frame { screen: SCREEN_PAUSED, ..marked };
+        let paused_plain = Frame { screen: SCREEN_PAUSED, ..split };
+        assert_eq!(banner_rows(&draw(&paused)), banner_rows(&draw(&paused_plain)));
+    }
+
+    #[test]
+    fn a_step_with_no_effort_written_falls_through_to_the_split() {
+        // Half a session can carry `@n` and half not, and a boundary with
+        // nothing to say about effort is an ordinary lap -- on the screen as
+        // well as on the wrist.
+        let mut split = frame(SCREEN_RIDING);
+        split.elapsed_s = 322;
+        split.lap_number = 2;
+        split.last_lap_s = 300;
+
+        let in_a_block = Frame { step_rep: 3, step_reps: 6, ..split };
+        assert_eq!(banner_rows(&draw(&split)), banner_rows(&draw(&in_a_block)));
+    }
+
+    #[test]
+    fn the_repetition_is_drawn_only_inside_a_block() {
+        let mut base = frame(SCREEN_RIDING);
+        base.elapsed_s = 322;
+        base.zone_count = 5;
+        base.has_zones = 1;
+        base.step_effort = 5;
+
+        let alone = base;
+        let counted = Frame { step_rep: 1, step_reps: 6, ..base };
+        assert_ne!(banner_rows(&draw(&alone)), banner_rows(&draw(&counted)));
+
+        // The repetition has to be visible, or a rider four reps into thirteen
+        // learns nothing from it.
+        let later = Frame { step_rep: 4, step_reps: 6, ..base };
+        assert_ne!(banner_rows(&draw(&counted)), banner_rows(&draw(&later)));
+    }
+
+    #[test]
+    fn a_repetition_reads_as_n_of_n() {
+        let mut buf = [0u8; 12];
+        assert_eq!(format_rep(1, 6, &mut buf), "1/6");
+        assert_eq!(format_rep(4, 13, &mut buf), "4/13");
+        assert_eq!(format_rep(13, 20, &mut buf), "13/20");
+        assert_eq!(format_rep(99, 99, &mut buf), "99/99");
     }
 
     #[test]

@@ -28,6 +28,7 @@
 #include "SpinEngine.hpp"
 
 #include "ActivityWriter.hpp"
+#include "Alerts.hpp"
 #include "AppConfigFields.hpp"
 #include "HrHold.hpp"
 #include "SecondsAccrual.hpp"
@@ -133,11 +134,31 @@ private:
 
     std::time_t mAutoLapSeconds = 0;  ///< 0 = one lap for the whole ride
     std::time_t mTargetSeconds  = 0;  ///< 0 = no target
+    /// The interval session as the wearer typed it, NUL-terminated. Untrusted
+    /// text: app-manifest.json's pattern is checked on the phone and never
+    /// ships, and the values file is plaintext on a FAT volume.
+    char        mIntervals[SpinConfig::kIntervalsBufferBytes] = {};
     bool        mKeepScreenLit  = false;
     bool        mEnergyInKilojoules = false;  ///< display unit only
     /// Offer the post-ride kilojoule screen. Forwarded to the GUI, which owns
     /// the screen; the Service only has to know whether to promise it.
     bool        mAskForKilojoules = true;
+
+    // -- The session the wearer asked for -------------------------------------
+
+    /// This ride was given a session, whether or not it still has steps left.
+    /// autoLapMinutes is suppressed for the whole ride on the strength of it:
+    /// two lap sources disagreeing about where a lap goes is worse than either
+    /// alone, and auto-lap taking over halfway through would be exactly that.
+    bool mHasSession = false;
+    /// There are steps left to drive. False once the last one ended, which is
+    /// when the ride becomes an ordinary ride and R2 a manual lap again.
+    bool mSessionRunning = false;
+
+    std::time_t mStepSeconds = 0;   ///< length of the current step
+    uint8_t     mStepEffort  = 0;   ///< its @n, 0 = the wearer wrote none
+    uint8_t     mStepRep     = 0;   ///< 1-based within its block, 0 outside one
+    uint8_t     mStepReps    = 0;   ///< repetitions of that block, 0 outside one
 
     // -- Sensors --------------------------------------------------------------
 
@@ -232,6 +253,13 @@ private:
     /// A lap the wearer asked for, as opposed to one auto-lap produced.
     void lapTrack();
     void saveLap();
+    /// Parse the configured session and put the cursor on its first step.
+    void beginSession();
+    /// Read whatever step the cursor is on into mStep*; false once it has run
+    /// out.
+    bool readStep();
+    /// Close of one step and open of the next, having just closed its lap.
+    void advanceStep();
     /// Keep a completed measurement, dropping the oldest if there is no room.
     void keepRecovery(const SpinRecovery& measurement);
     /// One line per second while paused, one every skActiveLogPeriod while
@@ -259,14 +287,20 @@ private:
     void notifyNewActivity();
     void notifyLapEnd();
     void notifyTargetReached();
+    /// The buzz at a step boundary, which on a ride the wearer cannot look at
+    /// is the whole feature. @p was and @p now are the two steps' @n as
+    /// written, and a boundary with nothing to say about effort is an ordinary
+    /// lap. See Alerts.hpp.
+    void notifyStepChange(uint8_t was, uint8_t now);
+    void notifySessionEnd();
     void backlightOn(uint32_t timeoutMs = skBacklightTimeout);
     /// Hold the backlight until something turns it off. autoOffTimeoutMs == 0
     /// disables the auto-off, so this is one message rather than a re-arming
     /// timer -- see SDK::Message::RequestBacklightSet.
     void backlightHold(bool on);
-    void playBuzzerPattern(uint16_t beepMs, uint8_t count = 1, uint16_t silenceMs = 100);
-    void playVibroPattern(SDK::Message::RequestVibroPlay::Effect effect,
-                          uint8_t count = 1, uint16_t silenceMs = 100);
+    /// Both channels of one alert, and the one place Alerts::Texture becomes an
+    /// SDK effect.
+    void playAlert(const Alerts::Alert& alert);
 };
 
 #endif // SERVICE_HPP

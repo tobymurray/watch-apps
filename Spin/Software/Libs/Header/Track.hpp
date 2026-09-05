@@ -66,6 +66,20 @@ struct Data {
     /// The same flag that fired the buzz, so the screen can never announce the
     /// target a second before or after the wrist felt it.
     bool targetReached = false;
+
+    /// The @n of the step just entered, 1..8; 0 = no session, no @n on this
+    /// step, or the marker has gone stale. It is what the wearer *asked for*
+    /// and never a reading, so nothing may draw it against hrZone.
+    ///
+    /// Published only while the split beside it is worth showing, so the screen
+    /// needs no clock of its own -- the same property lastLapSeconds has.
+    uint8_t stepEffort = 0;
+
+    /// Which repetition of its block the step is, 1-based, and how many the
+    /// block has. Both 0 outside a block, and both stale together with
+    /// stepEffort.
+    uint8_t stepRep  = 0;
+    uint8_t stepReps = 0;
 };
 
 } // namespace Track

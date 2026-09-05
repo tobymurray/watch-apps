@@ -269,6 +269,14 @@ fn write_session(w: &mut Writer, s: &Session) {
         w.num("work_kj", s.work_kj as u64);
     }
 
+    // What was asked for, beside the ride it belongs to and labelled as the
+    // prescription rather than as anything that happened. The laps are the
+    // record of what happened, and nothing compares the two.
+    if !s.prescription().is_empty() {
+        w.byte(b',');
+        w.text("prescription", s.prescription());
+    }
+
     w.byte(b',');
     w.num("zone_count", s.zone_count as u64);
     w.byte(b',');
@@ -444,6 +452,9 @@ fn parse_session(obj: &[u8]) -> Session {
         for (i, v) in json::items(list).enumerate().take(MAX_ZONE_BUCKETS) {
             s.zone_s[i] = json::as_u16_or(Some(v), 0);
         }
+    }
+    if let Some(text) = json::member(obj, "prescription").and_then(json::as_text) {
+        s.set_prescription(text);
     }
     if let Some(list) = json::member(obj, "recoveries") {
         let mut n = 0;

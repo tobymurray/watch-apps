@@ -15,6 +15,7 @@ use core::cell::UnsafeCell;
 
 use effortkit::history::{History, Load, MAX_STORE_BYTES};
 use effortkit::hr::HrSource;
+use effortkit::intervals::{Cursor, Session as Prescription};
 use effortkit::record::{DiscardCounts, Recovery, Session};
 use effortkit::window::{Calibration, Detector, Reason, Step, WindowKind, HRR60};
 
@@ -74,8 +75,83 @@ static DETECTOR: Single<Detector> = Single::new(Detector::new(&CALIBRATION));
 /// on the Service's 10 KiB stack.
 static HISTORY: Single<History> = Single::new(History::new());
 
+/// The session the wearer asked for, and where the ride has got to in it.
+///
+/// Static for the same reason the history is: 740 bytes is too much of a 10 KiB
+/// stack to hand around, and the cursor has to outlive the call that moved it.
+static PRESCRIBED: Single<Prescription> = Single::new(Prescription::EMPTY);
+static CURSOR: Single<Option<Cursor>> = Single::new(None);
+
 /// The Service's stack, from `una_app_build_service`'s default of `10*1024`.
 pub const SERVICE_STACK_BYTES: usize = 10 * 1024;
+
+// ------------------------------------------------------------------ intervals
+
+/// Read the `intervals` config value and put the cursor on its first step.
+///
+/// Returns the number of steps, which is 0 for the off value `0s`, for an empty
+/// value and for anything the grammar refuses -- all of which mean the same
+/// thing to a ride: no session, and `autoLapMinutes` back in charge of laps.
+///
+/// # Safety
+/// `text` must point at `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn spin_intervals_load(text: *const u8, len: u32) -> u16 {
+    let parsed = if text.is_null() {
+        Prescription::EMPTY
+    } else {
+        Prescription::parse(core::slice::from_raw_parts(text, len as usize))
+            .unwrap_or(Prescription::EMPTY)
+    };
+    *PRESCRIBED.get() = parsed;
+    *CURSOR.get() = parsed.start();
+    parsed.step_count()
+}
+
+/// The step the ride is in: its length in seconds, the `@n` as written (0 when
+/// none was), and where it sits in its block (0 and 0 outside one).
+///
+/// Returns 0 once the session has run out, leaving the outputs untouched.
+///
+/// # Safety
+/// Every pointer must be writable, or null.
+#[no_mangle]
+pub unsafe extern "C" fn spin_intervals_step(
+    seconds: *mut u16,
+    effort: *mut u8,
+    rep: *mut u8,
+    reps: *mut u8,
+) -> u8 {
+    let Some(cursor) = *CURSOR.get() else { return 0 };
+    let Some(placed) = cursor.current(PRESCRIBED.get()) else { return 0 };
+    if !seconds.is_null() {
+        *seconds = placed.step.seconds;
+    }
+    if !effort.is_null() {
+        *effort = placed.step.effort;
+    }
+    if !rep.is_null() {
+        *rep = placed.rep;
+    }
+    if !reps.is_null() {
+        *reps = placed.reps;
+    }
+    1
+}
+
+/// Move to the next step, returning 0 once there is none and the session is
+/// over.
+#[no_mangle]
+pub extern "C" fn spin_intervals_advance() -> u8 {
+    let slot = CURSOR.get();
+    let Some(cursor) = slot.as_mut() else { return 0 };
+    if cursor.advance(PRESCRIBED.get()) {
+        1
+    } else {
+        *slot = None;
+        0
+    }
+}
 
 // ------------------------------------------------------------------ recovery
 
@@ -331,7 +407,9 @@ pub extern "C" fn spin_engine_abi_fingerprint() -> u32 {
     let h = effortkit::fnv1a(h, offset_of!(Session, recoveries_dropped));
     let h = effortkit::fnv1a(h, offset_of!(Session, recoveries));
     let h = effortkit::fnv1a(h, offset_of!(Session, discarded));
-    effortkit::fnv1a(h, size_of::<DiscardCounts>())
+    let h = effortkit::fnv1a(h, size_of::<DiscardCounts>());
+    let h = effortkit::fnv1a(h, offset_of!(Session, prescription));
+    effortkit::fnv1a(h, offset_of!(Session, prescription_len))
 }
 
 #[cfg(test)]
@@ -351,6 +429,49 @@ mod tests {
             *active += 1;
             spin_engine_second(*det_utc, bpm, 3, 2, *active);
         }
+    }
+
+    #[test]
+    fn a_session_drives_step_by_step_across_the_abi() {
+        let _alone = alone();
+        let text = b"5m@2,6x(20s@5,40s@2)";
+        assert_eq!(unsafe { spin_intervals_load(text.as_ptr(), text.len() as u32) }, 13);
+
+        let (mut secs, mut effort, mut rep, mut reps) = (0u16, 0u8, 0u8, 0u8);
+        let mut step = |s: &mut u16, e: &mut u8, r: &mut u8, n: &mut u8| unsafe {
+            spin_intervals_step(s, e, r, n)
+        };
+
+        assert_eq!(step(&mut secs, &mut effort, &mut rep, &mut reps), 1);
+        assert_eq!((secs, effort, rep, reps), (300, 2, 0, 0));
+
+        assert_eq!(spin_intervals_advance(), 1);
+        assert_eq!(step(&mut secs, &mut effort, &mut rep, &mut reps), 1);
+        assert_eq!((secs, effort, rep, reps), (20, 5, 1, 6));
+
+        // Walk the rest of it out; the last advance says the session is over.
+        for _ in 0..11 {
+            assert_eq!(spin_intervals_advance(), 1);
+        }
+        assert_eq!(step(&mut secs, &mut effort, &mut rep, &mut reps), 1);
+        assert_eq!((secs, effort, rep, reps), (40, 2, 6, 6));
+        assert_eq!(spin_intervals_advance(), 0, "the last step ended the session");
+        assert_eq!(step(&mut secs, &mut effort, &mut rep, &mut reps), 0);
+    }
+
+    #[test]
+    fn the_off_value_and_a_refused_one_both_mean_no_session() {
+        let _alone = alone();
+        for text in [b"0s".as_slice(), b"", b"10M", b"5m,0s,3m", b"nonsense"] {
+            assert_eq!(
+                unsafe { spin_intervals_load(text.as_ptr(), text.len() as u32) },
+                0,
+                "{text:?}"
+            );
+            assert_eq!(unsafe { spin_intervals_step(&mut 0, &mut 0, &mut 0, &mut 0) }, 0);
+            assert_eq!(spin_intervals_advance(), 0);
+        }
+        assert_eq!(unsafe { spin_intervals_load(core::ptr::null(), 0) }, 0);
     }
 
     #[test]

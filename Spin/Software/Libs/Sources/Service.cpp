@@ -462,6 +462,13 @@ void Service::loadConfig()
         mKeepScreenLit      = false;
         mEnergyInKilojoules = false;
         mAskForKilojoules   = true;
+        // Taken from the table rather than written out, so it cannot drift from
+        // what the manifest declares. strncpy pads the rest with NUL, which
+        // matters here: without it a ride on a watch that failed to allocate
+        // its config would run a session made of whatever was left in memory.
+        std::strncpy(mIntervals, SpinConfig::kFields[SpinConfig::kIntervals].stringDefault,
+                     sizeof(mIntervals));
+        mIntervals[sizeof(mIntervals) - 1] = '\0';
         return;
     }
 
@@ -471,14 +478,17 @@ void Service::loadConfig()
                       skSecondsPerMinute;
     mTargetSeconds  = mConfig->getInt(SpinConfig::field(SpinConfig::kTargetMinutes)) *
                       skSecondsPerMinute;
+    // Untrusted text, and the parser treats it as such: the pattern that
+    // shaped it ran on the phone, and this is a values file on a FAT volume.
+    mConfig->getString(SpinConfig::field(SpinConfig::kIntervals), mIntervals, sizeof(mIntervals));
     mKeepScreenLit      = mConfig->getBool(SpinConfig::field(SpinConfig::kKeepScreenLit));
     mEnergyInKilojoules = mConfig->getBool(SpinConfig::field(SpinConfig::kEnergyInKilojoules));
     mAskForKilojoules   = mConfig->getBool(SpinConfig::field(SpinConfig::kAskForKilojoules));
 
-    LOG_INFO("Config: auto lap %us, target %us, keep screen lit %u\n",
+    LOG_INFO("Config: auto lap %us, target %us, keep screen lit %u, session '%s'\n",
              static_cast<unsigned>(mAutoLapSeconds),
              static_cast<unsigned>(mTargetSeconds),
-             static_cast<unsigned>(mKeepScreenLit));
+             static_cast<unsigned>(mKeepScreenLit), mIntervals);
 }
 
 void Service::startTrack(std::time_t utc)
@@ -526,6 +536,11 @@ void Service::startTrack(std::time_t utc)
                    static_cast<unsigned>(mZoneCount),
                    static_cast<unsigned>(mWeightKg + 0.5f));
     mEventLog.sync();
+
+    // After the lap clock was reset and the log opened: the first step's marker
+    // is published against a lap clock of zero, so the wearer gets the banner's
+    // dwell to read it, and what was asked for reaches the log with the ride.
+    beginSession();
 
     connectSensors();
 
@@ -613,18 +628,31 @@ void Service::processTrack()
         }
 
         // On active time, not wall clock, so a ride paused for two minutes does
-        // not come back to an immediate lap.
-        if (mAutoLapSeconds > 0 && mTimeCounter.getLapValueActive() >= mAutoLapSeconds) {
+        // not come back to an immediate lap -- and so a rider who stops for a
+        // drink resumes into the same step with the same time left.
+        if (mSessionRunning && mTimeCounter.getLapValueActive() >= mStepSeconds) {
+            saveLap();
+            advanceStep();
+        } else if (!mHasSession && mAutoLapSeconds > 0 &&
+                   mTimeCounter.getLapValueActive() >= mAutoLapSeconds) {
+            // Suppressed for the whole ride rather than only while steps
+            // remain: two lap sources disagreeing about where a lap goes is
+            // worse than either alone, and auto-lap taking over halfway through
+            // would be exactly that.
             saveLap();
             notifyLapEnd();
         }
     }
 
-    // The split, while it is still worth showing. Decided here because the
-    // Service owns every derived fact and the GUI owns no timer; the lap clock
-    // resets with the lap, so it is already "seconds since the lap".
-    mTrackData.lastLapSeconds =
-        (mTimeCounter.getLapValueActive() < skLapSplitSeconds) ? mLastLapSeconds : 0;
+    // The split and the step marker, while they are still worth showing.
+    // Decided here because the Service owns every derived fact and the GUI owns
+    // no timer; the lap clock resets with the lap, so it is already "seconds
+    // since the lap" and the two go stale together.
+    const bool fresh = mTimeCounter.getLapValueActive() < skLapSplitSeconds;
+    mTrackData.lastLapSeconds = fresh ? mLastLapSeconds : 0;
+    mTrackData.stepEffort = (fresh && mSessionRunning) ? mStepEffort : 0;
+    mTrackData.stepRep    = (fresh && mSessionRunning) ? mStepRep : 0;
+    mTrackData.stepReps   = (fresh && mSessionRunning) ? mStepReps : 0;
 
     mGuiSender.trackData(mTrackData);
 }
@@ -638,7 +666,75 @@ void Service::lapTrack()
         return;
     }
     saveLap();
-    notifyLapEnd();
+    // R2 already meant "the segment I am in ends here". With a session loaded it
+    // means the same thing and additionally advances the step, which is how a
+    // rider shortens a warm-up or bails out of a set. No button changes hands.
+    if (mSessionRunning) {
+        advanceStep();
+    } else {
+        notifyLapEnd();
+    }
+}
+
+void Service::beginSession()
+{
+    // Only from startTrack(), so a crash-recovered ride has no session for the
+    // same reason it has no work figure: no step machine ever ran.
+    const uint16_t steps = spin_intervals_load(reinterpret_cast<const uint8_t*>(mIntervals),
+                                               static_cast<uint32_t>(std::strlen(mIntervals)));
+    mHasSession     = steps > 0;
+    mSessionRunning = steps > 0;
+    mStepSeconds = 0;
+    mStepEffort  = 0;
+    mStepRep     = 0;
+    mStepReps    = 0;
+
+    if (mSessionRunning && !readStep()) {
+        mSessionRunning = false;
+    }
+
+    LOG_INFO("Session: %u steps\n", static_cast<unsigned>(steps));
+    if (mHasSession) {
+        mEventLog.line("%u session steps=%u '%s'",
+                       static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                       static_cast<unsigned>(steps), mIntervals);
+    }
+}
+
+bool Service::readStep()
+{
+    uint16_t seconds = 0;
+    uint8_t  effort  = 0;
+    uint8_t  rep     = 0;
+    uint8_t  reps    = 0;
+    if (!spin_intervals_step(&seconds, &effort, &rep, &reps)) {
+        return false;
+    }
+    mStepSeconds = seconds;
+    mStepEffort  = effort;
+    mStepRep     = rep;
+    mStepReps    = reps;
+    return true;
+}
+
+void Service::advanceStep()
+{
+    const uint8_t was = mStepEffort;
+    if (spin_intervals_advance() && readStep()) {
+        LOG_INFO("Step: %us at @%u (%u/%u)\n",
+                 static_cast<unsigned>(mStepSeconds), static_cast<unsigned>(mStepEffort),
+                 static_cast<unsigned>(mStepRep), static_cast<unsigned>(mStepReps));
+        notifyStepChange(was, mStepEffort);
+        return;
+    }
+
+    mSessionRunning = false;
+    mStepSeconds = 0;
+    mStepEffort  = 0;
+    mStepRep     = 0;
+    mStepReps    = 0;
+    LOG_INFO("Session finished; the ride carries on\n");
+    notifySessionEnd();
 }
 
 void Service::saveLap()
@@ -936,6 +1032,15 @@ void Service::recordSession(bool saved, uint16_t workKilojoules)
     entry.hr_max_setting = mSystemMaxHr;
     entry.weight_kg      = clampU8(mWeightKg);
     entry.zone_count     = mZoneCount;
+    // What was asked for, never what was done: the laps are the record of the
+    // ride, and nothing anywhere scores one against the other.
+    if (mHasSession) {
+        const size_t asked = std::strlen(mIntervals);
+        if (asked <= SPIN_MAX_PRESCRIPTION) {
+            std::memcpy(entry.prescription, mIntervals, asked);
+            entry.prescription_len = static_cast<uint8_t>(asked);
+        }
+    }
     entry.recovery_count     = mRecoveryCount;
     entry.recoveries_dropped = mRecoveriesDropped;
     for (size_t i = 0; i < mRecoveryCount; ++i) {
@@ -1002,18 +1107,35 @@ void Service::notifyNewActivity()
 
 void Service::notifyLapEnd()
 {
-    // Two short beeps, not the target's three: they have to be tellable apart
-    // without looking down.
     backlightOn();
-    playBuzzerPattern(120, 2);
-    playVibroPattern(SDK::Message::RequestVibroPlay::Effect::ALERT_750MS_100);
+    playAlert(Alerts::kLap);
 }
 
 void Service::notifyTargetReached()
 {
     backlightOn();
-    playBuzzerPattern(200, 3);
-    playVibroPattern(SDK::Message::RequestVibroPlay::Effect::ALERT_750MS_100, 2);
+    playAlert(Alerts::kTarget);
+}
+
+void Service::notifyStepChange(uint8_t was, uint8_t now)
+{
+    backlightOn();
+    // A boundary neither side of which said anything about effort has no
+    // direction in it, so it gets the lap a rider already knows rather than a
+    // fourth thing to learn.
+    if (was == 0 || now == 0 || was == now) {
+        playAlert(Alerts::kLap);
+        return;
+    }
+    // The @n as written, not anything the screen derives from it: the ordering
+    // the wearer typed is what this alert exists for.
+    playAlert(now > was ? Alerts::kStepHarder : Alerts::kStepEasier);
+}
+
+void Service::notifySessionEnd()
+{
+    backlightOn();
+    playAlert(Alerts::kSessionEnd);
 }
 
 void Service::backlightOn(uint32_t timeoutMs)
@@ -1038,62 +1160,72 @@ void Service::backlightHold(bool on)
     }
 }
 
-void Service::playBuzzerPattern(uint16_t beepMs, uint8_t count, uint16_t silenceMs)
+/// The one place a texture becomes an SDK waveform, so Alerts.hpp stays free of
+/// SDK types and can be covered without a kernel.
+static SDK::Message::RequestVibroPlay::Effect effectFor(Alerts::Texture texture)
 {
-    if (count == 0) {
+    using Effect = SDK::Message::RequestVibroPlay::Effect;
+    switch (texture) {
+        case Alerts::Texture::StrongBuzz:    return Effect::STRONG_BUZZ_100;
+        case Alerts::Texture::SoftBump:      return Effect::SOFT_BUMP_100;
+        case Alerts::Texture::PulsingStrong: return Effect::PULSING_STRONG_1_100;
+        case Alerts::Texture::Alert:         break;
+    }
+    return Effect::ALERT_750MS_100;
+}
+
+void Service::playAlert(const Alerts::Alert& alert)
+{
+    // The vibro first and deliberately: with hands on the bars in a gym the
+    // wrist feels everything and hears a small piezo over whatever is playing
+    // through the room, and the vibro is the channel with the palette.
+    // N events need 2N-1 notes, so each cap is (skMaxNotes + 1) / 2.
+    uint8_t vibroCount = alert.vibroCount;
+    const uint8_t maxVibro = (SDK::Message::RequestVibroPlay::skMaxNotes + 1u) / 2u;
+    if (vibroCount > maxVibro) {
+        vibroCount = maxVibro;
+    }
+    if (vibroCount > 0) {
+        auto *msg = mKernel.comm.allocateMessage<SDK::Message::RequestVibroPlay>();
+        if (msg) {
+            uint8_t n = 0;
+            for (uint8_t i = 0; i < vibroCount; ++i) {
+                // A pause is a duration with no effect; an effect is a note
+                // with no duration. Both set is neither.
+                msg->notes[n].effect = static_cast<uint8_t>(effectFor(alert.texture));
+                msg->notes[n].pause  = 0;
+                ++n;
+                if (i < vibroCount - 1u) {
+                    msg->notes[n].effect =
+                        static_cast<uint8_t>(SDK::Message::RequestVibroPlay::Effect::NO_EFFECT);
+                    msg->notes[n].pause = alert.vibroGapMs;
+                    ++n;
+                }
+            }
+            msg->notesCount = n;
+            mKernel.comm.sendMessage(msg);
+            mKernel.comm.releaseMessage(msg);
+        }
+    }
+
+    size_t beeps = Alerts::beepCount(alert);
+    const size_t maxBeeps = (SDK::Message::RequestBuzzerPlay::skMaxNotes + 1u) / 2u;
+    if (beeps > maxBeeps) {
+        beeps = maxBeeps;
+    }
+    if (beeps == 0) {
         return;
     }
-
-    // N beeps needs 2*N-1 notes, so the cap is (skMaxNotes + 1) / 2.
-    const uint8_t maxCount = (SDK::Message::RequestBuzzerPlay::skMaxNotes + 1u) / 2u;
-    if (count > maxCount) {
-        count = maxCount;
-    }
-
     auto *msg = mKernel.comm.allocateMessage<SDK::Message::RequestBuzzerPlay>();
     if (msg) {
         uint8_t n = 0;
-        for (uint8_t i = 0; i < count; ++i) {
+        for (size_t i = 0; i < beeps; ++i) {
             msg->notes[n].volume = 100;
-            msg->notes[n].time   = beepMs;
+            msg->notes[n].time   = alert.beepMs[i];
             ++n;
-            if (i < count - 1u) {
+            if (i + 1 < beeps) {
                 msg->notes[n].volume = 0;
-                msg->notes[n].time   = silenceMs;
-                ++n;
-            }
-        }
-        msg->notesCount = n;
-        mKernel.comm.sendMessage(msg);
-        mKernel.comm.releaseMessage(msg);
-    }
-}
-
-void Service::playVibroPattern(SDK::Message::RequestVibroPlay::Effect effect,
-                               uint8_t count, uint16_t silenceMs)
-{
-    if (count == 0) {
-        return;
-    }
-
-    const uint8_t maxCount = (SDK::Message::RequestVibroPlay::skMaxNotes + 1u) / 2u;
-    if (count > maxCount) {
-        count = maxCount;
-    }
-
-    auto *msg = mKernel.comm.allocateMessage<SDK::Message::RequestVibroPlay>();
-    if (msg) {
-        uint8_t n = 0;
-        for (uint8_t i = 0; i < count; ++i) {
-            // A pause is a duration with no effect; an effect is a note with
-            // no duration. Both set is neither.
-            msg->notes[n].effect = static_cast<uint8_t>(effect);
-            msg->notes[n].pause  = 0;
-            ++n;
-            if (i < count - 1u) {
-                msg->notes[n].effect =
-                    static_cast<uint8_t>(SDK::Message::RequestVibroPlay::Effect::NO_EFFECT);
-                msg->notes[n].pause = silenceMs;
+                msg->notes[n].time   = alert.beepGapMs;
                 ++n;
             }
         }

@@ -178,3 +178,100 @@ apps", Spin already links it through a shim that owns the C ABI, and a second
 crate would be a second archive with a second `#[panic_handler]` to keep out of
 the same ELF. It depends on nothing else in the crate, which is what its module
 doc says.
+
+
+---
+
+## 3. 2026-09-05 — what building it found
+
+Nothing here contradicts §1. Four things it did not price, and one guarantee
+that moved.
+
+### 3.1 Five words over eight zones means the screen can disagree with the wrist
+
+§1.2's ladder is anchored at its ends, so at `hrZoneCount` 8 two adjacent zones
+share a word: `@6` and `@7` are both `HARD`, `@2` and `@3` both `STEADY`.
+
+The wrist alert takes its direction from `@n` **as written**, because the
+ordering the wearer typed is the thing the alert exists for. So on an eight-zone
+ladder `4x(1m@7,1m@6)` buzzes "harder" into every work step while the banner says
+`HARD` on both sides of it. That is a real contradiction and it was chosen: the
+alternative is collapsing the direction, which leaves a buzz saying only
+"something changed" — the metronome `autoLapMinutes` already is.
+
+The same applies to the clamp. `@8` on a five-zone ladder becomes `ALL OUT`, and
+so does `@6`, but a transition between them still reads as harder.
+
+### 3.2 The prescription cost the shared log a guarantee, and it is the byte cap
+
+`../SharedData/spin_sessions.json` is capped at 20 entries and 16 KiB, the byte
+cap deciding. EffortKit's README said a session as wide as one can *reachably* be
+still reaches the entry cap, so the byte cap was not what a real wearer meets.
+Adding up to 128 bytes of prescription to each of 20 sessions is 2.6 KB against
+44 bytes of headroom, and that claim stopped being true at the ceiling.
+
+Re-measured, in `tests/history.rs`:
+
+| | bytes | entries |
+|---|---:|---:|
+| twenty ordinary sessions, no prescription | 9,306 | 20 |
+| twenty ordinary sessions, 128-byte prescription each | 12,226 | 20 |
+| every field at its ceiling, plus a full prescription | 15,428 | 16 |
+| the above with all fourteen discard reasons non-zero | — | 14 |
+
+The guarantee moved to the second row, which is the one a wearer can actually
+reach — the 2026-09-04 session is 58 bytes, not 128. The third row is now a
+pinned degradation rather than a promise, and it was always near-pathological:
+65,535 seconds in each of nine zone buckets is 163 hours.
+
+### 3.3 The buzzer collision §5.3 predicted was real, and count was the wrong fix
+
+"Two light taps" for *easier* collides on the buzzer with the manual lap a rider
+knows from every other ride — both are two beeps. Dropping to one pip would have
+broken the vibro/buzzer agreement, and going to three would have collided with
+the target.
+
+It is separated by **rhythm** instead: 60 ms beeps 40 ms apart against the lap's
+120 ms beeps 100 ms apart, over two textures that share nothing
+(`SOFT_BUMP_100` ×2 against `ALERT_750MS_100` ×1). The next-nearest pair is
+*harder* against the manual lap on the vibro — one event each, told apart by a
+rough sustained buzz against a smooth alert ramp.
+
+The brief's sketch offered `ALERT_1000MS_100` for *harder*; it was rejected
+because it is the lap's own texture at 33% more duration, which is a difference
+in count's clothing. `STRONG_BUZZ_100` is a different waveform.
+
+`Alerts.hpp` holds all five patterns together and `allPairwiseDistinct()` is a
+compile-time assertion over the set, because being tellable apart is a property
+of the set and not of any entry.
+
+### 3.4 A step neither side of which names an effort reuses the lap alert
+
+Half a session can carry `@n` and half not — the pattern makes it optional — and
+that boundary has no direction in it. It gets the manual lap's alert and the
+split's own banner rather than a fourth thing for a rider to learn, and the same
+rule covers two consecutive steps at the same `@n`.
+
+### 3.5 What the whole feature cost
+
+Service, same toolchain before and after:
+
+```
+             .text    .data     .bss
+before      105,156    1,708    4,160
+after       110,180    1,748    7,696
+```
+
+The 3,536 bytes of RAM are exactly: **2,640** for the shared log now carrying
+what each of its 20 rides was asked to do, **744** for the parsed session and its
+cursor, **152** for the Service's own copy of the config string. Parsing and then
+expanding would have added **8,613** on top — more than twice the Service's whole
+`.bss` before this landed. The GUI grew 568 bytes of `.text` and 8 of `.bss`.
+
+### 3.6 Still unmeasured
+
+**Everything about how it feels.** Nobody has felt these five patterns on a wrist
+at 150 bpm or read `ALL OUT` at that heart rate. The only test of §1.2 and of
+§3.3 that exists is riding the session, and that has not happened yet. If the two
+step alerts prove indistinguishable under effort, the one to keep is the
+direction.

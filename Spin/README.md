@@ -382,6 +382,188 @@ holds a thousand times that.
   honestly divided between auto-lap splits; apportioning it by time would be
   inventing a distribution, which is the per-record argument one level up.
 
+## The interval session
+
+Type a session into one setting on the phone and the watch drives it: **a buzz
+at every step boundary, an automatic lap at every step boundary, and a word on
+the screen saying how hard the step you just entered is meant to be.**
+
+```
+5m@2,6x(20s@5,40s@2),6m@2,3x(1m@5,1m@2),7m@2,2x(4m@4,3m@2)
+```
+
+Five minutes easy, six times twenty seconds all-out against forty easy, six
+minutes easy, three times a minute on and a minute off, seven minutes easy, then
+two four-minute efforts with three minutes between. Fifty-eight of the 128 bytes
+the field holds. That is a real session, ridden on 2026-09-04 and recorded in
+[`Tests/pulled/20260904-intervals-real-max-184/`](Tests/pulled/20260904-intervals-real-max-184).
+
+![A step at the top of a set, mid-set, outside a block, and the widest this row gets](Docs/screens-intervals.png)
+
+### `@n` is an instruction. It is never a compliance check.
+
+`@5` means *go this hard*, the way a pace cue does. It is **not** a claim about
+what your heart rate will do during the step, and nothing in this app compares
+the two. That is the one thing here settled by measurement rather than by taste,
+on the 2026-09-04 ride at a real maximum of 184:
+
+- Of six all-out 20-second sprints, **five spent at most four of their twenty
+  seconds above zone 3**, and the rider never reached zone 5 all session.
+- Taking means rather than peaks, **in nine of the eleven efforts the recovery
+  averaged a higher heart rate than the work it was recovering from** — the
+  sprint set's floats ran +4.3 bpm above their sprints and the minute set's
+  +7.0. Only the two four-minute efforts come out the right way round.
+- Scored against its own targets on the mildest criterion worth the name, **nine
+  of eleven correctly ridden efforts fail**.
+
+A verdict that is wrong in that pattern is worse than no verdict, so there is no
+"you are not in zone 5", no ring coloured against the target, and no count of
+steps met — not on the screen and not in the JSON.
+[`Docs/INTERVAL-DSL-EVALUATION.md`](Docs/INTERVAL-DSL-EVALUATION.md) is the
+whole account.
+
+### A word, not a number
+
+A screen reading `5` beside a dial reading zone 3 is a contradiction you have to
+resolve while out of breath, and the dial is the honest one — it is a
+measurement. A word cannot be misread as a reading, so the word and the dial
+never sit adjacent and neither is ever coloured against the other.
+
+The ladder is anchored at its ends the way the dial's colours already are, so it
+works at any `hrZoneCount` from 2 to 8: `@1` is always `EASY` and the top zone is
+always `ALL OUT`, with `HARD`, `TEMPO` and `STEADY` spread between. At two zones
+only the ends exist; at eight, two adjacent zones share a word, which is why the
+**wrist alert takes its direction from the number as written** rather than from
+the word it maps to. `@8` on a five-zone ladder clamps to the top zone: the
+parser cannot see the zone count, and a wearer writing `@8` is asking for the
+hardest thing there is.
+
+**These five words are the least settled thing in the design.** Nobody has read
+one at 150 bpm. What has to be true of them is only that they say effort rather
+than a measurement.
+
+The marker appears **at the transition, not throughout**: with your hands on the
+bars the wrist-tilt gesture almost never fires, so the moment you *do* look is
+the moment the wrist buzzes. It takes the banner slot the lap split already uses,
+at the same five-second dwell, and a step with no `@n` on it falls through to the
+ordinary split.
+
+### The buzz is the whole feature
+
+You mostly cannot see the screen, so **the bit worth spending everything on is
+direction: is the step I am entering harder or easier than the one that ended?**
+Without it `6x(20s,40s)` buzzes twice a minute and every buzz is identical.
+
+`RequestBuzzerPlay::Note` is `{ time_ms, volume }` — **there is no frequency** —
+so a rising two-tone for "harder" and a falling one for "easier", the mapping
+that would need no learning at all, cannot be built. `RequestVibroPlay` carries
+about twenty named haptic effects, and those are *textures* rather than counts.
+**So the vibro is the primary channel and the buzzer agrees with it**, which is
+the opposite of how the two alerts here are usually described: with hands on the
+bars in a gym the wrist feels everything and hears a small piezo over whatever is
+playing through the room.
+
+The rule is **differ in kind, not in count**. Two pips against three pips is the
+wrong axis: at 150 bpm nobody counts reliably, and a missed first pip turns one
+pattern into the other. Every pattern that can fire in one ride, in
+[`Alerts.hpp`](Software/Libs/Header/Alerts.hpp):
+
+| | Vibro | Buzzer | Meant to read as |
+|---|---|---|---|
+| **manual lap**, and a boundary with nothing to say about effort | `ALERT_750MS_100` ×1 | 120 ms ×2 | *unchanged* |
+| **target reached** | `ALERT_750MS_100` ×2 | 200 ms ×3 | *unchanged* |
+| **step → harder** | `STRONG_BUZZ_100` ×1 | one 500 ms beep | a single sustained *go* |
+| **step → easier** | `SOFT_BUMP_100` ×2 | 60 ms ×2, 40 ms apart | two light taps, obviously smaller |
+| **session finished** | `PULSING_STRONG_1_100` ×2 | 400 ms, then 100 ms ×2 | unlike either |
+
+The mapping carries its own logic so a rider infers it rather than memorises it:
+with no pitch available, **the signal's magnitude tracks the effort being asked
+for**. Long and strong means go; short and light means ease off.
+
+The nearest pair is **easier against the manual lap** — both are two beeps — so
+they are separated by rhythm as well as length (60 ms at 40 apart against 120 at
+100) and by two textures that share nothing. The next nearest is **harder against
+the manual lap** on the vibro, one event each, told apart by a rough sustained
+buzz against a smooth alert ramp. `allPairwiseDistinct()` is that claim as a
+compile-time assertion, and `Tests/Alerts_test.cpp` names the pair when it fails.
+
+**None of this is measured.** Nobody has felt these on a wrist at 150 bpm. If the
+two step alerts prove indistinguishable under effort, the one to keep is the
+direction: a buzz that says only "something changed" is the metronome
+`autoLapMinutes` already is.
+
+### What the buttons do, and what does not change
+
+**R2 already meant "the segment I am in ends here".** With a session loaded it
+means the same thing and additionally advances the step, which is how you lengthen
+a warm-up (let it run), shorten one (press early), or bail out of a set. No button
+changes hands and no button learns a second meaning.
+
+The session **starts with the ride**, and the warm-up is the first step you
+wrote. R2's first press starting the block was considered and rejected: it
+overloads a button that only just learned `LAP`, and it would make the split
+banner mean two things on two consecutive presses.
+
+**`autoLapMinutes` is ignored on a ride that has a session** — for the whole
+ride, not just while steps remain. Two lap sources disagreeing about where a lap
+goes is worse than either alone, and auto-lap taking over halfway through would
+be exactly that. When the last step ends the session is over: the ride carries on
+as an ordinary ride and R2 goes back to being a manual lap. A **crash-recovered
+ride has no session**, for the same reason it has no work figure — no step
+machine ever ran.
+
+The step clock is **active time**, like `autoLapMinutes`, so a rider who stops for
+a drink resumes into the same step with the same time left.
+
+### The grammar, and why nothing is expanded
+
+The manifest's `pattern` runs on the phone and **never reaches the watch**:
+`app-manifest.json` does not ship, `AppConfig::stringField` carries only an id, a
+default and two lengths, and the values file is plaintext on a FAT volume readable
+over USB and BLE. Anything can be in that string. So the real grammar is
+[`effortkit::intervals`](../EffortKit/src/intervals.rs), written as EBNF at the
+top of the module and total over arbitrary bytes: every input either yields a
+session or names a reason it did not, with no panic, no unbounded loop and no
+allocation.
+
+**MEASURED**, by searching every item shape against the field's 128 bytes: the
+most steps one value can name is **2871**, in 126 bytes and 8 items. That, not
+the pattern's 41 items × 99 repeats × 4 steps, is the bound a flat array of steps
+would have to carry — 8,613 bytes of `.bss` at three bytes a step. So a session is
+**iterated rather than expanded**: a cursor of `(item, repetition, step within
+block)` is **3 bytes** whatever the repeat counts, and `next_step()` is a compare
+and an increment on each of three `u8`s.
+
+What the whole feature cost the Service, from the same toolchain before and
+after:
+
+```
+             .text    .data     .bss
+before      105,156    1,708    4,160
+after       110,180    1,748    7,696
+```
+
+The 3,536 bytes of RAM are, exactly: 2,640 for the cross-app log now carrying
+what each ride was asked to do, 744 for the parsed session and its cursor, and
+152 for the Service's own copy of the config string. **Parsing and then expanding
+would have added 8,613 on top of that** — more than twice the Service's whole
+`.bss` before this landed.
+
+### What is written down
+
+**The `.fit` records the laps, and only the laps — what actually happened.** A
+prescribed step and an actual lap are not the same thing: R2 skips, pauses
+stretch, and a rider cuts a set short. Every lap already carries its own average
+and maximum heart rate, calories and time in zone. Nothing is written into
+`workout` or `workout_step`: those define a different FIT file type, and whether
+a decoder tolerates them inside an activity file is untested.
+
+The prescription itself goes to
+[`../SharedData/spin_sessions.json`](#a-record-that-outlives-the-ride) as the
+string, beside the ride it belongs to, in the record of the *series* and
+honestly labelled `prescription` — what was asked for, not what was done. There
+is no `steps_completed`, no `steps_met` and no adherence figure, anywhere.
+
 ## How fast your heart falls when you stop
 
 When you pause, Spin measures the fall in your heart rate over the next sixty
@@ -571,10 +753,12 @@ dark room the clock is unreadable for the whole ride. It is off by default
 because the panel is reflective and a lit gym needs no front light, so most of
 the time it would cost battery for nothing.
 
-The two buzzes are deliberately different — two short beeps for a lap, three
-longer ones for the target. A lap is a marker you can ignore; the target is the
-thing you were riding for, and they have to be tellable apart without looking
-down.
+The buzzes are deliberately different — two short beeps for a lap, three longer
+ones for the target. A lap is a marker you can ignore; the target is the thing
+you were riding for, and they have to be tellable apart without looking down.
+[The interval session](#the-buzz-is-the-whole-feature) adds three more, and
+`Alerts.hpp` holds all five together because being tellable apart is a property
+of the set rather than of any one of them.
 
 **The binary carries its own copy of the contract**, in
 [`AppConfigFields.cpp`](Software/Libs/Sources/AppConfigFields.cpp), because
@@ -620,11 +804,12 @@ dim and the time bright. Without it the button's whole feedback is a buzz, and a
 wearer lapping an interval session cannot tell a registered press from a missed
 one, let alone read the split they pressed for.
 
-It lands in the same slot as `PAUSED` and `TARGET MET`, and the three are
-ordered by **how long each stays true**. Paused wins: it is the state the wearer
-can act on. A split beats the target, because the split is the thing that just
-happened and is gone in seconds where the target stays met for the rest of the
-ride.
+It lands in the same slot as `PAUSED`, `TARGET MET` and the step marker, and the
+four are ordered by **how long each stays true**. Paused wins: it is the state
+the wearer can act on. The step marker and the split are the same age — both are
+the thing that just happened — so the more specific of the two goes first, and a
+step with no effort written on it falls through to the split. Both beat the
+target, which stays met for the rest of the ride.
 
 The Service decides when a split has gone stale and sends `last_lap_s` as 0 once
 it has, so **the GUI still owns no clock** — the same property the ride timer
@@ -813,17 +998,17 @@ Deliberately, and the first two are firmware limits rather than choices:
   is about 25% of itself, so a single number on the glass would read as a
   judgement the data cannot support — and a training log on a 240×240
   reflective panel is a worse version of a thing that already exists.
-- **No structured intervals — no workout to follow.** The SDK's profile carries
-  `Workout` and `WorkoutStep`, so the file side is reachable; the hard part is
-  where a workout would come from. `configFields` caps at 32 flat scalar fields
-  rendered as one form, with no arrays and no repeats, so an arbitrary session
-  would have to be encoded as a numbered list nobody wants to fill in.
-
-  The lap button is the answer to most of it: the rider marks the structure as
-  it happens rather than declaring it in advance, and each lap already records
-  its own heart rate, calories and time in zone. A guided workout — the watch
-  telling you what to do next — is the part still missing, and the tractable
-  version is three fields (work, rest, repeats) rather than an arbitrary one.
+- **Nothing scores a ride against its own prescription.** No "you are not in
+  zone 5", no ring coloured against the target, no count of steps met, in the
+  app or in the JSON. `@n` is an instruction and never a compliance check, and
+  [the interval session](#the-interval-session) has the measurement that settled
+  it.
+- **No ramps, open-ended steps, nested repeats, power or cadence targets, or
+  recovery-driven steps.** Each is priced in
+  [`Docs/INTERVAL-DSL-EVALUATION.md`](Docs/INTERVAL-DSL-EVALUATION.md). Nesting
+  is barred by the 256-character `pattern` budget — two levels costs 477.
+- **No editing a session on the watch, and no session library.** Config fields
+  are set from the phone and re-read at the start of every ride.
 
 ## Versions
 
@@ -869,7 +1054,12 @@ CMake project — from what the directory holds.
 
 Three suites, because they cover three different things.
 
-**Whether a recovery measurement counts, and what the shared log says** —
+**That no two alerts feel the same** — [`Tests/Alerts_test.cpp`](Tests/Alerts_test.cpp),
+host C++ over no SDK types, beside `HrHold` and `ZoneLadder`. The header's own
+`static_assert` says it too; the test names the pair when it fails.
+
+**Whether a recovery measurement counts, what an interval session parses to, and
+what the shared log says** —
 [`../EffortKit`](../EffortKit), Rust. Every gate in
 [§ How fast your heart falls](#how-fast-your-heart-falls-when-you-stop) has a
 test named after it, and the log's byte bound is a measured number rather than
@@ -880,9 +1070,10 @@ below covers them without knowing they are Rust:
 cd EffortKit && cargo test --features std
 ```
 
-That is also the only host coverage the Service side of this feature has:
+That is also the only host coverage the Service side of these features has:
 `Service.cpp` is compiled by the app build and by nothing else, which is why the
-detector and the load arithmetic live in a crate rather than in it.
+detector, the load arithmetic and the interval grammar live in a crate rather
+than in it.
 
 **What gets written** — [`Tests/`](Tests), host C++. Encodes a whole ride with
 the real `ActivityWriter` against the SDK's in-memory filesystem and decodes it

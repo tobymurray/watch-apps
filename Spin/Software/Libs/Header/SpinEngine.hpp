@@ -22,6 +22,7 @@
 #define SPIN_SHARED_DIR "../SharedData"
 #define SPIN_STORE_SUFFIX "_sessions.json"
 
+#define SPIN_MAX_PRESCRIPTION 128u
 #define SPIN_MAX_ZONE_BUCKETS 9u
 #define SPIN_MAX_ZONES        8u
 #define SPIN_MAX_RECOVERIES   2u
@@ -112,6 +113,12 @@ struct SpinSessionRecord {
     uint8_t  reserved[3];
     SpinRecovery recoveries[SPIN_MAX_RECOVERIES];
     SpinDiscardCounts discarded;
+    /* The structured session the wearer asked for, as they typed it;
+       prescription_len bytes are the value, and 0 means the ride had none.
+       What was asked for, never what was done. */
+    uint8_t  prescription[SPIN_MAX_PRESCRIPTION];
+    uint8_t  prescription_len;
+    uint8_t  reserved2[3];
 };
 
 uint32_t spin_engine_abi_fingerprint(void);
@@ -137,6 +144,20 @@ void    spin_engine_discarded(SpinDiscardCounts* out);
 /* The name of a discard reason, NUL-terminated and static. Here so a reason
    and its spelling cannot drift apart. */
 const char* spin_engine_discard_name(uint8_t reason);
+
+/* -- The session the wearer asked for -------------------------------------- */
+
+/* Read the `intervals` config value and put the cursor on its first step.
+   Returns the number of steps, which is 0 for the off value "0s", for an empty
+   value and for anything the grammar refuses -- all of which mean no session.
+   The value is untrusted text: app-manifest.json's pattern is checked on the
+   phone and never ships. */
+uint16_t spin_intervals_load(const uint8_t* text, uint32_t len);
+/* The step the ride is in. Returns 0 once the session has run out. */
+uint8_t  spin_intervals_step(uint16_t* seconds, uint8_t* effort,
+                             uint8_t* rep, uint8_t* reps);
+/* Move to the next step; 0 once there is none. */
+uint8_t  spin_intervals_advance(void);
 
 /* -- The shared log -------------------------------------------------------- */
 
@@ -209,7 +230,9 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(SpinSessionRecord, recoveries_dropped));
     h = fnv1a(h, offsetof(SpinSessionRecord, recoveries));
     h = fnv1a(h, offsetof(SpinSessionRecord, discarded));
-    return fnv1a(h, sizeof(SpinDiscardCounts));
+    h = fnv1a(h, sizeof(SpinDiscardCounts));
+    h = fnv1a(h, offsetof(SpinSessionRecord, prescription));
+    return fnv1a(h, offsetof(SpinSessionRecord, prescription_len));
 }
 
 } // namespace spin_abi
@@ -219,12 +242,13 @@ static_assert(alignof(SpinRecovery) == 4, "SpinRecovery alignment changed");
 static_assert(offsetof(SpinRecovery, curve) == 10, "curve moved");
 static_assert(offsetof(SpinRecovery, source) == 17, "source moved");
 
-static_assert(sizeof(SpinSessionRecord) == 120, "SpinSessionRecord size changed");
+static_assert(sizeof(SpinSessionRecord) == 252, "SpinSessionRecord size changed");
 static_assert(alignof(SpinSessionRecord) == 4, "SpinSessionRecord alignment changed");
 static_assert(offsetof(SpinSessionRecord, zone_s) == 16, "zone_s moved");
 static_assert(offsetof(SpinSessionRecord, zone_floor) == 34, "zone_floor moved");
 static_assert(offsetof(SpinSessionRecord, recoveries) == 52, "recoveries moved");
 static_assert(offsetof(SpinSessionRecord, discarded) == 92, "discarded moved");
+static_assert(offsetof(SpinSessionRecord, prescription) == 120, "prescription moved");
 static_assert(sizeof(SpinDiscardCounts) == 28, "SpinDiscardCounts size changed");
 
 #endif // SPIN_ENGINE_HPP

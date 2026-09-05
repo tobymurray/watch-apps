@@ -29,6 +29,10 @@ pub const MAX_RECOVERIES: usize = 2;
 /// Heart rate sampled every [`CURVE_STEP_S`] seconds across the window.
 pub const CURVE_POINTS: usize = 7;
 
+/// Bytes of prescription a session carries, matching the declared `maxLength`
+/// of the config field it came from.
+pub const MAX_PRESCRIPTION: usize = 128;
+
 /// Seconds between curve points.
 ///
 /// A fixed grid rather than a fraction of the window, so slot `i` is the same
@@ -138,6 +142,16 @@ pub struct Session {
     /// nothing should be able to say why a year later, and a text log that the
     /// field test tells you to delete cannot.
     pub discarded: DiscardCounts,
+    /// The structured session the wearer *asked for*, as they typed it; see
+    /// [`crate::intervals`]. `prescription_len` bytes are the value.
+    ///
+    /// What was asked for, never what was done: the laps are the record of the
+    /// ride, and nothing here or anywhere scores one against the other.
+    pub prescription: [u8; MAX_PRESCRIPTION],
+    /// Bytes of `prescription` that are the value; 0 = the ride had none.
+    pub prescription_len: u8,
+    /// Padding, so the struct's size is not a compiler's choice.
+    pub reserved2: [u8; 3],
 }
 
 /// Per-reason discard counts, on the wire.
@@ -256,7 +270,28 @@ impl Session {
         reserved: [0; 3],
         recoveries: [Recovery::EMPTY; MAX_RECOVERIES],
         discarded: DiscardCounts::NONE,
+        prescription: [0; MAX_PRESCRIPTION],
+        prescription_len: 0,
+        reserved2: [0; 3],
     };
+
+    /// The session the wearer asked for, or an empty slice when there was none.
+    pub fn prescription(&self) -> &[u8] {
+        let n = (self.prescription_len as usize).min(MAX_PRESCRIPTION);
+        &self.prescription[..n]
+    }
+
+    /// Record what was asked for, truncating nothing: a value longer than the
+    /// field can hold is not a shorter session, so it is stored as none.
+    pub fn set_prescription(&mut self, text: &[u8]) {
+        self.prescription = [0; MAX_PRESCRIPTION];
+        if text.len() > MAX_PRESCRIPTION {
+            self.prescription_len = 0;
+            return;
+        }
+        self.prescription[..text.len()].copy_from_slice(text);
+        self.prescription_len = text.len() as u8;
+    }
 
     /// The measurements this session actually carries.
     pub fn recoveries(&self) -> &[Recovery] {
