@@ -9,8 +9,8 @@ package as `icon.png` and shown by the phone app as an ordinary full-colour
 PNG. Unlike Barcode's store icon, which is built from real simulator
 captures because Barcode draws several different symbologies and a single
 drawing would undersell the ones it left out, this app has exactly one
-screen and no format choice, so the icon is the same vector pill-and-knob
-shape make_icon.py draws, scaled up, rather than a screenshot.
+screen and no format choice, so the icon is the same vector bell-and-pill
+shape make_icon.py draws at 60px, scaled up, rather than a screenshot.
 """
 from PIL import Image, ImageDraw, ImageFilter
 import numpy as np
@@ -27,9 +27,27 @@ PILL_ON = (0, 230, 90, 255)
 KNOB = (255, 255, 255, 255)
 
 
+def draw_bell(pen, cx, cy, w, h, colour):
+    """A bell in a w-by-h box: crown, dome, flared skirt, lip, clapper. Same
+    proportions as make_icon.py, so the store mark and the watch mark are the
+    same drawing at different sizes."""
+    left, top = cx - w / 2, cy - h / 2
+    pen.ellipse([left + 0.44 * w, top, left + 0.56 * w, top + 0.12 * h], fill=colour)
+    pen.ellipse([left + 0.20 * w, top + 0.06 * h,
+                 left + 0.80 * w, top + 0.78 * h], fill=colour)
+    pen.polygon([(left + 0.20 * w, top + 0.42 * h), (left + 0.08 * w, top + 0.74 * h),
+                 (left + 0.92 * w, top + 0.74 * h), (left + 0.80 * w, top + 0.42 * h)],
+                fill=colour)
+    pen.rounded_rectangle([left + 0.04 * w, top + 0.70 * h,
+                           left + 0.96 * w, top + 0.82 * h],
+                          radius=0.05 * h, fill=colour)
+    pen.ellipse([left + 0.40 * w, top + 0.84 * h,
+                 left + 0.60 * w, top + 1.00 * h], fill=colour)
+
+
 def draw_face(size):
-    """The same shape make_icon.py draws: a black rounded card, a green pill,
-    a white knob on the right (ON state)."""
+    """What make_icon.py draws at 60px: a black rounded card, a white bell, and
+    the green pill with its knob on the right (ON state)."""
     S = size * SS
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     pen = ImageDraw.Draw(img)
@@ -38,16 +56,16 @@ def draw_face(size):
     pen.rounded_rectangle([inset, inset, S - 1 - inset, S - 1 - inset],
                            radius=int(size * 0.2) * SS, fill=CARD_BG)
 
-    px0 = int(size * 0.18) * SS
-    py0 = int(size * 0.34) * SS
-    px1 = S - 1 - px0
-    py1 = S - 1 - py0
-    pen.rounded_rectangle([px0, py0, px1, py1], radius=(py1 - py0) // 2, fill=PILL_ON)
+    draw_bell(pen, 0.50 * S, 0.36 * S, 0.42 * S, 0.46 * S, KNOB)
 
-    kr = (py1 - py0) // 2 - int(0.06 * S)
-    kcx = px1 - kr - int(0.02 * S)
-    kcy = (py0 + py1) // 2
-    pen.ellipse([kcx - kr, kcy - kr, kcx + kr, kcy + kr], fill=KNOB)
+    px0, px1 = 0.18 * S, 0.82 * S
+    py0, py1 = 0.66 * S, 0.88 * S
+    r = (py1 - py0) / 2
+    pen.rounded_rectangle([px0, py0, px1, py1], radius=r, fill=PILL_ON)
+
+    kr = r * 0.72
+    pen.ellipse([px1 - r - kr, (py0 + py1) / 2 - kr,
+                 px1 - r + kr, (py0 + py1) / 2 + kr], fill=KNOB)
 
     return img.resize((size, size), Image.LANCZOS)
 
