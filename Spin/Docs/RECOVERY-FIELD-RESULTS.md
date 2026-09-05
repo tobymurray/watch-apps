@@ -729,10 +729,112 @@ complaint that is specifically about 20-second sprints.
 What today changed is that the comparison is now *possible*: the baseline is in
 the repository, the instrument reproduces its published numbers, and the only
 missing half is one ordinary interval workout — [Session
-5](RECOVERY-FIELD-TEST.md#session-5--an-interval-ride-an-ordinary-workout).
+5](RECOVERY-FIELD-TEST.md#session-5--an-interval-ride-an-ordinary-workout--done-2026-09-04).
 
 Nothing found today argues against the design. The 15-second floor got
 independent support, and the case for one mark over a trail got a real number
 from Ride A rather than a desk session — 1% outright disagreement between
 adjacent horizons. What it does argue against is §1's **94%**, which no longer
 has a derivation anyone can point at.
+
+---
+
+---
+
+## 2026-09-04 — the interval ride, and what it settles
+
+> **`hr_max_setting: 184`.** A real ride at a real maximum, on
+> `0.8.0-43-88d17f2`, wrist optical. Kept with its same-day steady control in
+> [`Spin/Tests/pulled/20260904-intervals-real-max-184/`](../Tests/pulled/20260904-intervals-real-max-184).
+
+45 minutes, 2700 active seconds, 84–163 bpm, average 134, 330 kJ entered,
+Edwards TRIMP 126, lapped at the start of every hard effort:
+
+| Set | Structure | Laps |
+|---|---|---|
+| A | 6 × 20 s hard / 40 s easy | 2–7 |
+| B | 3 × 60 s hard / 60 s easy | 9–11 |
+| C | 2 × 4 min hard / 3 min easy | 13–14 |
+
+A steady ride 65 minutes earlier — 44 minutes, 82–128 bpm, no laps — is the
+control, and it is a *within-day* one: same body, same sleep, same caffeine,
+same sensor placement, differing only in how the work was arranged.
+
+### The 20-second delta distribution, against Ride A
+
+| | n | p50 | p90 | rising | falling | flat | largest fall |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Ride A — 4–5 min ramps | 1035 | 3 | 8 | 53% | 23% | 23% | **−9** |
+| steady, same day | 2607 | 2 | 6 | 36% | 31% | 33% | −11 |
+| **intervals** | 2676 | **3** | **9** | 40% | 33% | 27% | **−24** |
+
+**Two things Ride A could not show.** Its record is 53% rising against 23%
+falling, with a largest fall of 9 bpm, because
+[its descents happened while paused](#2026-09-03--ride-a-real-maximum-184) and a
+`record` is written only while the clock runs. The interval ride recovers
+between efforts *while pedalling*, so the falling limb is in the file at last:
+33% of seconds, and a fall nearly three times the largest Ride A ever recorded.
+
+**And "intervals look dynamic for free" is only half true.** Against Ride A the
+20-second p90 moves 8 → 9, which is nothing. Against the same day's steady ride
+it moves 6 → 9, which is real. So the fixed scale does separate a hard session
+from an easy one; it does not separate intervals from ramps.
+
+### Half a zone width survives
+
+`HR-TREND-PROMPT.md` proposed half a zone width per 20 s as full scale, from
+Ride A's p90 of 0.43 zw. This ride's 20-second p90 is 9 bpm — **0.49 zw** — and
+the steady control's is 0.33 zw. The constant needs no change.
+
+### Where the peak falls, which is the whole complaint
+
+Each effort's peak, relative to the moment the hard part **ended**:
+
+| Set | effort | peak, relative to the effort's end |
+|---|---|---|
+| **A** | 20 s | **+15, +28, +18, +25, +15, +18 s** — median **+18** |
+| B | 60 s | +3, +3, +2 s — median **+3** |
+| C | 4 min | +34, −36 s — median −1 |
+
+**Six sprints out of six peaked after the sprint was over**, between 15 and 28
+seconds late. For a 20-second effort the entire heart-rate response arrives
+after the rider has stopped. That is the lag, measured, and no display can take
+it back.
+
+At 60 seconds the peak is essentially real-time.
+
+### What the ghost tick would actually have shown
+
+Simulating a 20-second ghost second by second, **while each effort was on**:
+
+| Set | reads rising | reads falling | flat | median gap |
+|---|---:|---:|---:|---:|
+| **A — 20 s** | **37%** | **42%** | 21% | 0.22 zw |
+| B — 60 s | **72%** | 16% | 12% | 0.33 zw |
+| C — 4 min | 60% | 5% | 35% | 0.11 zw |
+
+**During a sprint the mark points down more often than up.** Not because it is
+wrong — the heart rate genuinely is falling, decaying from the previous rep
+whose peak landed 18 seconds into this one. The mark is accurate and the rider
+would still misread it, because at that timescale heart rate has come loose from
+effort altogether.
+
+### The decision: build it, and say what it is not for
+
+**The ghost tick earns its place.** At 60-second efforts it reads rising 72% of
+the time with a median gap of a third of a zone, and the 20-second p90 of 0.49
+zw confirms the half-a-zone scale without a new number. Horizons still barely
+disagree — 15 s against 20 s conflict on **1%** of moving seconds, as on Ride A —
+so **one mark, not a trail**. The 45-second horizon's conflict rose from 6% to
+11%, which argues against a second mark rather than for one.
+
+**And 20-second sprints are out of its scope, permanently.** The peak arrives
+15–28 seconds after the effort ends; that is physiology, and the honest response
+is to add nothing for it rather than to tune a horizon that cannot exist. A
+rider doing 20-second efforts should watch the clock, which the screen already
+shows at the largest size that fits.
+
+Nothing here overturns
+[the design](HR-TREND-PROMPT.md#2-the-design-that-came-out-of-it): no threshold
+was invented, the unit stays the zone width, and the horizon stays fixed at
+20 s. What changed is that its limit is now measured rather than suspected.

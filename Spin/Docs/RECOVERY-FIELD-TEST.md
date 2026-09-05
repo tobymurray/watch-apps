@@ -9,15 +9,14 @@ and how to read what it produces.
 table before running anything here: every discard reason but `source_changed`
 has already fired, so most of the original prescription is spent.
 
-Two of the three sessions outstanding are at a desk, and neither needs a bike,
-a strap, or any hard effort. Ride A — the one prescribed hard session — is
+The two sessions outstanding are at a desk, and neither needs a bike, a strap,
+or any hard effort. Ride A — the one prescribed hard session — is
 **done and does not need repeating**, because the measurement happens on every
 pause of every ride.
 
-The third is [Session 5](#session-5--an-interval-ride-an-ordinary-workout), and
-it belongs to a different experiment: it is the evidence
-[`HR-TREND-PROMPT.md`](HR-TREND-PROMPT.md) is blocked on, and it is an ordinary
-workout rather than a prescription.
+[Session 5](#session-5--an-interval-ride-an-ordinary-workout--done-2026-09-04),
+which belonged to a different experiment, **ran on 2026-09-04** and settled it;
+the two desk sessions are all that is left here.
 
 > Treat a wrong number as information, not as a failure. Every gate's threshold
 > is in [EffortKit's README](../../EffortKit/README.md#the-gates-and-what-each-one-is-for)
@@ -239,7 +238,14 @@ was run with the watch set to `[30,60,70,80,90,100]` and recorded
 are never read. On the standard 50–100% ladder the two coincide exactly, which
 is why it has never shown before.
 
-### Session 5 — an interval ride (an ordinary workout)
+### Session 5 — an interval ride (an ordinary workout) — **done 2026-09-04**
+
+> **Run, and it answered the question.** See
+> [the write-up](RECOVERY-FIELD-RESULTS.md#2026-09-04--the-interval-ride-and-what-it-settles).
+> The ride and its same-day steady control are in
+> [`Spin/Tests/pulled/20260904-intervals-real-max-184/`](../Tests/pulled/20260904-intervals-real-max-184).
+> It does not need repeating; what is below is kept because it is how the ride
+> was specified and what it was read for.
 
 Not a prescription, and not part of the recovery feature. This is the one piece
 of evidence the
