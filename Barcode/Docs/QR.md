@@ -15,6 +15,16 @@ after the build is the one thing none of that could settle: **Google Lens reads
 the finished symbol clearly off the watch.** §Evidence item 5 records what that
 covers and what it does not.
 
+> **`kMaxIdLength` has since moved to 22**, and item 2 below is the part of this
+> document that is now history rather than policy. What moved it was not QR: a
+> wearer asked for two more digits on a Code 128 code, and the ceiling turned
+> out to be the 256-byte message block, which 22 characters fills exactly. The
+> reasoning below still holds where it matters — QR is still version 2 at level
+> M, and 22 characters still fits it with four bytes to spare rather than ten,
+> so QR still adds no way for a code to be refused. Read every "sixteen" here as
+> the ceiling that applied when the case was made. The README's *How much fits*
+> is the current account.
+
 ## The short version
 
 1. **Build it, but not the QR the question implies.** QR as a second format for

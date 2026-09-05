@@ -122,6 +122,24 @@ const ITF_12345678: [u8; 47] = [
     1, 1, 1, 1, 3, 1, 1, 1, 1, 3, 3, 3, 1, 3, 1, 1,
 ];
 
+// The case the id limit was raised for: eighteen digits pair into subset C, so
+// this is 134 modules and draws with every bar solid.
+const CODE128_18_DIGITS: [u8; 73] = [
+    2, 1, 1, 2, 3, 2, 1, 1, 2, 2, 3, 2, 1, 3, 1, 1, 2, 3, 3, 3, 1, 1, 2, 1, 2, 4, 1, 1, 1, 2, 2,
+    1, 4, 1, 2, 1, 1, 1, 2, 2, 3, 2, 1, 3, 1, 1, 2, 3, 3, 3, 1, 1, 2, 1, 2, 4, 1, 1, 1, 2, 2, 1,
+    2, 2, 2, 2, 2, 3, 3, 1, 1, 1, 2,
+];
+
+// Eighteen subset-B characters, at 233 modules, which is what the warning
+// screen below stands in front of.
+const CODE128_DENSE: [u8; 127] = [
+    2, 1, 1, 2, 1, 4, 3, 1, 1, 3, 2, 1, 3, 1, 1, 3, 2, 1, 3, 1, 1, 3, 2, 1, 3, 1, 1, 3, 2, 1, 3,
+    1, 1, 3, 2, 1, 3, 1, 1, 3, 2, 1, 3, 1, 1, 3, 2, 1, 3, 1, 1, 3, 2, 1, 3, 1, 1, 3, 2, 1, 3, 1,
+    1, 3, 2, 1, 3, 1, 1, 3, 2, 1, 3, 1, 1, 3, 2, 1, 3, 1, 1, 3, 2, 1, 3, 1, 1, 3, 2, 1, 3, 1, 1,
+    3, 2, 1, 3, 1, 1, 3, 2, 1, 3, 1, 1, 3, 2, 1, 3, 1, 1, 3, 2, 1, 1, 1, 1, 3, 2, 3, 2, 3, 3, 1,
+    1, 1, 2,
+];
+
 fn scenes() -> Vec<(&'static str, Frame)> {
     vec![
         // Match Barcode/Resources/capture_code128.png and capture_itf.png
@@ -137,11 +155,16 @@ fn scenes() -> Vec<(&'static str, Frame)> {
         ("prompt_noconfig", prompt("No codes yet. Set one in the UNA app, or write input.json.")),
         ("prompt_novalue", prompt("input.json has no usable code")),
         ("prompt_notset", prompt("No codes set yet. Open the UNA app and enter your ID")),
-        ("prompt_badvalue", prompt("That ID cannot be drawn: 1-16 plain characters")),
-        ("prompt_baddigitcount", prompt("ITF needs an even count of digits, 2 to 16")),
+        ("prompt_badvalue", prompt("That ID cannot be drawn: 1-22 plain characters")),
+        ("prompt_baddigitcount", prompt("ITF needs an even count of digits, 2 to 20")),
         ("prompt_badcharacters", prompt("ITF only draws digits 0-9")),
         ("prompt_badwhitespace", prompt("That ID starts or ends with a space, remove it")),
         ("prompt_badformat", prompt("Unknown format. Set it to Code128, QRCode or ITF.")),
+        ("prompt_toomuchdata", prompt("Too much data for this display. May not scan. R1 shows it anyway.")),
+        ("code128_18_digits",
+         linear(KIND_CODE128, &CODE128_18_DIGITS, 134, "123456789012345678", "Toby", 0, 2)),
+        ("code128_dense_shown_anyway",
+         linear(KIND_CODE128, &CODE128_DENSE, 233, "WWWWWWWWWWWWWWWWWW", "Dense", 1, 2)),
         ("pager_six", linear(KIND_CODE128, &CODE128_A1234, 79, "A1234", "", 4, 6)),
         ("id_split_worst_case", linear(KIND_CODE128, &CODE128_A1234, 79, "WWWWWWWWWWWWWWWW", "", 0, 1)),
     ]

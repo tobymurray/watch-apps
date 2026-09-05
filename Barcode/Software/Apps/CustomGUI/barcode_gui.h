@@ -26,10 +26,10 @@ typedef struct {
     uint16_t total_modules;         /* Encoded::totalModules, linear kinds only */
     uint8_t  kind;                  /* one of the BARCODE_GUI_KIND_* values above */
     uint8_t  width_count;           /* Encoded::count, linear kinds only */
-    uint8_t  widths[115];           /* Encoded::widths, Encoded::kMaxWidths = 18*6+7 */
+    uint8_t  widths[151];           /* Encoded::widths, Encoded::kMaxWidths */
     uint8_t  matrix_bits[79];       /* Barcode::Matrix::bits, QR only */
     uint8_t  matrix_size;           /* Barcode::Matrix::size, QR only */
-    char     id[17];                /* Barcode::Code::id, kMaxIdLength+1 */
+    char     id[23];                /* Barcode::Code::id, kMaxIdLength+1 */
     char     name[13];              /* Barcode::Code::name, kMaxNameLength+1 */
     uint8_t  index;                 /* which code is on screen, for the pager */
     uint8_t  count;                 /* how many codes there are, for the pager */
@@ -81,19 +81,19 @@ constexpr uint32_t fingerprint()
 
 } // namespace barcode_gui_abi
 
-static_assert(sizeof(barcode_gui_frame) == 328, "barcode_gui_frame size changed");
+static_assert(sizeof(barcode_gui_frame) == 370, "barcode_gui_frame size changed");
 static_assert(alignof(barcode_gui_frame) == 2, "barcode_gui_frame alignment changed");
 static_assert(offsetof(barcode_gui_frame, total_modules) == 0, "total_modules moved");
 static_assert(offsetof(barcode_gui_frame, kind) == 2, "kind moved");
 static_assert(offsetof(barcode_gui_frame, width_count) == 3, "width_count moved");
 static_assert(offsetof(barcode_gui_frame, widths) == 4, "widths moved");
-static_assert(offsetof(barcode_gui_frame, matrix_bits) == 119, "matrix_bits moved");
-static_assert(offsetof(barcode_gui_frame, matrix_size) == 198, "matrix_size moved");
-static_assert(offsetof(barcode_gui_frame, id) == 199, "id moved");
-static_assert(offsetof(barcode_gui_frame, name) == 216, "name moved");
-static_assert(offsetof(barcode_gui_frame, index) == 229, "index moved");
-static_assert(offsetof(barcode_gui_frame, count) == 230, "count moved");
-static_assert(offsetof(barcode_gui_frame, message) == 231, "message moved");
+static_assert(offsetof(barcode_gui_frame, matrix_bits) == 155, "matrix_bits moved");
+static_assert(offsetof(barcode_gui_frame, matrix_size) == 234, "matrix_size moved");
+static_assert(offsetof(barcode_gui_frame, id) == 235, "id moved");
+static_assert(offsetof(barcode_gui_frame, name) == 258, "name moved");
+static_assert(offsetof(barcode_gui_frame, index) == 271, "index moved");
+static_assert(offsetof(barcode_gui_frame, count) == 272, "count moved");
+static_assert(offsetof(barcode_gui_frame, message) == 273, "message moved");
 #endif
 
 #endif // BARCODE_GUI_H

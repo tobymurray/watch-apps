@@ -131,9 +131,12 @@ TEST(ItfAccepts, RefusesAnythingThatIsNotADigit)
 
 TEST(ItfAccepts, RefusesOverlongRatherThanTruncating)
 {
-    EXPECT_TRUE(Itf::accepts("1234567890123456"));       // 16
-    EXPECT_FALSE(Itf::accepts("123456789012345678"));    // 18
-    EXPECT_FALSE(Itf::accepts("12345678901234567890"));  // 20
+    const auto digits = [](size_t n) { return std::string(n, '1'); };
+
+    EXPECT_TRUE(Itf::accepts(digits(Itf::kMaxDataLength).c_str()));
+    // Two at a time, so each case fails on length and not on being odd.
+    EXPECT_FALSE(Itf::accepts(digits(Itf::kMaxDataLength + 2).c_str()));
+    EXPECT_FALSE(Itf::accepts(digits(Itf::kMaxDataLength + 4).c_str()));
 }
 
 // ---------------------------------------------------------------------------
@@ -162,8 +165,9 @@ TEST(ItfDiagnose, BadCharactersForAnyNonDigit)
 /// BadCharacters -- see diagnose()'s null case for the same reasoning.
 TEST(ItfDiagnose, BadCountForEmptyOddOrOverlong)
 {
-    for (const char *id : { "", "1", "123", "12345",
-                            "123456789012345", "123456789012345678" }) {
+    const std::string overlong(Itf::kMaxDataLength + 2, '1');
+    for (const char *id : { "", "1", "123", "12345", "123456789012345",
+                            overlong.c_str() }) {
         EXPECT_EQ(Itf::diagnose(id), Itf::Diagnosis::BadCount) << id;
     }
 }

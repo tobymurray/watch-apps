@@ -35,7 +35,7 @@
 namespace Code128
 {
 
-constexpr size_t kMaxDataLength = 16;   ///< Longest id this encoder accepts
+constexpr size_t kMaxDataLength = 22;   ///< Longest id this encoder accepts
 
 constexpr uint8_t kCodeC  = 99;   ///< Switch to subset C, from A or B
 constexpr uint8_t kCodeB  = 100;  ///< Switch to subset B, from A or C

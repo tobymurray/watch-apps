@@ -48,13 +48,33 @@ struct BarcodeState : public SDK::MessageBase {
     {}
 };
 
-/// The ceiling on Barcode::kMaxCodes, and the reason it is 7 rather than the
-/// 16 the SDK's 32-field limit would allow: a whole state travels in one
-/// message, and the largest kernel pool block is 256 bytes. Raising kMaxCodes
-/// too far fails the build here rather than truncating a wearer's codes.
-static_assert(sizeof(BarcodeState) <= 256,
-              "BarcodeState must fit the largest kernel message pool block -- "
+/// The largest kernel message pool block. A whole state travels in one
+/// message, so this is what actually bounds Barcode::kMaxCodes *and*
+/// Barcode::kMaxIdLength, and raising either too far fails the build here
+/// rather than truncating a wearer's codes.
+constexpr size_t kPoolBlockBytes = 256;
+
+/// What SDK::MessageBase costs on the watch, per the layout table and the
+/// `sizeof(MessageBase) == 32` static_assert in SDK/Messages/MessageBase.hpp,
+/// which that header applies only when `__SIZEOF_POINTER__ == 4`.
+///
+/// Stated here rather than measured because a 64-bit host build gets **40**
+/// for the same struct -- its vptr and semaphore pointer double -- so a plain
+/// `sizeof(BarcodeState)` is a different, stricter budget in the host tests
+/// than on the target it is supposed to be about. Sizing the payload against
+/// the watch's header is the question worth asking in both builds.
+constexpr size_t kMessageHeaderOnWatch = 32;
+
+static_assert(sizeof(Barcode::State) + kMessageHeaderOnWatch <= kPoolBlockBytes,
+              "Barcode::State must fit the largest kernel message pool block -- "
               "lower Barcode::kMaxCodes, or shorten the id and name limits");
+
+#if __SIZEOF_POINTER__ == 4
+static_assert(sizeof(BarcodeState) <= kPoolBlockBytes,
+              "BarcodeState must fit the largest kernel message pool block");
+static_assert(sizeof(SDK::MessageBase) == kMessageHeaderOnWatch,
+              "SDK::MessageBase is not the size the budget above assumes");
+#endif
 
 /**
  * @brief Ask the service to re-check the file and reply with the result.

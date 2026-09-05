@@ -149,17 +149,21 @@ Alphabetic ids, which subset C cannot help — one symbol per character:
 | 12 | 167 | 1.19 px | 8.35 modules | short |
 | 15 | 200 | 1.00 px | 10 modules | whole pixels, one px wide |
 | 16 | 211 | 0.94 px | 10.55 modules | sub-pixel module |
+| 22 | 277 | 0.72 px | 13.85 modules | the longest id accepted |
 
 ISO/IEC 15417 wants ten modules of quiet zone. The layout gives a fixed **10
-pixels**, which is short at every length anyone would use. It only "passes" at
-15 and 16 characters, and not because the margin grew — because the module
+pixels**, which is short at every length anyone would use. It only "passes"
+from 15 characters up, and not because the margin grew — because the module
 shrank to a pixel or less. Measured in pixels the margin looks generous; that
 is how it came to be one.
 
-The 15-character row is the tension in a single line: it is the only length
+The 15-character row is the tension in a single line: it is the last length
 where every module is a whole pixel and nothing is anti-aliased, and it is also
 the narrowest a bar can be. The one length that renders cleanly is the one a
-scanner has least chance of reading.
+scanner has least chance of reading. Past it the `Drawability` suite takes
+over: below one pixel per module a narrow bar quantises to gray and the space
+beside it fills in, which is why 16 alphabetic characters draws badly and has
+done since long before the limit moved to 22.
 
 ### Subset C, and the parity nobody expects
 
@@ -173,10 +177,13 @@ Subset B character. Against the 127 µm (5 mil) mid-density line:
 | 10 | 90 | 280 µm | | 11 | 112 | 225 µm |
 | 12 | 101 | 249 µm | | 13 | 123 | 204 µm |
 | 14 | 112 | 225 µm | | 15 | 134 | **188 µm** |
-| 16 | 123 | 204 µm | | | | |
+| 16 | 123 | 204 µm | | 17 | 145 | 173 µm |
+| 18 | 134 | 188 µm | | 19 | 156 | 161 µm |
+| 20 | 145 | 173 µm | | 21 | 167 | **150 µm** |
+| 22 | 156 | 161 µm | | | | |
 
-**Every numeric length clears 5 mil**, including fifteen and sixteen digits —
-the two lengths that fall just under it when they are letters. That is the
+**Every numeric length clears 5 mil**, all the way to the 22 the message block
+allows — including the lengths that fall under it when they are letters. That is the
 whole of what subset C bought, and `EveryNumericIdLengthClearsMidDensity` is
 where it is claimed.
 
@@ -189,7 +196,8 @@ symbol of its own *plus* a switch back into subset B — two symbols to say what
 a pair says in one. There is no encoding that avoids it; it is a property of
 pairing, not an optimisation the encoder is missing. So fifteen digits is the
 worst case in the whole numeric range, and sixteen digits are comfortably
-better than fifteen.
+better than fifteen. The same parity runs the whole way up: twenty-one digits
+is the worst numeric case at 150 µm, and twenty-two are better than twenty-one.
 
 A parkrun id — a letter and seven digits — is the shape subset C helps least,
 since the letter and the odd leading digit both stay in subset B. 123 modules

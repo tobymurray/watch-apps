@@ -127,9 +127,9 @@ not phone against not-phone — it is **laser against imager**:
 
 | | laser scanner | imaging scanner | takes |
 | --- | --- | --- | --- |
-| Code 128 | reads it | reads it | 1–16 printable characters |
-| QR | **cannot** | reads it | 1–16 printable characters |
-| ITF | reads it | reads it | an **even** number of digits, 2–16 |
+| Code 128 | reads it | reads it | 1–22 printable characters |
+| QR | **cannot** | reads it | 1–22 printable characters |
+| ITF | reads it | reads it | an **even** number of digits, 2–20 |
 
 A laser sweeps a line, so there is no mechanism by which it reads a grid. An
 imaging scanner takes a picture and decodes it, so it reads both — and that is
@@ -168,10 +168,11 @@ Two things a QR code costs, both deliberate:
   Every size that would clear the caption is smaller, and module size is the
   number that decides whether a scanner can resolve it. The id text and the pager
   marks still say which code you are looking at.
-- **The id limit does not change.** Still 1 to 16 characters. QR could hold a
-  URL; six of those would not fit in the message the service sends the screen,
-  and a URL has no readable rendering under the symbol on a 30 mm panel.
-  [`Docs/QR.md`](Docs/QR.md) costs that out in full.
+- **The id limit is the same for every format.** 1 to 22 characters, and QR is
+  not the reason it is not more: six URLs would not fit the message the service
+  sends the screen, and a URL has no readable rendering under the symbol on a
+  30 mm panel. [`Docs/QR.md`](Docs/QR.md) costs that out in full, at the
+  sixteen-character ceiling that applied when it was written.
 
 An unrecognised format — only reachable by hand-editing `input.json`, since the
 phone's pattern accepts nothing else — refuses that code and says so on screen,
@@ -179,15 +180,20 @@ rather than quietly drawing it as Code 128.
 
 ### What the id may contain
 
-1 to 16 printable ASCII characters. The phone enforces that as you type; a
-hand-written file is checked on the watch. Either way an id that does not fit is
-**refused, not trimmed** — a shortened id is a *wrong* id, and a barcode that
-scans as someone else's number is the one genuinely harmful thing this app could
-do. Keeping that true through the migration took a deliberate trick; see
+1 to 22 printable ASCII characters — except ITF, which takes 2 to 20 digits and
+an even number of them. The phone enforces that as you type; a hand-written file
+is checked on the watch. Either way an id that does not fit is **refused, not
+trimmed** — a shortened id is a *wrong* id, and a barcode that scans as someone
+else's number is the one genuinely harmful thing this app could do. Keeping that
+true through the migration took a deliberate trick; see
 [Concessions](#concessions).
 
+Twenty-two is a **message** limit, not a drawing one, and the two are not the
+same question — see [How much fits](#how-much-fits) for the one that decides
+whether a scanner can read it.
+
 **A leading or trailing space is refused too**, even though a space is itself
-one of those 1-16 printable ASCII characters. It is invisible on the phone
+one of those printable ASCII characters. It is invisible on the phone
 form and easy to leave behind when an id is copied out of a spreadsheet cell
 or a PDF, and every symbology here draws it as a real character rather than
 ignoring it — so a trailing space is not a smaller mistake than a wrong digit,
@@ -264,9 +270,9 @@ it. Only the bars get wider.
 
 There is [no ISO minimum](#is-it-scannable) to hold these to, so the line worth
 naming is scanner capability: 5 mil (0.127 mm) is the low end of what
-scanner-selection guidance gives for Code 128. Alphabetic ids of 15 and 16
-characters fall just under it. **Every numeric length now clears it**, the worst
-being fifteen digits at 0.188 mm.
+scanner-selection guidance gives for Code 128. Alphabetic ids of 15 characters
+and up fall under it. **Every numeric length now clears it**, the worst being
+twenty-one digits at 0.150 mm.
 
 A parkrun id — a letter and seven digits — is the shape this helps least, since
 the `A` and the odd leading digit both stay in subset B and only the remaining
@@ -290,6 +296,57 @@ In practice: a numeric id with a leading zero to spare renders wider bars with
 it than without. And fifteen digits is the worst case in the entire numeric
 range at 0.188 mm — still half again the 5 mil line, but the one numeric length
 where sixteen digits would do better than fifteen.
+
+### How much fits
+
+The id limit is 22 characters and that number comes from the **message**, not
+the screen: a whole state travels in one 256-byte kernel block, each character
+costs a byte in each of the six slots, and 22 is where that budget runs out
+exactly. `Commands.hpp` fails the build rather than letting it be exceeded.
+
+What the *screen* can draw is a different and smaller question, and it is not a
+character count at all. It is a **module count**, because Code 128 packs a pair
+of digits into one symbol: eighteen digits is a narrower symbol than sixteen
+letters. The panel draws **200 modules** — one module per pixel across the
+200 px bars band — and past that a narrow bar can no longer own a pixel column,
+so the renderer's four grey levels quantise it to `170,170,170` and the space
+beside it fills in.
+
+That boundary was measured by rendering sampled ids through the real renderer
+and reading the ink back out of the framebuffer, 400 ids per module count:
+
+| modules | module | ids with a faint bar | ids with a space filling in |
+| ------- | ------ | -------------------- | --------------------------- |
+| ≤ 200   | ≥ 1.000 px | **0 of 4800**    | **0 of 4800**               |
+| 211     | 0.948 px | 317 of 400         | 207 of 400                  |
+| 222     | 0.901 px | 379 of 400         | 375 of 400                  |
+
+The cliff is that sharp because it *is* the pixel grid. It happens to land on
+the resolution limit too: a module is a pixel is one 126 µm dot pitch, so 200
+modules is a micron under the 5 mil reference point above. Below one pixel per
+module you lose the ink and the resolution together.
+
+In id lengths, that comes out as:
+
+| id                              | modules | draws |
+| ------------------------------- | ------- | ----- |
+| `A1234567`, a parkrun id        | 101     | yes   |
+| 18 digits                       | 134     | yes   |
+| 22 digits, the longest accepted | 156     | yes   |
+| 15 letters                      | 200     | yes, exactly |
+| 16 letters                      | 211     | no    |
+
+**Every digit-only id this app accepts draws cleanly.** Only subset-B content —
+letters and punctuation — crosses, and it crosses at 16, which was the ceiling
+before this limit moved: a 16-letter id was already being drawn with faint bars
+and nobody was told.
+
+Nothing is refused for being dense. The watch shows a full-screen
+*"Too much data for this display. May not scan. R1 shows it anyway."*, `R1`
+dismisses it, and the barcode is drawn. The dismissal is remembered **per id**,
+in `/dense_ack.txt` beside `last_code.txt`, so it appears once for a given code
+and never again — and comes back if that code is edited to something else,
+because that is a different barcode.
 
 ## Concessions
 
@@ -323,14 +380,14 @@ right outcome anyway.
 
 **Truncation had to be bought back.** `SDK::AppConfig` truncates an over-long
 string to the declared `maxLength` on a UTF-8 boundary and tells the caller
-nothing about having done it. A field declared at 16 would hand back the first
-16 characters of a 30-character value as though that were the id — a *wrong* id
-that still scans, which is the one outcome this app exists to prevent. So the
-field is declared at **17**, one byte longer than an id can be: anything too
-long arrives at 17 bytes, the length check refuses it, and the wearer is told.
-The phone never offers a 17-character value because the field's pattern caps
-entry at 16, so the extra byte is reachable only from a hand-edited file —
-exactly the untrusted path that needed defending.
+nothing about having done it. A field declared at the id limit would hand back
+the first 22 characters of a 30-character value as though that were the id — a
+*wrong* id that still scans, which is the one outcome this app exists to
+prevent. So the field is declared at **23**, one byte longer than an id can be:
+anything too long arrives at 23 bytes, the length check refuses it, and the
+wearer is told. The phone never offers a 23-character value because the field's
+pattern caps entry at 22, so the extra byte is reachable only from a hand-edited
+file — exactly the untrusted path that needed defending.
 
 Two things were gained, for balance: the id can now be typed on a phone keyboard
 with validation as you go, and a backslash in the id works, because
@@ -738,12 +795,13 @@ wrong too.
 Against scanner capability instead, which is the question that matters:
 
 - Code 128 is a mid-density symbology, and scanner-selection guidance puts it at
-  5–10 mil capability. Everything up to **14 characters** clears 5 mil; 15 and 16
-  fall just under, at 4.96 and 4.7 mil.
+  5–10 mil capability. Everything up to **14 characters** clears 5 mil; 15 and
+  above fall under, from 4.96 mil down to 3.5 mil at 22. Those are alphabetic
+  lengths — every digit-only length clears it, because subset C pairs them.
 - Zebra's [LS2208 spec sheet](https://www.zebra.com/us/en/products/spec-sheets/scanners/general-purpose-scanners/ls2208.html)
   — a cheap, very widely deployed laser scanner — quotes a 3.0 mil narrow
-  element. **Every length this app accepts is above that**, sixteen characters
-  included.
+  element. **Every length this app accepts is above that**, the 22-character
+  worst case included, at 3.5 mil.
 
 So resolution is not the binding constraint anyone thought it was. What is
 likely to decide a scan on this panel is contrast, specular glare off the front
@@ -754,7 +812,7 @@ arithmetic.
 **A QR code sidesteps the whole table.** Its module is four *whole pixels*,
 504 µm, whatever the id says — because a matrix symbology spends area in two
 directions rather than width in one, and the version is fixed at 2, which holds
-26 characters against the 16 an id may be. That is four times the X-dimension of
+26 characters against the 22 an id may be. That is four times the X-dimension of
 the worst row above. The cost is that the symbol has to be square: the largest
 square of lit pixels on this panel is 168 px, and only 144 px is available once
 the id row below it is left alone, which is what fixes the version at 2 and the

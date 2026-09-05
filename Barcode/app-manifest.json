@@ -28,10 +28,10 @@
       "label": "Code 1 ID",
       "description": "The value encoded in the barcode: a parkrun athlete ID, a membership number, a transit pass. Copy it exactly as case matters.",
       "default": "",
-      "maxLength": 17,
-      "pattern": "[ -~]{0,16}",
+      "maxLength": 23,
+      "pattern": "[ -~]{0,22}",
       "required": true,
-      "validationMessage": "Up to 16 plain characters, copied exactly. Case matters."
+      "validationMessage": "Up to 22 plain characters, copied exactly. Case matters."
     },
     {
       "id": "name1",
@@ -59,9 +59,9 @@
       "label": "Code 2 ID",
       "description": "The value encoded in the barcode",
       "default": "",
-      "maxLength": 17,
-      "pattern": "[ -~]{0,16}",
-      "validationMessage": "Up to 16 plain characters, copied exactly. Case matters."
+      "maxLength": 23,
+      "pattern": "[ -~]{0,22}",
+      "validationMessage": "Up to 22 plain characters, copied exactly. Case matters."
     },
     {
       "id": "name2",
@@ -89,9 +89,9 @@
       "label": "Code 3 ID",
       "description": "The value encoded in the barcode",
       "default": "",
-      "maxLength": 17,
-      "pattern": "[ -~]{0,16}",
-      "validationMessage": "Up to 16 plain characters, copied exactly. Case matters."
+      "maxLength": 23,
+      "pattern": "[ -~]{0,22}",
+      "validationMessage": "Up to 22 plain characters, copied exactly. Case matters."
     },
     {
       "id": "name3",
@@ -119,9 +119,9 @@
       "label": "Code 4 ID",
       "description": "The value encoded in the barcode",
       "default": "",
-      "maxLength": 17,
-      "pattern": "[ -~]{0,16}",
-      "validationMessage": "Up to 16 plain characters, copied exactly. Case matters."
+      "maxLength": 23,
+      "pattern": "[ -~]{0,22}",
+      "validationMessage": "Up to 22 plain characters, copied exactly. Case matters."
     },
     {
       "id": "name4",
@@ -149,9 +149,9 @@
       "label": "Code 5 ID",
       "description": "The value encoded in the barcode",
       "default": "",
-      "maxLength": 17,
-      "pattern": "[ -~]{0,16}",
-      "validationMessage": "Up to 16 plain characters, copied exactly. Case matters."
+      "maxLength": 23,
+      "pattern": "[ -~]{0,22}",
+      "validationMessage": "Up to 22 plain characters, copied exactly. Case matters."
     },
     {
       "id": "name5",
@@ -179,9 +179,9 @@
       "label": "Code 6 ID",
       "description": "The value encoded in the barcode",
       "default": "",
-      "maxLength": 17,
-      "pattern": "[ -~]{0,16}",
-      "validationMessage": "Up to 16 plain characters, copied exactly. Case matters."
+      "maxLength": 23,
+      "pattern": "[ -~]{0,22}",
+      "validationMessage": "Up to 22 plain characters, copied exactly. Case matters."
     },
     {
       "id": "name6",

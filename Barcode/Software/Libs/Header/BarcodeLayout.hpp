@@ -490,6 +490,37 @@ struct Scannability
         return totalModules != 0 && (barsWidthPx % totalModules) == 0;
     }
 
+    /**
+     * @brief Is every module at least a whole pixel wide?
+     *
+     * The line this panel actually draws cleanly either side of, and the one
+     * a long id crosses first. Below a pixel a narrow bar cannot own a column
+     * outright, so the renderer's four grey levels quantise it to 170,170,170
+     * and the space beside it fills in -- a bar that is there in the widths
+     * and not there on the glass.
+     *
+     * Measured by rendering sampled ids through the real renderer and reading
+     * the ink back out of the framebuffer, 400 ids per module count:
+     *
+     *   <= 200 modules  (>= 1.000 px)  0 of 4800 ids had a faint bar or a
+     *                                  filled space
+     *      211 modules  (0.948 px)     317 of 400 faint, 207 of 400 filled
+     *      222 modules  (0.901 px)     379 of 400 faint, 375 of 400 filled
+     *
+     * The cliff is that sharp because it is the pixel grid. It coincides with
+     * the resolution one: a module is a pixel is kDotPitchMicrons, so 200
+     * modules is 126 um, a micron under the 5 mil reference point above.
+     *
+     * Not a refusal anywhere in this app. A dense id is stored, encoded and
+     * drawn; the GUI shows what this predicate found and the wearer decides
+     * whether their scanner agrees. Rerun Tests/Layout_test.cpp's
+     * drawability cases to falsify the boundary.
+     */
+    constexpr bool modulesAreAtLeastOnePixel() const
+    {
+        return totalModules != 0 && totalModules <= static_cast<uint16_t>(barsWidthPx);
+    }
+
     /// Narrow element in whole pixels, rounded down -- what a scanner has to
     /// resolve in the worst case.
     constexpr uint16_t narrowElementPx() const

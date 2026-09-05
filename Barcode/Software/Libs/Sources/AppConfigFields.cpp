@@ -42,28 +42,45 @@ using SDK::AppConfig;
 // fourth per-code field, so it is not part of the kMaxCodes * kFieldsPerCode
 // count below and gets its own +1.
 const AppConfig::Field kFields[] = {
-    AppConfig::stringField("id1", "", 0, 17),
+    AppConfig::stringField("id1", "", 0, 23),
     AppConfig::stringField("name1", "", 0, 12),
     AppConfig::stringField("fmt1", "Code128", 0, 8),
-    AppConfig::stringField("id2", "", 0, 17),
+    AppConfig::stringField("id2", "", 0, 23),
     AppConfig::stringField("name2", "", 0, 12),
     AppConfig::stringField("fmt2", "Code128", 0, 8),
-    AppConfig::stringField("id3", "", 0, 17),
+    AppConfig::stringField("id3", "", 0, 23),
     AppConfig::stringField("name3", "", 0, 12),
     AppConfig::stringField("fmt3", "Code128", 0, 8),
-    AppConfig::stringField("id4", "", 0, 17),
+    AppConfig::stringField("id4", "", 0, 23),
     AppConfig::stringField("name4", "", 0, 12),
     AppConfig::stringField("fmt4", "Code128", 0, 8),
-    AppConfig::stringField("id5", "", 0, 17),
+    AppConfig::stringField("id5", "", 0, 23),
     AppConfig::stringField("name5", "", 0, 12),
     AppConfig::stringField("fmt5", "Code128", 0, 8),
-    AppConfig::stringField("id6", "", 0, 17),
+    AppConfig::stringField("id6", "", 0, 23),
     AppConfig::stringField("name6", "", 0, 12),
     AppConfig::stringField("fmt6", "Code128", 0, 8),
     AppConfig::boolField("boostBacklight", true),
 };
 
 const size_t kFieldCount = sizeof(kFields) / sizeof(kFields[0]);
+
+// The lengths above are spelled as literals because CI reads this file as
+// text: validate_app_config.py --check-bounds refuses a named constant with
+// "use plain literals (not named constants or expressions) so CI can compare
+// them", since it has no compiler to fold one with. That leaves the table and
+// the header free to drift, so these say what the literals were copied from
+// and fail the build instead.
+static_assert(Barcode::kConfigMaxLength == 23,
+              "the idN maxLength above no longer matches Barcode::kConfigMaxLength "
+              "-- update all six, and app-manifest.json with them");
+static_assert(Barcode::kMaxNameLength == 12,
+              "the nameN maxLength above no longer matches Barcode::kMaxNameLength "
+              "-- update all six, and app-manifest.json with them");
+static_assert(Barcode::kConfigFormatMaxLength == 8,
+              "the fmtN maxLength above no longer matches "
+              "Barcode::kConfigFormatMaxLength -- update all six, and "
+              "app-manifest.json with them");
 
 static_assert(sizeof(kFields) / sizeof(kFields[0])
                   == Barcode::kMaxCodes * kFieldsPerCode + 1,

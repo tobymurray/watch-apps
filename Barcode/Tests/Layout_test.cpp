@@ -158,6 +158,87 @@ TEST(PagerMarks, TheRowIsCentredAndSizedAsDocumented)
 }
 
 // ---------------------------------------------------------------------------
+// Drawability: whether the panel can put this symbol on the glass at all
+//
+// A separate question from the X-dimension below, and the one a long id runs
+// into first. Below one pixel per module a narrow bar cannot own a column, so
+// the renderer's four gray levels quantise it to 170,170,170 and the space
+// beside it fills in. Scannability::modulesAreAtLeastOnePixel() carries the
+// measurement; these hold the boundary it was measured at.
+//
+// Nothing in the app refuses an id for failing this. The GUI shows a warning
+// the wearer dismisses once per id, and then draws it -- so what these tests
+// protect is the honesty of the warning, not a gate.
+// ---------------------------------------------------------------------------
+
+TEST(Drawability, TheBoundaryIsTheBarsBandInModules)
+{
+    // One module per pixel, exactly, is the last count that draws cleanly.
+    EXPECT_TRUE(BarcodeLayout::scannabilityFor(BarcodeLayout::kBarsW)
+                    .modulesAreAtLeastOnePixel());
+    EXPECT_FALSE(BarcodeLayout::scannabilityFor(BarcodeLayout::kBarsW + 1)
+                     .modulesAreAtLeastOnePixel());
+}
+
+/// The measured cliff, in the units the measurement was made in: 200 modules
+/// had no faint bar in 4800 sampled ids and 211 had one in 317 of 400. Those
+/// are the two module counts Code 128 can actually produce either side of the
+/// boundary -- symbols come in steps of 11, so there is nothing in between.
+TEST(Drawability, TwoHundredModulesDrawsAndTwoHundredAndElevenDoesNot)
+{
+    EXPECT_TRUE(BarcodeLayout::scannabilityFor(200).modulesAreAtLeastOnePixel());
+    EXPECT_FALSE(BarcodeLayout::scannabilityFor(211).modulesAreAtLeastOnePixel());
+}
+
+/// INVARIANT. The reason this app can be asked for a longer id at all: a
+/// digit-only id pairs into subset C, so every length the app accepts still
+/// draws cleanly. This is the case the limit was raised for.
+TEST(Drawability, EveryDigitOnlyIdThisAppAcceptsDrawsCleanly)
+{
+    for (size_t len = 1; len <= Code128::kMaxDataLength; len++) {
+        const Scannability s = BarcodeLayout::scannabilityFor(digitModulesFor(len));
+        EXPECT_TRUE(s.modulesAreAtLeastOnePixel())
+            << len << " digits is " << s.totalModules << " modules";
+    }
+}
+
+/// A parkrun id and the two shapes the README names, all well inside.
+TEST(Drawability, TheShapesThisAppExistsForDrawCleanly)
+{
+    for (const char *id : { "A1234567", "12345678", "GYMWORLD12345678" }) {
+        EXPECT_TRUE(BarcodeLayout::scannabilityFor(modulesForId(id)).modulesAreAtLeastOnePixel())
+            << id;
+    }
+}
+
+/// CHARACTERISATION. Where a subset-B id crosses, and the fact that the
+/// crossing predates this limit being raised: fifteen alphabetic characters
+/// draws and sixteen does not, and sixteen was the ceiling before.
+TEST(Drawability, FifteenAlphabeticCharactersDrawsAndSixteenDoesNot)
+{
+    EXPECT_TRUE(BarcodeLayout::scannabilityFor(modulesFor(15)).modulesAreAtLeastOnePixel());
+    EXPECT_FALSE(BarcodeLayout::scannabilityFor(modulesFor(16)).modulesAreAtLeastOnePixel());
+}
+
+/// REPORT. What each length costs, so a change to the geometry has to answer
+/// for which ids stop drawing.
+TEST(Drawability, ReportTheWholeRange)
+{
+    for (size_t len = 1; len <= Code128::kMaxDataLength; len++) {
+        const Scannability alpha  = BarcodeLayout::scannabilityFor(modulesFor(len));
+        const Scannability digits = BarcodeLayout::scannabilityFor(digitModulesFor(len));
+        RecordProperty("len" + std::to_string(len) + "_alpha_modules", alpha.totalModules);
+        RecordProperty("len" + std::to_string(len) + "_digit_modules", digits.totalModules);
+        std::cout << "  len " << (len < 10 ? " " : "") << len
+                  << "  alpha " << alpha.totalModules << " modules"
+                  << (alpha.modulesAreAtLeastOnePixel() ? "  draws" : "  FAINT")
+                  << "   digits " << digits.totalModules << " modules"
+                  << (digits.modulesAreAtLeastOnePixel() ? "  draws" : "  FAINT")
+                  << "\n";
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The X-dimension: the module width as a physical size
 //
 // Table 3-1 of the LS012B7DD06 datasheet gives a 0.126 mm dot pitch, which is
@@ -192,8 +273,9 @@ TEST(XDimension, AParkrunIdIsComfortablyAboveMidDensity)
 
 /// INVARIANT. Every id length this app accepts stays above the narrow-element
 /// minimum on the LS2208's spec sheet, which is the most capable of the
-/// reference points and the cheapest scanner. Resolution is not what limits
-/// this app; the worst case, sixteen characters, is 0.119 mm -- about 4.7 mil.
+/// reference points and the cheapest scanner. Resolution is not the first
+/// thing a long id runs out of here -- Drawability below is, and well before
+/// this.
 TEST(XDimension, EvenTheLongestIdIsAboveTheAggressiveScannerFigure)
 {
     for (size_t len = 1; len <= Code128::kMaxDataLength; len++) {
@@ -203,16 +285,15 @@ TEST(XDimension, EvenTheLongestIdIsAboveTheAggressiveScannerFigure)
     }
 }
 
-/// CHARACTERISATION, and a mild one: fifteen and sixteen *non-numeric*
-/// characters fall just under the 5 mil mid-density line, at 4.96 and 4.7 mil.
-/// Worth knowing before relying on a 16-character id, not worth calling a
-/// defect.
+/// CHARACTERISATION: fifteen *non-numeric* characters is where the 5 mil
+/// mid-density line is crossed, and every longer subset-B id is below it.
+/// Fourteen, at 5.0 mil, is the last one that clears it.
 ///
 /// This used to name Subset C as the fix if it ever mattered, priced by the
 /// standard at 5,5 modules per numeric character against 11 for a Subset B
 /// one. It is implemented now, and the tests below say what it reached. What
 /// remains here is what it cannot touch: a letter has nothing to pair with.
-TEST(XDimension, CurrentlyFifteenAndSixteenNonNumericFallJustUnderMidDensity)
+TEST(XDimension, EveryNonNumericIdOfFifteenOrMoreFallsUnderMidDensity)
 {
     for (size_t len = 15; len <= Code128::kMaxDataLength; len++) {
         EXPECT_FALSE(BarcodeLayout::scannabilityFor(modulesFor(len))

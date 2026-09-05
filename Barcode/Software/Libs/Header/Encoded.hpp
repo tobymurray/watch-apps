@@ -38,16 +38,16 @@ namespace Barcode
 /**
  * @brief The most symbols one barcode may hold, excluding the stop.
  *
- * A start, one symbol per character of the longest id (Barcode::kMaxIdLength,
- * which is 16), and a check. Each symbology static_asserts that its own worst
- * case fits, rather than this header reaching for a limit that belongs to the
- * app -- Code128.hpp does so against kMaxDataLength.
+ * A start, one symbol per character of the longest id (Barcode::kMaxIdLength),
+ * and a check. Each symbology static_asserts that its own worst case fits,
+ * rather than this header reaching for a limit that belongs to the app --
+ * Code128.hpp does so against kMaxDataLength.
  *
  * "One symbol per character" is the worst case and not the usual one: Code 128
  * packs a pair of digits into a single symbol where it can, which only ever
  * makes a barcode shorter than this allows for.
  */
-constexpr size_t kMaxSymbols = 18;
+constexpr size_t kMaxSymbols = 24;
 
 /**
  * @brief Encoded element widths for one barcode.

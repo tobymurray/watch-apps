@@ -60,22 +60,28 @@ namespace Barcode
 constexpr size_t kMaxCodes = 6;
 
 /**
- * @brief Longest id any encoder here accepts. Matches Code128::kMaxDataLength.
+ * @brief Longest id this app will store. Matches Code128::kMaxDataLength.
  *
- * Deliberately unmoved by QR arriving, and Docs/QR.md argues that at length:
- * QR could carry a URL, but a `State` holding six of those does not fit the
- * 256-byte message block, and a URL has no readable rendering under the bars
- * on a 30 mm panel. Sixteen is what Code 128 can draw legibly here and what
- * the phone form declares.
+ * **This is a message-size limit, not a drawing one.** A whole `State` travels
+ * in one 256-byte kernel block, each id costs a byte in each of kMaxCodes
+ * slots, and 22 is where that budget runs out -- the static_assert in
+ * Commands.hpp is what actually holds it. Docs/SYMBOLOGIES.md carries the
+ * arithmetic and the measurement behind the paragraph below.
  *
- * The happy consequence is that QR adds no new way for a code to be refused:
- * Qr::kMaxDataLength is 26, so every id this app accepts fits with ten bytes
- * to spare, and Problem::BadValue's prompt stays true as written. ITF broke
- * that streak on arrival -- a digit-only format under the same ceiling can
- * fail in ways neither earlier format could, which is what
- * Problem::BadDigitCount and Problem::BadCharacters are for.
+ * What the *screen* can draw is a separate and smaller question, and it is not
+ * a character count at all: it is BarcodeLayout::Scannability's
+ * modulesAreAtLeastOnePixel(), because Code 128 packs a pair of digits into
+ * one symbol and so a 22-digit id is a narrower symbol than a 16-letter one.
+ * An id that busts that is still stored, still encoded and still drawn -- the
+ * GUI warns first and the wearer decides. Nothing here refuses an id for being
+ * dense.
+ *
+ * Each format then stops where its own geometry does: Itf::kMaxDataLength is
+ * 20 because ITF is drawn whole-pixel and the twenty-second digit eats the
+ * quiet zone, and Qr::kMaxDataLength is 26, comfortably past this, so QR adds
+ * no way for a code to be refused that Code 128 did not already have.
  */
-constexpr size_t kMaxIdLength = 16;
+constexpr size_t kMaxIdLength = 22;
 
 /// Longest name that fits the screen at the label font's size.
 constexpr size_t kMaxNameLength = 12;
@@ -85,18 +91,18 @@ constexpr size_t kMaxNameLength = 12;
  *
  * SDK::AppConfig truncates a stored string to the field's declared maxLength
  * on a UTF-8 boundary and tells the caller nothing about having done it, so a
- * field declared at 16 would hand back the first 16 characters of a 30
- * character value as though the user had typed exactly that. A shortened id is
- * a *wrong* id -- it scans, and it scans as somebody else -- which is the one
- * outcome this app exists to prevent.
+ * field declared at kMaxIdLength would hand back the first kMaxIdLength
+ * characters of a 30 character value as though the user had typed exactly
+ * that. A shortened id is a *wrong* id -- it scans, and it scans as somebody
+ * else -- which is the one outcome this app exists to prevent.
  *
- * Declaring 17 buys the distinction back. Anything too long to be an id
- * arrives as 17 bytes, the length check refuses it, and the wearer is told.
- * The phone never offers a 17-character value in the first place: the field's
- * pattern caps entry at 16, so the extra byte is reachable only by a
+ * Declaring one more buys the distinction back. Anything too long to be an id
+ * arrives at this length, the length check refuses it, and the wearer is told.
+ * The phone never offers a value this long in the first place: the field's
+ * pattern caps entry at kMaxIdLength, so the extra byte is reachable only by a
  * hand-edited file, which is exactly the untrusted path that needed defending.
  */
-constexpr size_t kConfigMaxLength = 17;
+constexpr size_t kConfigMaxLength = kMaxIdLength + 1;
 
 /**
  * @brief Declared maximum of a format field.

@@ -67,9 +67,23 @@
 namespace Itf
 {
 
-/// Longest id this encoder accepts, matching Code128::kMaxDataLength so that
-/// no format is the reason an id has to be shortened.
-constexpr size_t kMaxDataLength = 16;
+/**
+ * @brief Longest id this encoder accepts, and the one format ceiling that is
+ * shorter than Barcode::kMaxIdLength.
+ *
+ * ITF is drawn whole-pixel, so an extra digit does not thin the elements the
+ * way Code 128's do -- it widens the symbol and takes the width out of the
+ * quiet zone instead. Measured off the rendered framebuffer, a symbol drawn at
+ * the one-pixel element this app reaches by ten digits leaves 15 px of white
+ * each side at twenty digits and 6 px at twenty-two, against the ten
+ * BarcodeLayout::kItfQuietUnitsRequired asks for. Rerun Tests/Layout_test.cpp's
+ * itfMeetsQuietZone cases to falsify it.
+ *
+ * So an ITF id longer than this is refused rather than warned about: unlike a
+ * dense Code 128, which is merely hard to read, an ITF symbol with no quiet
+ * zone is the "plausible value that scans" failure Barcode.hpp is about.
+ */
+constexpr size_t kMaxDataLength = 20;
 
 /// Narrow and wide elements, in the units Barcode::Encoded counts. The ratio
 /// is these two numbers and nothing else depends on their absolute size --

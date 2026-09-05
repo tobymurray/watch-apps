@@ -30,6 +30,12 @@ namespace {
 using BarcodeTest::document;
 using BarcodeTest::Harness;
 
+/// An id one character past what any encoder here accepts, built from the
+/// limit rather than typed out: this is the fixture for "present, but the
+/// service must refuse it", and a literal silently stops testing that the
+/// day the limit moves.
+const std::string kOverlongId(Barcode::kMaxIdLength + 1, '7');
+
 // ---------------------------------------------------------------------------
 // The format field, and the promise that predates it
 //
@@ -218,7 +224,7 @@ TEST(Service, AnUndrawableIdIsBadValueEvenWhenAFormatIsAlsoWrong)
     // more likely to have made and the one the screen can be specific about --
     // and because a wrong format with a good id is the rarer accident.
     Harness h;
-    h.seed(BarcodeTest::documentWithFormats({"01234567890123456", "A1234567"},
+    h.seed(BarcodeTest::documentWithFormats({kOverlongId, "A1234567"},
                                             {"", "nonsense"}));
     h.comm.queueGuiRun();
     h.comm.queueStop();
@@ -322,7 +328,7 @@ TEST(Service, ASpaceInTheMiddleOfAnIdIsUnaffected)
 TEST(Service, BadWhitespaceOutranksTheGenericBadValue)
 {
     Harness h;
-    h.seed(BarcodeTest::documentWithFormats({"01234567890123456", " A1234567"}, {"", ""}));
+    h.seed(BarcodeTest::documentWithFormats({kOverlongId, " A1234567"}, {"", ""}));
     h.comm.queueGuiRun();
     h.comm.queueStop();
     h.run();
@@ -548,7 +554,7 @@ TEST(Service, AMissingKeyPublishesNoValueNotBadValue)
 TEST(Service, APresentButUnusableValuePublishesBadValue)
 {
     Harness h;
-    h.seed(document("01234567890123456")); // 17 characters
+    h.seed(document(kOverlongId));
     h.comm.queueGuiRun();
     h.comm.queueStop();
     h.run();
@@ -613,7 +619,7 @@ TEST(Service, CompactsPastEmptyAndUnusableSlots)
     // so what comes out is slots 1, 3 and 5 with no holes -- and the state
     // carries no problem, because the usable ones are usable.
     Harness h;
-    h.seed(BarcodeTest::documentWithCodes({"A1111111", "", "B2222222", "01234567890123456", "C3333333"}));
+    h.seed(BarcodeTest::documentWithCodes({"A1111111", "", "B2222222", kOverlongId, "C3333333"}));
     h.comm.queueGuiRun();
     h.comm.queueStop();
     h.run();

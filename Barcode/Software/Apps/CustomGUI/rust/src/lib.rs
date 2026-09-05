@@ -99,9 +99,9 @@ pub const KIND_ITF: u8 = 1;
 pub const KIND_QR: u8 = 2;
 pub const KIND_PROMPT: u8 = 3;
 
-pub const MAX_WIDTHS: usize = 115;
+pub const MAX_WIDTHS: usize = 151;
 pub const MAX_MATRIX_BITS: usize = 79;
-pub const ID_LEN: usize = 17;
+pub const ID_LEN: usize = 23;
 pub const NAME_LEN: usize = 13;
 pub const MESSAGE_LEN: usize = 96;
 
@@ -176,19 +176,19 @@ pub extern "C" fn barcode_gui_abi_fingerprint() -> u32 {
     abi_fingerprint()
 }
 
-const _: () = assert!(core::mem::size_of::<Frame>() == 328);
+const _: () = assert!(core::mem::size_of::<Frame>() == 370);
 const _: () = assert!(core::mem::align_of::<Frame>() == 2);
 const _: () = assert!(core::mem::offset_of!(Frame, total_modules) == 0);
 const _: () = assert!(core::mem::offset_of!(Frame, kind) == 2);
 const _: () = assert!(core::mem::offset_of!(Frame, width_count) == 3);
 const _: () = assert!(core::mem::offset_of!(Frame, widths) == 4);
-const _: () = assert!(core::mem::offset_of!(Frame, matrix_bits) == 119);
-const _: () = assert!(core::mem::offset_of!(Frame, matrix_size) == 198);
-const _: () = assert!(core::mem::offset_of!(Frame, id) == 199);
-const _: () = assert!(core::mem::offset_of!(Frame, name) == 216);
-const _: () = assert!(core::mem::offset_of!(Frame, index) == 229);
-const _: () = assert!(core::mem::offset_of!(Frame, count) == 230);
-const _: () = assert!(core::mem::offset_of!(Frame, message) == 231);
+const _: () = assert!(core::mem::offset_of!(Frame, matrix_bits) == 155);
+const _: () = assert!(core::mem::offset_of!(Frame, matrix_size) == 234);
+const _: () = assert!(core::mem::offset_of!(Frame, id) == 235);
+const _: () = assert!(core::mem::offset_of!(Frame, name) == 258);
+const _: () = assert!(core::mem::offset_of!(Frame, index) == 271);
+const _: () = assert!(core::mem::offset_of!(Frame, count) == 272);
+const _: () = assert!(core::mem::offset_of!(Frame, message) == 273);
 
 // -- Geometry, copied verbatim from Barcode/Software/Libs/Header/BarcodeLayout.hpp --
 
@@ -759,15 +759,16 @@ mod tests {
         assert!(row.contains(&DIM.0), "other marks should be dim");
     }
 
-    const PROMPTS: [&str; 8] = [
+    const PROMPTS: [&str; 9] = [
         "No codes yet. Set one in the UNA app, or write input.json.",
         "input.json has no usable code",
         "No codes set yet. Open the UNA app and enter your ID",
-        "That ID cannot be drawn: 1-16 plain characters",
-        "ITF needs an even count of digits, 2 to 16",
+        "That ID cannot be drawn: 1-22 plain characters",
+        "ITF needs an even count of digits, 2 to 20",
         "ITF only draws digits 0-9",
         "That ID starts or ends with a space, remove it",
         "Unknown format. Set it to Code128, QRCode or ITF.",
+        "Too much data for this display. May not scan. R1 shows it anyway.",
     ];
 
     #[test]

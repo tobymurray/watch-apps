@@ -24,7 +24,17 @@ accept their side of it.
 
 ## What it accepts
 
-Two to sixteen digits, an **even** number of them.
+Two to twenty digits, an **even** number of them.
+
+Twenty, where every other format here stops at twenty-two, and the difference is
+geometric rather than arbitrary. ITF is drawn whole-pixel, so an extra digit does
+not thin its elements — it widens the symbol and takes the width out of the quiet
+zone. Measured off the rendered framebuffer, at the one-pixel element this app
+reaches by ten digits, twenty digits leaves 15 px of white each side and
+twenty-two leaves 6 px, against the ten `kItfQuietUnitsRequired` asks for. So
+twenty is where a symbol still has a quiet zone, and past it an ITF scan can
+decode short — the "plausible value that scans" failure this whole app is
+written against.
 
 Odd is **refused, not padded**. Every other ITF implementation, zint included,
 pads a leading zero and encodes the result — and a scanner then reads that zero
@@ -109,8 +119,8 @@ The gap this leaves is the one the SDK's field model makes unavoidable:
 phone will happily save `fmt1=ITF` alongside `id1=A1234567` and the watch is
 where that is caught.
 
-That used to mean `Problem::BadValue`'s one generic prompt, "1-16 plain
-characters" — true and useless for `A1234567`, which already is 1-16 plain
+That used to mean `Problem::BadValue`'s one generic prompt, "1-22 plain
+characters" — true and useless for `A1234567`, which already is 1-22 plain
 characters. `Barcode::Refusal` (see Symbology.hpp) now asks *why* a digit-only
 format refused an id, not just whether it did, and Service.cpp threads the
 answer through as its own `Problem`: `BadCharacters` for a stray letter,

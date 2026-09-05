@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "BarcodeLayout.hpp"
 #include "Commands.hpp"
 #include "Symbology.hpp"
 
@@ -27,13 +28,30 @@ constexpr uint32_t kWaitForever = 0xFFFFFFFF;
 // carried over so an app updated in place keeps its wearer's last position.
 constexpr char kLastIndexPath[] = "/last_code.txt";
 
+// One acknowledged id per line. Beside kLastIndexPath and for the same
+// reason: it is this GUI's own note to itself about what the wearer has
+// already been told, and no other process reads or writes it.
+constexpr char kAckPath[] = "/dense_ack.txt";
+
+/// Shown instead of a barcode the panel cannot draw cleanly, once per id.
+///
+/// Names the button because there is nothing else on the screen to suggest
+/// the warning can be got past, and a wearer who cannot get past it has lost
+/// the code rather than been warned about it. Says "data" rather than
+/// anything about modules or pixels: what the wearer can act on is putting
+/// less in the field, and the count that actually decides it is not one they
+/// can see.
+constexpr char kDenseMessage[] =
+    "Too much data for this display. May not scan. R1 shows it anyway.";
+
 /// One flat, unwrapped string per Problem; Rust word-wraps it at the chosen
-/// font (see lib.rs's word_wrap()). BadFormat is still built from
-/// Symbology::kFormatNames so it keeps tracking the supported-format list
-/// automatically -- the self-syncing property a past bug fix put there stays
-/// intact. The other eight are static content with no data source to drift
-/// from, so they are literals rather than anything generated.
-const char *promptMessage(Barcode::Problem problem, char (&badFormatBuf)[96])
+/// font (see lib.rs's word_wrap()). The three that quote a limit are built
+/// from the constant that sets it, for the reason BadFormat has been built
+/// from Symbology::kFormatNames since a past fix: a prompt that restates a
+/// number owned elsewhere goes stale the first time the number moves, silently
+/// and only on the watch. The rest are static content with no data source to
+/// drift from, so they are literals.
+const char *promptMessage(Barcode::Problem problem, char (&scratch)[96])
 {
     using Barcode::Problem;
     switch (problem) {
@@ -42,25 +60,29 @@ const char *promptMessage(Barcode::Problem problem, char (&badFormatBuf)[96])
     case Problem::NotSet:
         return "No codes set yet. Open the UNA app and enter your ID";
     case Problem::BadValue:
-        return "That ID cannot be drawn: 1-16 plain characters";
+        std::snprintf(scratch, sizeof(scratch),
+                      "That ID cannot be drawn: 1-%zu plain characters", Barcode::kMaxIdLength);
+        return scratch;
     case Problem::BadDigitCount:
-        return "ITF needs an even count of digits, 2 to 16";
+        std::snprintf(scratch, sizeof(scratch),
+                      "ITF needs an even count of digits, 2 to %zu", Itf::kMaxDataLength);
+        return scratch;
     case Problem::BadCharacters:
         return "ITF only draws digits 0-9";
     case Problem::BadWhitespace:
         return "That ID starts or ends with a space, remove it";
     case Problem::BadFormat: {
-        int pos = std::snprintf(badFormatBuf, sizeof(badFormatBuf), "Unknown format. Set it to ");
+        int pos = std::snprintf(scratch, sizeof(scratch), "Unknown format. Set it to ");
         for (uint8_t i = 0; i < Barcode::kFormatCount && pos > 0 &&
-                             static_cast<size_t>(pos) < sizeof(badFormatBuf); i++) {
+                             static_cast<size_t>(pos) < sizeof(scratch); i++) {
             const char *sep = (i == 0) ? "" : ((i + 1 == Barcode::kFormatCount) ? " or " : ", ");
-            pos += std::snprintf(badFormatBuf + pos, sizeof(badFormatBuf) - static_cast<size_t>(pos),
+            pos += std::snprintf(scratch + pos, sizeof(scratch) - static_cast<size_t>(pos),
                                   "%s%s", sep, Barcode::kFormatNames[i]);
         }
-        if (pos > 0 && static_cast<size_t>(pos) < sizeof(badFormatBuf)) {
-            std::snprintf(badFormatBuf + pos, sizeof(badFormatBuf) - static_cast<size_t>(pos), ".");
+        if (pos > 0 && static_cast<size_t>(pos) < sizeof(scratch)) {
+            std::snprintf(scratch + pos, sizeof(scratch) - static_cast<size_t>(pos), ".");
         }
-        return badFormatBuf;
+        return scratch;
     }
     case Problem::None:
     case Problem::NoConfig:
@@ -124,6 +146,118 @@ void Gui::rememberIndex(uint8_t index)
     file->close();
 }
 
+bool Gui::isDense() const
+{
+    if (mState.problem != Barcode::Problem::None || mIndex >= mState.count) {
+        return false;
+    }
+
+    const Barcode::Code &code = mState.codes[mIndex];
+    // Only the stretched-to-fit path can produce a module narrower than a
+    // pixel. ITF is drawn whole-pixel, so its elements are never thinner than
+    // one -- its own ceiling is Itf::kMaxDataLength, enforced by refusing.
+    if (Barcode::isMatrix(code.format) ||
+        Barcode::renderStyle(code.format) != Barcode::Render::Scaled) {
+        return false;
+    }
+
+    Barcode::Encoded encoded {};
+    if (!Barcode::encode(code.format, code.id, encoded)) {
+        return false;
+    }
+    return !BarcodeLayout::scannabilityFor(encoded.totalModules).modulesAreAtLeastOnePixel();
+}
+
+bool Gui::warningShowing() const
+{
+    return isDense() && !acknowledged(mState.codes[mIndex].id);
+}
+
+bool Gui::acknowledged(const char *id) const
+{
+    for (uint8_t i = 0; i < mAckCount; i++) {
+        if (std::strncmp(mAckIds[i], id, sizeof(mAckIds[i])) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Gui::acknowledge()
+{
+    const char *id = mState.codes[mIndex].id;
+    if (acknowledged(id)) {
+        return;
+    }
+    // Full means every slot on the watch holds a distinct acknowledged id, so
+    // the one being added must already be replacing a code that is gone.
+    // Dropping the oldest is the only choice that keeps this bounded, and it
+    // costs at worst one repeat of a warning already dismissed.
+    if (mAckCount == Barcode::kMaxCodes) {
+        for (uint8_t i = 1; i < mAckCount; i++) {
+            std::memcpy(mAckIds[i - 1], mAckIds[i], sizeof(mAckIds[i]));
+        }
+        mAckCount--;
+    }
+    std::strncpy(mAckIds[mAckCount], id, sizeof(mAckIds[mAckCount]) - 1);
+    mAckIds[mAckCount][sizeof(mAckIds[mAckCount]) - 1] = '\0';
+    mAckCount++;
+    saveAcknowledgements();
+}
+
+void Gui::loadAcknowledgements()
+{
+    mAckCount = 0;
+
+    std::unique_ptr<SDK::Interface::IFile> file = mKernel.fs.file(kAckPath);
+    if (!file || !file->open()) {
+        return;
+    }
+
+    char   buf[Barcode::kMaxCodes * (Barcode::kMaxIdLength + 1) + 1] = {};
+    size_t read = 0;
+    const bool ok = file->read(buf, sizeof(buf) - 1, read);
+    file->close();
+    if (!ok || read == 0) {
+        return;
+    }
+    buf[read] = '\0';
+
+    for (char *line = buf; *line != '\0' && mAckCount < Barcode::kMaxCodes;) {
+        char *end = std::strchr(line, '\n');
+        if (end != nullptr) {
+            *end = '\0';
+        }
+        if (*line != '\0') {
+            std::strncpy(mAckIds[mAckCount], line, sizeof(mAckIds[mAckCount]) - 1);
+            mAckIds[mAckCount][sizeof(mAckIds[mAckCount]) - 1] = '\0';
+            mAckCount++;
+        }
+        if (end == nullptr) {
+            break;
+        }
+        line = end + 1;
+    }
+}
+
+void Gui::saveAcknowledgements()
+{
+    std::unique_ptr<SDK::Interface::IFile> file = mKernel.fs.file(kAckPath);
+    if (!file || !file->open(true, true)) {
+        return;
+    }
+
+    for (uint8_t i = 0; i < mAckCount; i++) {
+        char line[Barcode::kMaxIdLength + 2];
+        const int len = std::snprintf(line, sizeof(line), "%s\n", mAckIds[i]);
+        if (len > 0) {
+            size_t written = 0;
+            file->write(line, static_cast<size_t>(len), written);
+        }
+    }
+    file->close();
+}
+
 void Gui::queryDisplayConfig()
 {
     auto *cfg = mKernel.comm.allocateMessage<SDK::Message::RequestDisplayConfig>();
@@ -168,9 +302,17 @@ void Gui::buildFrame(barcode_gui_frame &out) const
 
     if (mState.problem != Barcode::Problem::None) {
         out.kind = BARCODE_GUI_KIND_PROMPT;
-        char badFormatBuf[sizeof(out.message)];
-        const char *message = promptMessage(mState.problem, badFormatBuf);
+        char scratch[sizeof(out.message)];
+        const char *message = promptMessage(mState.problem, scratch);
         std::strncpy(out.message, message, sizeof(out.message) - 1);
+        return;
+    }
+
+    // Stands in front of the barcode rather than replacing it: the wearer
+    // dismisses this once per id and never sees it for that id again.
+    if (warningShowing()) {
+        out.kind = BARCODE_GUI_KIND_PROMPT;
+        std::strncpy(out.message, kDenseMessage, sizeof(out.message) - 1);
         return;
     }
 
@@ -296,6 +438,13 @@ void Gui::run()
                     mIndex       = lastIndex();
                     mIndexLoaded = true;
                 }
+                // Read once, for the same reason and on the same trigger:
+                // afterwards this list is ahead of the file, because
+                // acknowledge() writes through to it.
+                if (!mAcksLoaded && mState.count > 0) {
+                    loadAcknowledgements();
+                    mAcksLoaded = true;
+                }
                 // A re-read can leave fewer codes than before, so never trust
                 // the old position: an index past the end would draw
                 // somebody else's code.
@@ -330,7 +479,12 @@ void Gui::run()
                             cycle(+1);
                             renderAndPush();
                             break;
-                        case Id::SW2: // R1: unused, matches the original
+                        case Id::SW2: // R1: show a dense code anyway
+                            if (warningShowing()) {
+                                acknowledge();
+                                renderAndPush();
+                            }
+                            break;
                         default:
                             break;
                     }

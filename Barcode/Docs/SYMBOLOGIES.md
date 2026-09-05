@@ -58,6 +58,12 @@ sheet for Zebra's LS2208.
 | 8 chars (parkrun-length) | 123 modules | 205 µm | |
 | 12 chars | 167 modules | 151 µm | |
 | 16 chars | 211 modules | 119 µm | under 5 mil, over 3 mil |
+| 22 chars | 277 modules | 90 µm | the longest id accepted |
+
+The rows past 15 characters are all past what the panel draws cleanly, which is
+200 modules — one module per pixel. That is a separate limit from the two above
+and it binds first; the README's *How much fits* has the measurement. It is only
+reachable with subset-B content, because digits pair.
 
 That reframing matters for what follows: a second symbology is **not** a fix for
 an out-of-standard defect, because there is no such defect. It is a lever on
@@ -78,7 +84,7 @@ Two things fall straight out of that table.
 
 **Code 39 and Codabar are not worth building.** They are less dense than what
 the app already draws, and Code 39 at 16 characters needs 179 elements against
-the 115 `Encoded::kMaxWidths` currently allows. A format that is both worse and
+the `Encoded::kMaxWidths` this app allows. A format that is both worse and
 more expensive has no case.
 
 **ITF is not the free lunch it first looks like.** The 2:1 ratio that produces
@@ -141,16 +147,16 @@ form six times over. An `int` with a documented mapping is worse. This is the
 single biggest argument for keeping the format count small.
 
 **The phone cannot cross-validate.** Each field's `pattern` sees only its own
-value, so `id1` is checked against `[ -~]{0,16}` whatever `fmt1` says. Choose ITF
+value, so `id1` is checked against `[ -~]{0,22}` whatever `fmt1` says. Choose ITF
 and type an odd number of digits and the companion app accepts it, writes it,
 and the watch refuses it on launch. That inverts the property the README is
 proudest of — that the phone validates as you type — for every code that is not
 Code 128.
 
 **One prompt has to cover more ground.** `Problem::BadValue` currently reads
-*"That ID cannot be drawn: 1-16 plain characters"*, which is the complete truth
+*"That ID cannot be drawn: 1-22 plain characters"*, which is the complete truth
 while there is one format. With three it is neither true nor actionable: "ITF
-needs an even number of digits" and "that is 17 characters" are different
+needs an even number of digits" and "that is 23 characters" are different
 problems with different fixes, on a device with no keyboard where the screen is
 the only place a fault can be reported. The Concessions section already records
 losing this ability once; adding formats loses more of it, and the honest fix is
@@ -158,10 +164,10 @@ more `Problem` values or a format-aware prompt, not a vaguer sentence.
 
 There is a tempting way around the first two: put the format in the id itself,
 `itf:0123456789`, one field with a pattern like
-`[ -~]{0,16}|itf:([0-9]{2}){1,8}|ean13:[0-9]{13}` that the phone *can* fully
+`[ -~]{0,22}|itf:([0-9]{2}){1,10}|ean13:[0-9]{13}` that the phone *can* fully
 enforce. It is rejected here, for the reason the README gives for deleting the
 old single-space sentinel: it is in-band signalling in the one field the app's
-safety story rests on, and it spends four of sixteen id characters on a prefix.
+safety story rests on, and it spends four id characters on a prefix.
 
 ## Recommended order
 

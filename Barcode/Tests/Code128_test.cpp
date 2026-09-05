@@ -288,7 +288,7 @@ TEST(Code128Encode, TheLongestIdFillsTheBufferExactlyAndNoFurther)
     Barcode::Encoded e{};
     ASSERT_TRUE(Code128::encode(id.c_str(), e));
     EXPECT_EQ(e.count, Barcode::Encoded::kMaxWidths);
-    EXPECT_EQ(e.count, 115u);
+    EXPECT_EQ(e.count, 151u);
 }
 
 TEST(Code128Encode, FirstElementIsAlwaysABar)
