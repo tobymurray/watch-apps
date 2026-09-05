@@ -5,8 +5,9 @@ set(APP_NAME "NotifyToggle")
 set(APP_USER_NAME "NotifyToggle")
 set(APP_TYPE "Utility")
 set(DEV_ID "UNA")
-# sha256("https://github.com/tobymurray/watch-apps#notify-toggle")[0:8]
-set(APP_ID "F37173F1AD6F4187")
+# Assigned by UNA and stable for the life of the app: it is how the mobile app
+# matches a new *.uapp to the installed one when the file name changes.
+set(APP_ID "26FBAA925F61BA27")
 set(APP_USE_ICONS On)
 set(RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Resources")
 set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")

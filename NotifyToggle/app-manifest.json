@@ -10,7 +10,7 @@
   "minKernelVersion": "1.4.0",
   "requiredHardware": [],
   "description": "One switch: shows and flips the watch's real phone-notifications setting. Press R1 to toggle it, R2 to leave. Reads and writes the same setting.json flag the paired phone app controls, so the change is immediate and persistent, not just for this app's session.",
-  "id": "F37173F1AD6F4187",
+  "id": "26FBAA925F61BA27",
   "stravaExport": false,
   "supportsLaps": false,
   "supportsDistance": false,
