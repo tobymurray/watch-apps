@@ -90,7 +90,7 @@ reboot. Treat the address table as what it is: one watch, one firmware.
 
 Everything above is specific to one unit's kernel — addresses that would need
 re-deriving, not assuming, on another watch or firmware version. This app never
-assumes it either. `Software/Libs/Header/FirmwareGate.hpp` decides, in three
+assumes it either. [`SettingsKit`](../SettingsKit)'s `Header/FirmwareGate.hpp` decides, in three
 steps, and refuses outright at any of them:
 
 1. **The kernel's ABI.** `gIKernel->version`, the version the loader patched in
@@ -255,7 +255,7 @@ The splice — the part that decides which bytes of a real personal settings fil
 get rewritten — is a header-only module with no SDK types, so it runs at a desk:
 
 ```sh
-cmake -B build -S Tests && cmake --build build && ctest --test-dir build
+cmake -B build -S ../SettingsKit/Tests && cmake --build build && ctest --test-dir build
 ```
 
 Those cases are the file read off a real watch, a `notifications` key belonging
@@ -280,10 +280,11 @@ renames across the ABI:
 
 ```sh
 clang++ -std=c++17 -fsyntax-only -Wall -I"$UNA_SDK/Libs/Header" \
-  -ISoftware/Libs/Header -ISoftware/Apps/CustomGUI \
+  -I../SettingsKit/Header -ISoftware/Libs/Header -ISoftware/Apps/CustomGUI \
   Software/Apps/CustomGUI/Gui.cpp Software/Libs/Sources/Service.cpp \
-  Software/Libs/Sources/SettingsAddresses.cpp Software/Libs/Sources/LiveSettings.cpp \
-  Software/Libs/Sources/SettingsPersist.cpp Software/Libs/Sources/DebugLog.cpp
+  ../SettingsKit/Sources/SettingsAddresses.cpp ../SettingsKit/Sources/LiveSettings.cpp \
+  ../SettingsKit/Sources/SettingsPersist.cpp ../SettingsKit/Sources/DebugLog.cpp \
+  ../SettingsKit/Sources/FirmwareGate.cpp
 ```
 
 `app-manifest.json` is checked the same way every other app's is:

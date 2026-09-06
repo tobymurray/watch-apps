@@ -1,8 +1,8 @@
 /**
  ******************************************************************************
  * @file    LiveSettings.hpp
- * @brief   Direct read/write of the kernel's live, in-RAM `phone.notifications`
- *          byte via a raw pointer. Not a supported SDK mechanism.
+ * @brief   Direct read/write of a boolean byte in the kernel's live, in-RAM
+ *          settings struct via a raw pointer. Not a supported SDK mechanism.
  ******************************************************************************
  *
  * The supported route does not exist: `FileSystemGuard::getFullPath` allows
@@ -34,20 +34,30 @@ namespace LiveSettings
 enum class Status {
     Ok,
     NoChange,                ///< Write only: already the requested value; nothing written.
-    UnexpectedCurrentValue,  ///< The notifications byte wasn't 0 or 1 -- refused to trust the address.
+    UnexpectedCurrentValue,  ///< The byte wasn't 0 or 1 -- refused to trust the address.
     CrossCheckOutOfRange,    ///< The watchFaceId cross-check field looked implausible -- refused.
     ReadbackMismatch,        ///< Write only: the byte didn't read back as what was just written.
 };
 
-/// Reads the live `phone.notifications` byte and a nearby cross-check field
-/// (`watchFaceId`), refusing rather than trusting a value that does not look
-/// like what this address should hold. `fs` is used only for DebugLog.
-Status readNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, bool &outEnabled);
+/// One boolean byte in the live struct: which one, and what to call it in a log
+/// line. Pairing the two here is what stops a call site reaching for one
+/// field's offset under another field's name.
+struct Flag {
+    size_t      offset;
+    const char *name;
+};
 
-/// Reads fresh, refuses under the same conditions as readNotificationsFlag,
-/// and only then writes -- skipping the write entirely (Status::NoChange) if
-/// the live value already matches.
-Status writeNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, bool newEnabled);
+/// Reads `flag`'s byte and a nearby cross-check field (`watchFaceId`), refusing
+/// rather than trusting a value that does not look like what this address
+/// should hold. `fs` is used only for DebugLog.
+Status readFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                const Flag &flag, bool &outEnabled);
+
+/// Reads fresh, refuses under the same conditions as readFlag, and only then
+/// writes -- skipping the write entirely (Status::NoChange) if the live value
+/// already matches.
+Status writeFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                 const Flag &flag, bool newEnabled);
 
 /// True if two fields read straight out of the struct match what the kernel
 /// reports for them through RequestSystemSettings. Both sides are live, so

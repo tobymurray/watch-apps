@@ -17,6 +17,9 @@ on:
       # The renderer's text comes from the shared crate; a change there is a
       # change to this app's binary.
       - 'TextKit/**'
+      # So does the settings mechanism: the addresses, the gate and the commit
+      # all live in SettingsKit now.
+      - 'SettingsKit/**'
       - '.github/workflows/notifytoggle.yml'
       - '.github/workflows/app-build.yml'
   pull_request:
@@ -25,6 +28,9 @@ on:
       # The renderer's text comes from the shared crate; a change there is a
       # change to this app's binary.
       - 'TextKit/**'
+      # So does the settings mechanism: the addresses, the gate and the commit
+      # all live in SettingsKit now.
+      - 'SettingsKit/**'
       - '.github/workflows/notifytoggle.yml'
       - '.github/workflows/app-build.yml'
   workflow_dispatch:

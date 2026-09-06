@@ -6,7 +6,7 @@
  ******************************************************************************
  *
  * Every call compiles to nothing unless the build defines
- * NOTIFY_TOGGLE_DEBUG_LOG=1.
+ * SETTINGS_KIT_DEBUG_LOG=1.
  *
  * Nothing here logs file contents: `2:/settings.json` holds height, weight,
  * gender and date of birth.
@@ -20,14 +20,14 @@
 
 #include "SDK/Interfaces/IFileSystem.hpp"
 
-#ifndef NOTIFY_TOGGLE_DEBUG_LOG
-#define NOTIFY_TOGGLE_DEBUG_LOG 0
+#ifndef SETTINGS_KIT_DEBUG_LOG
+#define SETTINGS_KIT_DEBUG_LOG 0
 #endif
 
 namespace DebugLog
 {
 
-#if NOTIFY_TOGGLE_DEBUG_LOG
+#if SETTINGS_KIT_DEBUG_LOG
 
 /// Selects which file subsequent calls write to (default "debug.log"). GUI and
 /// Service set distinct names, being two processes with two filesystem roots.

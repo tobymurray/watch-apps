@@ -17,6 +17,7 @@ set(APP_USE_ICONS On)
 set(RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Resources")
 set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")
 set(LIBS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../Libs")
+set(SETTINGSKIT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../../SettingsKit")
 set(CUSTOMGUI_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../CustomGUI")
 set(RUST_CRATE_DIR "${CUSTOMGUI_PATH}/rust")
 
@@ -31,6 +32,7 @@ endif()
 include($ENV{UNA_SDK}/cmake/una-app.cmake)
 include($ENV{UNA_SDK}/cmake/una-sdk.cmake)
 include(${LIBS_PATH}/libs.cmake)
+include(${SETTINGSKIT_PATH}/settingskit.cmake)
 
 project(${APP_NAME})
 una_app_setup_version(BUILD_VERSION ${CMAKE_CURRENT_SOURCE_DIR})
@@ -40,7 +42,9 @@ una_app_setup_version(BUILD_VERSION ${CMAKE_CURRENT_SOURCE_DIR})
 option(NOTIFY_TOGGLE_DEBUG_LOG "Write diagnostic logs to the watch's filesystem" OFF)
 if(NOTIFY_TOGGLE_DEBUG_LOG)
     message(STATUS "NotifyToggle: debug logging ON -- not a shippable build")
-    add_compile_definitions(NOTIFY_TOGGLE_DEBUG_LOG=1)
+    # The option keeps this app's name and SettingsKit's code reads the kit's,
+    # so the documented build flag survives the move into the shared library.
+    add_compile_definitions(SETTINGS_KIT_DEBUG_LOG=1)
 endif()
 
 set(RUST_TARGET "thumbv8m.main-none-eabihf")
@@ -63,12 +67,13 @@ add_custom_target(notify_toggle_gui_rust ALL
 # raw address into a binary that has no use for one.
 set(SERVICE_SOURCES
     ${LIBS_PATH}/Sources/Service.cpp
-    ${LIBS_PATH}/Sources/DebugLog.cpp
+    ${SETTINGSKIT_DEBUGLOG_SOURCES}
     ${UNA_SDK_SOURCES_COMMON}
     ${UNA_SDK_SOURCES_APPSYSTEM}
 )
 set(SERVICE_INCLUDE_DIRS
     ${LIBS_INCLUDE_DIRS}
+    ${SETTINGSKIT_INCLUDE_DIRS}
     ${UNA_SDK_INCLUDE_DIRS_COMMON}
     ${UNA_SDK_INCLUDE_DIRS_SERVICE}
 )
@@ -77,11 +82,7 @@ una_app_build_service(${APP_NAME}Service.elf)
 set(GUI_SOURCES
     $ENV{UNA_SDK}/Libs/Source/AppSystem/EntryPoint/CustomGUI/main.cpp
     ${CUSTOMGUI_PATH}/Gui.cpp
-    ${LIBS_PATH}/Sources/DebugLog.cpp
-    ${LIBS_PATH}/Sources/FirmwareGate.cpp
-    ${LIBS_PATH}/Sources/SettingsAddresses.cpp
-    ${LIBS_PATH}/Sources/LiveSettings.cpp
-    ${LIBS_PATH}/Sources/SettingsPersist.cpp
+    ${SETTINGSKIT_SOURCES}
     ${UNA_SDK_SOURCES_COMMON}
     # The one declared setting is read through SDK::AppConfig, which needs JSON
     # in the same link.
@@ -90,6 +91,7 @@ set(GUI_SOURCES
 )
 set(GUI_INCLUDE_DIRS
     ${LIBS_INCLUDE_DIRS}
+    ${SETTINGSKIT_INCLUDE_DIRS}
     ${UNA_SDK_INCLUDE_DIRS_COMMON}
     ${UNA_SDK_INCLUDE_DIRS_JSON}
     ${CUSTOMGUI_PATH}

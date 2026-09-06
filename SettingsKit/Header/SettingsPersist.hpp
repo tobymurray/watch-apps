@@ -1,9 +1,8 @@
 /**
  ******************************************************************************
  * @file    SettingsPersist.hpp
- * @brief   Writes `phone.notifications` back to `2:/settings.json` so a
- *          LiveSettings change survives a reboot. Not a supported SDK
- *          mechanism.
+ * @brief   Writes one field back to `2:/settings.json` so a LiveSettings
+ *          change survives a reboot. Not a supported SDK mechanism.
  ******************************************************************************
  *
  * LiveSettings changes the kernel's in-RAM copy; nothing writes that back to
@@ -24,9 +23,26 @@
 
 #include "DebugLog.hpp"
 #include "SettingsAddresses.hpp"
+#include "SettingsSplice.hpp"
 
 namespace SettingsPersist
 {
+
+/// The field an app owns, and the scratch names it writes under. Every path
+/// here has to be that app's alone: two apps sharing one would have each
+/// mistaking the other's half-finished commit for its own, and the file being
+/// moved aside is the wearer's only settings file.
+struct Field {
+    /// Rewrites this field in a settings.json buffer.
+    SettingsSplice::Result (*splice)(char *buf, size_t &len, size_t capacity, bool value,
+                                     size_t *valueOffsetOut);
+    const char *name;        ///< DebugLog only.
+    const char *tmpPath;     ///< Written whole before the real file is touched at all.
+    const char *prevPath;    ///< Where the current file waits while the rename lands.
+    const char *probeAPath;  ///< validatePrimitives scratch; never settings.json.
+    const char *probeBPath;
+    const char *probeText;
+};
 
 /// Upper bound on the settings file this app will read or write. The real file
 /// was 245 bytes on 2026-09-05; this leaves headroom for the firmware adding
@@ -41,7 +57,7 @@ enum class Status {
     ReadOpenFailed,     ///< Could not open 2:/settings.json for reading.
     ReadFailed,         ///< Open succeeded but the read itself failed or was short.
     SizeOutOfRange,     ///< The reported size was 0 or above the cap this app reads into.
-    FieldNotFound,      ///< No boolean `phone.notifications` in the file; nothing written.
+    FieldNotFound,      ///< The field is absent or unrecognised in the file; nothing written.
     WriteOpenFailed,    ///< Could not open the temporary file. The real file was never touched.
     WriteFailed,        ///< The temporary write failed or was short. The real file was never touched.
     CommitFailed,       ///< The temporary file was written but could not be moved into place;
@@ -49,11 +65,12 @@ enum class Status {
     ReadbackMismatch,   ///< The commit happened, but re-reading did not return what was written.
 };
 
-/// Replaces `phone.notifications` in `2:/settings.json` with `newEnabled`,
-/// leaving every other byte as it was, and re-reads to confirm. `addrs` is the
-/// caller's already-resolved set for the running firmware. `fs` is used only
-/// for DebugLog, there being no wired-up debug UART.
-Status persistNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, bool newEnabled);
+/// Replaces `field` in `2:/settings.json` with `newEnabled`, leaving every
+/// other byte as it was, and re-reads to confirm. `addrs` is the caller's
+/// already-resolved set for the running firmware. `fs` is used only for
+/// DebugLog, there being no wired-up debug UART.
+Status persistFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                   const Field &field, bool newEnabled);
 
 /// Puts back a settings file left aside by a commit that never finished.
 ///
@@ -66,7 +83,7 @@ Status persistNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsA
 ///
 /// True if it recovered something.
 bool recoverInterruptedCommit(SDK::Interface::IFileSystem &fs,
-                              const SettingsAddresses::AddressSet &addrs);
+                              const SettingsAddresses::AddressSet &addrs, const Field &field);
 
 /// Proves `addrs`'s File primitives are the functions they are supposed to be,
 /// by exercising them against this app's own scratch paths: a path written
@@ -78,7 +95,8 @@ bool recoverInterruptedCommit(SDK::Interface::IFileSystem &fs,
 /// This is a gate, not a diagnostic: an ABI is shared by every firmware
 /// version that ships it, so the row ABI selected is only a candidate until
 /// this returns true. Debug builds log every raw return value on the way.
-bool validatePrimitives(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs);
+bool validatePrimitives(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                        const Field &field);
 
 } // namespace SettingsPersist
 

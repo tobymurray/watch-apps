@@ -1,6 +1,6 @@
 #include "DebugLog.hpp"
 
-#if NOTIFY_TOGGLE_DEBUG_LOG
+#if SETTINGS_KIT_DEBUG_LOG
 
 #include <cstdarg>
 #include <cstdio>
@@ -87,4 +87,4 @@ void appendf(SDK::Interface::IFileSystem &fs, const char *fmt, ...)
 
 } // namespace DebugLog
 
-#endif // NOTIFY_TOGGLE_DEBUG_LOG
+#endif // SETTINGS_KIT_DEBUG_LOG

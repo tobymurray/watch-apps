@@ -11,6 +11,7 @@
 #include "DebugLog.hpp"
 #include "FirmwareGate.hpp"
 #include "LiveSettings.hpp"
+#include "NotifySetting.hpp"
 #include "SettingsPersist.hpp"
 #include "notify_toggle_gui.h"
 
@@ -95,7 +96,8 @@ void Gui::refreshLiveState()
     }
 
     bool enabled = false;
-    const auto status = LiveSettings::readNotificationsFlag(mKernel.fs, *mAddresses, enabled);
+    const auto status =
+        LiveSettings::readFlag(mKernel.fs, *mAddresses, NotifySetting::liveFlag(*mAddresses), enabled);
 
     const bool known = (status == LiveSettings::Status::Ok);
     if (!known) {
@@ -141,14 +143,16 @@ void Gui::toggle()
     mPersistFailed = false;
 
     bool current = false;
-    if (LiveSettings::readNotificationsFlag(mKernel.fs, *mAddresses, current) != LiveSettings::Status::Ok) {
+    if (LiveSettings::readFlag(mKernel.fs, *mAddresses, NotifySetting::liveFlag(*mAddresses), current) !=
+        LiveSettings::Status::Ok) {
         LOG_WARNING("toggle: could not confirm the current value; not writing\n");
         refreshLiveState();
         return;
     }
 
     const bool desired = !current;
-    const auto status = LiveSettings::writeNotificationsFlag(mKernel.fs, *mAddresses, desired);
+    const auto status =
+        LiveSettings::writeFlag(mKernel.fs, *mAddresses, NotifySetting::liveFlag(*mAddresses), desired);
 
     if (status != LiveSettings::Status::Ok && status != LiveSettings::Status::NoChange) {
         LOG_ERROR("toggle: write failed (status=%d); left unchanged\n", static_cast<int>(status));
@@ -169,7 +173,8 @@ void Gui::toggle()
     // for. Once per run is enough -- the firmware cannot change under a run.
     if (!mPrimitivesChecked) {
         mPrimitivesChecked = true;
-        mPrimitivesOk = SettingsPersist::validatePrimitives(mKernel.fs, *mAddresses);
+        mPrimitivesOk =
+            SettingsPersist::validatePrimitives(mKernel.fs, *mAddresses, NotifySetting::kField);
     }
     if (!mPrimitivesOk) {
         LOG_ERROR("toggle: the File primitives did not behave; not writing\n");
@@ -180,7 +185,8 @@ void Gui::toggle()
 
     // The live change is already what the wearer saw, so a failure here does not
     // undo it -- it changes what the screen may claim, nothing else.
-    const auto persistStatus = SettingsPersist::persistNotificationsFlag(mKernel.fs, *mAddresses, desired);
+    const auto persistStatus =
+        SettingsPersist::persistFlag(mKernel.fs, *mAddresses, NotifySetting::kField, desired);
     if (persistStatus != SettingsPersist::Status::Ok) {
         LOG_ERROR("toggle: persist to settings.json failed (status=%d); live value still changed\n",
                    static_cast<int>(persistStatus));

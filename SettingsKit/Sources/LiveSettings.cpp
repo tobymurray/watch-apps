@@ -14,9 +14,9 @@ namespace
 // address that plainly is not the settings struct.
 constexpr uint64_t kWatchFaceIdSanityMax = 1000u;
 
-volatile uint8_t &notificationsByte(const SettingsAddresses::AddressSet &addrs)
+volatile uint8_t &flagByte(const SettingsAddresses::AddressSet &addrs, const Flag &flag)
 {
-    const uintptr_t addr = addrs.settingsStructBase + addrs.phoneNotificationsOffset;
+    const uintptr_t addr = addrs.settingsStructBase + flag.offset;
     return *reinterpret_cast<volatile uint8_t *>(addr);
 }
 
@@ -33,13 +33,15 @@ uint64_t readWatchFaceIdRaw(const SettingsAddresses::AddressSet &addrs)
 
 /// Never writes: both public functions need the same refusals before either
 /// can trust the byte.
-Status readChecked(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, uint8_t &outRaw)
+Status readChecked(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                   const Flag &flag, uint8_t &outRaw)
 {
-    const uint8_t raw = notificationsByte(addrs);
+    const uint8_t raw = flagByte(addrs, flag);
     const uint64_t watchFaceId = readWatchFaceIdRaw(addrs);
 
-    DebugLog::appendf(fs, "LiveSettings: read raw=0x%02X (addr=0x%08X) watchFaceId=%llu (addr=0x%08X)",
-                       raw, static_cast<unsigned>(addrs.settingsStructBase + addrs.phoneNotificationsOffset),
+    DebugLog::appendf(fs, "LiveSettings: %s raw=0x%02X (addr=0x%08X) watchFaceId=%llu (addr=0x%08X)",
+                       flag.name, raw,
+                       static_cast<unsigned>(addrs.settingsStructBase + flag.offset),
                        static_cast<unsigned long long>(watchFaceId),
                        static_cast<unsigned>(addrs.settingsStructBase + addrs.watchFaceIdOffset));
 
@@ -49,7 +51,8 @@ Status readChecked(SDK::Interface::IFileSystem &fs, const SettingsAddresses::Add
     }
 
     if (raw != 0 && raw != 1) {
-        DebugLog::append(fs, "LiveSettings: notifications byte is not 0/1 -- refusing to trust this address");
+        DebugLog::appendf(fs, "LiveSettings: %s byte is not 0/1 -- refusing to trust this address",
+                           flag.name);
         return Status::UnexpectedCurrentValue;
     }
 
@@ -59,10 +62,11 @@ Status readChecked(SDK::Interface::IFileSystem &fs, const SettingsAddresses::Add
 
 } // namespace
 
-Status readNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, bool &outEnabled)
+Status readFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                const Flag &flag, bool &outEnabled)
 {
     uint8_t raw = 0;
-    const Status status = readChecked(fs, addrs, raw);
+    const Status status = readChecked(fs, addrs, flag, raw);
     if (status != Status::Ok) {
         return status;
     }
@@ -70,10 +74,11 @@ Status readNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddr
     return Status::Ok;
 }
 
-Status writeNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs, bool newEnabled)
+Status writeFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
+                 const Flag &flag, bool newEnabled)
 {
     uint8_t raw = 0;
-    const Status status = readChecked(fs, addrs, raw);
+    const Status status = readChecked(fs, addrs, flag, raw);
     if (status != Status::Ok) {
         return status;
     }
@@ -85,11 +90,12 @@ Status writeNotificationsFlag(SDK::Interface::IFileSystem &fs, const SettingsAdd
     }
 
     const uint8_t newRaw = newEnabled ? 1 : 0;
-    DebugLog::appendf(fs, "LiveSettings: writing raw=0x%02X to addr=0x%08X",
-                       newRaw, static_cast<unsigned>(addrs.settingsStructBase + addrs.phoneNotificationsOffset));
-    notificationsByte(addrs) = newRaw;
+    DebugLog::appendf(fs, "LiveSettings: writing %s raw=0x%02X to addr=0x%08X",
+                       flag.name, newRaw,
+                       static_cast<unsigned>(addrs.settingsStructBase + flag.offset));
+    flagByte(addrs, flag) = newRaw;
 
-    const uint8_t readBack = notificationsByte(addrs);
+    const uint8_t readBack = flagByte(addrs, flag);
     DebugLog::appendf(fs, "LiveSettings: readback raw=0x%02X", readBack);
     if (readBack != newRaw) {
         DebugLog::append(fs, "LiveSettings: readback mismatch after write");

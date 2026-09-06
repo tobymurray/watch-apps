@@ -1,17 +1,17 @@
 /**
  ******************************************************************************
  * @file    SettingsSplice.hpp
- * @brief   Replaces `phone.notifications` in a settings.json buffer, leaving
- *          every other byte alone.
+ * @brief   Replaces one field in a settings.json buffer, leaving every other
+ *          byte alone.
  ******************************************************************************
  *
  * Header-only and free of SDK types so the host tests in `Tests/` can drive it
  * without a kernel.
  *
- * Scoped to the `phone` object rather than matching `"notifications"` anywhere
- * in the file: the flag this app owns is `phone.notifications`, and a settings
- * file that grows a second key of that name elsewhere must not be edited in
- * the wrong place.
+ * `setNotifications` is scoped to the `phone` object rather than matching
+ * `"notifications"` anywhere in the file: the flag it owns is
+ * `phone.notifications`, and a settings file that grows a second key of that
+ * name elsewhere must not be edited in the wrong place.
  ******************************************************************************
  */
 
@@ -25,8 +25,8 @@ namespace SettingsSplice
 
 enum class Result {
     Ok,
-    FieldNotFound,   ///< No `phone` object, or no boolean `notifications` inside it.
-    WouldNotFit,     ///< The one-byte true/false delta would overrun the buffer.
+    FieldNotFound,   ///< The key is absent, or its value is not one this knows how to rewrite.
+    WouldNotFit,     ///< The length delta between old and new value would overrun the buffer.
 };
 
 namespace detail
@@ -136,6 +136,31 @@ inline const char *findObject(const char *begin, const char *end, const char *na
     return (value != nullptr && *value == '{') ? value : nullptr;
 }
 
+/// Overwrites the `oldLen` bytes at `value` with `newLen` bytes of
+/// `replacement`, shifting the rest of the buffer to suit and adjusting `len`.
+/// `buf` is left untouched unless the result is Ok.
+inline Result replaceToken(char *buf, size_t &len, size_t capacity, char *value,
+                           size_t oldLen, const char *replacement, size_t newLen)
+{
+    const size_t resultLen = len - oldLen + newLen;
+    if (resultLen > capacity) {
+        return Result::WouldNotFit;
+    }
+
+    char *const tail       = value + oldLen;
+    const size_t tailBytes = static_cast<size_t>((buf + len) - tail);
+    for (size_t i = 0; i < tailBytes; ++i) {
+        const size_t from = newLen > oldLen ? tailBytes - 1 - i : i;
+        (value + newLen)[from] = tail[from];
+    }
+    for (size_t i = 0; i < newLen; ++i) {
+        value[i] = replacement[i];
+    }
+
+    len = resultLen;
+    return Result::Ok;
+}
+
 } // namespace detail
 
 /// Rewrites `phone.notifications` in `buf` (`len` bytes, `capacity` available)
@@ -179,23 +204,7 @@ inline Result setNotifications(char *buf, size_t &len, size_t capacity, bool new
     const char *replacement = newEnabled ? detail::kTrue : detail::kFalse;
     const size_t newLen     = newEnabled ? detail::kTrueLen : detail::kFalseLen;
 
-    const size_t resultLen = len - oldLen + newLen;
-    if (resultLen > capacity) {
-        return Result::WouldNotFit;
-    }
-
-    char *const tail       = value + oldLen;
-    const size_t tailBytes = static_cast<size_t>(end - tail);
-    for (size_t i = 0; i < tailBytes; ++i) {
-        const size_t from = newLen > oldLen ? tailBytes - 1 - i : i;
-        (value + newLen)[from] = tail[from];
-    }
-    for (size_t i = 0; i < newLen; ++i) {
-        value[i] = replacement[i];
-    }
-
-    len = resultLen;
-    return Result::Ok;
+    return detail::replaceToken(buf, len, capacity, value, oldLen, replacement, newLen);
 }
 
 } // namespace SettingsSplice
