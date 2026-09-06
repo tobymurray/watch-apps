@@ -134,9 +134,8 @@ private:
 
     std::time_t mAutoLapSeconds = 0;  ///< 0 = one lap for the whole ride
     std::time_t mTargetSeconds  = 0;  ///< 0 = no target
-    /// The interval session as the wearer typed it, NUL-terminated. Untrusted
-    /// text: app-manifest.json's pattern is checked on the phone and never
-    /// ships, and the values file is plaintext on a FAT volume.
+    /// The interval session as the wearer typed it, NUL-terminated; untrusted
+    /// text, which effortkit::intervals is what makes safe to read.
     char        mIntervals[SpinConfig::kIntervalsBufferBytes] = {};
     bool        mKeepScreenLit  = false;
     bool        mEnergyInKilojoules = false;  ///< display unit only
@@ -147,12 +146,8 @@ private:
     // -- The session the wearer asked for -------------------------------------
 
     /// This ride was given a session, whether or not it still has steps left.
-    /// autoLapMinutes is suppressed for the whole ride on the strength of it:
-    /// two lap sources disagreeing about where a lap goes is worse than either
-    /// alone, and auto-lap taking over halfway through would be exactly that.
     bool mHasSession = false;
-    /// There are steps left to drive. False once the last one ended, which is
-    /// when the ride becomes an ordinary ride and R2 a manual lap again.
+    /// There are steps left to drive.
     bool mSessionRunning = false;
 
     std::time_t mStepSeconds = 0;   ///< length of the current step
@@ -287,10 +282,8 @@ private:
     void notifyNewActivity();
     void notifyLapEnd();
     void notifyTargetReached();
-    /// The buzz at a step boundary, which on a ride the wearer cannot look at
-    /// is the whole feature. @p was and @p now are the two steps' @n as
-    /// written, and a boundary with nothing to say about effort is an ordinary
-    /// lap. See Alerts.hpp.
+    /// The buzz at a step boundary; @p was and @p now are the ending and
+    /// starting steps' @n, 0 for a step that named none. See Alerts.hpp.
     void notifyStepChange(uint8_t was, uint8_t now);
     void notifySessionEnd();
     void backlightOn(uint32_t timeoutMs = skBacklightTimeout);
@@ -298,8 +291,7 @@ private:
     /// disables the auto-off, so this is one message rather than a re-arming
     /// timer -- see SDK::Message::RequestBacklightSet.
     void backlightHold(bool on);
-    /// Both channels of one alert, and the one place Alerts::Texture becomes an
-    /// SDK effect.
+    /// Both channels of one alert.
     void playAlert(const Alerts::Alert& alert);
 };
 

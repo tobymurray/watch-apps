@@ -77,8 +77,8 @@ static HISTORY: Single<History> = Single::new(History::new());
 
 /// The session the wearer asked for, and where the ride has got to in it.
 ///
-/// Static for the same reason the history is: 740 bytes is too much of a 10 KiB
-/// stack to hand around, and the cursor has to outlive the call that moved it.
+/// Static for the same reason the history is: far too large for the Service's
+/// stack, and the cursor has to outlive the call that moved it.
 static PRESCRIBED: Single<Prescription> = Single::new(Prescription::EMPTY);
 static CURSOR: Single<Option<Cursor>> = Single::new(None);
 
@@ -90,8 +90,7 @@ pub const SERVICE_STACK_BYTES: usize = 10 * 1024;
 /// Read the `intervals` config value and put the cursor on its first step.
 ///
 /// Returns the number of steps, which is 0 for the off value `0s`, for an empty
-/// value and for anything the grammar refuses -- all of which mean the same
-/// thing to a ride: no session, and `autoLapMinutes` back in charge of laps.
+/// value and for anything the grammar refuses.
 ///
 /// # Safety
 /// `text` must point at `len` readable bytes.

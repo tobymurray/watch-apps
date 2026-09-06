@@ -29,8 +29,7 @@ pub const MAX_RECOVERIES: usize = 2;
 /// Heart rate sampled every [`CURVE_STEP_S`] seconds across the window.
 pub const CURVE_POINTS: usize = 7;
 
-/// Bytes of prescription a session carries, matching the declared `maxLength`
-/// of the config field it came from.
+/// Bytes of prescription a session carries.
 pub const MAX_PRESCRIPTION: usize = 128;
 
 /// Seconds between curve points.
@@ -142,11 +141,11 @@ pub struct Session {
     /// nothing should be able to say why a year later, and a text log that the
     /// field test tells you to delete cannot.
     pub discarded: DiscardCounts,
-    /// The structured session the wearer *asked for*, as they typed it; see
-    /// [`crate::intervals`]. `prescription_len` bytes are the value.
+    /// The structured session the wearer *asked for*, as they typed it;
+    /// `prescription_len` bytes are the value. See [`crate::intervals`].
     ///
-    /// What was asked for, never what was done: the laps are the record of the
-    /// ride, and nothing here or anywhere scores one against the other.
+    /// What was asked for and never what was done: nothing here or anywhere
+    /// scores one against the other.
     pub prescription: [u8; MAX_PRESCRIPTION],
     /// Bytes of `prescription` that are the value; 0 = the ride had none.
     pub prescription_len: u8,

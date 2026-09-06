@@ -22,7 +22,7 @@ const AppConfig::Field kFields[] = {
     // Past an hour a lap split stops being a split and the ride is the lap.
     AppConfig::intField("autoLapMinutes", 0, 0, 60),
     // The pattern lives only in the manifest, so the phone is the only thing
-    // that ever checks it; the parser treats this value as untrusted text.
+    // that ever checks it.
     AppConfig::stringField("intervals", "0s", 2, 128),
     // Five hours: longer than any indoor session, short enough that a mistyped
     // value is visibly a mistake.

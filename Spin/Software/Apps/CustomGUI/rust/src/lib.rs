@@ -137,10 +137,8 @@ pub struct Frame {
     /// The `@n` of the step just entered, 1..8; 0 = no session, no `@n` on the
     /// step, or the marker has gone stale.
     ///
-    /// What the wearer *asked for*, never a reading. It is not drawn beside the
-    /// dial and nothing is coloured against it: they are different quantities,
-    /// and a screen that invites the comparison invites a rider to conclude
-    /// they are failing.
+    /// What the wearer *asked for* and never a reading, so it is never drawn
+    /// beside the dial and neither is ever coloured by the other.
     pub step_effort: u8,
     /// Which repetition of its block the step is, 1-based, and how many the
     /// block has. Both 0 outside a block.
@@ -560,27 +558,24 @@ fn draw_lap_split(fb: &mut FrameBuf, number: u16, seconds: u16, y: i32) {
 
 /// The five words `@n` maps to, easiest first.
 ///
-/// A word rather than the number the wearer typed: `5` beside a dial reading
-/// zone 3 is a contradiction the rider has to resolve while out of breath, and
-/// the dial is the honest one -- it is a measurement. A word cannot be misread
-/// as a reading.
+/// A word rather than the number typed, because `5` beside a dial reading zone
+/// 3 is a contradiction a rider has to resolve while out of breath and a word
+/// cannot be misread as a reading.
 ///
-/// NOT MEASURED. Nobody has read one of these at 150 bpm. What has to be true
-/// of them is only that they say effort rather than a reading.
+/// NOT MEASURED -- nobody has read one of these at 150 bpm. Falsified by
+/// riding a session and failing to read one.
 const EFFORT_WORDS: [&str; 5] = ["EASY", "STEADY", "TEMPO", "HARD", "ALL OUT"];
 
 /// The word for `@effort` on a ladder of `zone_count` zones, or `None` when the
 /// step named no effort.
 ///
-/// Anchored at its ends the way the dial's colours already are, so it works at
-/// any count from 2 to 8: `@1` is always `EASY` and the top zone is always
-/// `ALL OUT`, with the rest spread between. At eight zones two adjacent zones
-/// share a word, which is what anchoring five words to a longer ladder means,
-/// so a word is not enough to order two steps by. `Spin/README.md` prices that.
+/// Anchored at its ends the way the dial's colours are, so it works at any
+/// count from 2 to 8: `@1` is always `EASY` and the top zone always `ALL OUT`.
+/// Past five zones two adjacent zones share a word, so a word is not enough to
+/// order two steps by; `Spin/README.md` prices that.
 ///
-/// An effort above the ladder clamps to the top zone rather than being refused:
-/// the parser cannot see `hrZoneCount`, so `@8` on a five-zone ladder is a
-/// wearer asking for the hardest thing there is.
+/// An effort above the ladder clamps to its top rather than being refused,
+/// because a wearer writing `@8` is asking for the hardest thing there is.
 fn effort_word(effort: u8, zone_count: u8) -> Option<&'static str> {
     if effort == 0 {
         return None;
@@ -593,8 +588,8 @@ fn effort_word(effort: u8, zone_count: u8) -> Option<&'static str> {
     Some(EFFORT_WORDS[(i as usize).min(EFFORT_WORDS.len() - 1)])
 }
 
-/// `3/6  ALL OUT` at the top of a step, in the split's own slot and shape: the
-/// repetition dim, the word bright.
+/// `3/6  ALL OUT`, in the split's own shape: the repetition dim, the word
+/// bright.
 fn draw_step_marker(fb: &mut FrameBuf, rep: u8, reps: u8, word: &str, y: i32) {
     let label = label_face();
     let word_w = text_width(label, word) as i32;
@@ -612,7 +607,7 @@ fn draw_step_marker(fb: &mut FrameBuf, rep: u8, reps: u8, word: &str, y: i32) {
     draw_text(fb, label, word, left + count_w + WORD_GAP, y, Align::Left, WHITE);
 }
 
-/// `rep/reps`, both at most 99 since a block repeats at most that many times.
+/// `rep/reps`; each must be under 100.
 fn format_rep(rep: u8, reps: u8, buf: &mut [u8; 12]) -> &str {
     let mut n = 0;
     let push = |buf: &mut [u8; 12], n: &mut usize, v: u8| {
@@ -656,10 +651,9 @@ fn draw_riding(fb: &mut FrameBuf, frame: &Frame) {
 
     // One slot, four things that can want it, ordered by how long each stays
     // true. Paused wins: it is the state the wearer can act on. The step marker
-    // and the split are the same age -- both are the thing that just happened
-    // and both are gone in seconds -- so the more specific of the two goes
-    // first, and a step with no effort written on it falls through to the
-    // split. The target having been met stays true for the rest of the ride.
+    // and the split are the same age, so the more specific goes first and a
+    // step with no effort falls through to the split. The target stays met for
+    // the rest of the ride.
     if paused {
         draw_centered(fb, label, "PAUSED", PAUSED_BANNER_Y, AMBER);
     } else if let Some(word) = effort_word(frame.step_effort, frame.zone_count) {
@@ -1284,8 +1278,7 @@ mod tests {
             (1..=5).map(|n| effort_word(n, 5).unwrap()).collect::<Vec<_>>(),
             EFFORT_WORDS.to_vec()
         );
-        // At two, only the ends exist. At eight, adjacent zones share a word --
-        // which is why the wrist alert takes its direction from the number.
+        // At two, only the ends exist; at eight, adjacent zones share a word.
         assert_eq!(effort_word(2, 2), Some("ALL OUT"));
         assert_eq!(effort_word(2, 8), effort_word(3, 8));
         assert_eq!(effort_word(6, 8), effort_word(7, 8));
@@ -1300,8 +1293,8 @@ mod tests {
 
     #[test]
     fn an_effort_above_the_ladder_clamps_to_its_top() {
-        // The parser cannot see hrZoneCount, so @8 on a five-zone ladder is a
-        // wearer asking for the hardest thing there is.
+        // @8 on a five-zone ladder is a wearer asking for the hardest thing
+        // there is, not a value to refuse.
         assert_eq!(effort_word(8, 5), effort_word(5, 5));
         assert_eq!(effort_word(6, 5), Some("ALL OUT"));
         // No ladder set: @n is written on a 1-8 scale, so that is the scale.

@@ -10,10 +10,9 @@
  * rather than reading the writer is the point: a lap that is one message short
  * of what was prescribed looks fine from the writing end.
  *
- * WHAT THIS DOES NOT COVER: Service.cpp itself, which is compiled by the app
- * build and by nothing else, so the clock that decides *when* a boundary comes
- * is only tested by riding it. This covers everything from the config string to
- * the bytes on storage.
+ * WHAT THIS DOES NOT COVER: the Service's own clock, which decides *when* a
+ * boundary comes and is only tested by riding it. Everything from the config
+ * string to the bytes on storage is covered here.
  *
  ******************************************************************************
  */
@@ -199,8 +198,7 @@ TEST(SpinIntervalsFit, TheFileRecordsWhatHappenedAndNotWhatWasAskedFor)
 
 TEST(SpinIntervalsFit, ARideWithNoSessionPrescribesNoLaps)
 {
-    // "0s" is off, and so is anything the grammar refuses: both leave the ride
-    // to autoLapMinutes and the lap button, exactly as before this existed.
+    // "0s" is off, and so is anything the grammar refuses.
     EXPECT_TRUE(stepSeconds("0s").empty());
     EXPECT_TRUE(stepSeconds("").empty());
     EXPECT_TRUE(stepSeconds("10M").empty());

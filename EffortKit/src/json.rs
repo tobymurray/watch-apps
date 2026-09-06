@@ -110,9 +110,8 @@ pub fn member<'a>(obj: &'a [u8], key: &str) -> Option<&'a [u8]> {
 
 /// The bytes inside a JSON string, or `None` for anything else.
 ///
-/// Refuses a value carrying a backslash: [`Writer::text`] never writes one, so
-/// an escape in the file came from something that is not this writer, and
-/// declining it is the same choice the rest of this module makes.
+/// Refuses a value carrying a backslash, because [`Writer::text`] never writes
+/// one and this module declines what it does not understand.
 pub fn as_text(v: &[u8]) -> Option<&[u8]> {
     if v.len() < 2 || v[0] != b'"' || v[v.len() - 1] != b'"' {
         return None;

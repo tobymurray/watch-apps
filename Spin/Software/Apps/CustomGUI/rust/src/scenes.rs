@@ -55,8 +55,7 @@ fn split(mut f: Frame, lap_number: u16, last_lap_s: u16) -> Frame {
     f
 }
 
-/// A step boundary: the same slot and the same dwell as the split, which the
-/// Service publishes alongside it.
+/// A step boundary, which shares the split's slot.
 fn step(mut f: Frame, effort: u8, rep: u8, reps: u8) -> Frame {
     f.step_effort = effort;
     f.step_rep = rep;
@@ -129,9 +128,7 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
                 183,
             ),
         ),
-        // The top of a step, in the seconds after the wrist buzzed. The word is
-        // an instruction and the dial is a measurement, and the two sit apart
-        // on purpose -- see draw_riding.
+        // The top of a step, in the seconds after the wrist buzzed.
         (
             "step_all_out",
             step(split(in_zone(riding(SCREEN_RIDING, 322, 121, HR_EXTERNAL), 2), 2, 300), 5, 1, 6),

@@ -53,8 +53,7 @@ TEST(Alerts, TheTwoStepAlertsDifferInShapeRatherThanCount)
 
 TEST(Alerts, TheLapAndTheTargetAreUnchanged)
 {
-    // A rider already knows these from every other ride; a session must not
-    // redefine them.
+    // A session must not redefine the two patterns a rider already has.
     EXPECT_EQ(kLap.texture, Texture::Alert);
     EXPECT_EQ(kLap.vibroCount, 1u);
     EXPECT_EQ(beepCount(kLap), 2u);

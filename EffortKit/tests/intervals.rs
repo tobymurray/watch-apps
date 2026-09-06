@@ -56,9 +56,9 @@ fn the_ride_of_2026_09_04() {
 }
 
 #[test]
-fn the_sessions_the_evaluation_tabled() {
-    // name, text, items, steps -- the shapes §4 of INTERVAL-DSL-PROMPT.md asks
-    // about, each written as far as this grammar allows.
+fn the_structures_people_actually_ride() {
+    // name, text, items, steps -- the shapes `Spin/Docs/INTERVAL-DSL-PROMPT.md`
+    // asks about, each written as far as this grammar allows.
     let corpus: &[(&str, &str, usize, u16)] = &[
         ("Norwegian 4x4", "10m@2,4x(4m@4,3m@2),10m@1", 3, 10),
         ("Tabata", "5m@2,8x(20s@5,10s@1),5m@1", 3, 18),
@@ -160,10 +160,9 @@ fn case_and_whitespace_are_refused() {
 
 #[test]
 fn an_effort_out_of_range_is_refused_here_and_clamped_elsewhere() {
-    // 1..8 is what the pattern admits, so 0 and 9 are rejections. `@8` on a
-    // five-zone ladder is not this type's business: it is stored as written and
-    // clamped where the word is chosen, so that the *ordering* survives -- see
-    // Spin's `effort_word`.
+    // 1..8 is what the grammar admits, so 0 and 9 are rejections. Clamping `@8`
+    // to a five-zone ladder is not this type's business: it is stored as
+    // written, so whatever picks a word for it can keep the ordering.
     assert_eq!(Session::parse(b"5m@0"), Err(Error::Unexpected));
     assert_eq!(Session::parse(b"5m@9"), Err(Error::Unexpected));
     assert_eq!(walk(&ok("5m@8")), vec![(300, 8, 0, 0)]);

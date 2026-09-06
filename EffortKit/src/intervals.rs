@@ -13,40 +13,30 @@
 //! digit    = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
 //! ```
 //!
-//! THIS IS THE GRAMMAR; THE MANIFEST'S `pattern` IS NOT. The pattern runs on
-//! the phone and never reaches the watch — `app-manifest.json` does not ship,
-//! and the values file is plaintext on a FAT volume readable over USB — so
-//! [`Session::parse`] is handed untrusted bytes and is total over them: every
-//! input either yields a session or names a reason it did not, with no panic,
-//! no unbounded loop and no allocation.
+//! PLATFORM: the regex the phone validates this text against never reaches the
+//! watch, and the values file it writes is plaintext on a FAT volume readable
+//! over USB and BLE. So [`Session::parse`] is handed arbitrary bytes and is
+//! total over them: every input yields a session or names a reason it did not,
+//! with no panic, no unbounded loop and no allocation. Falsified by a values
+//! file the watch cannot be handed directly.
 //!
-//! Where this is stricter than the pattern, deliberately:
+//! Where this grammar and that regex deliberately disagree, and why, is in
+//! `Spin/Docs/INTERVAL-DSL-EVALUATION.md`.
 //!
-//! - a duration of zero is rejected, except as the whole value `0s`, which is
-//!   the off value and parses to a session of no steps: a step nobody can be
-//!   in is a boundary with no interval on either side of it;
-//! - `0x(...)` is rejected for the same reason;
-//! - a 42nd item is rejected, which is where the pattern's `{0,40}` stops.
+//! `@n` IS AN INSTRUCTION AND NEVER A COMPLIANCE CHECK: nothing here or built
+//! on it may compare it against a measured heart rate. Measured on one real
+//! interval ride at a maximum of 184: in nine of eleven correctly ridden
+//! efforts the recovery averaged a *higher* heart rate than the work it was
+//! recovering from. Falsified by riding one that does not.
 //!
-//! Where it is deliberately not stricter: `007s` is seven seconds, because
-//! `\d{1,3}` matches it and the watch must not disagree with the phone about
-//! what is a valid session.
-//!
-//! `@n` IS AN INSTRUCTION AND NEVER A COMPLIANCE CHECK. Nothing here compares
-//! it against a measured heart rate, and nothing built on it may. Measured on
-//! the ride of 2026-09-04 at a real maximum of 184: in nine of eleven correctly
-//! ridden efforts the recovery averaged a *higher* heart rate than the work it
-//! was recovering from. See `Spin/Docs/INTERVAL-DSL-EVALUATION.md`.
-//!
-//! MEASURED: the most steps a 128-byte value of that pattern can name is
-//! **2871**, in 126 bytes and 8 items — `99x(1s,1s,1s,1s)` six times, then
-//! `99x(1s,1s,1s)` and `99x(1s,1s)`. That is why a session is iterated by
-//! [`Cursor`] rather than expanded: a flat array bounded by it costs 8.6 KB at
-//! three bytes a step where the cursor costs three. Re-derive by searching item
-//! shapes against the 128-byte cap; `the_worst_case_a_128_byte_value_can_name`
-//! is the number as a test.
+//! MEASURED: the most steps a 128-byte value can name is **2871**, in 126 bytes
+//! and 8 items — `99x(1s,1s,1s,1s)` six times, then `99x(1s,1s,1s)` and
+//! `99x(1s,1s)`. That is why a session is walked by [`Cursor`] rather than
+//! expanded: a flat array bounded by it costs 8.6 KB at three bytes a step
+//! where the cursor costs three. Re-derive by searching item shapes against the
+//! 128-byte cap.
 
-/// Items a session may hold, which is where the manifest's `{0,40}` stops.
+/// Items a session may hold.
 pub const MAX_ITEMS: usize = 41;
 
 /// Steps one repeated block may hold.
@@ -64,10 +54,6 @@ pub struct Step {
     /// Length of the step in seconds, 1..=59_940.
     pub seconds: u16,
     /// The `@n` the wearer wrote, 1..=8; 0 when they wrote none.
-    ///
-    /// Stored as written rather than clamped to the ladder the ride is using:
-    /// this type is a pure function of the text, and the zone count is a
-    /// separate setting that can change between rides.
     pub effort: u8,
 }
 
@@ -94,15 +80,11 @@ impl Default for Item {
 }
 
 /// Why a value named no session.
-///
-/// Every variant is a rejection the wearer can act on, which is what the
-/// field's `validationMessage` has to cover in one line.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Error {
-    /// No bytes at all. The phone's `minLength` is 2, so this is a values file
-    /// that did not come from it.
+    /// No bytes at all.
     Empty,
-    /// Longer than the field's declared `maxLength`.
+    /// Longer than [`MAX_TEXT`].
     TooLong,
     /// More than [`MAX_ITEMS`] items.
     TooManyItems,
@@ -133,8 +115,7 @@ impl Default for Session {
     }
 }
 
-/// Where a step sits in the session, which is what a wrist alert and a banner
-/// need and a [`Step`] alone cannot say.
+/// Where a step sits in the session, which a [`Step`] alone cannot say.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Placed {
     /// The step itself.
@@ -149,7 +130,7 @@ impl Session {
     /// No session, usable in a `const`. What `0s` parses to.
     pub const EMPTY: Self = Session { items: [Item::EMPTY; MAX_ITEMS], len: 0 };
 
-    /// Read a session out of the bytes the values file held.
+    /// Read a session out of arbitrary bytes.
     pub fn parse(text: &[u8]) -> Result<Session, Error> {
         if text.is_empty() {
             return Err(Error::Empty);
@@ -179,8 +160,7 @@ impl Session {
         }
     }
 
-    /// True when there is no session to drive: the off value, or a value the
-    /// wearer set and then emptied.
+    /// True when there are no steps, which is what [`OFF`] parses to.
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
@@ -191,8 +171,6 @@ impl Session {
     }
 
     /// Steps the session runs through, blocks counted out.
-    ///
-    /// A `u16` holds it: the most a 128-byte value can name is 2871.
     pub fn step_count(&self) -> u16 {
         let mut n = 0u16;
         for item in &self.items[..self.len as usize] {
@@ -223,12 +201,13 @@ impl Session {
         }
     }
 
-    /// Write the session back out as text the pattern matches.
+    /// Write the session back out as text this grammar accepts, canonically
+    /// rather than byte-identically: `120s` comes back as `2m` and `007s` as
+    /// `7s`.
     ///
-    /// Canonical rather than byte-identical to what was typed: a duration that
-    /// divides by 60 comes back as minutes, and `007s` comes back as `7s`.
-    /// Returns the bytes written, or `None` when `out` is too small — 128 bytes
-    /// is always enough, because a session came from at most that many.
+    /// Returns the bytes written, or `None` when `out` is too small;
+    /// [`MAX_TEXT`] bytes is always enough, because a session came from at most
+    /// that many.
     pub fn render(&self, out: &mut [u8]) -> Option<usize> {
         let mut w = Writer { out, at: 0 };
         if self.is_empty() {
@@ -258,10 +237,8 @@ impl Session {
 }
 
 /// A position in a session: which item, which repetition of it, which step of
-/// that repetition.
-///
-/// Three bytes, whatever the repeat counts, which is the whole reason a session
-/// is not expanded into an array of steps — see the module's note.
+/// that repetition — three bytes whatever the repeat counts, which is why the
+/// module's measurement does not need an array of steps.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Cursor {
     item: u8,
@@ -270,10 +247,8 @@ pub struct Cursor {
 }
 
 impl Cursor {
-    /// The step the cursor is on, with its place in its block.
-    ///
-    /// `None` once the session has run out, which is the same test as "the
-    /// prescription is over and this is an ordinary ride again".
+    /// The step the cursor is on, with its place in its block; `None` once the
+    /// session has run out.
     pub fn current(&self, session: &Session) -> Option<Placed> {
         let item = session.items.get(self.item as usize)?;
         if self.item >= session.len || self.step >= item.len {
@@ -324,10 +299,8 @@ fn parse_item(text: &[u8], at: usize) -> Result<(Item, usize), Error> {
     Ok((item, next))
 }
 
-/// The offset of a block's `x`, when this item is a block.
-///
-/// Looked for rather than backtracked into: an item starts with digits either
-/// way, and only the byte after them says which production this is.
+/// The offset of a block's `x`: an item starts with digits either way, so only
+/// the byte after them says which production this is.
 fn find_block_x(text: &[u8], at: usize) -> Option<usize> {
     let mut i = at;
     while i < text.len() && text[i].is_ascii_digit() {

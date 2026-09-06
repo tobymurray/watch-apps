@@ -269,9 +269,8 @@ fn write_session(w: &mut Writer, s: &Session) {
         w.num("work_kj", s.work_kj as u64);
     }
 
-    // What was asked for, beside the ride it belongs to and labelled as the
-    // prescription rather than as anything that happened. The laps are the
-    // record of what happened, and nothing compares the two.
+    // What was asked for, labelled as such, and never scored against what the
+    // session actually did.
     if !s.prescription().is_empty() {
         w.byte(b',');
         w.text("prescription", s.prescription());

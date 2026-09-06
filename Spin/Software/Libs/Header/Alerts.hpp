@@ -4,32 +4,26 @@
  * @brief   Every pattern the wrist can feel in one ride, in one table.
  ******************************************************************************
  *
- * The rider mostly cannot see the screen, so these are the whole interface for
- * a ride with a session in it. **Every pattern here must be tellable from every
- * other one under effort**, which is a property of the set rather than of any
- * entry, so they live together and `kAllDistinct` below is that claim as a
- * compile-time assertion.
+ * Being tellable apart under effort is a property of the SET rather than of any
+ * entry, which is why they are one table and why `allPairwiseDistinct()` below
+ * is a compile-time assertion.
  *
- * Two things the SDK's message structs settle, and they shape everything here:
+ * HARDWARE, and it shapes everything here: `RequestBuzzerPlay::Note` is
+ * `{ time_ms, volume }` -- there is NO FREQUENCY, so a rising two-tone for
+ * "harder" and a falling one for "easier" cannot be built and the buzzer can
+ * only vary length and rhythm. `RequestVibroPlay` instead carries about twenty
+ * named haptic effects, which are textures rather than counts, so the vibro
+ * leads and the buzzer agrees with it. Falsified by either struct gaining a
+ * pitch field.
  *
- * 1. `RequestBuzzerPlay::Note` is `{ time_ms, volume }` -- **there is no
- *    frequency**. A rising two-tone for "harder" and a falling one for "easier"
- *    is not available, so the buzzer can only vary length and rhythm.
- * 2. `RequestVibroPlay` carries about twenty named haptic effects. Those are
- *    *textures*, not counts, and they are the real expressive range on this
- *    watch. So the vibro is the primary channel and the buzzer agrees with it.
+ * The rule the set is built on is **differ in kind, not in count**: a rider at
+ * 150 bpm does not count reliably, and a missed first pip turns one pattern
+ * into the other.
  *
- * The rule the set is built on is **differ in kind, not in count**: two pips
- * against three pips is the wrong axis, because a rider at 150 bpm does not
- * count reliably and a missed first pip turns one pattern into the other. Each
- * entry is still itself if you catch only its back half.
+ * NOTHING HERE IS MEASURED -- nobody has felt these on a wrist at 150 bpm.
+ * Riding a session is the only thing that can falsify any of it.
  *
- * Nothing here is measured. Nobody has felt these on a wrist at 150 bpm, and
- * the only test that exists is riding it -- see Spin/README.md.
- *
- * No SDK types, so this builds against nothing and Alerts_test.cpp can cover
- * it without a kernel. Service.cpp owns the one map from Texture to the SDK's
- * own Effect enum.
+ * No SDK types, so this builds against nothing.
  *
  ******************************************************************************
  */
@@ -44,14 +38,14 @@ namespace Alerts {
 
 /// The vibro waveform an alert uses, named by what it feels like.
 enum class Texture : uint8_t {
-    Alert,          ///< a smooth 750 ms ramp; what a lap has always been
+    Alert,          ///< a smooth 750 ms ramp
     StrongBuzz,     ///< a rough sustained buzz
     SoftBump,       ///< one light tap
     PulsingStrong,  ///< a pulse train, unlike anything else here
 };
 
-/// Beeps one alert may have. The buzzer's own cap is five (`skMaxNotes` 10,
-/// two notes a beep); three is what any pattern here needs.
+/// Beeps one alert may have; the buzzer's own cap is five (`skMaxNotes` 10,
+/// two notes a beep).
 constexpr size_t kMaxBeeps = 3;
 
 /// One alert, on both channels.
@@ -63,26 +57,25 @@ struct Alert {
     uint16_t beepGapMs;
 };
 
-/// A lap the wearer asked for, and a step boundary with nothing to say about
-/// effort. Unchanged from before there were sessions: a rider knows it.
+/// A lap the wearer asked for, and a step boundary with no effort either side.
 constexpr Alert kLap = { Texture::Alert, 1, 100, { 120, 120, 0 }, 100 };
 
-/// The ride reached `targetMinutes`. Unchanged.
+/// The ride reached its configured target time.
 constexpr Alert kTarget = { Texture::Alert, 2, 100, { 200, 200, 200 }, 100 };
 
 /// The step just entered asks for more than the one that ended: one long,
-/// strong, sustained *go*. The signal's magnitude tracks the effort asked for,
-/// which is the only mapping available with no pitch to work with.
+/// strong, sustained go, because magnitude tracking effort is the only mapping
+/// left once pitch is gone.
 constexpr Alert kStepHarder = { Texture::StrongBuzz, 1, 0, { 500, 0, 0 }, 0 };
 
-/// The step just entered asks for less: two light taps, obviously smaller. The
-/// beeps are 60 ms at 40 ms apart rather than the lap's 120 at 100, so the two
-/// differ in rhythm and not only in length -- they are the nearest pair in this
-/// table on the buzzer, and they are far apart on the vibro.
+/// The step just entered asks for less: two light taps, obviously smaller.
+///
+/// The nearest pair in this table on the buzzer is this against `kLap`, both
+/// two beeps, so these are 60 ms at 40 apart against 120 at 100 -- a difference
+/// in rhythm and not only in length.
 constexpr Alert kStepEasier = { Texture::SoftBump, 2, 120, { 60, 60, 0 }, 40 };
 
-/// The last step ended and the ride carries on as an ordinary ride: long, then
-/// two short, over a texture nothing else here uses.
+/// The last step ended: long, then two short, over a texture nothing else uses.
 constexpr Alert kSessionEnd = { Texture::PulsingStrong, 2, 200, { 400, 100, 100 }, 100 };
 
 /// Every alert that can fire in one ride.
@@ -99,8 +92,7 @@ constexpr size_t beepCount(const Alert& a)
     return n;
 }
 
-/// Whether two alerts are told apart by the vibro alone, which is the channel
-/// a rider with hands on the bars in a gym actually reads.
+/// Whether two alerts are told apart by the vibro alone.
 constexpr bool distinctOnVibro(const Alert& a, const Alert& b)
 {
     return a.texture != b.texture || a.vibroCount != b.vibroCount;
