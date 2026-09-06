@@ -1,0 +1,34 @@
+name: SettingsKit
+
+# The shared settings mechanism has no binary of its own -- app-build.yml's
+# discovery handles that, the way it does for MapKit -- but it does have the
+# host tests for the splice, and those are the only part of the write path that
+# runs without a watch. Without this caller they would run for neither app that
+# uses them, since app-build.yml looks for Tests/ under the app it was given.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'SettingsKit/**'
+      - '.github/workflows/settingskit.yml'
+      - '.github/workflows/app-build.yml'
+  pull_request:
+    paths:
+      - 'SettingsKit/**'
+      - '.github/workflows/settingskit.yml'
+      - '.github/workflows/app-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: settingskit-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    uses: ./.github/workflows/app-build.yml
+    with:
+      app: SettingsKit
+    permissions:
+      contents: write
+      packages: read

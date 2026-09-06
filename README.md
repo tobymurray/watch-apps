@@ -23,6 +23,7 @@ than living inside it.
 | [`Spin`](Spin) | A stationary bike ride: the clock, your heart rate and the zone it puts you in, and a FIT file that says `indoor_cycling` rather than a bike ride that covered no ground. Its GUI is Rust through CustomGUI and its settings come from the phone, like `Barcode`. |
 | [`Squash`](Squash) | A squash activity app, and the raw 100 Hz IMU recorder it is being built out of — because tuning shot detection needs labelled court data that does not exist yet. |
 | [`SunGlance`](SunGlance) | A `Glance` card that says what the sun does next — sunrise or sunset, and how long until it — for a position written into the app's folder at install time, because a three-second card cannot afford a GNSS fix and does not need one. |
+| [`UnitToggle`](UnitToggle) | A single metric/imperial switch for the watch's real `units` setting, read the supported way through `RequestSystemSettings` and written the unsupported way through the kernel's own live struct — because the SDK reports that setting to an app but gives it no way to change one. |
 
 Most of these started as example apps inside the SDK tree and came here with
 their history intact (`Barcode`, `GpsLab`, `RustGuiPoc`, `Squash`); `Chrono`
@@ -36,7 +37,9 @@ shared directory rather than an app. `Spin` is new here too, forked from
 `Squash` for its Service half — the indoor, GPS-free shape of an activity was
 already right — and then given a Rust `CustomGUI` frontend instead of `Squash`'s
 TouchGFX one. `NotifyToggle` is new here too, built from scratch on the same
-Rust `CustomGUI` pattern.
+Rust `CustomGUI` pattern, and `UnitToggle` is built from `NotifyToggle` — the
+two share everything that touches the watch's settings, which lives once in
+[`SettingsKit`](SettingsKit) rather than in either app.
 
 ## Building
 

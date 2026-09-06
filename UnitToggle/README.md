@@ -1,0 +1,282 @@
+# Units — switch the watch between metric and imperial, on the watch
+
+The launcher name is `Units`; the directory, the binary and the CMake
+`APP_NAME` stay `UnitToggle`.
+
+A utility app that does one thing: show which units the watch is set to, and
+let R1 change it — immediately, and durably. There is no second screen and
+nothing else on the display. Built on the same shape as
+[`NotifyToggle`](../NotifyToggle) — a C++ `Gui.cpp` that owns the kernel
+message loop and framebuffer, a Rust core (`embedded-graphics`, no TouchGFX)
+that owns only pixels over a checked C ABI, and
+[`SettingsKit`](../SettingsKit) underneath both for everything that touches the
+watch's real settings.
+
+> **Not yet run on a watch.** Everything below that says "measured" was measured
+> at a desk: the file format off a real device over USB, the struct offset out
+> of a firmware image, the screens out of the renderer, the footprint out of a
+> real linker map. Nothing here has been installed on a wrist. The section
+> [What has not been proved](#what-has-not-been-proved) is the list, and it is
+> not short.
+
+## What it actually changes
+
+Not a per-app preference, and not a copy of the setting — the real, watch-wide
+`units` field in `2:/settings.json`, the same one the paired UNA phone app
+edits, and the byte the kernel parses it into.
+
+**Unlike `phone.notifications`, this setting can be read the supported way.**
+`RequestSystemSettings` (`Libs/Header/SDK/Messages/CommandMessages.hpp`) carries
+`bool imperialUnits`, and the simulator's own handler
+(`Libs/Source/Simulator/App/KernelMessageDispatcher.cpp`) copies it straight out
+of the `WatchSettings` struct. That one difference shapes the whole app:
+
+- **Showing the units needs no raw access at all.** On a firmware this app
+  refuses to write to, it still displays the truth and says the switch will not
+  move. `NotifyToggle` cannot do that; its flag appears in no app-facing message,
+  so a refused gate leaves it with nothing to draw.
+- **A write has a second, independent witness.** After flipping the live byte,
+  the app re-asks the kernel. If `imperialUnits` does not follow, the byte it
+  wrote was not the units field — so it puts the byte back and reports nothing
+  rather than claiming a change it cannot corroborate. `NotifyToggle`'s readback
+  could only ever prove that some byte accepted a value.
+- **But the units may not witness themselves in the gate.** `FirmwareGate`'s
+  live-struct check still uses `dailyGoals.activityMinutes` and `steps`, fields
+  this app never writes, for the reason `NotifyToggle/README.md` records: in
+  live-only mode the app deliberately diverges the live value from the file, so
+  anything it writes disagrees with something by design.
+
+There is no supported *setter*. `REQUEST_SYSTEM_INFO` and
+`REQUEST_SYSTEM_SETTINGS` are the only two `REQUEST_SYSTEM_*` messages in the
+headers and both are reads; the only `SET` an app gets is
+`RequestSetCapabilities`, whose entire surface is `enPhoneNotification`,
+`enUsbChargingScreen` and `enMusicControl`. So changing the units goes the same
+route `NotifyToggle` documents at length — a raw pointer into the kernel's live
+struct on a part with no MPU, and a hand-driven splice of `settings.json` for
+persistence. **Read that app's README before changing anything here**; it is the
+design record for the mechanism, and `SettingsKit/README.md` says which parts
+are shared.
+
+### What was measured, and how
+
+**The file, on a watch, on 2026-09-06.** Read over USB mass storage, flipped
+from the phone, read again:
+
+```
+metric    245 bytes  sha256 999af4f830a8c5ddcae501c42fdc13290469ffeda826a71cf509f51b524a5aa4
+imperial  247 bytes  sha256 2fb702bad14142721fe6625cad8f4404b53d4e93c1cb35f83897ca677a8628b1
+```
+
+- The two spellings are lowercase `metric` and `imperial`, the key is first in
+  the object, and the value token starts at byte 9 in both. The file is
+  minified — no whitespace anywhere — so the splice's whitespace tolerance is
+  defensive rather than exercised by this unit.
+- The delta is exactly **+2 bytes**, against the one byte a `true`/`false`
+  rewrite moves. `SettingsPersist::kBufferCapacity` is sized for both.
+- Every other field came back byte for byte.
+
+The two captures are **not committed**: they are a real personal settings file,
+and `.gitignore` keeps `DeviceBackups/` out of this repository for that reason.
+The hashes above are what you check a fresh capture against. The host tests use
+the same file *shape* with every personal value replaced by a neutral one of
+identical byte length, so 245, 247 and byte 9 all still hold.
+
+**The struct offset, from the firmware image.** `settingsStructBase + 4`, one
+byte, `0` = metric. Derived in
+[`SettingsKit/Docs/2026-09-06-units-offset.md`](../SettingsKit/Docs/2026-09-06-units-offset.md)
+from the settings parser at `0x080abcd6` rather than the constructor — metric is
+the default, so the constructor's `memset` is the only thing that writes it and
+there is no store to find. Both match branches converge on
+`strb r0, [r4, #4]`. The firmware's own comparison table gives the two spellings
+lengths 6 and 8, which is the same +2 delta arrived at from the other direction.
+
+Only one derivation, though, and the standard in this repository is two. **The
+second is the gate, and it runs on the watch**: the app compares its raw read
+against `RequestSystemSettings` at launch and after every write, and refuses if
+they disagree. So the offset is asserted here and checked there — which is why
+the app can ship before it has ever run, and why its first run is the experiment.
+
+**The file passes through zero bytes mid-write.** In the same session,
+`2:/settings.json` was observed at 0 bytes with a null FAT timestamp while a
+change from the phone was in flight; a later read returned the completed
+247-byte file, and nothing had faulted. `SettingsPersist` already refuses a
+reported size of 0, and its recovery keys on a file *existing* rather than
+having length, so that window cannot be mistaken for an interrupted commit.
+Two things this did not establish: how long the window lasts, and whether the
+truncation comes from the phone's BLE overwrite or the watch's own write.
+
+## Screen and buttons
+
+One screen: the word `UNITS`, a two-position control naming both choices, and a
+button hint. A pill switch reading ON/OFF would be the wrong metaphor — neither
+unit is "off" — so the control is segmented and both sides are always legible.
+
+`METRIC` is 67 px and `IMPERIAL` 80 px in Poppins SemiBold 18, so equal halves
+of 102 px leave the wider label 22 px of padding; the control spans x 18..222,
+and the round mask's chord at its corner rows is 233 px. The footer is 118 px at
+Regular 12 against a 129 px chord at row 220. Measured with `textkit`'s
+`measure` example, not estimated.
+
+| What happened | What it draws |
+|---|---|
+| Read, and saved | White outline, the set half filled, no status line |
+| Saving is switched off (the default) | The same, footer `REVERTS ON REBOOT` |
+| Changed, but the file was not written | Amber outline, the set half still filled, `NOT SAVED`, footer `REVERTS ON REBOOT` |
+| Firmware refused, units still readable | Grey outline, the set half filled, `VIEW ONLY`, footer `NEEDS WATCH 1.4.0` |
+| The units could not be read at all | No control, `UNKNOWN` |
+| Firmware known, its settings unconfirmed | No control, `SETTINGS?`, footer `UNREADABLE FILE` |
+
+The fourth row is the one that differs from `NotifyToggle`, which draws no
+switch at all on a firmware it cannot write to. Here the units are true whatever
+the gate decided, so hiding them would be the lie; the control is drawn and
+marked read-only instead. The last two draw no control because there is nothing
+to show — inventing one of two answers is worse than admitting neither.
+
+A change that took effect live but never reached `settings.json` is real right
+now and gone at the next reboot, and must not draw the same confident white as
+one that saved; `not_saved_is_visually_distinct_from_a_saved_choice` is what
+holds that line, and `unsupported_is_visually_distinct_from_a_changeable_choice`
+holds the other.
+
+| Button | Does |
+|---|---|
+| R1 (`SW2`) | Switch. Flips the live value, confirms it against the kernel's own report, writes `settings.json`, and re-reads. Does nothing on a firmware the gate refused. |
+| R2 (`SW4`) | Back — exits the app. |
+
+Closing the app changes nothing: the watch-wide setting stays where R1 left it.
+Whether it survives a reboot depends on the write having succeeded, which is why
+the screen says so either way.
+
+## What has not been proved
+
+Everything in this section needs a watch, and none of it has had one.
+
+- **That the offset is right on a running kernel.** Derived statically from one
+  firmware image. The gate is built to catch a wrong one — it refuses rather
+  than writing when the raw byte and `RequestSystemSettings` disagree — but a
+  gate that has never refused is a gate that has never been tested either.
+- **That the write takes effect at all**, and that the kernel's report follows
+  it.
+- **That the commit works**, that the file is byte-identical apart from `units`
+  after a round trip, and that the change survives a power cycle. `NotifyToggle`
+  proved all three for its own field on this firmware through the same
+  primitives, which is evidence about the mechanism but not about this field.
+- **What the change actually does to the rest of the watch, and when.** This is
+  the open question that most affects what the screen should say.
+  `phone.notifications` is a behaviour the kernel acts on continuously, so
+  "immediate" was provable. Units is a *display* setting, and apps read it once
+  at start through `RequestSystemSettings`. Whether the watch face repaints,
+  whether an activity app started afterwards picks it up, whether one already
+  running does, and whether the native summary screens do — all unknown. **The
+  screen deliberately claims none of it.** It says what the setting is and
+  whether it will last, and nothing about what else will change.
+
+The first run on a watch is what closes these, and the app is built to fail
+safe until then: with saving off — the default — it never writes a file at all,
+and with the gate refused it never touches a raw address.
+
+## Building
+
+Targets **`apps-v1.4.0`**, the same as `NotifyToggle`, `RustGuiPoc`, `QrGuiPoc`
+and `Spin`.
+
+```sh
+rustup target add thumbv8m.main-none-eabihf
+export UNA_SDK=/path/to/una-sdk
+cd Software/Apps/UnitToggle-CMake
+cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.1.0 .
+cmake --build build
+```
+
+The `.uapp` lands in `Output/`; deploy it per the SDK's `Docs/deploy.md`.
+
+`-DUNIT_TOGGLE_DEBUG_LOG=ON` adds diagnostic logging to a file in the app's own
+directory on the watch. It is off by default and belongs off in anything a
+wearer installs; it never logs file contents, because `settings.json` holds
+height, weight, gender and date of birth.
+
+> **`APP_ID` is `0000000000000000`, which is not a real one.** UNA assigns app
+> ids, and the id is how the phone matches a new `.uapp` to the one already
+> installed. The packer requires exactly 16 hex characters, which is why this is
+> zeros rather than a word. Replace it in both `CMakeLists.txt` and
+> `app-manifest.json` before installing this anywhere.
+
+### Footprint
+
+From a real build against the pinned toolchain image and SDK revision
+(`arm-none-eabi-size -A`, 600 KiB GUI RAM window, code executing from RAM):
+
+```
+GUI      .text 49,096   .data 580   .bss 58,536   .stack 10,240   .uapp 57,428
+Service  .text  2,180   .data  36   .bss    556   .stack 10,240
+```
+
+`.bss` is mostly the 57,600-byte framebuffer, as on every CustomGUI app here.
+`SDK::AppConfig` and the JSON reader it needs are most of the difference between
+this app's `.text` and something with no declared setting — the price of the
+saving switch being something the companion app can present and explain rather
+than a build-time constant. Re-derive the numbers rather than trusting this
+table.
+
+## Tests
+
+The splice is shared, and so are its tests — they live in
+[`SettingsKit`](../SettingsKit) because both apps rewrite the same file:
+
+```sh
+cmake -B build -S ../SettingsKit/Tests && cmake --build build && ctest --test-dir build
+```
+
+The renderer's own tests run at a desk:
+
+```sh
+cd Software/Apps/CustomGUI/rust
+cargo test --features std
+```
+
+`filled_half_follows_state` and `unsupported_still_shows_which_units_are_set`
+are the two worth reading first: they sample specific pixels rather than diffing
+whole frames, so each states the one thing that has to be true of this screen —
+the filled half is the one the setting says, and a refused gate still shows it.
+`the_filled_half_stays_inside_the_rounded_outline` exists because it did not:
+the chosen half is a rectangle inside a rounded control, and its square corners
+showed outside the curve until the corners were rounded to match. Every pixel
+probe passed straight over that; it was found by looking.
+
+The C++ half type-checks on a host without the ARM toolchain, which catches
+renames across the ABI:
+
+```sh
+clang++ -std=c++17 -fsyntax-only -Wall -I"$UNA_SDK/Libs/Header" \
+  -I../SettingsKit/Header -ISoftware/Libs/Header -ISoftware/Apps/CustomGUI \
+  Software/Apps/CustomGUI/Gui.cpp Software/Libs/Sources/Service.cpp
+```
+
+`app-manifest.json` is checked the same way every other app's is:
+
+```sh
+python3 $UNA_SDK/Utilities/Scripts/app_packer/validate_app_config.py \
+    --check app-manifest.json
+```
+
+## Desktop simulator
+
+```sh
+brew install sdl2   # or the Linux equivalent
+cd Software/Apps/CustomGUI/rust
+cargo run --bin sim --features sim
+```
+
+`SPACE` or `ENTER` switches units (matching R1), `ESC` or `BACKSPACE` quits
+(matching R2). `U`, `N`, `L`, `S` and `F` preview the unreadable, not-saved,
+live-only, unreadable-settings and unsupported screens, which a wrist only
+reaches by something going wrong. It calls the same `unit_toggle_gui::render()`
+the firmware calls, into an identical buffer, so the framebuffer matches the
+device's by construction.
+
+Where SDL is not available, the same frames can be written out and looked at:
+
+```sh
+cargo run --example dump --features std -- /tmp/frames
+python3 ../../../../Tools/frames_to_png.py /tmp/frames
+```

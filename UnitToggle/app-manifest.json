@@ -1,0 +1,33 @@
+{
+  "manifest_version": 1,
+  "type": [
+    "utility"
+  ],
+  "name": "Units",
+  "icon": "icon.png",
+  "binary": "UnitToggle_0.1.0.uapp",
+  "appVersion": "0.1.0",
+  "minKernelVersion": "1.4.0",
+  "requiredHardware": [],
+  "description": "Switches the watch between metric and imperial from your wrist — the same watch-wide setting the phone app controls. The change applies at once and reverts when the watch restarts, unless you switch on Save to watch settings. Saving needs watch software 1.4.0 exactly; on any other version the app still shows which units are set but will not change them.",
+  "id": "0000000000000000",
+  "stravaExport": false,
+  "supportsLaps": false,
+  "supportsDistance": false,
+  "supportsTrack": false,
+  "supportsHeartbeat": false,
+  "supportsElevation": false,
+  "supportsStep": false,
+  "supportsSpeed": "none",
+  "customMeasures": [],
+  "configFile": "unit_config.json",
+  "configFields": [
+    {
+      "id": "saveToSettings",
+      "type": "bool",
+      "label": "Save to watch settings",
+      "description": "Off: the switch works now and reverts when the watch restarts. On: it is also written to the watch's settings file, so it lasts. The app checks the firmware first and refuses if it cannot verify it.",
+      "default": false
+    }
+  ]
+}
