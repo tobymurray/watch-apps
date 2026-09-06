@@ -4,25 +4,22 @@
 
     python3 UnitToggle/Resources/make_icon.py UnitToggle/Resources
 
-A dual-scale ruler was the obvious idea and it does not survive. Rendered at
-true size, ticks on both edges at two different spacings read as a fence, and
-a bar with notches cut into it reads as piano keys; neither says "two scales"
-at 60px, let alone 30px. What does read is one scale drawn the ordinary way --
-a baseline with ticks rising from it, alternating long and short. So the icon
-says "units" rather than "two systems of units", and the two-position bar
-under it at 60px is what carries the choosing.
+A dual-scale ruler does not survive these sizes: rendered at true size, ticks on
+both edges at two different spacings read as a fence, and a bar with notches cut
+into it reads as piano keys. One scale drawn the ordinary way does read -- a
+baseline with ticks rising from it, alternating long and short -- so that is
+what this draws, and the choosing is carried by the two-position bar under it.
 
 The two sizes carry different amounts of that idea, on purpose. At 60px the
-ruler and the bar both read, so the icon says "unit switch". At 30px the bar
-collapses into a smear beside the ticks, so the small icon is the ruler alone,
-with three ticks instead of five -- same subject, same colour, fewer shapes.
-Rendered at true size and compared before choosing; magnified previews flatter
-a 30px icon into looking like it works.
+ruler and the bar both read. At 30px the bar collapses into a smear beside the
+ticks, so the small icon is the ruler alone with three ticks instead of five.
+Compare at true size before changing either; magnified previews flatter a 30px
+icon into looking like it works.
 
 Every shape here is at least two pixels wide even at 30px, so the whole icon is
-drawn supersampled and downsampled with one function, the way NotifyToggle's
-is. The quantisation check at the bottom is what proves that choice was safe --
-`app_merging.py` reduces this to ABGR2222, two bits per channel, four levels.
+drawn supersampled and downsampled with one function. The quantisation check at
+the bottom is what proves that choice was safe -- `app_merging.py` reduces this
+to ABGR2222, two bits per channel, four levels.
 """
 from PIL import Image, ImageDraw
 import sys

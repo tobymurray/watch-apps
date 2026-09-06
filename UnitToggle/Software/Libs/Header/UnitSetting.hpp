@@ -5,10 +5,8 @@
  *          under.
  ******************************************************************************
  *
- * Every path here is this app's own. `NotifyToggle` writes the same
- * `2:/settings.json` through the same primitives, and two apps sharing a
- * scratch name would each treat the other's interrupted commit as its own --
- * with the wearer's only settings file sitting under it.
+ * Every path here is this app's own; `SettingsPersist::Field` says why that
+ * matters.
  ******************************************************************************
  */
 

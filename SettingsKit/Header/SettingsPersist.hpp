@@ -33,8 +33,7 @@ namespace SettingsPersist
 /// mistaking the other's half-finished commit for its own, and the file being
 /// moved aside is the wearer's only settings file.
 struct Field {
-    /// Rewrites this field in a settings.json buffer -- one of
-    /// `SettingsSplice::setNotifications` or `SettingsSplice::setUnits`.
+    /// Rewrites this field in a settings.json buffer.
     SettingsSplice::Result (*splice)(char *buf, size_t &len, size_t capacity, bool value,
                                      size_t *valueOffsetOut);
     const char *name;        ///< DebugLog only.

@@ -32,8 +32,8 @@ fn on_panic(info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-/// What the last read or write actually achieved. The screen is different for
-/// each, because each leaves the wearer's setting somewhere different.
+/// What the last read or write achieved -- each leaves the setting somewhere
+/// different, so each draws a different screen.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Status {
     /// Read, and any change also reached settings.json.
@@ -65,8 +65,7 @@ impl Status {
         }
     }
 
-    /// True when the wearer can still see which units are set, even though this
-    /// screen cannot change them.
+    /// True when the units are known, whether or not they can be changed here.
     fn shows_a_readable_choice(self) -> bool {
         self != Status::Unreadable && self != Status::NoSettings
     }
@@ -266,9 +265,8 @@ fn chosen_half_x(state: &State) -> Option<i32> {
 }
 
 fn draw_choice(fb: &mut FrameBuf, state: &State) {
-    // Amber for a change that will not survive a reboot, grey for a choice this
-    // screen cannot move, white otherwise. The outline carries the same news as
-    // the footer, so a glance gets it without reading.
+    // The outline carries the same news as the footer, so a glance gets it
+    // without reading.
     let outline = match state.status() {
         _ if !state.is_known() => WARN_ACCENT,
         Status::NotSaved => WARN_ACCENT,
@@ -276,8 +274,8 @@ fn draw_choice(fb: &mut FrameBuf, state: &State) {
         _ => HEADING,
     };
 
-    // Only the half's outer corners are rounded: a square fill would show
-    // outside the control's own curve, which it did before this was measured.
+    // Only the half's outer corners are rounded, so the fill cannot show
+    // outside the control's own curve.
     if let Some(x) = chosen_half_x(state) {
         let round = Size::new(SEG_RADIUS as u32, SEG_RADIUS as u32);
         let corners = if x == SEG_X {
@@ -341,9 +339,8 @@ fn draw(fb: &mut FrameBuf, state: &State) {
 
     draw_choice(fb, state);
 
-    // Unlike the notifications switch this was built from, an unsupported
-    // firmware still draws the control: the units come from a supported message
-    // and are true, so the honest screen shows them and says they are read-only.
+    // Unsupported still draws the control: the units came from a supported
+    // message, so they are true whatever the gate decided.
     let (label, label_color) = if !state.is_known() {
         (LABEL_UNKNOWN, WARN_ACCENT)
     } else {
@@ -480,8 +477,7 @@ mod tests {
         State { imperial: 0, known: 0, status: 5, _pad: [0; 1] }
     }
 
-    /// The gate refused, but the units still came from the supported message --
-    /// which is why this one, unlike NotifyToggle's, is `known`.
+    /// Gate refused, units still `known`: reading them needs no gate.
     fn unsupported() -> State {
         State { imperial: 1, known: 1, status: 1, _pad: [0; 1] }
     }
@@ -551,8 +547,7 @@ mod tests {
     }
 
     /// The chosen half is a rectangle inside a rounded control, so its outer
-    /// corners have to be rounded too -- a square fill showed grey outside the
-    /// white curve, which the pixel probes above all passed straight over.
+    /// corners have to be rounded too.
     #[test]
     fn the_filled_half_stays_inside_the_rounded_outline() {
         for (state, corner_x) in
@@ -576,9 +571,7 @@ mod tests {
         assert_eq!(px(&u, IMPERIAL_PROBE.0, IMPERIAL_PROBE.1), GROUND.0);
     }
 
-    /// The difference from NotifyToggle worth a test of its own: the gate
-    /// refusing does not hide the setting, because reading it never needed the
-    /// gate. It only stops the wearer changing it.
+    /// The gate refusing must not hide the setting; it only stops it changing.
     #[test]
     fn unsupported_still_shows_which_units_are_set() {
         let u = frame(&unsupported());

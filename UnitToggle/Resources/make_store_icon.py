@@ -8,7 +8,7 @@ quantised to ABGR2222 and baked into the .uapp; this file is copied into the
 package as `icon.png` and shown by the phone app as an ordinary full-colour
 PNG. This app has one screen and no format choice, so the icon is the same
 vector ruler-and-bar shape make_icon.py draws at 60px, scaled up, rather than
-a screenshot -- the same call NotifyToggle's store icon makes.
+a screenshot.
 """
 from PIL import Image, ImageDraw, ImageFilter
 import numpy as np

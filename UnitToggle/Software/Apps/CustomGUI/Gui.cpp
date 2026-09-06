@@ -190,10 +190,9 @@ void Gui::toggle()
         return;
     }
 
-    // The write's second witness, and the one NotifyToggle could never have: if
-    // the byte just written really is the units field, the kernel's own report
-    // of it changes too. When it does not, this wrote to something else, so put
-    // the byte back and claim nothing.
+    // If the byte just written is really the units field, the kernel's own
+    // report of it changes too; when it does not, this wrote to something else,
+    // so put the byte back and claim nothing.
     bool kernelImperial = false;
     if (!readKernelUnits(kernelImperial) || kernelImperial != desired) {
         LOG_ERROR("switch: the kernel does not report the units this just wrote; reverting\n");

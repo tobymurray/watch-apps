@@ -5,10 +5,9 @@
 #
 # and folded into that app's GUI_SOURCES / GUI_INCLUDE_DIRS.
 #
-# Sources are listed explicitly rather than globbed, for the same reason
-# MapKit's are: a stray file here would silently join every app that includes
-# this, and a build that changes because of a file nobody added to a list is
-# noticed much later than it should be.
+# Sources are listed explicitly rather than globbed: a stray file here would
+# silently join every app that includes this, and a build that changes because
+# of a file nobody added to a list is noticed much later than it should be.
 #
 # GUI only, and deliberately so. Every one of these files either carries a raw
 # firmware address or is reached by something that does, and a Service that

@@ -17,8 +17,7 @@ enum {
     UNIT_TOGGLE_STATUS_OK = 0,
     /* The firmware gate refused, so R1 cannot move the choice. `imperial` is
        still trustworthy: it comes from RequestSystemSettings, which needs no
-       gate. This is where it differs from NotifyToggle's UNSUPPORTED, where
-       nothing at all could be read. */
+       gate. */
     UNIT_TOGGLE_STATUS_UNSUPPORTED = 1,
     /* The units could not be confirmed at all, so `imperial` means nothing. */
     UNIT_TOGGLE_STATUS_UNREADABLE = 2,

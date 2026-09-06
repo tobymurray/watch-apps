@@ -68,10 +68,7 @@ struct AddressSet {
     uintptr_t settingsStructBase;
     size_t    phoneNotificationsOffset;
 
-    /// 0 = metric, 1 = imperial -- the byte the settings parser stores the
-    /// result of its `"metric"`/`"imperial"` comparison into. A token matching
-    /// neither leaves it at whatever it already held.
-    size_t    unitsImperialOffset;
+    size_t    unitsImperialOffset;   ///< 0 = metric, 1 = imperial
 
     size_t    watchFaceIdOffset;
 
