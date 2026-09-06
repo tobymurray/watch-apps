@@ -272,3 +272,192 @@ TEST(SettingsScan, DoesNotSearchPastAPhoneKeyThatIsNotAnObject)
 }
 
 } // namespace
+
+namespace
+{
+
+/// The shape of two real files read off one watch on 2026-09-06 either side of
+/// a flip made from the phone, with every personal value replaced by a neutral
+/// one of the same byte length -- height, weight, gender, date of birth and the
+/// heart-rate zones are the wearer's, and a test fixture is a poor place to
+/// keep them. The lengths are what these cases turn on, and they are exact:
+/// 245 bytes and 247, with the units token starting at byte 9 in both.
+constexpr const char *kRealMetric =
+    "{\"units\":\"metric\",\"watchFaceId\":0,\"phone\":{\"notifications\":false},"
+    "\"heartRateZones\":[99,111,122,133,144,155],\"dailyGoals\":{\"activityMinutes\":30,"
+    "\"steps\":5000,\"floors\":5},\"height\":100,\"weight\":10,\"gender\":\"X\","
+    "\"dateOfBirth\":\"2000-01-01\",\"version\":2}";
+
+constexpr const char *kRealImperial =
+    "{\"units\":\"imperial\",\"watchFaceId\":0,\"phone\":{\"notifications\":false},"
+    "\"heartRateZones\":[99,111,122,133,144,155],\"dailyGoals\":{\"activityMinutes\":30,"
+    "\"steps\":5000,\"floors\":5},\"height\":100,\"weight\":10,\"gender\":\"X\","
+    "\"dateOfBirth\":\"2000-01-01\",\"version\":2}";
+
+Spliced spliceUnits(const std::string &input, bool imperial)
+{
+    char buf[kCapacity] = {};
+    std::memcpy(buf, input.data(), input.size());
+    size_t len = input.size();
+    const auto result = SettingsSplice::setUnits(buf, len, kCapacity, imperial);
+    return {result, std::string(buf, len)};
+}
+
+TEST(SettingsUnits, TurnsTheMetricFileIntoTheImperialOne)
+{
+    const auto out = spliceUnits(kRealMetric, true);
+    EXPECT_EQ(out.result, SettingsSplice::Result::Ok);
+    EXPECT_EQ(out.text, kRealImperial);
+}
+
+TEST(SettingsUnits, TurnsTheImperialFileIntoTheMetricOne)
+{
+    const auto out = spliceUnits(kRealImperial, false);
+    EXPECT_EQ(out.result, SettingsSplice::Result::Ok);
+    EXPECT_EQ(out.text, kRealMetric);
+}
+
+/// 245 and 247 as measured, which is what makes the delta two bytes rather than
+/// the one a true/false rewrite moves.
+TEST(SettingsUnits, TheMeasuredFilesAreTheLengthsTheBufferIsSizedFor)
+{
+    EXPECT_EQ(std::strlen(kRealMetric), 245u);
+    EXPECT_EQ(std::strlen(kRealImperial), 247u);
+}
+
+TEST(SettingsUnits, RoundTripsBackToTheOriginal)
+{
+    const auto imperial = spliceUnits(kRealMetric, true);
+    ASSERT_EQ(imperial.result, SettingsSplice::Result::Ok);
+    const auto back = spliceUnits(imperial.text, false);
+    ASSERT_EQ(back.result, SettingsSplice::Result::Ok);
+    EXPECT_EQ(back.text, kRealMetric);
+}
+
+TEST(SettingsUnits, SettingWhatIsAlreadySetChangesNothing)
+{
+    const auto out = spliceUnits(kRealMetric, false);
+    EXPECT_EQ(out.result, SettingsSplice::Result::Ok);
+    EXPECT_EQ(out.text, kRealMetric);
+}
+
+/// The firmware's parser knows two spellings and stores nothing for anything
+/// else, so a third is a file this does not understand.
+TEST(SettingsUnits, RefusesATokenTheFirmwareWouldNotRecognise)
+{
+    EXPECT_EQ(spliceUnits(R"({"units":"furlongs","version":2})", true).result,
+              SettingsSplice::Result::FieldNotFound);
+}
+
+TEST(SettingsUnits, RefusesWhenTheValueIsNotAString)
+{
+    EXPECT_EQ(spliceUnits(R"({"units":true,"version":2})", true).result,
+              SettingsSplice::Result::FieldNotFound);
+    EXPECT_EQ(spliceUnits(R"({"units":0,"version":2})", true).result,
+              SettingsSplice::Result::FieldNotFound);
+}
+
+TEST(SettingsUnits, RefusesWhenThereIsNoUnitsKey)
+{
+    EXPECT_EQ(spliceUnits(R"({"watchFaceId":0,"version":2})", true).result,
+              SettingsSplice::Result::FieldNotFound);
+}
+
+TEST(SettingsUnits, RefusesTruncatedJson)
+{
+    EXPECT_EQ(spliceUnits(R"({"units":"metr)", true).result,
+              SettingsSplice::Result::FieldNotFound);
+    EXPECT_EQ(spliceUnits(R"({"units":)", true).result,
+              SettingsSplice::Result::FieldNotFound);
+}
+
+TEST(SettingsUnits, RefusesAnEmptyBuffer)
+{
+    EXPECT_EQ(spliceUnits("", true).result, SettingsSplice::Result::FieldNotFound);
+}
+
+/// The same characters appear as a string *value*, and only the colon after
+/// them says which one was the key.
+TEST(SettingsUnits, LooksPastAValueThatLooksLikeTheKey)
+{
+    const auto out = spliceUnits(R"({"note":"units","units":"metric"})", true);
+    EXPECT_EQ(out.result, SettingsSplice::Result::Ok);
+    EXPECT_EQ(out.text, R"({"note":"units","units":"imperial"})");
+}
+
+TEST(SettingsUnits, ToleratesWhitespaceAroundTheColon)
+{
+    const auto out = spliceUnits("{ \"units\" : \"metric\" ,\"version\":2}", true);
+    EXPECT_EQ(out.result, SettingsSplice::Result::Ok);
+    EXPECT_EQ(out.text, "{ \"units\" : \"imperial\" ,\"version\":2}");
+}
+
+TEST(SettingsUnits, RefusesWhenTheTwoByteGrowthWouldNotFit)
+{
+    const std::string input = R"({"units":"metric"})";
+    char buf[64] = {};
+    std::memcpy(buf, input.data(), input.size());
+    size_t len = input.size();
+
+    EXPECT_EQ(SettingsSplice::setUnits(buf, len, input.size() + 1, true),
+              SettingsSplice::Result::WouldNotFit);
+    EXPECT_EQ(len, input.size());
+    EXPECT_EQ(std::string(buf, len), input);
+
+    EXPECT_EQ(SettingsSplice::setUnits(buf, len, input.size() + 2, true),
+              SettingsSplice::Result::Ok);
+    EXPECT_EQ(std::string(buf, len), R"({"units":"imperial"})");
+}
+
+TEST(SettingsUnits, MovesTheTailCorrectlyInBothDirections)
+{
+    const auto grown = spliceUnits(R"({"units":"metric","tail":[1,2,3]})", true);
+    ASSERT_EQ(grown.result, SettingsSplice::Result::Ok);
+    EXPECT_EQ(grown.text, R"({"units":"imperial","tail":[1,2,3]})");
+
+    const auto shrunk = spliceUnits(grown.text, false);
+    ASSERT_EQ(shrunk.result, SettingsSplice::Result::Ok);
+    EXPECT_EQ(shrunk.text, R"({"units":"metric","tail":[1,2,3]})");
+}
+
+TEST(SettingsUnits, ReportsWhereItEdited)
+{
+    char buf[kCapacity] = {};
+    const std::string input = kRealMetric;
+    std::memcpy(buf, input.data(), input.size());
+    size_t len = input.size();
+
+    size_t at = 0;
+    ASSERT_EQ(SettingsSplice::setUnits(buf, len, kCapacity, true, &at),
+              SettingsSplice::Result::Ok);
+    EXPECT_EQ(at, 9u);
+    EXPECT_EQ(buf[at], '"');
+}
+
+TEST(SettingsUnits, LeavesTheOffsetAloneWhenItRefuses)
+{
+    char buf[kCapacity] = {};
+    const std::string input = R"({"units":"furlongs"})";
+    std::memcpy(buf, input.data(), input.size());
+    size_t len = input.size();
+
+    size_t at = 0xABCD;
+    EXPECT_EQ(SettingsSplice::setUnits(buf, len, kCapacity, true, &at),
+              SettingsSplice::Result::FieldNotFound);
+    EXPECT_EQ(at, 0xABCDu);
+}
+
+/// The two fields are spliced by different functions over the same buffer, and
+/// neither may disturb the other's bytes.
+TEST(SettingsUnits, DoesNotDisturbTheNotificationsFlag)
+{
+    const auto units = spliceUnits(kRealMetric, true);
+    ASSERT_EQ(units.result, SettingsSplice::Result::Ok);
+    EXPECT_NE(units.text.find("\"notifications\":false"), std::string::npos);
+
+    const auto notifications = splice(kRealMetric, true);
+    ASSERT_EQ(notifications.result, SettingsSplice::Result::Ok);
+    EXPECT_NE(notifications.text.find("\"units\":\"metric\""), std::string::npos);
+}
+
+} // namespace

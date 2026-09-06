@@ -11,7 +11,9 @@
  * `setNotifications` is scoped to the `phone` object rather than matching
  * `"notifications"` anywhere in the file: the flag it owns is
  * `phone.notifications`, and a settings file that grows a second key of that
- * name elsewhere must not be edited in the wrong place.
+ * name elsewhere must not be edited in the wrong place. `setUnits` needs no
+ * such scoping -- `units` is a top-level key -- but still tells a key from a
+ * string value that happens to read the same.
  ******************************************************************************
  */
 
@@ -36,6 +38,12 @@ constexpr const char *kTrue  = "true";
 constexpr const char *kFalse = "false";
 constexpr size_t kTrueLen  = 4;
 constexpr size_t kFalseLen = 5;
+
+/// Quoted, because that is what gets spliced: the quotes move with the token.
+constexpr const char *kMetric   = "\"metric\"";
+constexpr const char *kImperial = "\"imperial\"";
+constexpr size_t kMetricLen   = 8;
+constexpr size_t kImperialLen = 10;
 
 inline bool isSpace(char c)
 {
@@ -203,6 +211,44 @@ inline Result setNotifications(char *buf, size_t &len, size_t capacity, bool new
 
     const char *replacement = newEnabled ? detail::kTrue : detail::kFalse;
     const size_t newLen     = newEnabled ? detail::kTrueLen : detail::kFalseLen;
+
+    return detail::replaceToken(buf, len, capacity, value, oldLen, replacement, newLen);
+}
+
+/// Rewrites the top-level `units` string in `buf` to `"imperial"` or
+/// `"metric"`, adjusting `len` for the two-byte length delta. `buf` is left
+/// untouched unless the result is Ok. `valueOffsetOut`, when given, receives
+/// the offset of the opening quote that was rewritten.
+///
+/// A `units` value that is neither of those two tokens is `FieldNotFound`: the
+/// firmware's parser recognises exactly these two spellings, and a file
+/// carrying a third is one this does not understand well enough to edit.
+inline Result setUnits(char *buf, size_t &len, size_t capacity, bool imperial,
+                       size_t *valueOffsetOut = nullptr)
+{
+    const char *const end = buf + len;
+
+    const char *const found = detail::findValue(buf, end, "units", 5);
+    if (found == nullptr) {
+        return Result::FieldNotFound;
+    }
+    char *const value = buf + (found - buf);
+
+    size_t oldLen = 0;
+    if (detail::matches(value, end, detail::kMetric, detail::kMetricLen)) {
+        oldLen = detail::kMetricLen;
+    } else if (detail::matches(value, end, detail::kImperial, detail::kImperialLen)) {
+        oldLen = detail::kImperialLen;
+    } else {
+        return Result::FieldNotFound;
+    }
+
+    if (valueOffsetOut != nullptr) {
+        *valueOffsetOut = static_cast<size_t>(value - buf);
+    }
+
+    const char *replacement = imperial ? detail::kImperial : detail::kMetric;
+    const size_t newLen     = imperial ? detail::kImperialLen : detail::kMetricLen;
 
     return detail::replaceToken(buf, len, capacity, value, oldLen, replacement, newLen);
 }

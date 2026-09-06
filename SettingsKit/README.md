@@ -1,8 +1,9 @@
 # SettingsKit — reading and writing the watch's real settings, from an app
 
-The shared half of [`NotifyToggle`](../NotifyToggle): the firmware gate, the
-address table, the live struct read/write, and the commit that puts a change
-into `2:/settings.json` without disturbing a byte the app does not own.
+The shared half of [`NotifyToggle`](../NotifyToggle) and
+[`UnitToggle`](../UnitToggle): the firmware gate, the address table, the live
+struct read/write, and the commit that puts a change into `2:/settings.json`
+without disturbing a byte the app does not own.
 
 This is a directory, not an app — it builds nothing on its own. Each app folds
 it into its own GUI target:
@@ -45,6 +46,21 @@ would each treat the other's interrupted commit as its own. `NotifyToggle`'s
 `ntprev` name in particular is fixed for good — a watch left holding one by a
 commit that lost power is recovered by matching it.
 
+## The two fields, and how they differ
+
+| | `phone.notifications` | `units` |
+|---|---|---|
+| In the file | nested boolean, `true`/`false` | top-level string, `"metric"`/`"imperial"` |
+| Length delta on rewrite | 1 byte | 2 bytes |
+| In the live struct | one byte at `+5` | one byte at `+4`, 0 = metric |
+| Readable through the SDK | no | yes, `RequestSystemSettings::imperialUnits` |
+
+That last row is the one that matters. `phone.notifications` appears in no
+app-facing message at all, so `NotifyToggle` needs a raw pointer even to show
+the current state. `units` does appear, so `UnitToggle` reads it the supported
+way and needs the raw pointer only to change it — and can check its own write
+against what the kernel then reports.
+
 ## Tests
 
 The splice is the only part that runs without a kernel — it decides which bytes
@@ -54,5 +70,7 @@ of a real personal settings file get rewritten, so it is where the tests are:
 cmake -B build -S Tests && cmake --build build && ctest --test-dir build
 ```
 
-What the tests cannot reach is everything above them: the addresses, the `File`
-primitives and the commit rename only ever run on a watch.
+Both fields are covered against real files read off a watch, including the
+metric/imperial pair read either side of a flip on 2026-09-06. What the tests
+cannot reach is everything above them: the addresses, the `File` primitives and
+the commit rename only ever run on a watch.

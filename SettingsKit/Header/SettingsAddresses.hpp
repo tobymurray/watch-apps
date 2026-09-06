@@ -67,6 +67,12 @@ struct AddressSet {
     // --- LiveSettings: the kernel's live, in-RAM WatchSettings struct ---
     uintptr_t settingsStructBase;
     size_t    phoneNotificationsOffset;
+
+    /// 0 = metric, 1 = imperial -- the byte the settings parser stores the
+    /// result of its `"metric"`/`"imperial"` comparison into. A token matching
+    /// neither leaves it at whatever it already held.
+    size_t    unitsImperialOffset;
+
     size_t    watchFaceIdOffset;
 
     /// Daily goals, which this app never writes and the kernel also reports

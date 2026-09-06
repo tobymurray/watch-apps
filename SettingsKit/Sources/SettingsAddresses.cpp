@@ -40,6 +40,10 @@ constexpr AddressSet kFirmware_1_4_0 = {
     .derivedFrom              = "1.4.0",
     .settingsStructBase       = 0x20010cb0u,
     .phoneNotificationsOffset = 5u,
+    // Derived in Docs/2026-09-06-units-offset.md, from the settings parser
+    // rather than the constructor: metric is the default, so the constructor's
+    // memset is the only thing that writes it.
+    .unitsImperialOffset      = 4u,
     .watchFaceIdOffset        = 8u,
     // Read out of the constructor at 0x080abbb4, which stores the documented
     // defaults 30 and 5000 at objectBase+0x20/+0x24; the same function's
@@ -108,6 +112,7 @@ constexpr bool isWellFormed(const AddressSet &a)
     return a.abi > 0u && a.derivedFrom != nullptr && signaturesPairWithAddresses(a) &&
            a.settingsStructBase >= kSramBase && a.settingsStructBase < kSramEnd &&
            a.phoneNotificationsOffset < kMaxStructOffset &&
+           a.unitsImperialOffset < kMaxStructOffset &&
            a.watchFaceIdOffset < kMaxStructOffset &&
            a.activityMinutesOffset < kMaxStructOffset &&
            a.stepsOffset < kMaxStructOffset &&
