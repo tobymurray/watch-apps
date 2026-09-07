@@ -30,10 +30,11 @@ private:
     /// message that carries them. False if the kernel would not answer.
     bool readKernelUnits(bool &outImperial);
 
-    /// True once the raw byte and the kernel's own report have been seen to
-    /// agree, which is what proves the address is the units field rather than
-    /// some byte that merely accepted a write.
-    bool rawAgreesWithKernel();
+    /// True if the raw byte matches what the kernel has just reported, which is
+    /// what proves the address is the units field rather than some byte that
+    /// merely accepted a write. Takes the report rather than asking again, so
+    /// the value checked is the value drawn.
+    bool rawAgreesWithKernel(bool kernelImperial);
 
     static constexpr int16_t  kFallbackWidth     = 240;
     static constexpr int16_t  kFallbackHeight    = 240;
@@ -58,16 +59,23 @@ private:
     bool     mDisplayUsable = true;
     uint32_t mTicksSinceRead = 0;
 
-    // Sticky until the next R1, so the periodic re-read cannot quietly turn a
-    // change that never reached the file back into a confident answer.
-    bool mPersistFailed = false;
+    /// What the last R1 press left behind. Sticky until the next press: a
+    /// press that failed is invisible to a fresh read -- the revert puts the
+    /// byte back, so the read agrees again -- and without this the screen
+    /// returns to a confident answer about a change that did not happen.
+    enum class PressOutcome {
+        Clean,
+        LiveWriteFailed,    ///< The live byte could not be read or written.
+        WitnessDisagreed,   ///< Written, but the kernel did not report it; byte put back.
+        NotPersisted,       ///< Live change took effect; settings.json was not written.
+        FileUnreadable,     ///< Live change took effect; settings.json could not be read at all.
+    };
+    PressOutcome mLastPress = PressOutcome::Clean;
 
     // The wearer's answer to "also write this to the watch's settings file".
     // False until the config says otherwise, so an install that nobody
     // configures never writes anything.
     bool mSaveToSettings = false;
-
-    FirmwareGate::Outcome mGateOutcome = FirmwareGate::Outcome::UnknownFirmware;
 
     bool mPrimitivesChecked = false;
     bool mPrimitivesOk      = false;

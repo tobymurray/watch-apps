@@ -132,13 +132,23 @@ solid.
 | Changed, but the file was not written | Amber outline, the set half still filled, `NOT SAVED`, footer `REVERTS ON REBOOT` |
 | Firmware refused, units still readable | Grey outline, the set half filled, `VIEW ONLY`, footer `NEEDS WATCH 1.4.0` |
 | The units could not be read at all | No control, `UNKNOWN` |
-| Firmware known, its settings unconfirmed | No control, `SETTINGS?`, footer `UNREADABLE FILE` |
+| Saving found `settings.json` unreadable | No control, `SETTINGS?`, footer `UNREADABLE FILE` |
 
 The fourth row is the one that differs from `NotifyToggle`, which draws no
 switch at all on a firmware it cannot write to. Here the units are true whatever
 the gate decided, so hiding them would be the lie; the control is drawn and
 marked read-only instead. The last two draw no control because there is nothing
 to show — inventing one of two answers is worse than admitting neither.
+
+`SETTINGS?` / `UNREADABLE FILE` is shown only when a save actually failed to
+read the file. The firmware gate never opens one — it is a flash read and a
+message — so a gate refusal says nothing about `settings.json` and must not
+claim to.
+
+Whatever a press leaves behind is sticky until the next press. A failed press
+is invisible to a fresh read — the revert puts the byte back, so the next read
+agrees again — and without that stickiness the screen would return to a
+confident answer about a change that did not happen.
 
 A change that took effect live but never reached `settings.json` is real right
 now and gone at the next reboot, and must not draw the same confident white as

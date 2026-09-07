@@ -76,7 +76,6 @@ bool Gui::resolveFirmwareSupport()
 {
     FirmwareGate::Outcome outcome = FirmwareGate::Outcome::UnknownFirmware;
     mAddresses = FirmwareGate::resolve(mKernel, gIKernel->version, outcome);
-    mGateOutcome = outcome;
     if (!mAddresses) {
         LOG_ERROR("firmware not verified for this build -- refusing every raw address\n");
     }
@@ -101,14 +100,8 @@ bool Gui::readKernelUnits(bool &outImperial)
     return true;
 }
 
-bool Gui::rawAgreesWithKernel()
+bool Gui::rawAgreesWithKernel(bool kernelImperial)
 {
-    bool kernelImperial = false;
-    if (!readKernelUnits(kernelImperial)) {
-        DebugLog::append(mKernel.fs, "witness: the kernel would not report its settings");
-        return false;
-    }
-
     bool rawImperial = false;
     if (LiveSettings::readFlag(mKernel.fs, *mAddresses, UnitSetting::liveFlag(*mAddresses),
                                rawImperial) != LiveSettings::Status::Ok) {
@@ -134,33 +127,45 @@ void Gui::refreshLiveState()
     mState.known    = kernelAnswered ? 1 : 0;
 
     if (!mAddresses) {
-        if (mGateOutcome == FirmwareGate::Outcome::SettingsUnreadable) {
-            mState.status = UNIT_TOGGLE_STATUS_NO_SETTINGS;
-        } else if (kernelAnswered) {
-            mState.status = UNIT_TOGGLE_STATUS_UNSUPPORTED;
-        } else {
-            mState.status = UNIT_TOGGLE_STATUS_UNREADABLE;
-        }
+        // Whichever way the gate refused, it never opened a file -- what it
+        // decides is whether R1 may write, not whether the units can be read.
+        mState.status = kernelAnswered ? UNIT_TOGGLE_STATUS_UNSUPPORTED
+                                       : UNIT_TOGGLE_STATUS_UNREADABLE;
         return;
     }
 
     // Past the gate, the raw byte is what R1 will write, so it has to agree
     // with the message before the screen claims anything about it. Disagreement
     // means the offset is not the units field on this firmware.
-    if (!kernelAnswered || !rawAgreesWithKernel()) {
+    if (!kernelAnswered || !rawAgreesWithKernel(kernelImperial)) {
         LOG_WARNING("could not confirm the units against the kernel's own report\n");
         mState.known  = 0;
         mState.status = UNIT_TOGGLE_STATUS_UNREADABLE;
         return;
     }
 
-    if (mPersistFailed) {
-        mState.status = UNIT_TOGGLE_STATUS_NOT_SAVED;
-    } else if (!mSaveToSettings) {
-        mState.status = UNIT_TOGGLE_STATUS_LIVE_ONLY;
-    } else {
-        mState.status = UNIT_TOGGLE_STATUS_OK;
+    switch (mLastPress) {
+        case PressOutcome::LiveWriteFailed:
+        case PressOutcome::WitnessDisagreed:
+            // The read above agrees, and says nothing: the revert put the byte
+            // back to a value that already agreed. Only this remembers that the
+            // press proved the address wrong.
+            mState.known  = 0;
+            mState.status = UNIT_TOGGLE_STATUS_UNREADABLE;
+            return;
+        case PressOutcome::NotPersisted:
+            mState.status = UNIT_TOGGLE_STATUS_NOT_SAVED;
+            return;
+        case PressOutcome::FileUnreadable:
+            // The live change is real; it is the file that could not be read,
+            // which is the one thing "UNREADABLE FILE" is true of.
+            mState.status = UNIT_TOGGLE_STATUS_NO_SETTINGS;
+            return;
+        case PressOutcome::Clean:
+            break;
     }
+
+    mState.status = mSaveToSettings ? UNIT_TOGGLE_STATUS_OK : UNIT_TOGGLE_STATUS_LIVE_ONLY;
 }
 
 void Gui::toggle()
@@ -170,12 +175,13 @@ void Gui::toggle()
         return;
     }
 
-    mPersistFailed = false;
+    mLastPress = PressOutcome::Clean;
 
     bool current = false;
     if (LiveSettings::readFlag(mKernel.fs, *mAddresses, UnitSetting::liveFlag(*mAddresses),
                                current) != LiveSettings::Status::Ok) {
         LOG_WARNING("switch: could not confirm the current units; not writing\n");
+        mLastPress = PressOutcome::LiveWriteFailed;
         refreshLiveState();
         return;
     }
@@ -186,6 +192,7 @@ void Gui::toggle()
 
     if (status != LiveSettings::Status::Ok && status != LiveSettings::Status::NoChange) {
         LOG_ERROR("switch: write failed (status=%d); left unchanged\n", static_cast<int>(status));
+        mLastPress = PressOutcome::LiveWriteFailed;
         refreshLiveState();
         return;
     }
@@ -200,8 +207,8 @@ void Gui::toggle()
                            kernelImperial ? 1 : 0, desired ? 1 : 0);
         LiveSettings::writeFlag(mKernel.fs, *mAddresses, UnitSetting::liveFlag(*mAddresses),
                                 current);
-        mState.known  = 0;
-        mState.status = UNIT_TOGGLE_STATUS_UNREADABLE;
+        mLastPress = PressOutcome::WitnessDisagreed;
+        refreshLiveState();
         return;
     }
 
@@ -222,7 +229,7 @@ void Gui::toggle()
     }
     if (!mPrimitivesOk) {
         LOG_ERROR("switch: the File primitives did not behave; not writing\n");
-        mPersistFailed = true;
+        mLastPress = PressOutcome::NotPersisted;
         refreshLiveState();
         return;
     }
@@ -235,7 +242,19 @@ void Gui::toggle()
         LOG_ERROR("switch: persist to settings.json failed (status=%d); live value still changed\n",
                    static_cast<int>(persistStatus));
         DebugLog::appendf(mKernel.fs, "R1 persist FAILED: status=%d", static_cast<int>(persistStatus));
-        mPersistFailed = true;
+        // A file that could not be read is a different thing to tell the wearer
+        // than a write that did not land, and only one of them is about a file.
+        switch (persistStatus) {
+            case SettingsPersist::Status::ReadOpenFailed:
+            case SettingsPersist::Status::ReadFailed:
+            case SettingsPersist::Status::SizeOutOfRange:
+            case SettingsPersist::Status::FieldNotFound:
+                mLastPress = PressOutcome::FileUnreadable;
+                break;
+            default:
+                mLastPress = PressOutcome::NotPersisted;
+                break;
+        }
         refreshLiveState();
     } else {
         DebugLog::append(mKernel.fs, "R1 persist OK");
@@ -310,6 +329,11 @@ void Gui::run()
 
             case SDK::MessageType::COMMAND_APP_GUI_RESUME:
                 mResumed = true;
+                // The phone app can change the units while this app is
+                // suspended, so the first frame after resume is read fresh
+                // rather than served from before the suspend.
+                mTicksSinceRead = 0;
+                refreshLiveState();
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 break;
 
@@ -324,7 +348,9 @@ void Gui::run()
 
                 // The phone app can change the same setting while this screen is
                 // open, so the value is re-read rather than assumed unchanged.
-                if (++mTicksSinceRead >= kReReadEveryTicks) {
+                // Only while it is on screen: polling the kernel to redraw
+                // nothing costs two messages a second for no one.
+                if (mResumed && ++mTicksSinceRead >= kReReadEveryTicks) {
                     mTicksSinceRead = 0;
                     const uint8_t before = mState.imperial;
                     const uint8_t beforeKnown = mState.known;
@@ -351,7 +377,10 @@ void Gui::run()
                     return;
                 }
 
-                if (btn->event == Event::CLICK && btn->id == Id::SW2) {
+                // Not while suspended: a press that reaches a screen nobody is
+                // looking at would change the watch-wide setting with nothing
+                // drawn to say it had.
+                if (btn->event == Event::CLICK && btn->id == Id::SW2 && mResumed) {
                     DebugLog::append(mKernel.fs, "R1 pressed");
                     toggle();
                     LOG_INFO("Switched: units now %s (known=%d)\n",
