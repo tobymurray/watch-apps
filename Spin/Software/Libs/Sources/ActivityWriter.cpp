@@ -12,6 +12,7 @@
 
 #include <cassert>
 #include <cstring>
+#include <new>
 
 #define LOG_MODULE_PRX      "ActivityWriter"
 #define LOG_MODULE_LEVEL    LOG_LEVEL_DEBUG
@@ -98,7 +99,15 @@ void ActivityWriter::start(const AppInfo& info)
         return;
     }
 
-    mFit = std::make_unique<fit::FitWriter>(*mFile);
+    // `make_unique` compiled to a `bl _Znwj` with no null test after it, because
+    // GCC treats the throwing operator new as never returning null while this
+    // SDK's returns nullptr; disassemble this function to re-check.
+    mFit.reset(new (std::nothrow) fit::FitWriter(*mFile));
+    if (!mFit) {
+        LOG_ERROR("No room for the FIT writer; this ride records nothing\n");
+        return;
+    }
+
     const bool begun = mFit->begin(/*profileVersion=*/0);
     if (!begun) {
         LOG_ERROR("Failed to write FIT header\n");

@@ -266,6 +266,24 @@ truncated JSON, and the one-byte growth from `true` to `false` against a full
 buffer. What they cannot cover is everything above them: the addresses, the
 `File` primitives and the commit rename only ever run on a watch.
 
+Five of them cover one exact depth, which is what the splice matches at:
+`notifications` among the `phone` object's own keys, with `phone` itself found
+only at the outermost. Scoping to the object alone was not enough — it matched
+at any depth inside it, so a `notifications` key nested within `phone` was
+rewritten and `phone.notifications` left alone, and the same for a `phone`
+object nested in something else. The commit reported success either way, because
+the readback compares the file against the buffer just written rather than
+re-parsing it, so the change reverted at the next reboot:
+
+```
+in   {"phone":{"nested":{"notifications":true},"notifications":false}}
+was  unchanged, result Ok, phone.notifications still false
+now  phone.notifications true, the nested key untouched
+```
+
+No firmware is known to emit either shape — `phone` holds one key on 1.4.0.
+Falsified by a settings file that nests either name.
+
 ```sh
 cd Software/Apps/CustomGUI/rust
 cargo test --features std
