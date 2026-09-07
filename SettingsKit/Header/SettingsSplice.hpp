@@ -8,15 +8,11 @@
  * Header-only and free of SDK types so the host tests in `Tests/` can drive it
  * without a kernel.
  *
- * `setUnits` matches its key only at the outermost brace depth. A key of the
- * same name deeper in is not the one the kernel parses, and rewriting it would
- * be confirmed rather than caught: the readback compares the file against the
- * buffer just written.
- *
- * `setNotifications` narrows to the `phone` object but then matches at any
- * depth inside it, so a `notifications` key nested within `phone` is edited in
- * preference to `phone.notifications` itself. That is a live fault, recorded in
- * `../README.md`; it predates this scoping and is not fixed here.
+ * Both entry points match their key at one exact brace depth: `units` at the
+ * outermost, `notifications` among the `phone` object's own keys, with `phone`
+ * itself found only at the outermost. A key of the same name deeper in is not
+ * the one the kernel parses, and rewriting it would be confirmed rather than
+ * caught -- the readback compares the file against the buffer just written.
  ******************************************************************************
  */
 
@@ -66,22 +62,6 @@ inline bool matches(const char *p, const char *end, const char *needle, size_t n
     return true;
 }
 
-/// Start of the quoted token `name` at or after `begin`, or null. A match is
-/// only a candidate: the same characters appear in a string *value* too, and
-/// only the colon after them says which one this was.
-inline const char *findQuoted(const char *begin, const char *end, const char *name, size_t nameLen)
-{
-    for (const char *p = begin; p < end; ++p) {
-        if (*p != '"' || !matches(p + 1, end, name, nameLen)) {
-            continue;
-        }
-        if (p + 1 + nameLen < end && p[1 + nameLen] == '"') {
-            return p;
-        }
-    }
-    return nullptr;
-}
-
 /// End of the object that opens at `open` (which must point at '{'), one past
 /// its closing brace, or null if the braces never balance. Skips braces and
 /// escapes inside strings so a value can contain either.
@@ -111,46 +91,11 @@ inline const char *objectEnd(const char *open, const char *end)
     return nullptr;
 }
 
-/// Start of the value for key `name` within [begin, end), past the colon and
-/// any whitespace, or null. Keeps looking past a token that turned out to be a
-/// string value rather than a key -- `{"a":"phone","phone":{...}}` has both,
-/// and stopping at the first would miss the real one.
-inline const char *findValue(const char *begin, const char *end, const char *name, size_t nameLen)
-{
-    for (const char *search = begin; search < end;) {
-        const char *key = findQuoted(search, end, name, nameLen);
-        if (key == nullptr) {
-            return nullptr;
-        }
-        const char *p = key + 1 + nameLen + 1;
-        while (p < end && isSpace(*p)) {
-            ++p;
-        }
-        if (p < end && *p == ':') {
-            ++p;
-            while (p < end && isSpace(*p)) {
-                ++p;
-            }
-            return p < end ? p : nullptr;
-        }
-        search = key + 1;
-    }
-    return nullptr;
-}
-
-/// Start of the object that is the value of key `name`, pointing at its '{'.
-/// A `name` whose value is not an object is not searched past: the file is then
-/// not the shape this app knows how to edit.
-inline const char *findObject(const char *begin, const char *end, const char *name, size_t nameLen)
-{
-    const char *value = findValue(begin, end, name, nameLen);
-    return (value != nullptr && *value == '{') ? value : nullptr;
-}
-
 /// Start of the value for key `name` at brace depth `wantDepth` -- 1 being the
-/// keys of the outermost object -- or null. Unlike `findValue` this steps over
-/// nested objects rather than matching inside them, so a key of the same name
-/// one level down cannot be taken for the one being looked for.
+/// keys of the outermost object -- past the colon and any whitespace, or null.
+/// Steps over nested objects rather than matching inside them, and over a
+/// token that turned out to be a string value: only the colon after it says
+/// which one it was.
 inline const char *findValueAtDepth(const char *begin, const char *end, const char *name,
                                     size_t nameLen, int wantDepth)
 {
@@ -197,6 +142,16 @@ inline const char *findValueAtDepth(const char *begin, const char *end, const ch
     return nullptr;
 }
 
+/// Start of the object that is the value of key `name` at brace depth
+/// `wantDepth`, pointing at its '{'. A `name` whose value is not an object is
+/// not searched past: the file is then not the shape this app knows how to edit.
+inline const char *findObjectAtDepth(const char *begin, const char *end, const char *name,
+                                     size_t nameLen, int wantDepth)
+{
+    const char *value = findValueAtDepth(begin, end, name, nameLen, wantDepth);
+    return (value != nullptr && *value == '{') ? value : nullptr;
+}
+
 /// Overwrites the `oldLen` bytes at `value` with `newLen` bytes of
 /// `replacement`, shifting the rest of the buffer to suit and adjusting `len`.
 /// `buf` is left untouched unless the result is Ok.
@@ -235,7 +190,7 @@ inline Result setNotifications(char *buf, size_t &len, size_t capacity, bool new
 {
     const char *const end = buf + len;
 
-    const char *const phone = detail::findObject(buf, end, "phone", 5);
+    const char *const phone = detail::findObjectAtDepth(buf, end, "phone", 5, 1);
     if (phone == nullptr) {
         return Result::FieldNotFound;
     }
@@ -243,7 +198,7 @@ inline Result setNotifications(char *buf, size_t &len, size_t capacity, bool new
     if (phoneEnd == nullptr) {
         return Result::FieldNotFound;
     }
-    const char *const found = detail::findValue(phone, phoneEnd, "notifications", 13);
+    const char *const found = detail::findValueAtDepth(phone, phoneEnd, "notifications", 13, 1);
     if (found == nullptr) {
         return Result::FieldNotFound;
     }

@@ -61,27 +61,28 @@ the current state. `units` does appear, so `UnitToggle` reads it the supported
 way and needs the raw pointer only to change it — and can check its own write
 against what the kernel then reports.
 
-## A live fault this kit has, and does not yet fix
+## Both fields are matched at one exact depth
 
-`setNotifications` narrows to the `phone` object and then matches
-`"notifications"` at any depth inside it, so a `notifications` key nested within
-`phone` is rewritten in preference to `phone.notifications` itself. Measured
-against the real function:
+A key is looked for at one brace depth and nowhere else: `units` among the
+outermost object's keys, `notifications` among the `phone` object's own, with
+`phone` itself found only at the outermost. Anything of the same name deeper in
+is not what the kernel parses.
+
+This is not belt-and-braces. The commit's readback compares the file against
+the buffer just written rather than re-parsing it, so an edit to the wrong key
+is *confirmed* rather than caught: the write reports success and the change
+reverts at the next reboot. Both entry points had that fault --
+`setNotifications` shipped with it in NotifyToggle 0.6.0, scoped to the `phone`
+object but matching at any depth inside it:
 
 ```
 in   {"phone":{"nested":{"notifications":true},"notifications":false}}
-out  unchanged, result Ok, phone.notifications still false
+was  unchanged, result Ok, phone.notifications still false
+now  phone.notifications true, the nested key untouched
 ```
 
-The commit reports success, because the readback compares the file against the
-buffer just written rather than re-parsing it — so the wrong key is confirmed,
-and the change reverts at the next reboot. `setUnits` was given depth scoping
-against exactly this; `setNotifications` predates it and is shipped in
-NotifyToggle, so fixing it is its own change against its own baseline rather
-than something to fold into a units app.
-
-No firmware is known to emit such a file: `phone` holds one key on 1.4.0.
-Falsified by a settings file with a `notifications` key nested inside `phone`.
+No firmware is known to emit either shape -- `units` is the first key and
+`phone` holds one. Falsified by a settings file that nests either name.
 
 ## Tests
 

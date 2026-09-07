@@ -273,6 +273,42 @@ TEST(SettingsScan, DoesNotSearchPastAPhoneKeyThatIsNotAnObject)
               SettingsSplice::Result::FieldNotFound);
 }
 
+/// Scoping to the `phone` object is not enough on its own: matching anywhere
+/// inside it rewrote a nested key and left `phone.notifications` alone, and the
+/// readback confirmed it because it compares the file against the buffer just
+/// written. The change then reverted at the next reboot.
+TEST(SettingsScan, IgnoresANotificationsKeyNestedInsidePhone)
+{
+    const auto out =
+        splice(R"({"phone":{"nested":{"notifications":true},"notifications":false}})", true);
+    ASSERT_EQ(out.result, SettingsSplice::Result::Ok);
+    EXPECT_EQ(out.text,
+              R"({"phone":{"nested":{"notifications":true},"notifications":true}})");
+}
+
+TEST(SettingsScan, RefusesWhenTheOnlyNotificationsKeyIsNestedInsidePhone)
+{
+    EXPECT_EQ(splice(R"({"phone":{"nested":{"notifications":true}},"x":1})", true).result,
+              SettingsSplice::Result::FieldNotFound);
+}
+
+/// `phone` itself has to be found at the outermost depth too, or a `phone`
+/// object nested in something else is edited in preference to the real one.
+TEST(SettingsScan, IgnoresAPhoneObjectNestedInsideAnotherObject)
+{
+    const auto out = splice(
+        R"({"lastPaired":{"phone":{"notifications":true}},"phone":{"notifications":true}})", false);
+    ASSERT_EQ(out.result, SettingsSplice::Result::Ok);
+    EXPECT_EQ(out.text,
+              R"({"lastPaired":{"phone":{"notifications":true}},"phone":{"notifications":false}})");
+}
+
+TEST(SettingsScan, RefusesWhenTheOnlyPhoneObjectIsNested)
+{
+    EXPECT_EQ(splice(R"({"lastPaired":{"phone":{"notifications":true}},"x":1})", false).result,
+              SettingsSplice::Result::FieldNotFound);
+}
+
 } // namespace
 
 namespace

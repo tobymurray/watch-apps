@@ -224,7 +224,7 @@ From real builds against `apps-v1.4.0` in CI's toolchain image (linker map
 section headers, 600 KiB GUI RAM window, code executing from RAM):
 
 ```
-GUI      .text 47,844   .data 564   .bss 58,536   .stack 10,240   .uapp 56,108
+GUI      .text 47,876   .data 596   .bss 58,536   .stack 10,240   .uapp 56,200
 Service  .text  2,180   .data  36   .bss    556   .stack 10,240
 ```
 
