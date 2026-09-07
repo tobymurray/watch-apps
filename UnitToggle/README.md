@@ -231,6 +231,17 @@ the screen says so either way.
 
 The offset, the live write and the commit are settled (above). These are not.
 
+- **That the app's own recovery ever runs on hardware.** Tested on 2026-09-07 by
+  renaming `2:/settings.json` away by hand and rebooting, and the answer is that
+  it does not get the chance: kernel 1.4.0 rewrites a missing settings file, and
+  its own `.bak`, at boot with every personal field intact. The app then found
+  the file present and did nothing — the debug log has no `recover:` line at all.
+  So the recovery is a backstop for the narrower case where the firmware's backup
+  is gone too, and that case is untested; so is a real power loss inside the
+  two-rename window, which is the only way to produce a strand for real. What the
+  test did settle is that an interrupted commit is not the data-loss event this
+  app assumed. [`SettingsKit/README.md`](../SettingsKit/README.md) records what
+  it costs instead.
 - **That the gate ever refuses.** It accepted on the only firmware it has seen. A
   gate that has never said no is a gate whose refusal path is untested.
 - **What the change actually does to the rest of the watch, and when.** This is

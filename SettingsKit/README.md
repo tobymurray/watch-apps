@@ -40,11 +40,32 @@ Two descriptors, and nothing else:
   the scratch paths it commits under.
 
 The commit's own scratch names are **not** in `Field` — they are shared, and
-deliberately so. The commit moves the wearer's only settings file aside before
-renaming the replacement into place, so a power loss between those two renames
-leaves that file under a scratch name, and the app that stranded it is not
-necessarily the app that next runs. It may never run again. One name, swept at
-every launch by whichever app is opened, is what makes the file reachable at all.
+deliberately so. The commit moves the settings file aside before renaming the
+replacement into place, so a power loss between those two renames leaves it
+under a scratch name, and the app that stranded it is not necessarily the app
+that next runs. It may never run again. One name, swept at every launch by
+whichever app is opened, is what makes the file reachable at all.
+
+**Measured 2026-09-07, and it makes this less urgent than it reads.** With
+`2:/settings.json` renamed away by hand and the watch power-cycled, kernel 1.4.0
+rewrote it — and its own `.bak` — at boot, with the wearer's real height, weight,
+gender, date of birth and heart-rate zones intact, before any app ran. The app's
+own recovery then found the file present and did nothing, which the debug log
+shows by having no `recover:` line at all. So an interrupted commit is not the
+data-loss event this kit assumed: the firmware heals it.
+
+Two things that survives:
+
+- Recovery still matters when the firmware *cannot* heal — its backup gone or
+  unreadable — which is the only window left for it.
+- It cannot ever beat the firmware to a strand. The kernel acts at boot and apps
+  run after, so recovery-at-launch is structurally second.
+
+What is left behind is litter: the scratch file stays, and nothing removes it.
+And the firmware heals from `.bak`, which is as old as the last time it rotated
+one — so a strand can silently cost a wearer whatever changed in between, with
+the more recent copy sitting unread under a scratch name. Falsified by a boot
+that leaves a renamed-away settings file missing.
 
 Sharing is safe because the only destructive step — the stale-prev delete in
 `commitTmpFile` — is guarded on `2:/settings.json` existing, which is exactly

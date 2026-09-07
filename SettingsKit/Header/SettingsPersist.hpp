@@ -60,13 +60,18 @@ Status persistFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::Add
 ///
 /// The rollback inside a commit only covers a rename that returned an error;
 /// losing power between the two renames leaves the scratch copy holding the
-/// only settings file on the watch, and every later read refusing because there
-/// is none. Takes no `Field`: the app that stranded a file is not necessarily
-/// the app that next runs, so recovery cannot be the property of one of them.
+/// file. **The firmware heals that itself**: on 2026-09-07, with
+/// `2:/settings.json` renamed away by hand, kernel 1.4.0 rewrote it -- and its
+/// own `.bak` -- at boot, with the wearer's real fields intact, before any app
+/// ran. So this is for the narrower case where that backup is gone too, and it
+/// cannot beat the firmware to a strand: the kernel acts at boot and apps run
+/// after. Falsified by a boot that leaves a renamed-away settings file missing.
 ///
-/// Call this at launch, whether or not saving is on. It is the exception to
-/// writing nothing in that mode -- it moves back a file this mechanism moved,
-/// and only when the real one is absent.
+/// Takes no `Field`: the app that stranded a file is not necessarily the app
+/// that next runs, so recovery cannot be the property of one of them.
+///
+/// Call this at launch, whether or not saving is on -- it only ever moves back
+/// a file this mechanism moved, and only when the real one is absent.
 ///
 /// True if it recovered something.
 bool recoverInterruptedCommit(SDK::Interface::IFileSystem &fs,
