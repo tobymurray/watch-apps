@@ -12,12 +12,11 @@ that owns only pixels over a checked C ABI, and
 [`SettingsKit`](../SettingsKit) underneath both for everything that touches the
 watch's real settings.
 
-> **Run on a watch on 2026-09-07**, on the author's unit, kernel 1.4.0: the gate
-> accepted, the offset held against the kernel's own report, and three presses
-> moved the units in both directions. What has *not* run is the file write —
-> saving is off by default and was off for that run, so the commit path has
-> never executed for this field. [What has not been proved](#what-has-not-been-proved)
-> is the remaining list.
+> **Run on a watch on 2026-09-07**, on the author's unit, kernel 1.4.0, in both
+> modes: the gate accepted, the offset held against the kernel's own report, and
+> with saving switched on the commit wrote `2:/settings.json` and verified it on
+> flash. [What has not been proved](#what-has-not-been-proved) is what is left,
+> and it is now short.
 
 ## What it actually changes
 
@@ -119,6 +118,44 @@ That run also confirms the default is inert: with no config file on the watch,
 alone`, and `2:/settings.json` came back byte-identical to the capture taken the
 previous day — with no scratch file of any kind left on the volume.
 
+**The commit, with saving switched on.** Same day, same unit, a
+`unit_config.json` carrying `saveToSettings: true`. `validatePrimitives` ran for
+the first time and all fourteen checks passed — including `rename onto an
+OCCUPIED name -> 0`, which is the FatFs behaviour the whole move-aside dance
+exists for. Then:
+
+```
+persist: read 247 bytes, hash=0x9BA64962
+persist: spliced at offset 9, now 245 bytes, hash=0xAAD0F819
+write: open(2:/settings.json.uttmp, CREATE) -> 1
+write: write(245) -> 1 bytesWritten=245
+commit: exists(real) -> 1
+commit: exists(prev) -> 0
+commit: rename(real -> prev) -> 1
+commit: rename(tmp -> real) -> 1
+commit: delete(prev) after success -> 1
+persist: readback 245 bytes, hash=0xAAD0F819
+persist: verified OK -- the file on flash is what we wrote
+```
+
+Checked afterwards over USB, against the capture taken minutes before:
+
+- The file is **245 bytes and byte-identical to the metric file read off this
+  watch on 2026-09-06**, before any of this code existed. Not merely valid JSON:
+  the same bytes the firmware itself writes.
+- Only the `units` token differs from the pre-write file. Height, weight,
+  gender, date of birth and all six heart-rate zones came back exactly.
+- No `.uttmp`, `.utprev` or probe file was left anywhere on the volume.
+- The firmware's own `settings.json.bak` is byte-identical to before — untouched,
+  which is the one thing this app must never spend.
+- `0xAAD0F819` is the hash [`NotifyToggle`](../NotifyToggle) independently
+  recorded for this file's metric state on 2026-09-05, and it is what this Mac
+  computes for the file now. Two apps, two sessions, one number.
+
+The next launch read `metric` from the live struct, which is the kernel having
+reloaded the written file. Falsified by a run where the readback hash differs
+from the spliced hash, or where a scratch file survives a successful commit.
+
 **The file passes through zero bytes mid-write.** In the same session,
 `2:/settings.json` was observed at 0 bytes with a null FAT timestamp while a
 change from the phone was in flight; a later read returned the completed
@@ -189,15 +226,15 @@ the screen says so either way.
 
 ## What has not been proved
 
-The offset and the live write are settled (above). These are not.
+The offset, the live write and the commit are settled (above). These are not.
 
-- **That the commit works** for this field: that `settings.json` comes back
-  byte-identical apart from `units`, and that the change survives a power cycle.
-  Saving is off by default and was off for the 2026-09-07 run, so the whole
-  commit path — `validatePrimitives`, the tmp write, the rename dance — has never
-  executed for `units` on any watch. `NotifyToggle` proved all of it for its own
-  field on this firmware through the same primitives, which is evidence about the
-  mechanism but not about this field.
+- **That an interrupted commit is ever recovered.** `recoverInterruptedCommit`
+  has one call site, inside `persistFlag`, which the GUI reaches only when saving
+  is on — so a file stranded under `2:/settings.json.utprev` by a power loss
+  between the two renames is put back only by this app, only with saving still
+  on, and only on the next press. `NotifyToggle` cannot help: it knows
+  `.ntprev` and nothing else. Losing power inside that window is the one failure
+  here that costs a wearer their settings file, and nothing has tested it.
 - **That the gate ever refuses.** It accepted on the only firmware it has seen. A
   gate that has never said no is a gate whose refusal path is untested.
 - **What the change actually does to the rest of the watch, and when.** This is
@@ -210,9 +247,9 @@ The offset and the live write are settled (above). These are not.
   screen deliberately claims none of it.** It says what the setting is and
   whether it will last, and nothing about what else will change.
 
-Turning saving on is what closes the first of these, and it is the one that can
-leave a wearer without a settings file — which is why it is a decision made in
-the companion app rather than a default.
+The first of those is the one that can leave a wearer without a settings file,
+and it is why saving is a decision made in the companion app rather than a
+default.
 
 ## Building
 
