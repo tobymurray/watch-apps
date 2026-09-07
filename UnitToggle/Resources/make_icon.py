@@ -1,71 +1,60 @@
 #!/usr/bin/env python3
-"""Draw the UnitToggle app icons: a ruler -- the one symbol that says measuring
--- above the two-position bar this app actually draws on screen.
+"""Draw the UnitToggle app icons: the two units named, one above the other.
 
     python3 UnitToggle/Resources/make_icon.py UnitToggle/Resources
 
-A dual-scale ruler does not survive these sizes: rendered at true size, ticks on
-both edges at two different spacings read as a fence, and a bar with notches cut
-into it reads as piano keys. One scale drawn the ordinary way does read -- a
-baseline with ticks rising from it, alternating long and short -- so that is
-what this draws, and the choosing is carried by the two-position bar under it.
+Pictures of measuring do not survive this scale. A dual-scale ruler -- ticks on
+both edges at two spacings -- reads as a fence; a bar with notches cut into it
+reads as piano keys; and a single baseline-and-ticks ruler, which does read at
+60px, collapses into a letter W at 30px. Two bars divided four ways and three
+ways read as a progress bar. All four were rendered at true size and quantised
+before being discarded.
 
-The two sizes carry different amounts of that idea, on purpose. At 60px the
-ruler and the bar both read. At 30px the bar collapses into a smear beside the
-ticks, so the small icon is the ruler alone with three ticks instead of five.
-Compare at true size before changing either; magnified previews flatter a 30px
-icon into looking like it works.
+Naming the units works where drawing them does not, because two short words in
+a bold face are big shapes. At 30px the caps stand 7-8 px with strokes 1-3 px
+solid, and the row-by-row ink census in `report` is what checks none of that
+is lost to ABGR2222 -- two bits a channel, four levels, which `app_merging.py`
+reduces this to.
 
-Every shape here is at least two pixels wide even at 30px, so the whole icon is
-drawn supersampled and downsampled with one function. The quantisation check at
-the bottom is what proves that choice was safe -- `app_merging.py` reduces this
-to ABGR2222, two bits per channel, four levels.
+Both words are bright. An earlier version set MI in mid grey to mark metric as
+the chosen one; at 30px that grey is what made it mushy, and an icon has no
+business claiming which unit is set anyway -- the setting changes, the icon
+does not. The 60px size adds a divider rule between them, which is the one
+piece of detail that size can carry and this one cannot.
+
+Poppins SemiBold is the app's own face, from TextKit/Fonts.
 """
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
+import os
 import sys
 
 SS = 16  # supersample factor
 
-CARD_BG = (10, 10, 10, 255)   # near-black, matches the app's own ground
-RULE = (0, 170, 255, 255)     # quantises exactly, and is nobody else's colour here
-UNCHOSEN = (85, 85, 85, 255)  # the dark grey the app fills the unchosen half with
+CARD_BG = (10, 10, 10, 255)    # near-black, matches the app's own ground
+TOP = (0, 170, 255, 255)       # quantises exactly, and is nobody else's colour here
+BOTTOM = (255, 255, 255, 255)
+RULE = (85, 85, 85, 255)
 
-# Per size: the card, how many ticks, and whether that size can carry the bar.
+FONT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                    "..", "..", "TextKit", "Fonts", "Poppins-SemiBold.ttf")
+
+TOP_WORD = "KM"
+BOTTOM_WORD = "MI"
+
+# Per size: the card, how large the words are, and whether that size can carry
+# the divider between them.
 DESIGNS = {
-    60: dict(card_inset=3, card_radius=12, ticks=5, with_choice=True,
-             base_y=0.56, long_h=0.26, short_h=0.15, bar_h=0.065),
-    30: dict(card_inset=2, card_radius=6, ticks=3, with_choice=False,
-             base_y=0.62, long_h=0.30, short_h=0.17, bar_h=0.085),
+    60: dict(card_inset=3, card_radius=12, scale=0.30, top_cy=0.31, bottom_cy=0.70,
+             with_rule=True),
+    30: dict(card_inset=2, card_radius=6, scale=0.34, top_cy=0.31, bottom_cy=0.70,
+             with_rule=False),
 }
 
-RULE_X0 = 0.15
-RULE_X1 = 0.85
 
-
-def draw_ruler(pen, S, d):
-    """A baseline with ticks up from it, every other one long -- the shape a
-    ruler has to have to read as one rather than as a comb."""
-    x0, x1 = RULE_X0 * S, RULE_X1 * S
-    base_y = d["base_y"] * S
-    pen.rectangle([x0, base_y, x1, base_y + d["bar_h"] * S], fill=RULE)
-
-    span = x1 - x0
-    tick_w = span / (d["ticks"] * 2 - 1)
-    for i in range(d["ticks"]):
-        x = x0 + i * tick_w * 2
-        h = (d["long_h"] if i % 2 == 0 else d["short_h"]) * S
-        pen.rectangle([x, base_y - h, x + tick_w, base_y], fill=RULE)
-
-
-def draw_choice(pen, S):
-    """The app's own control, reduced to its one readable fact: two halves,
-    with the left one chosen."""
-    x0, x1 = RULE_X0 * S, RULE_X1 * S
-    y0, y1 = 0.70 * S, 0.84 * S
-    r = (y1 - y0) / 2
-    mid = (x0 + x1) / 2
-    pen.rounded_rectangle([x0, y0, x1, y1], radius=r, fill=UNCHOSEN)
-    pen.rounded_rectangle([x0, y0, mid + r, y1], radius=r, fill=RULE)
+def centred(pen, text, face, cx, cy, colour):
+    left, top, right, bottom = pen.textbbox((0, 0), text, font=face)
+    pen.text((cx - (right - left) / 2 - left, cy - (bottom - top) / 2 - top),
+             text, font=face, fill=colour)
 
 
 def draw(size):
@@ -79,9 +68,12 @@ def draw(size):
     pen.rounded_rectangle([ci, ci, S - 1 - ci, S - 1 - ci],
                           radius=d["card_radius"] * SS, fill=CARD_BG)
 
-    draw_ruler(pen, S, d)
-    if d["with_choice"]:
-        draw_choice(pen, S)
+    face = ImageFont.truetype(FONT, int(d["scale"] * S))
+    centred(pen, TOP_WORD, face, S / 2, d["top_cy"] * S, TOP)
+    centred(pen, BOTTOM_WORD, face, S / 2, d["bottom_cy"] * S, BOTTOM)
+
+    if d["with_rule"]:
+        pen.rectangle([0.24 * S, 0.495 * S, 0.76 * S, 0.515 * S], fill=RULE)
 
     return img.resize((size, size), Image.LANCZOS)
 
@@ -99,30 +91,38 @@ def quantise(img):
 
 
 def report(size, img):
-    """Spot-check pixels well inside each shape, away from any edge, against
-    what they should quantise to. Edge pixels are expected to blend -- that is
-    what the supersample-then-downsample is for -- so this checks the interiors
-    are still the intended flat colour, not that the whole icon has only four
-    shades in it."""
-    d = DESIGNS[size]
+    """Counts the ink each word keeps after quantisation, and prints the rows so
+    a shape that has gone mushy is visible rather than merely counted. Glyphs
+    are strokes, not fills, so the spot-checks a solid shape gets would prove
+    nothing here; what matters is that both words survive as several rows of
+    connected pixels."""
     q = quantise(img)
+    px = q.load()
 
-    base_mid = int((d["base_y"] + d["bar_h"] / 2) * size)
-    checks = [("card", size // 2, d["card_inset"] + 2, CARD_BG),
-              ("baseline", int(0.5 * size), base_mid, RULE),
-              ("first tick", int(RULE_X0 * size) + 1,
-               int((d["base_y"] - d["long_h"] / 2) * size), RULE)]
-    if d["with_choice"]:
-        checks.append(("chosen half", int((RULE_X0 + 0.06) * size), int(0.77 * size), RULE))
-        checks.append(("unchosen half", int((RULE_X1 - 0.06) * size), int(0.77 * size), UNCHOSEN))
+    rows = []
+    for y in range(size):
+        ink = "".join("#" if sum(px[x, y][:3]) > 200 else "." for x in range(size))
+        if "#" in ink:
+            rows.append((y, ink))
 
-    bad = []
-    for label, x, y, expect in checks:
-        got = q.getpixel((x, y))
-        want = quantise(Image.new("RGBA", (1, 1), expect)).getpixel((0, 0))
-        if got != want:
-            bad.append("%s: got %s, want %s" % (label, got, want))
-    print("%dx%d: %s" % (size, size, "clean" if not bad else "; ".join(bad)))
+    if not rows:
+        print("%dx%d: NOTHING SURVIVED QUANTISATION" % (size, size))
+        return
+
+    # Each word is a run of inked rows; the divider, where a size draws one, is
+    # a band of its own between them.
+    gaps = [i for i in range(1, len(rows)) if rows[i][0] != rows[i - 1][0] + 1]
+    bounds = [0] + gaps + [len(rows)]
+    bands = [rows[bounds[i]:bounds[i + 1]] for i in range(len(bounds) - 1)]
+    expected = 3 if DESIGNS[size]["with_rule"] else 2
+    word_bands = sorted((len(b) for b in bands), reverse=True)[:2]
+
+    ok = len(bands) == expected and min(word_bands) >= 5
+    print("%dx%d: %d inked bands (expected %d), words %d and %d rows tall -- %s"
+          % (size, size, len(bands), expected, word_bands[0], word_bands[1],
+             "clean" if ok else "CHECK THIS BY EYE"))
+    for y, ink in rows:
+        print("        y=%2d  %s" % (y, ink))
 
 
 if __name__ == "__main__":

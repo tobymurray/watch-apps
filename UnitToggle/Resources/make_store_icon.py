@@ -7,31 +7,31 @@ Not the watch icon. `icon_60x60.png` / `icon_30x30.png` (make_icon.py) get
 quantised to ABGR2222 and baked into the .uapp; this file is copied into the
 package as `icon.png` and shown by the phone app as an ordinary full-colour
 PNG. This app has one screen and no format choice, so the icon is the same
-vector ruler-and-bar shape make_icon.py draws at 60px, scaled up, rather than
-a screenshot.
+KM/MI face make_icon.py draws at 60px, scaled up, rather than a screenshot.
 """
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import numpy as np
+import os
 import sys
 
 SIZE = 512
 SS = 4
 
-BG_CENTER = (14, 36, 52)     # a dark blue glow, echoing the ruler's own colour
+BG_CENTER = (14, 36, 52)     # a dark blue glow, echoing the type's own colour
 BG_EDGE = (7, 9, 11)
 BEZEL = (234, 234, 231)
 CARD_BG = (10, 10, 10, 255)
-RULE = (0, 170, 255, 255)
-UNCHOSEN = (85, 85, 85, 255)
+TOP = (0, 170, 255, 255)
+BOTTOM = (255, 255, 255, 255)
+RULE = (85, 85, 85, 255)
 
-RULE_X0 = 0.15
-RULE_X1 = 0.85
-TICKS = 5
+FONT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                    "..", "..", "TextKit", "Fonts", "Poppins-SemiBold.ttf")
 
 
 def draw_face(size):
-    """What make_icon.py draws at 60px: a black rounded card, the ruler, and
-    the two-position bar with its left half chosen."""
+    """What make_icon.py draws at 60px: a black rounded card and the two units
+    named, one above the other, with a rule between them."""
     S = size * SS
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     pen = ImageDraw.Draw(img)
@@ -40,22 +40,13 @@ def draw_face(size):
     pen.rounded_rectangle([inset, inset, S - 1 - inset, S - 1 - inset],
                           radius=int(size * 0.2) * SS, fill=CARD_BG)
 
-    x0, x1 = RULE_X0 * S, RULE_X1 * S
-    base_y = 0.56 * S
-    pen.rectangle([x0, base_y, x1, base_y + 0.065 * S], fill=RULE)
+    face = ImageFont.truetype(FONT, int(0.30 * S))
+    for text, cy, colour in (("KM", 0.31 * S, TOP), ("MI", 0.70 * S, BOTTOM)):
+        left, top, right, bottom = pen.textbbox((0, 0), text, font=face)
+        pen.text((S / 2 - (right - left) / 2 - left, cy - (bottom - top) / 2 - top),
+                 text, font=face, fill=colour)
 
-    span = x1 - x0
-    tick_w = span / (TICKS * 2 - 1)
-    for i in range(TICKS):
-        x = x0 + i * tick_w * 2
-        h = (0.26 if i % 2 == 0 else 0.15) * S
-        pen.rectangle([x, base_y - h, x + tick_w, base_y], fill=RULE)
-
-    by0, by1 = 0.70 * S, 0.84 * S
-    r = (by1 - by0) / 2
-    mid = (x0 + x1) / 2
-    pen.rounded_rectangle([x0, by0, x1, by1], radius=r, fill=UNCHOSEN)
-    pen.rounded_rectangle([x0, by0, mid + r, by1], radius=r, fill=RULE)
+    pen.rectangle([0.24 * S, 0.495 * S, 0.76 * S, 0.515 * S], fill=RULE)
 
     return img.resize((size, size), Image.LANCZOS)
 

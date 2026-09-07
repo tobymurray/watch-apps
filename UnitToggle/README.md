@@ -117,6 +117,14 @@ and the round mask's chord at its corner rows is 233 px. The footer is 118 px at
 Regular 12 against a 129 px chord at row 220. Measured with `textkit`'s
 `measure` example, not estimated.
 
+The launcher icon names the two units rather than drawing one. Pictures of
+measuring do not survive 30 px: a dual-scale ruler reads as a fence, a notched
+bar reads as piano keys, and a plain baseline-and-ticks ruler — which does read
+at 60 px — collapses into a letter W. `Resources/make_icon.py` records what was
+tried, and its ink census is what checks the type survives the panel's four
+levels a channel: at 30 px the caps stand 7 and 8 rows with strokes 1–3 px
+solid.
+
 | What happened | What it draws |
 |---|---|
 | Read, and saved | White outline, the set half filled, no status line |
