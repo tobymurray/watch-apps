@@ -47,8 +47,6 @@ pub enum Status {
     NotSaved,
     /// Saving is switched off, so the change is live only. Nothing went wrong.
     LiveOnly,
-    /// The firmware is known but settings.json could not be read or understood.
-    NoSettings,
 }
 
 impl Status {
@@ -60,14 +58,13 @@ impl Status {
             1 => Status::Unsupported,
             3 => Status::NotSaved,
             4 => Status::LiveOnly,
-            5 => Status::NoSettings,
             _ => Status::Unreadable,
         }
     }
 
     /// True when the units are known, whether or not they can be changed here.
     fn shows_a_readable_choice(self) -> bool {
-        self != Status::Unreadable && self != Status::NoSettings
+        self != Status::Unreadable
     }
 }
 
@@ -328,12 +325,8 @@ fn draw(fb: &mut FrameBuf, state: &State) {
     // Nothing to show a choice about: the units themselves could not be read,
     // so drawing the control at all would be inventing one of its two answers.
     if !state.status().shows_a_readable_choice() {
-        let (label, footer) = match state.status() {
-            Status::NoSettings => (LABEL_NO_SETTINGS, FOOTER_NO_SETTINGS),
-            _ => (LABEL_UNKNOWN, FOOTER_UNKNOWN),
-        };
-        text(fb, WORD_FACE, label, PANEL_CX, LABEL_BASELINE_Y, WARN_ACCENT);
-        text(fb, HINT_FACE, footer, PANEL_CX, FOOTER_BASELINE_Y, CHROME);
+        text(fb, WORD_FACE, LABEL_UNKNOWN, PANEL_CX, LABEL_BASELINE_Y, WARN_ACCENT);
+        text(fb, HINT_FACE, FOOTER_UNKNOWN, PANEL_CX, FOOTER_BASELINE_Y, CHROME);
         return;
     }
 
@@ -368,12 +361,10 @@ const LABEL_IMPERIAL: &str = "IMPERIAL";
 const LABEL_UNKNOWN: &str = "UNKNOWN";
 const LABEL_NOT_SAVED: &str = "NOT SAVED";
 const LABEL_VIEW_ONLY: &str = "VIEW ONLY";
-const LABEL_NO_SETTINGS: &str = "SETTINGS?";
 const FOOTER: &str = "R1 SWITCH  R2 BACK";
 const FOOTER_NOT_SAVED: &str = "REVERTS ON REBOOT";
 const FOOTER_UNSUPPORTED: &str = "NEEDS WATCH 1.4.0";
 const FOOTER_UNKNOWN: &str = "R2 BACK";
-const FOOTER_NO_SETTINGS: &str = "UNREADABLE FILE";
 
 pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {
     if width == 0 || height == 0 {
@@ -471,10 +462,6 @@ mod tests {
 
     fn live_only() -> State {
         State { imperial: 1, known: 1, status: 4, _pad: [0; 1] }
-    }
-
-    fn no_settings() -> State {
-        State { imperial: 0, known: 0, status: 5, _pad: [0; 1] }
     }
 
     /// Gate refused, units still `known`: reading them needs no gate.
@@ -592,13 +579,12 @@ mod tests {
     }
 
     /// Nothing readable to show, so nothing that looks like an answer is drawn.
+    /// Nothing readable to show, so nothing that looks like an answer is drawn.
     #[test]
-    fn no_settings_draws_no_control_at_all() {
-        for state in [no_settings(), unknown()] {
-            let f = frame(&state);
-            let outline_y = SEG_Y + SEG_H / 2;
-            assert_eq!(px(&f, SEG_X, outline_y), GROUND.0, "status {}", state.status);
-        }
+    fn unreadable_draws_no_control_at_all() {
+        let f = frame(&unknown());
+        let outline_y = SEG_Y + SEG_H / 2;
+        assert_eq!(px(&f, SEG_X, outline_y), GROUND.0);
     }
 
     #[test]
@@ -620,8 +606,7 @@ mod tests {
     #[test]
     fn nothing_is_drawn_outside_the_round_mask() {
         let r = (W / 2) as i32;
-        for state in [metric(), imperial(), unknown(), not_saved(), live_only(), no_settings(),
-                      unsupported()] {
+        for state in [metric(), imperial(), unknown(), not_saved(), live_only(), unsupported()] {
             let f = frame(&state);
             for y in 0..H as i32 {
                 for x in 0..W as i32 {

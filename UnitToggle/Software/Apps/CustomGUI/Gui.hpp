@@ -7,7 +7,6 @@
 #include "SDK/Kernel/Kernel.hpp"
 
 #include "DebugLog.hpp"
-#include "FirmwareGate.hpp"
 #include "SettingsAddresses.hpp"
 #include "unit_toggle_gui.h"
 
@@ -65,12 +64,15 @@ private:
     /// returns to a confident answer about a change that did not happen.
     enum class PressOutcome {
         Clean,
-        LiveWriteFailed,    ///< The live byte could not be read or written.
-        WitnessDisagreed,   ///< Written, but the kernel did not report it; byte put back.
-        NotPersisted,       ///< Live change took effect; settings.json was not written.
-        FileUnreadable,     ///< Live change took effect; settings.json could not be read at all.
+        Unreliable,     ///< The live byte could not be read, written, or witnessed.
+        NotPersisted,   ///< Live change took effect; settings.json was not written.
     };
     PressOutcome mLastPress = PressOutcome::Clean;
+
+    /// What the kernel reported when `mLastPress` was set. A `NotPersisted`
+    /// outcome describes one value; once something else has changed the units,
+    /// it no longer describes what is on screen and is dropped.
+    uint8_t mLastPressValue = 0;
 
     // The wearer's answer to "also write this to the watch's settings file".
     // False until the config says otherwise, so an install that nobody

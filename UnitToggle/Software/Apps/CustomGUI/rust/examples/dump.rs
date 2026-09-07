@@ -20,14 +20,13 @@ fn main() {
     );
     fs::create_dir_all(&dir).expect("could not create the output directory");
 
-    let screens: [(&str, State); 7] = [
+    let screens: [(&str, State); 6] = [
         ("metric", State { imperial: 0, known: 1, status: 0, _pad: [0; 1] }),
         ("imperial", State { imperial: 1, known: 1, status: 0, _pad: [0; 1] }),
         ("live-only", State { imperial: 1, known: 1, status: 4, _pad: [0; 1] }),
         ("not-saved", State { imperial: 1, known: 1, status: 3, _pad: [0; 1] }),
         ("unsupported", State { imperial: 1, known: 1, status: 1, _pad: [0; 1] }),
         ("unreadable", State { imperial: 0, known: 0, status: 2, _pad: [0; 1] }),
-        ("no-settings", State { imperial: 0, known: 0, status: 5, _pad: [0; 1] }),
     ];
 
     let mut buf = vec![0u8; (W * H) as usize];

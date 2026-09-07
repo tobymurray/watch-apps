@@ -145,22 +145,23 @@ void Gui::refreshLiveState()
     }
 
     switch (mLastPress) {
-        case PressOutcome::LiveWriteFailed:
-        case PressOutcome::WitnessDisagreed:
+        case PressOutcome::Unreliable:
             // The read above agrees, and says nothing: the revert put the byte
             // back to a value that already agreed. Only this remembers that the
-            // press proved the address wrong.
+            // press proved the address is not the units field.
             mState.known  = 0;
             mState.status = UNIT_TOGGLE_STATUS_UNREADABLE;
             return;
         case PressOutcome::NotPersisted:
-            mState.status = UNIT_TOGGLE_STATUS_NOT_SAVED;
-            return;
-        case PressOutcome::FileUnreadable:
-            // The live change is real; it is the file that could not be read,
-            // which is the one thing "UNREADABLE FILE" is true of.
-            mState.status = UNIT_TOGGLE_STATUS_NO_SETTINGS;
-            return;
+            if (mState.imperial == mLastPressValue) {
+                mState.status = UNIT_TOGGLE_STATUS_NOT_SAVED;
+                return;
+            }
+            // Something else has set the units since -- the phone app, most
+            // likely -- so what this press failed to write is no longer what
+            // the screen is showing.
+            mLastPress = PressOutcome::Clean;
+            break;
         case PressOutcome::Clean:
             break;
     }
@@ -175,13 +176,22 @@ void Gui::toggle()
         return;
     }
 
+    if (mLastPress == PressOutcome::Unreliable) {
+        // A press already established that this byte is not the units field.
+        // Pressing again would write it twice more -- forward, then back -- in
+        // kernel RAM on a part with no MPU, and learn nothing new.
+        LOG_WARNING("switch: the address failed its own witness this run; not writing again\n");
+        DebugLog::append(mKernel.fs, "R1 ignored: address already proved unreliable this run");
+        return;
+    }
+
     mLastPress = PressOutcome::Clean;
 
     bool current = false;
     if (LiveSettings::readFlag(mKernel.fs, *mAddresses, UnitSetting::liveFlag(*mAddresses),
                                current) != LiveSettings::Status::Ok) {
         LOG_WARNING("switch: could not confirm the current units; not writing\n");
-        mLastPress = PressOutcome::LiveWriteFailed;
+        mLastPress = PressOutcome::Unreliable;
         refreshLiveState();
         return;
     }
@@ -192,7 +202,7 @@ void Gui::toggle()
 
     if (status != LiveSettings::Status::Ok && status != LiveSettings::Status::NoChange) {
         LOG_ERROR("switch: write failed (status=%d); left unchanged\n", static_cast<int>(status));
-        mLastPress = PressOutcome::LiveWriteFailed;
+        mLastPress = PressOutcome::Unreliable;
         refreshLiveState();
         return;
     }
@@ -207,7 +217,7 @@ void Gui::toggle()
                            kernelImperial ? 1 : 0, desired ? 1 : 0);
         LiveSettings::writeFlag(mKernel.fs, *mAddresses, UnitSetting::liveFlag(*mAddresses),
                                 current);
-        mLastPress = PressOutcome::WitnessDisagreed;
+        mLastPress = PressOutcome::Unreliable;
         refreshLiveState();
         return;
     }
@@ -229,7 +239,8 @@ void Gui::toggle()
     }
     if (!mPrimitivesOk) {
         LOG_ERROR("switch: the File primitives did not behave; not writing\n");
-        mLastPress = PressOutcome::NotPersisted;
+        mLastPress      = PressOutcome::NotPersisted;
+        mLastPressValue = desired ? 1 : 0;
         refreshLiveState();
         return;
     }
@@ -242,19 +253,8 @@ void Gui::toggle()
         LOG_ERROR("switch: persist to settings.json failed (status=%d); live value still changed\n",
                    static_cast<int>(persistStatus));
         DebugLog::appendf(mKernel.fs, "R1 persist FAILED: status=%d", static_cast<int>(persistStatus));
-        // A file that could not be read is a different thing to tell the wearer
-        // than a write that did not land, and only one of them is about a file.
-        switch (persistStatus) {
-            case SettingsPersist::Status::ReadOpenFailed:
-            case SettingsPersist::Status::ReadFailed:
-            case SettingsPersist::Status::SizeOutOfRange:
-            case SettingsPersist::Status::FieldNotFound:
-                mLastPress = PressOutcome::FileUnreadable;
-                break;
-            default:
-                mLastPress = PressOutcome::NotPersisted;
-                break;
-        }
+        mLastPress      = PressOutcome::NotPersisted;
+        mLastPressValue = desired ? 1 : 0;
         refreshLiveState();
     } else {
         DebugLog::append(mKernel.fs, "R1 persist OK");
@@ -330,10 +330,10 @@ void Gui::run()
             case SDK::MessageType::COMMAND_APP_GUI_RESUME:
                 mResumed = true;
                 // The phone app can change the units while this app is
-                // suspended, so the first frame after resume is read fresh
-                // rather than served from before the suspend.
-                mTicksSinceRead = 0;
-                refreshLiveState();
+                // suspended, so the next tick re-reads rather than serving a
+                // frame from before it. Scheduled rather than done here: no
+                // other app in this repo blocks a resume on a kernel round-trip.
+                mTicksSinceRead = kReReadEveryTicks;
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 break;
 
