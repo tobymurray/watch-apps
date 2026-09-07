@@ -5,8 +5,9 @@
  *          under.
  ******************************************************************************
  *
- * Every path here is this app's own; `SettingsPersist::Field` says why that
- * matters.
+ * The commit's own scratch names are not here: they are shared across the apps
+ * that use this mechanism, so any of them can put back a file another stranded.
+ * `SettingsPersist::kScratchPrevPath` says why.
  ******************************************************************************
  */
 
@@ -30,8 +31,6 @@ inline LiveSettings::Flag liveFlag(const SettingsAddresses::AddressSet &addrs)
 constexpr SettingsPersist::Field kField = {
     .splice     = &SettingsSplice::setUnits,
     .name       = "units",
-    .tmpPath    = "2:/settings.json.uttmp",
-    .prevPath   = "2:/settings.json.utprev",
     .probeAPath = "2:/ut-probe-a.tmp",
     .probeBPath = "2:/ut-probe-b.tmp",
     .probeText  = "UnitToggle primitive self-test",

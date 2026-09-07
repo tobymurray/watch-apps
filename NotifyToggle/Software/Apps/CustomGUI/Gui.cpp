@@ -249,6 +249,14 @@ void Gui::run()
 
     resolveFirmwareSupport();
 
+    // Before anything reads the file: a commit that lost power between its two
+    // renames left the wearer's only settings file under a scratch name, and
+    // nothing else on the watch will put it back. Runs whether or not saving is
+    // on -- it only ever moves back a file this mechanism moved.
+    if (mAddresses && SettingsPersist::recoverInterruptedCommit(mKernel.fs, *mAddresses)) {
+        LOG_WARNING("recovered a settings file left aside by an interrupted commit\n");
+    }
+
     refreshLiveState();
     // IAppCapabilities scopes these to "while this app is running", so reopening
     // has to re-request the flag rather than merely display it.

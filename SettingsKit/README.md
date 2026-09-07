@@ -39,12 +39,24 @@ Two descriptors, and nothing else:
 - **`SettingsPersist::Field`** — the splice function for the field it owns, and
   the scratch paths it commits under.
 
-Every path in `Field` must be that app's alone. The commit moves the wearer's
-only settings file aside under `prevPath` before renaming the replacement into
-place, and recovery finds it again by that exact name; two apps sharing one
-would each treat the other's interrupted commit as its own. `NotifyToggle`'s
-`ntprev` name in particular is fixed for good — a watch left holding one by a
-commit that lost power is recovered by matching it.
+The commit's own scratch names are **not** in `Field` — they are shared, and
+deliberately so. The commit moves the wearer's only settings file aside before
+renaming the replacement into place, so a power loss between those two renames
+leaves that file under a scratch name, and the app that stranded it is not
+necessarily the app that next runs. It may never run again. One name, swept at
+every launch by whichever app is opened, is what makes the file reachable at all.
+
+Sharing is safe because the only destructive step — the stale-prev delete in
+`commitTmpFile` — is guarded on `2:/settings.json` existing, which is exactly
+what a stranded file means is not true; and recovery runs before that step in
+any case. An earlier version of this kit gave each app its own names on the
+theory that sharing risked one app eating another's strand. That theory does not
+survive reading the guard, and the names it produced were the reason recovery
+could not work across apps.
+
+`Field` still carries the two paths the primitive self-test writes, and those
+must be the app's own — `isWellFormed` refuses one that collides with the
+settings file or with either shared name.
 
 ## The two fields, and how they differ
 

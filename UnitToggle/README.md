@@ -145,7 +145,10 @@ Checked afterwards over USB, against the capture taken minutes before:
   the same bytes the firmware itself writes.
 - Only the `units` token differs from the pre-write file. Height, weight,
   gender, date of birth and all six heart-rate zones came back exactly.
-- No `.uttmp`, `.utprev` or probe file was left anywhere on the volume.
+- No `.uttmp`, `.utprev` or probe file was left anywhere on the volume. Those
+  were the scratch names at the time; they are shared and shorter now, for the
+  reason [`SettingsKit/README.md`](../SettingsKit/README.md) gives, and the log
+  above is quoted as it was written.
 - The firmware's own `settings.json.bak` is byte-identical to before — untouched,
   which is the one thing this app must never spend.
 - `0xAAD0F819` is the hash [`NotifyToggle`](../NotifyToggle) independently
@@ -228,13 +231,6 @@ the screen says so either way.
 
 The offset, the live write and the commit are settled (above). These are not.
 
-- **That an interrupted commit is ever recovered.** `recoverInterruptedCommit`
-  has one call site, inside `persistFlag`, which the GUI reaches only when saving
-  is on — so a file stranded under `2:/settings.json.utprev` by a power loss
-  between the two renames is put back only by this app, only with saving still
-  on, and only on the next press. `NotifyToggle` cannot help: it knows
-  `.ntprev` and nothing else. Losing power inside that window is the one failure
-  here that costs a wearer their settings file, and nothing has tested it.
 - **That the gate ever refuses.** It accepted on the only firmware it has seen. A
   gate that has never said no is a gate whose refusal path is untested.
 - **What the change actually does to the rest of the watch, and when.** This is
@@ -247,9 +243,8 @@ The offset, the live write and the commit are settled (above). These are not.
   screen deliberately claims none of it.** It says what the setting is and
   whether it will last, and nothing about what else will change.
 
-The first of those is the one that can leave a wearer without a settings file,
-and it is why saving is a decision made in the companion app rather than a
-default.
+Saving stays a decision made in the companion app rather than a default,
+because the commit is the only part of this that can cost a wearer anything.
 
 ## Building
 
@@ -283,7 +278,7 @@ From a real build against the pinned toolchain image and SDK revision
 (`arm-none-eabi-size -A`, 600 KiB GUI RAM window, code executing from RAM):
 
 ```
-GUI      .text 49,252   .data 580   .bss 58,536   .stack 10,240   .uapp 57,572
+GUI      .text 49,512   .data 572   .bss 58,536   .stack 10,240   .uapp 57,820
 Service  .text  2,180   .data  36   .bss    556   .stack 10,240
 ```
 

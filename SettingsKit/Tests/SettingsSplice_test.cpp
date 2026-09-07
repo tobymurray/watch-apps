@@ -495,8 +495,6 @@ namespace field_cases
 constexpr SettingsPersist::Field kGood = {
     .splice     = &SettingsSplice::setUnits,
     .name       = "units",
-    .tmpPath    = "2:/settings.json.uttmp",
-    .prevPath   = "2:/settings.json.utprev",
     .probeAPath = "2:/ut-probe-a.tmp",
     .probeBPath = "2:/ut-probe-b.tmp",
     .probeText  = "UnitToggle primitive self-test",
@@ -505,14 +503,15 @@ constexpr SettingsPersist::Field kGood = {
 constexpr SettingsPersist::Field with(SettingsPersist::Field f, int slot, const char *value)
 {
     switch (slot) {
-        case 0: f.tmpPath = value; break;
-        case 1: f.prevPath = value; break;
-        case 2: f.probeAPath = value; break;
-        case 3: f.probeBPath = value; break;
+        case 0: f.probeAPath = value; break;
+        case 1: f.probeBPath = value; break;
         default: f.probeText = value; break;
     }
     return f;
 }
+
+/// How many interchangeable `const char *` paths `isWellFormed` checks.
+constexpr int kPathSlots = 2;
 
 } // namespace field_cases
 
@@ -525,13 +524,12 @@ TEST(SettingsField, AcceptsAWellFormedDescriptor)
 /// commit moves the file aside under the name it is about to write.
 TEST(SettingsField, RejectsTwoPathsThatAreTheSame)
 {
-    for (int slot = 0; slot < 4; ++slot) {
-        for (int other = 0; other < 4; ++other) {
+    for (int slot = 0; slot < field_cases::kPathSlots; ++slot) {
+        for (int other = 0; other < field_cases::kPathSlots; ++other) {
             if (slot == other) {
                 continue;
             }
-            const char *const paths[] = {field_cases::kGood.tmpPath, field_cases::kGood.prevPath,
-                                         field_cases::kGood.probeAPath,
+            const char *const paths[] = {field_cases::kGood.probeAPath,
                                          field_cases::kGood.probeBPath};
             EXPECT_FALSE(SettingsPersist::isWellFormed(
                 field_cases::with(field_cases::kGood, slot, paths[other])))
@@ -540,20 +538,38 @@ TEST(SettingsField, RejectsTwoPathsThatAreTheSame)
     }
 }
 
-/// A scratch name that is the real file would have the commit delete or rename
-/// the thing it is supposed to be protecting.
-TEST(SettingsField, RejectsAScratchPathThatIsTheRealSettingsFile)
+/// A probe path colliding with the settings file, or with either shared commit
+/// scratch name, would have the self-test delete what a commit is holding.
+TEST(SettingsField, RejectsAProbePathThatIsAReservedName)
 {
-    for (int slot = 0; slot < 4; ++slot) {
-        EXPECT_FALSE(SettingsPersist::isWellFormed(
-            field_cases::with(field_cases::kGood, slot, "2:/settings.json")))
-            << "slot " << slot;
+    for (const char *reserved : {SettingsPersist::kSettingsPath,
+                                 SettingsPersist::kScratchTmpPath,
+                                 SettingsPersist::kScratchPrevPath}) {
+        for (int slot = 0; slot < field_cases::kPathSlots; ++slot) {
+            EXPECT_FALSE(SettingsPersist::isWellFormed(
+                field_cases::with(field_cases::kGood, slot, reserved)))
+                << reserved << " in slot " << slot;
+        }
+    }
+}
+
+/// The commit's scratch names are shared, so recovery reaches a stranded file
+/// whichever app left it -- and the legacy names stay swept until no watch can
+/// still be carrying one.
+TEST(SettingsField, TheSharedScratchNamesAreDistinctFromEachOtherAndTheRealFile)
+{
+    EXPECT_STRNE(SettingsPersist::kScratchTmpPath, SettingsPersist::kScratchPrevPath);
+    EXPECT_STRNE(SettingsPersist::kScratchTmpPath, SettingsPersist::kSettingsPath);
+    EXPECT_STRNE(SettingsPersist::kScratchPrevPath, SettingsPersist::kSettingsPath);
+    for (size_t i = 0; i < SettingsPersist::kLegacyPrevPathCount; ++i) {
+        EXPECT_STRNE(SettingsPersist::kLegacyPrevPaths[i], SettingsPersist::kSettingsPath);
+        EXPECT_STRNE(SettingsPersist::kLegacyPrevPaths[i], SettingsPersist::kScratchPrevPath);
     }
 }
 
 TEST(SettingsField, RejectsAnEmptyOrMissingPath)
 {
-    for (int slot = 0; slot < 4; ++slot) {
+    for (int slot = 0; slot < field_cases::kPathSlots; ++slot) {
         EXPECT_FALSE(SettingsPersist::isWellFormed(field_cases::with(field_cases::kGood, slot, "")));
         EXPECT_FALSE(
             SettingsPersist::isWellFormed(field_cases::with(field_cases::kGood, slot, nullptr)));
@@ -569,7 +585,7 @@ TEST(SettingsField, RejectsAScratchPathTooLongForTheFileObject)
     const std::string overLimit(atLimit + "x");
     ASSERT_EQ(atLimit.size(), SettingsPersist::kMaxScratchPathBytes);
 
-    for (int slot = 0; slot < 4; ++slot) {
+    for (int slot = 0; slot < field_cases::kPathSlots; ++slot) {
         EXPECT_TRUE(SettingsPersist::isWellFormed(
             field_cases::with(field_cases::kGood, slot, atLimit.c_str())))
             << "slot " << slot;
@@ -587,9 +603,9 @@ TEST(SettingsField, RejectsAProbeTextThatWouldNotFitTheReadBuffer)
     const std::string overLimit(SettingsPersist::kMaxProbeTextBytes + 1, 'x');
 
     EXPECT_TRUE(
-        SettingsPersist::isWellFormed(field_cases::with(field_cases::kGood, 4, atLimit.c_str())));
+        SettingsPersist::isWellFormed(field_cases::with(field_cases::kGood, 9, atLimit.c_str())));
     EXPECT_FALSE(
-        SettingsPersist::isWellFormed(field_cases::with(field_cases::kGood, 4, overLimit.c_str())));
+        SettingsPersist::isWellFormed(field_cases::with(field_cases::kGood, 9, overLimit.c_str())));
 }
 
 /// The capacity the write path actually passes, against the cap the read path
@@ -605,8 +621,6 @@ TEST(SettingsLimits, ASpliceIsCappedAtWhatTheReaderWillAccept)
     constexpr SettingsPersist::Field kUnits = {
         .splice     = &SettingsSplice::setUnits,
         .name       = "units",
-        .tmpPath    = "2:/t.tmp",
-        .prevPath   = "2:/p.tmp",
         .probeAPath = "2:/a.tmp",
         .probeBPath = "2:/b.tmp",
         .probeText  = "probe",
@@ -657,8 +671,6 @@ TEST(SettingsLimits, TheOneByteGrowthIsCappedTheSameWay)
     constexpr SettingsPersist::Field kNotify = {
         .splice     = &SettingsSplice::setNotifications,
         .name       = "notifications",
-        .tmpPath    = "2:/t.tmp",
-        .prevPath   = "2:/p.tmp",
         .probeAPath = "2:/a.tmp",
         .probeBPath = "2:/b.tmp",
         .probeText  = "probe",

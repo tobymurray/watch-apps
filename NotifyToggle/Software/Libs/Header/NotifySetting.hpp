@@ -5,10 +5,9 @@
  *          under.
  ******************************************************************************
  *
- * The scratch names are this app's alone and must stay exactly what they are:
- * a watch left holding `2:/settings.json.ntprev` by a commit that lost power is
- * recovered by matching that name, and renaming it here would strand the only
- * settings file on the watch.
+ * The commit's own scratch names are not here: they are shared across the apps
+ * that use this mechanism, so any of them can put back a file another stranded.
+ * `SettingsPersist::kScratchPrevPath` says why.
  ******************************************************************************
  */
 
@@ -32,8 +31,6 @@ inline LiveSettings::Flag liveFlag(const SettingsAddresses::AddressSet &addrs)
 constexpr SettingsPersist::Field kField = {
     .splice     = &SettingsSplice::setNotifications,
     .name       = "notifications",
-    .tmpPath    = "2:/settings.json.nttmp",
-    .prevPath   = "2:/settings.json.ntprev",
     .probeAPath = "2:/nt-probe-a.tmp",
     .probeBPath = "2:/nt-probe-b.tmp",
     .probeText  = "NotifyToggle primitive self-test",

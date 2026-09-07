@@ -10,6 +10,12 @@
 #include "SettingsAddresses.hpp"
 #include "unit_toggle_gui.h"
 
+/// The real value comes from `BUILD_VERSION` via CMake; this keeps the
+/// host type-check in `README.md` compiling without it.
+#ifndef UNIT_TOGGLE_VERSION
+#define UNIT_TOGGLE_VERSION "unknown"
+#endif
+
 class Gui
 {
 public:

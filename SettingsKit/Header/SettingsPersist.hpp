@@ -55,18 +55,22 @@ enum class Status {
 Status persistFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
                    const Field &field, bool newEnabled);
 
-/// Puts back a settings file left aside by a commit that never finished.
+/// Puts back a settings file left aside by a commit that never finished, under
+/// any scratch name this mechanism has ever used.
 ///
 /// The rollback inside a commit only covers a rename that returned an error;
 /// losing power between the two renames leaves the scratch copy holding the
-/// only settings file on the watch, and every later launch refusing because it
-/// cannot read one. This is the exception to writing nothing when saving is
-/// off: it moves back a file this app moved, and only when the real one is
-/// missing.
+/// only settings file on the watch, and every later read refusing because there
+/// is none. Takes no `Field`: the app that stranded a file is not necessarily
+/// the app that next runs, so recovery cannot be the property of one of them.
+///
+/// Call this at launch, whether or not saving is on. It is the exception to
+/// writing nothing in that mode -- it moves back a file this mechanism moved,
+/// and only when the real one is absent.
 ///
 /// True if it recovered something.
 bool recoverInterruptedCommit(SDK::Interface::IFileSystem &fs,
-                              const SettingsAddresses::AddressSet &addrs, const Field &field);
+                              const SettingsAddresses::AddressSet &addrs);
 
 /// Proves `addrs`'s File primitives are the functions they are supposed to be,
 /// by exercising them against this app's own scratch paths: a path written

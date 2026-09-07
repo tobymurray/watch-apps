@@ -32,8 +32,6 @@ using FileRenameFn  = int (*)(const char *oldPath, const char *newPath);
 constexpr int kOpenReadOnly        = 0;
 constexpr int kOpenCreateOrReplace = 1;
 
-constexpr const char *kSettingsPath = "2:/settings.json";
-
 // Sane upper bound on AddressSet::fileObjectSize -- a fixed-capacity local
 // buffer needs a compile-time size, but the real size is a per-firmware
 // runtime value (SettingsAddresses::AddressSet::fileObjectSize). 1.4.0's
@@ -168,14 +166,14 @@ Status spliceField(const Field &field, char *buf, size_t &len, bool newEnabled,
     return Status::FieldNotFound;
 }
 
-/// Writes `buf`/`len` to a brand-new `field.tmpPath`, never touching the real
+/// Writes `buf`/`len` to a brand-new `kScratchTmpPath`, never touching the real
 /// file. On any failure, best-effort deletes the tmp file so a half-written
 /// leftover doesn't confuse the next attempt.
 Status writeTmpFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
-                     const Field &field, const char *buf, size_t len)
+                     const char *buf, size_t len)
 {
     RawFile file{};
-    resetFile(file, addrs, field.tmpPath);
+    resetFile(file, addrs, kScratchTmpPath);
 
     const auto fileOpen = reinterpret_cast<FileOpenFn>(addrs.fileOpenAddr);
     const auto fileWrite = reinterpret_cast<FileWriteFn>(addrs.fileWriteAddr);
@@ -185,7 +183,7 @@ Status writeTmpFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::Ad
     const auto fileDelete = reinterpret_cast<FileDeleteFn>(addrs.fileDeleteAddr);
 
     const int openRet = fileOpen(file.self(), kOpenCreateOrReplace, 1);
-    DebugLog::appendf(fs, "write: open(%s, CREATE) -> %d", field.tmpPath, openRet);
+    DebugLog::appendf(fs, "write: open(%s, CREATE) -> %d", kScratchTmpPath, openRet);
     if (openRet == 0) {
         return Status::WriteOpenFailed;
     }
@@ -197,10 +195,10 @@ Status writeTmpFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::Ad
     DebugLog::appendf(fs, "write: write(%zu) -> %d bytesWritten=%u", len, writeOk, bytesWritten);
 
     if (!writeOk || bytesWritten != len) {
-        const int existsRet = fileExists(field.tmpPath);
+        const int existsRet = fileExists(kScratchTmpPath);
         DebugLog::appendf(fs, "write: cleanup exists(tmp) -> %d", existsRet);
         if (existsRet) {
-            DebugLog::appendf(fs, "write: cleanup delete(tmp) -> %d", fileDelete(field.tmpPath));
+            DebugLog::appendf(fs, "write: cleanup delete(tmp) -> %d", fileDelete(kScratchTmpPath));
         }
         return Status::WriteFailed;
     }
@@ -215,8 +213,7 @@ Status writeTmpFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::Ad
 /// which is what keeps the wearer from being left with no settings file at
 /// all. On success the scratch copy is removed. The firmware's own
 /// `settings.json.bak` is never read, written or deleted here.
-Status commitTmpFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
-                      const Field &field)
+Status commitTmpFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs)
 {
     const auto fileExists = reinterpret_cast<FileExistsFn>(addrs.fileExistsAddr);
     const auto fileDelete = reinterpret_cast<FileDeleteFn>(addrs.fileDeleteAddr);
@@ -227,48 +224,47 @@ Status commitTmpFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses::A
     const bool hadPrevious = realExistsRet != 0;
 
     if (hadPrevious) {
-        const int staleRet = fileExists(field.prevPath);
+        const int staleRet = fileExists(kScratchPrevPath);
         DebugLog::appendf(fs, "commit: exists(prev) -> %d", staleRet);
         if (staleRet) {
-            const int delRet = fileDelete(field.prevPath);
+            const int delRet = fileDelete(kScratchPrevPath);
             DebugLog::appendf(fs, "commit: delete(prev) -> %d", delRet);
             if (!delRet) {
                 return Status::CommitFailed;
             }
         }
-        const int asideRet = fileRename(kSettingsPath, field.prevPath);
+        const int asideRet = fileRename(kSettingsPath, kScratchPrevPath);
         DebugLog::appendf(fs, "commit: rename(real -> prev) -> %d", asideRet);
         if (!asideRet) {
             return Status::CommitFailed;
         }
     }
 
-    const int commitRet = fileRename(field.tmpPath, kSettingsPath);
+    const int commitRet = fileRename(kScratchTmpPath, kSettingsPath);
     DebugLog::appendf(fs, "commit: rename(tmp -> real) -> %d", commitRet);
     if (!commitRet) {
         if (hadPrevious) {
-            const int restoreRet = fileRename(field.prevPath, kSettingsPath);
+            const int restoreRet = fileRename(kScratchPrevPath, kSettingsPath);
             DebugLog::appendf(fs, "commit: ROLLBACK rename(prev -> real) -> %d", restoreRet);
         }
         return Status::CommitFailed;
     }
 
-    if (hadPrevious && fileExists(field.prevPath)) {
-        DebugLog::appendf(fs, "commit: delete(prev) after success -> %d", fileDelete(field.prevPath));
+    if (hadPrevious && fileExists(kScratchPrevPath)) {
+        DebugLog::appendf(fs, "commit: delete(prev) after success -> %d", fileDelete(kScratchPrevPath));
     }
 
     return Status::Ok;
 }
 
 Status writeWholeFileAtomic(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
-                             const Field &field,
                              const char *buf, size_t len)
 {
-    Status status = writeTmpFile(fs, addrs, field, buf, len);
+    Status status = writeTmpFile(fs, addrs, buf, len);
     if (status != Status::Ok) {
         return status;
     }
-    return commitTmpFile(fs, addrs, field);
+    return commitTmpFile(fs, addrs);
 }
 
 } // namespace
@@ -282,7 +278,7 @@ Status persistFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::Add
     // Before reading: a commit interrupted by power loss left the only settings
     // file under this app's scratch name, and reading would fail for want of a
     // file this app moved.
-    recoverInterruptedCommit(fs, addrs, field);
+    recoverInterruptedCommit(fs, addrs);
 
     if (!objectSizeInRange(addrs)) {
         DebugLog::appendf(fs,
@@ -312,7 +308,7 @@ Status persistFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::Add
     DebugLog::appendf(fs, "persist: spliced at offset %zu, now %zu bytes, hash=0x%08X",
                        valueOffset, len, contentHash(buf, len));
 
-    status = writeWholeFileAtomic(fs, addrs, field, buf, len);
+    status = writeWholeFileAtomic(fs, addrs, buf, len);
     if (status != Status::Ok) {
         DebugLog::appendf(fs, "persist: write/commit failed -> %s", statusName(status));
         return status;
@@ -345,7 +341,7 @@ Status persistFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::Add
 }
 
 bool recoverInterruptedCommit(SDK::Interface::IFileSystem &fs,
-                              const SettingsAddresses::AddressSet &addrs, const Field &field)
+                              const SettingsAddresses::AddressSet &addrs)
 {
     if (!objectSizeInRange(addrs)) {
         return false;
@@ -357,13 +353,27 @@ bool recoverInterruptedCommit(SDK::Interface::IFileSystem &fs,
     // Existence, not length: a settings file being rewritten reads as zero
     // bytes while the write is in flight, and putting a scratch copy over one
     // of those would discard the change that is landing.
-    if (fileExists(kSettingsPath) || !fileExists(field.prevPath)) {
+    if (fileExists(kSettingsPath)) {
         return false;
     }
 
-    const int ret = fileRename(field.prevPath, kSettingsPath);
-    DebugLog::appendf(fs, "recover: no settings.json but a scratch copy exists; rename back -> %d", ret);
-    return ret != 0;
+    const char *candidates[1 + kLegacyPrevPathCount] = {kScratchPrevPath};
+    for (size_t i = 0; i < kLegacyPrevPathCount; ++i) {
+        candidates[1 + i] = kLegacyPrevPaths[i];
+    }
+
+    for (const char *prev : candidates) {
+        if (!fileExists(prev)) {
+            continue;
+        }
+        const int ret = fileRename(prev, kSettingsPath);
+        DebugLog::appendf(fs, "recover: no settings.json but %s exists; rename back -> %d", prev,
+                           ret);
+        if (ret != 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool validatePrimitives(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,

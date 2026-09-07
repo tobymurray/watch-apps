@@ -65,8 +65,10 @@ version:
 - **The commit moves the previous file aside and puts it back if anything
   goes wrong.** FatFs will not rename onto a name that already exists, so the
   order is: write `2:/settings.json.tmp`, move the current file to
-  `2:/settings.json.ntprev`, rename `.tmp` into place, then drop the scratch
-  copy. If the second rename fails, the previous file is moved straight back,
+  `2:/settings.json.prev`, rename `.tmp` into place, then drop the scratch
+  copy. Both scratch names are shared with every other app built on
+  [`SettingsKit`](../SettingsKit), which is what lets any of them put back a
+  file another was interrupted halfway through moving. If the second rename fails, the previous file is moved straight back,
   so the failure mode is "nothing changed", not "no settings file". The
   firmware's own `settings.json.bak` is never touched — the firmware
   maintains that one itself, and spending the wearer's only firmware-made
@@ -224,7 +226,7 @@ From real builds against `apps-v1.4.0` in CI's toolchain image (linker map
 section headers, 600 KiB GUI RAM window, code executing from RAM):
 
 ```
-GUI      .text 47,876   .data 596   .bss 58,536   .stack 10,240   .uapp 56,200
+GUI      .text 48,136   .data 588   .bss 58,536   .stack 10,240   .uapp 56,448
 Service  .text  2,180   .data  36   .bss    556   .stack 10,240
 ```
 

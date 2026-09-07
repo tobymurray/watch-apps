@@ -37,18 +37,45 @@ constexpr size_t kMaxProbeTextBytes = 63;
 /// failing for no stated reason.
 constexpr size_t kMaxScratchPathBytes = 64;
 
-/// The field an app owns, and the scratch names it writes under. Initialise
-/// with designated initialisers and assert `isWellFormed`: five members are
-/// interchangeable `const char *`, and `../README.md` says what a transposition
-/// costs.
+/// The file every app here rewrites.
+constexpr const char *kSettingsPath = "2:/settings.json";
+
+/// Where a rewrite is staged, and where the file being replaced waits while the
+/// rename lands. One name for every app, deliberately: a commit that loses
+/// power between the two renames leaves the wearer's only settings file under
+/// `kScratchPrevPath`, and the app that stranded it is not necessarily the app
+/// that next runs -- it may never run again. A shared name is what lets any of
+/// them put it back.
+///
+/// Sharing is safe because the only destructive step, the stale-prev delete in
+/// `commitTmpFile`, is guarded on `2:/settings.json` existing -- which is
+/// exactly what a stranded file means is not true. Recovery also runs before
+/// that step and at launch, so a commit never begins with a strand in place.
+constexpr const char *kScratchTmpPath  = "2:/settings.json.tmp";
+constexpr const char *kScratchPrevPath = "2:/settings.json.prev";
+
+/// Names earlier versions staged under, swept by recovery so a watch already
+/// holding a strand from one of them is not stuck with it. NotifyToggle 0.6.0
+/// and 0.6.1 shipped `.ntprev`; UnitToggle was never released using `.utprev`,
+/// and is here only because this author's watch has run it. Both can go once no
+/// watch can still be carrying one.
+constexpr const char *kLegacyPrevPaths[] = {
+    "2:/settings.json.ntprev",
+    "2:/settings.json.utprev",
+};
+constexpr size_t kLegacyPrevPathCount =
+    sizeof(kLegacyPrevPaths) / sizeof(kLegacyPrevPaths[0]);
+
+/// The field an app owns, and the two scratch paths its primitive self-test
+/// uses. Initialise with designated initialisers and assert `isWellFormed`:
+/// four members are interchangeable `const char *`. The commit's own scratch
+/// names are not here -- they are shared, for the reason above.
 struct Field {
     /// Rewrites this field in a settings.json buffer.
     SettingsSplice::Result (*splice)(char *buf, size_t &len, size_t capacity, bool value,
                                      size_t *valueOffsetOut);
     const char *name;        ///< DebugLog only.
-    const char *tmpPath;     ///< Written whole before the real file is touched at all.
-    const char *prevPath;    ///< Where the current file waits while the rename lands.
-    const char *probeAPath;  ///< validatePrimitives scratch; never settings.json.
+    const char *probeAPath;  ///< validatePrimitives scratch; never the settings file.
     const char *probeBPath;
     const char *probeText;   ///< At most kMaxProbeTextBytes.
 };
@@ -91,12 +118,13 @@ constexpr bool isWellFormed(const Field &f)
         return false;
     }
 
-    const char *const paths[] = {f.tmpPath, f.prevPath, f.probeAPath, f.probeBPath};
+    const char *const paths[] = {f.probeAPath, f.probeBPath};
+    constexpr size_t kCount = 2;
 
     // Every path proved non-null before any of them is compared: `sameString`
     // reads both of its arguments, so a later null would be dereferenced by an
     // earlier iteration's comparison.
-    for (size_t i = 0; i < 4; ++i) {
+    for (size_t i = 0; i < kCount; ++i) {
         if (paths[i] == nullptr) {
             return false;
         }
@@ -105,11 +133,16 @@ constexpr bool isWellFormed(const Field &f)
             return false;
         }
     }
-    for (size_t i = 0; i < 4; ++i) {
-        if (detail::sameString(paths[i], "2:/settings.json")) {
-            return false;
+    // A probe path that collided with the settings file or with either shared
+    // scratch name would have the self-test delete what a commit is holding.
+    const char *const reserved[] = {kSettingsPath, kScratchTmpPath, kScratchPrevPath};
+    for (size_t i = 0; i < kCount; ++i) {
+        for (size_t r = 0; r < 3; ++r) {
+            if (detail::sameString(paths[i], reserved[r])) {
+                return false;
+            }
         }
-        for (size_t j = i + 1; j < 4; ++j) {
+        for (size_t j = i + 1; j < kCount; ++j) {
             if (detail::sameString(paths[i], paths[j])) {
                 return false;
             }
