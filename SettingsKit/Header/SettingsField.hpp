@@ -1,14 +1,12 @@
 /**
  ******************************************************************************
  * @file    SettingsField.hpp
- * @brief   Which field an app owns in `2:/settings.json`, and the scratch names
- *          it commits under.
+ * @brief   Which field an app owns in `2:/settings.json`, the sizes the write
+ *          path is bounded by, and the splice that respects them.
  ******************************************************************************
  *
- * Free of SDK types, like SettingsSplice.hpp, so `isWellFormed` can be driven
- * by the host tests. It is the only thing standing between a mistyped
- * descriptor and a commit that moves the wearer's only settings file somewhere
- * recovery will not look for it.
+ * Free of SDK types so `Tests/` can drive `isWellFormed` and `spliceWithinReadCap`
+ * directly -- the two pieces of this mechanism whose mistakes are silent.
  ******************************************************************************
  */
 
@@ -17,23 +15,32 @@
 
 #include <cstddef>
 
-#include "SettingsPersistLimits.hpp"
 #include "SettingsSplice.hpp"
 
 namespace SettingsPersist
 {
 
-/// The field an app owns, and the scratch names it writes under. Every path
-/// here has to be that app's alone: two apps sharing one would have each
-/// mistaking the other's half-finished commit for its own, and the file being
-/// moved aside is the wearer's only settings file.
-///
-/// Initialise with designated initialisers and check it with `isWellFormed`.
-/// Five of these members are interchangeable `const char *`, so a positional
-/// initialiser binds by position while the names are only comments -- and a
-/// `tmpPath`/`prevPath` transposition is silent until a commit loses power,
-/// when recovery looks for the wearer's only settings file under the name the
-/// other member holds.
+/// Upper bound on the settings file this app will read or write. The real file
+/// was 245 bytes on 2026-09-05; this leaves headroom for the firmware adding
+/// fields while still refusing an unexpectedly huge read.
+constexpr size_t kMaxSettingsFileSize = 512;
+
+/// The read buffer: room for a null terminator this app adds, and slack.
+constexpr size_t kBufferCapacity = kMaxSettingsFileSize + 8;
+
+/// Longest `Field::probeText` `validatePrimitives` will read back, one less
+/// than the buffer it reads into.
+constexpr size_t kMaxProbeTextBytes = 63;
+
+/// Longest scratch path a `Field` may carry. `setPath` truncates silently past
+/// the File object's own path buffer, which surfaces only as a primitive check
+/// failing for no stated reason.
+constexpr size_t kMaxScratchPathBytes = 64;
+
+/// The field an app owns, and the scratch names it writes under. Initialise
+/// with designated initialisers and assert `isWellFormed`: five members are
+/// interchangeable `const char *`, and `../README.md` says what a transposition
+/// costs.
 struct Field {
     /// Rewrites this field in a settings.json buffer.
     SettingsSplice::Result (*splice)(char *buf, size_t &len, size_t capacity, bool value,
@@ -72,10 +79,9 @@ constexpr bool sameString(const char *a, const char *b)
 
 } // namespace detail
 
-/// True if every member holds the kind of value its name promises: four
-/// distinct scratch paths, none of them the real settings file, and a probe
-/// text that fits the buffer it is read back into. Not a claim that any path is
-/// the right one; only that a value has not landed in the wrong member.
+/// True if every member holds the kind of value its name promises -- not a
+/// claim that any path is the right one, only that a value has not landed in
+/// the wrong member.
 constexpr bool isWellFormed(const Field &f)
 {
     if (f.splice == nullptr || f.name == nullptr || f.probeText == nullptr) {
@@ -91,7 +97,11 @@ constexpr bool isWellFormed(const Field &f)
     // reads both of its arguments, so a later null would be dereferenced by an
     // earlier iteration's comparison.
     for (size_t i = 0; i < 4; ++i) {
-        if (paths[i] == nullptr || detail::constexprStrlen(paths[i]) == 0) {
+        if (paths[i] == nullptr) {
+            return false;
+        }
+        const size_t n = detail::constexprStrlen(paths[i]);
+        if (n == 0 || n > kMaxScratchPathBytes) {
             return false;
         }
     }
@@ -106,6 +116,19 @@ constexpr bool isWellFormed(const Field &f)
         }
     }
     return true;
+}
+
+/// Rewrites `f`'s field in `buf`, capped at what the reader will accept.
+///
+/// The cap is the point of this function. Handing a splice the size of the
+/// buffer instead lets it produce a file that commits and is then refused by
+/// every later read -- a durable change reported as unsaved, and no further
+/// write possible on that watch by any app. `Tests/` drives this rather than
+/// the splice directly, so the cap is what is under test.
+inline SettingsSplice::Result spliceWithinReadCap(const Field &f, char *buf, size_t &len,
+                                                  bool value, size_t *valueOffsetOut)
+{
+    return f.splice(buf, len, kMaxSettingsFileSize, value, valueOffsetOut);
 }
 
 } // namespace SettingsPersist

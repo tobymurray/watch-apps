@@ -157,7 +157,7 @@ Status readCurrentFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses:
 Status spliceField(const Field &field, char *buf, size_t &len, bool newEnabled,
                    size_t &valueOffset)
 {
-    switch (field.splice(buf, len, kSpliceCapacity, newEnabled, &valueOffset)) {
+    switch (spliceWithinReadCap(field, buf, len, newEnabled, &valueOffset)) {
         case SettingsSplice::Result::Ok:
             return Status::Ok;
         case SettingsSplice::Result::WouldNotFit:

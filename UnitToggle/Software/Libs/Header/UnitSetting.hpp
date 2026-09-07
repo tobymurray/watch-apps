@@ -37,9 +37,7 @@ constexpr SettingsPersist::Field kField = {
     .probeText  = "UnitToggle primitive self-test",
 };
 
-static_assert(SettingsPersist::isWellFormed(kField),
-              "A path landed in the wrong member, two of them are the same, one is the real "
-              "settings file, or the probe text will not fit the buffer it is read back into.");
+static_assert(SettingsPersist::isWellFormed(kField), "see SettingsPersist::isWellFormed");
 
 } // namespace UnitSetting
 

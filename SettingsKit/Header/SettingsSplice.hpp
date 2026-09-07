@@ -8,11 +8,15 @@
  * Header-only and free of SDK types so the host tests in `Tests/` can drive it
  * without a kernel.
  *
- * Both entry points are scoped rather than matching their key anywhere in the
- * file: `setNotifications` to the `phone` object, `setUnits` to the outermost
- * one. A settings file that grows a second key of either name deeper in must
- * not be edited in the wrong place -- the readback compares the file against
- * the buffer just written, so it would confirm the wrong edit.
+ * `setUnits` matches its key only at the outermost brace depth. A key of the
+ * same name deeper in is not the one the kernel parses, and rewriting it would
+ * be confirmed rather than caught: the readback compares the file against the
+ * buffer just written.
+ *
+ * `setNotifications` narrows to the `phone` object but then matches at any
+ * depth inside it, so a `notifications` key nested within `phone` is edited in
+ * preference to `phone.notifications` itself. That is a live fault, recorded in
+ * `../README.md`; it predates this scoping and is not fixed here.
  ******************************************************************************
  */
 

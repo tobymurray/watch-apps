@@ -61,6 +61,28 @@ the current state. `units` does appear, so `UnitToggle` reads it the supported
 way and needs the raw pointer only to change it — and can check its own write
 against what the kernel then reports.
 
+## A live fault this kit has, and does not yet fix
+
+`setNotifications` narrows to the `phone` object and then matches
+`"notifications"` at any depth inside it, so a `notifications` key nested within
+`phone` is rewritten in preference to `phone.notifications` itself. Measured
+against the real function:
+
+```
+in   {"phone":{"nested":{"notifications":true},"notifications":false}}
+out  unchanged, result Ok, phone.notifications still false
+```
+
+The commit reports success, because the readback compares the file against the
+buffer just written rather than re-parsing it — so the wrong key is confirmed,
+and the change reverts at the next reboot. `setUnits` was given depth scoping
+against exactly this; `setNotifications` predates it and is shipped in
+NotifyToggle, so fixing it is its own change against its own baseline rather
+than something to fold into a units app.
+
+No firmware is known to emit such a file: `phone` holds one key on 1.4.0.
+Falsified by a settings file with a `notifications` key nested inside `phone`.
+
 ## Tests
 
 The splice is the only part that runs without a kernel — it decides which bytes

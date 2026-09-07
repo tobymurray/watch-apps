@@ -1,7 +1,6 @@
 #include "SettingsSplice.hpp"
 
 #include "SettingsField.hpp"
-#include "SettingsPersistLimits.hpp"
 
 #include <gtest/gtest.h>
 
@@ -525,6 +524,25 @@ TEST(SettingsField, RejectsAnEmptyOrMissingPath)
     }
 }
 
+/// A path longer than the File object's own buffer is truncated silently by
+/// setPath, and surfaces only as a primitive check failing for no stated
+/// reason.
+TEST(SettingsField, RejectsAScratchPathTooLongForTheFileObject)
+{
+    const std::string atLimit("2:/" + std::string(SettingsPersist::kMaxScratchPathBytes - 3, 'x'));
+    const std::string overLimit(atLimit + "x");
+    ASSERT_EQ(atLimit.size(), SettingsPersist::kMaxScratchPathBytes);
+
+    for (int slot = 0; slot < 4; ++slot) {
+        EXPECT_TRUE(SettingsPersist::isWellFormed(
+            field_cases::with(field_cases::kGood, slot, atLimit.c_str())))
+            << "slot " << slot;
+        EXPECT_FALSE(SettingsPersist::isWellFormed(
+            field_cases::with(field_cases::kGood, slot, overLimit.c_str())))
+            << "slot " << slot;
+    }
+}
+
 /// The probe text is read back into a fixed buffer, so one that does not fit is
 /// a stack overrun inside the function that gates every raw-address write.
 TEST(SettingsField, RejectsAProbeTextThatWouldNotFitTheReadBuffer)
@@ -539,16 +557,25 @@ TEST(SettingsField, RejectsAProbeTextThatWouldNotFitTheReadBuffer)
 }
 
 /// The capacity the write path actually passes, against the cap the read path
-/// actually enforces. Every case above chose its own capacity, which is why
-/// none of them could see that a splice was allowed to produce a file the
-/// reader would then refuse -- committed, durable, and reported as unsaved,
-/// with every later write on that watch refused before it opened anything.
+/// actually enforces. Every splice case above chooses its own capacity, which
+/// is why none of them could see that the write path was handing the splice the
+/// size of the buffer -- producing a file that commits and is then refused by
+/// every later read. This drives `spliceWithinReadCap`, which is the line that
+/// was wrong.
 TEST(SettingsLimits, ASpliceIsCappedAtWhatTheReaderWillAccept)
 {
     EXPECT_LE(SettingsPersist::kMaxSettingsFileSize, SettingsPersist::kBufferCapacity);
 
-    // A file at the read cap, rewritten the direction that grows: the result
-    // must be refused rather than produced.
+    constexpr SettingsPersist::Field kUnits = {
+        .splice     = &SettingsSplice::setUnits,
+        .name       = "units",
+        .tmpPath    = "2:/t.tmp",
+        .prevPath   = "2:/p.tmp",
+        .probeAPath = "2:/a.tmp",
+        .probeBPath = "2:/b.tmp",
+        .probeText  = "probe",
+    };
+
     const std::string head = R"({"units":"metric","pad":")";
     const std::string tail = R"(","version":2})";
     for (size_t len : {SettingsPersist::kMaxSettingsFileSize - 1,
@@ -560,12 +587,22 @@ TEST(SettingsLimits, ASpliceIsCappedAtWhatTheReaderWillAccept)
         std::memcpy(buf, in.data(), in.size());
         size_t n = in.size();
 
-        EXPECT_EQ(SettingsSplice::setUnits(buf, n, SettingsPersist::kMaxSettingsFileSize, true),
+        EXPECT_EQ(SettingsPersist::spliceWithinReadCap(kUnits, buf, n, true, nullptr),
                   SettingsSplice::Result::WouldNotFit)
             << "len " << len;
         EXPECT_EQ(n, len) << "len " << len;
         EXPECT_EQ(std::string(buf, n), in) << "len " << len;
     }
+
+    // ...and one under the cap still goes through, so the guard is not simply
+    // refusing everything.
+    std::string ok = head + std::string(400 - head.size() - tail.size(), 'x') + tail;
+    char buf[SettingsPersist::kBufferCapacity] = {};
+    std::memcpy(buf, ok.data(), ok.size());
+    size_t n = ok.size();
+    EXPECT_EQ(SettingsPersist::spliceWithinReadCap(kUnits, buf, n, true, nullptr),
+              SettingsSplice::Result::Ok);
+    EXPECT_EQ(n, ok.size() + 2);
 }
 
 /// The same arithmetic for the one-byte field, at its own boundary.
@@ -581,7 +618,16 @@ TEST(SettingsLimits, TheOneByteGrowthIsCappedTheSameWay)
     std::memcpy(buf, in.data(), in.size());
     size_t n = in.size();
 
-    EXPECT_EQ(SettingsSplice::setNotifications(buf, n, SettingsPersist::kMaxSettingsFileSize, false),
+    constexpr SettingsPersist::Field kNotify = {
+        .splice     = &SettingsSplice::setNotifications,
+        .name       = "notifications",
+        .tmpPath    = "2:/t.tmp",
+        .prevPath   = "2:/p.tmp",
+        .probeAPath = "2:/a.tmp",
+        .probeBPath = "2:/b.tmp",
+        .probeText  = "probe",
+    };
+    EXPECT_EQ(SettingsPersist::spliceWithinReadCap(kNotify, buf, n, false, nullptr),
               SettingsSplice::Result::WouldNotFit);
     EXPECT_EQ(std::string(buf, n), in);
 }
