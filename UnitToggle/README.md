@@ -277,12 +277,6 @@ directory on the watch. It is off by default and belongs off in anything a
 wearer installs; it never logs file contents, because `settings.json` holds
 height, weight, gender and date of birth.
 
-> **`APP_ID` is `0000000000000000`, which is not a real one.** UNA assigns app
-> ids, and the id is how the phone matches a new `.uapp` to the one already
-> installed. The packer requires exactly 16 hex characters, which is why this is
-> zeros rather than a word. Replace it in both `CMakeLists.txt` and
-> `app-manifest.json` before installing this anywhere.
-
 ### Footprint
 
 From a real build against the pinned toolchain image and SDK revision

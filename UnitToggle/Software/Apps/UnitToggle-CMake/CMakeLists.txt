@@ -11,12 +11,9 @@ set(APP_USER_NAME "Units")
 set(APP_FILE_NAME "UnitToggle")
 set(APP_TYPE "Utility")
 set(DEV_ID "UNA")
-# NOT a real app id, and all-zero so it cannot be mistaken for one: UNA assigns
-# these, and the id is how the phone matches a new *.uapp to the one already
-# installed, so reusing another app's would have the phone treat this as an
-# update to that app. The packer requires exactly 16 hex characters, which is
-# why this is zeros rather than a word. Replace before installing anywhere.
-set(APP_ID "0000000000000000")
+# Assigned by UNA and stable for the life of the app: it is how the mobile app
+# matches a new *.uapp to the installed one when the file name changes.
+set(APP_ID "B7D228CF5A7C91AD")
 set(APP_USE_ICONS On)
 set(RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Resources")
 set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")
