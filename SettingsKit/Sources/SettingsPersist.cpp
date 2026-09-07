@@ -157,7 +157,7 @@ Status readCurrentFile(SDK::Interface::IFileSystem &fs, const SettingsAddresses:
 Status spliceField(const Field &field, char *buf, size_t &len, bool newEnabled,
                    size_t &valueOffset)
 {
-    switch (field.splice(buf, len, kBufferCapacity, newEnabled, &valueOffset)) {
+    switch (field.splice(buf, len, kSpliceCapacity, newEnabled, &valueOffset)) {
         case SettingsSplice::Result::Ok:
             return Status::Ok;
         case SettingsSplice::Result::WouldNotFit:
@@ -373,6 +373,15 @@ bool validatePrimitives(SDK::Interface::IFileSystem &fs, const SettingsAddresses
 
     DebugLog::append(fs, "=== validating primitives: scratch paths only, settings.json not written ===");
 
+    // The probe text is the caller's, and it is read back into a fixed buffer
+    // below. A Field carrying a longer one would overrun that buffer inside the
+    // function that gates every raw-address write.
+    if (probeLen > kMaxProbeTextBytes) {
+        DebugLog::appendf(fs, "validate: probeText is %zu bytes, max %zu -- refusing", probeLen,
+                           kMaxProbeTextBytes);
+        return false;
+    }
+
     if (!objectSizeInRange(addrs)) {
         DebugLog::append(fs, "validate: File layout out of range -- refusing");
         return false;
@@ -420,7 +429,7 @@ bool validatePrimitives(SDK::Interface::IFileSystem &fs, const SettingsAddresses
         std::memcpy(&reported, file.bytes + addrs.fileSizeFieldOffset, sizeof(reported));
         check("the size field reads back the written length", reported == probeLen);
 
-        char readBuf[64] = {};
+        char readBuf[kMaxProbeTextBytes + 1] = {};
         uint32_t got = 0;
         const int rRet = fileRead(file.self(), readBuf, static_cast<uint32_t>(probeLen), &got);
         check("content round-trips", rRet != 0 && got == probeLen &&

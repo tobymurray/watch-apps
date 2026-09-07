@@ -8,12 +8,11 @@
  * Header-only and free of SDK types so the host tests in `Tests/` can drive it
  * without a kernel.
  *
- * `setNotifications` is scoped to the `phone` object rather than matching
- * `"notifications"` anywhere in the file: the flag it owns is
- * `phone.notifications`, and a settings file that grows a second key of that
- * name elsewhere must not be edited in the wrong place. `setUnits` needs no
- * such scoping -- `units` is a top-level key -- but still tells a key from a
- * string value that happens to read the same.
+ * Both entry points are scoped rather than matching their key anywhere in the
+ * file: `setNotifications` to the `phone` object, `setUnits` to the outermost
+ * one. A settings file that grows a second key of either name deeper in must
+ * not be edited in the wrong place -- the readback compares the file against
+ * the buffer just written, so it would confirm the wrong edit.
  ******************************************************************************
  */
 
@@ -144,6 +143,56 @@ inline const char *findObject(const char *begin, const char *end, const char *na
     return (value != nullptr && *value == '{') ? value : nullptr;
 }
 
+/// Start of the value for key `name` at brace depth `wantDepth` -- 1 being the
+/// keys of the outermost object -- or null. Unlike `findValue` this steps over
+/// nested objects rather than matching inside them, so a key of the same name
+/// one level down cannot be taken for the one being looked for.
+inline const char *findValueAtDepth(const char *begin, const char *end, const char *name,
+                                    size_t nameLen, int wantDepth)
+{
+    int depth = 0;
+    bool inString = false;
+    for (const char *p = begin; p < end; ++p) {
+        if (inString) {
+            if (*p == '\\') {
+                ++p;
+            } else if (*p == '"') {
+                inString = false;
+            }
+            continue;
+        }
+        if (*p == '{' || *p == '[') {
+            ++depth;
+            continue;
+        }
+        if (*p == '}' || *p == ']') {
+            --depth;
+            continue;
+        }
+        if (*p != '"') {
+            continue;
+        }
+
+        if (depth == wantDepth && matches(p + 1, end, name, nameLen) &&
+            p + 1 + nameLen < end && p[1 + nameLen] == '"') {
+            const char *q = p + 1 + nameLen + 1;
+            while (q < end && isSpace(*q)) {
+                ++q;
+            }
+            if (q < end && *q == ':') {
+                ++q;
+                while (q < end && isSpace(*q)) {
+                    ++q;
+                }
+                return q < end ? q : nullptr;
+            }
+        }
+        // Not the key: step over the rest of this string token.
+        inString = true;
+    }
+    return nullptr;
+}
+
 /// Overwrites the `oldLen` bytes at `value` with `newLen` bytes of
 /// `replacement`, shifting the rest of the buffer to suit and adjusting `len`.
 /// `buf` is left untouched unless the result is Ok.
@@ -228,7 +277,10 @@ inline Result setUnits(char *buf, size_t &len, size_t capacity, bool imperial,
 {
     const char *const end = buf + len;
 
-    const char *const found = detail::findValue(buf, end, "units", 5);
+    // Depth 1, not "anywhere": a `units` key nested inside another object is
+    // not the one the kernel parses, and rewriting it would report success
+    // while the setting never changed.
+    const char *const found = detail::findValueAtDepth(buf, end, "units", 5, 1);
     if (found == nullptr) {
         return Result::FieldNotFound;
     }

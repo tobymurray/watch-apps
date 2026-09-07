@@ -1,5 +1,8 @@
 #include "SettingsSplice.hpp"
 
+#include "SettingsField.hpp"
+#include "SettingsPersistLimits.hpp"
+
 #include <gtest/gtest.h>
 
 #include <cstring>
@@ -445,6 +448,169 @@ TEST(SettingsUnits, LeavesTheOffsetAloneWhenItRefuses)
     EXPECT_EQ(SettingsSplice::setUnits(buf, len, kCapacity, true, &at),
               SettingsSplice::Result::FieldNotFound);
     EXPECT_EQ(at, 0xABCDu);
+}
+
+/// `Field` is five interchangeable `const char *` in a row, so the compiler
+/// cannot tell a transposition from a correct one. `isWellFormed` is what does,
+/// and each app asserts it at compile time -- these cases are what say the
+/// assertion is worth having.
+namespace field_cases
+{
+
+constexpr SettingsPersist::Field kGood = {
+    .splice     = &SettingsSplice::setUnits,
+    .name       = "units",
+    .tmpPath    = "2:/settings.json.uttmp",
+    .prevPath   = "2:/settings.json.utprev",
+    .probeAPath = "2:/ut-probe-a.tmp",
+    .probeBPath = "2:/ut-probe-b.tmp",
+    .probeText  = "UnitToggle primitive self-test",
+};
+
+constexpr SettingsPersist::Field with(SettingsPersist::Field f, int slot, const char *value)
+{
+    switch (slot) {
+        case 0: f.tmpPath = value; break;
+        case 1: f.prevPath = value; break;
+        case 2: f.probeAPath = value; break;
+        case 3: f.probeBPath = value; break;
+        default: f.probeText = value; break;
+    }
+    return f;
+}
+
+} // namespace field_cases
+
+TEST(SettingsField, AcceptsAWellFormedDescriptor)
+{
+    EXPECT_TRUE(SettingsPersist::isWellFormed(field_cases::kGood));
+}
+
+/// The transposition that matters: two members holding the same path means the
+/// commit moves the file aside under the name it is about to write.
+TEST(SettingsField, RejectsTwoPathsThatAreTheSame)
+{
+    for (int slot = 0; slot < 4; ++slot) {
+        for (int other = 0; other < 4; ++other) {
+            if (slot == other) {
+                continue;
+            }
+            const char *const paths[] = {field_cases::kGood.tmpPath, field_cases::kGood.prevPath,
+                                         field_cases::kGood.probeAPath,
+                                         field_cases::kGood.probeBPath};
+            EXPECT_FALSE(SettingsPersist::isWellFormed(
+                field_cases::with(field_cases::kGood, slot, paths[other])))
+                << "slot " << slot << " set to slot " << other;
+        }
+    }
+}
+
+/// A scratch name that is the real file would have the commit delete or rename
+/// the thing it is supposed to be protecting.
+TEST(SettingsField, RejectsAScratchPathThatIsTheRealSettingsFile)
+{
+    for (int slot = 0; slot < 4; ++slot) {
+        EXPECT_FALSE(SettingsPersist::isWellFormed(
+            field_cases::with(field_cases::kGood, slot, "2:/settings.json")))
+            << "slot " << slot;
+    }
+}
+
+TEST(SettingsField, RejectsAnEmptyOrMissingPath)
+{
+    for (int slot = 0; slot < 4; ++slot) {
+        EXPECT_FALSE(SettingsPersist::isWellFormed(field_cases::with(field_cases::kGood, slot, "")));
+        EXPECT_FALSE(
+            SettingsPersist::isWellFormed(field_cases::with(field_cases::kGood, slot, nullptr)));
+    }
+}
+
+/// The probe text is read back into a fixed buffer, so one that does not fit is
+/// a stack overrun inside the function that gates every raw-address write.
+TEST(SettingsField, RejectsAProbeTextThatWouldNotFitTheReadBuffer)
+{
+    const std::string atLimit(SettingsPersist::kMaxProbeTextBytes, 'x');
+    const std::string overLimit(SettingsPersist::kMaxProbeTextBytes + 1, 'x');
+
+    EXPECT_TRUE(
+        SettingsPersist::isWellFormed(field_cases::with(field_cases::kGood, 4, atLimit.c_str())));
+    EXPECT_FALSE(
+        SettingsPersist::isWellFormed(field_cases::with(field_cases::kGood, 4, overLimit.c_str())));
+}
+
+/// The capacity the write path actually passes, against the cap the read path
+/// actually enforces. Every case above chose its own capacity, which is why
+/// none of them could see that a splice was allowed to produce a file the
+/// reader would then refuse -- committed, durable, and reported as unsaved,
+/// with every later write on that watch refused before it opened anything.
+TEST(SettingsLimits, ASpliceIsCappedAtWhatTheReaderWillAccept)
+{
+    EXPECT_LE(SettingsPersist::kMaxSettingsFileSize, SettingsPersist::kBufferCapacity);
+
+    // A file at the read cap, rewritten the direction that grows: the result
+    // must be refused rather than produced.
+    const std::string head = R"({"units":"metric","pad":")";
+    const std::string tail = R"(","version":2})";
+    for (size_t len : {SettingsPersist::kMaxSettingsFileSize - 1,
+                       SettingsPersist::kMaxSettingsFileSize}) {
+        std::string in = head + std::string(len - head.size() - tail.size(), 'x') + tail;
+        ASSERT_EQ(in.size(), len);
+
+        char buf[SettingsPersist::kBufferCapacity] = {};
+        std::memcpy(buf, in.data(), in.size());
+        size_t n = in.size();
+
+        EXPECT_EQ(SettingsSplice::setUnits(buf, n, SettingsPersist::kMaxSettingsFileSize, true),
+                  SettingsSplice::Result::WouldNotFit)
+            << "len " << len;
+        EXPECT_EQ(n, len) << "len " << len;
+        EXPECT_EQ(std::string(buf, n), in) << "len " << len;
+    }
+}
+
+/// The same arithmetic for the one-byte field, at its own boundary.
+TEST(SettingsLimits, TheOneByteGrowthIsCappedTheSameWay)
+{
+    const std::string head = R"({"phone":{"notifications":true},"pad":")";
+    const std::string tail = R"(","version":2})";
+    const size_t len = SettingsPersist::kMaxSettingsFileSize;
+    std::string in = head + std::string(len - head.size() - tail.size(), 'x') + tail;
+    ASSERT_EQ(in.size(), len);
+
+    char buf[SettingsPersist::kBufferCapacity] = {};
+    std::memcpy(buf, in.data(), in.size());
+    size_t n = in.size();
+
+    EXPECT_EQ(SettingsSplice::setNotifications(buf, n, SettingsPersist::kMaxSettingsFileSize, false),
+              SettingsSplice::Result::WouldNotFit);
+    EXPECT_EQ(std::string(buf, n), in);
+}
+
+/// A `units` key one level down is not the one the kernel parses. Rewriting it
+/// would still pass the readback, because that compares the file against the
+/// buffer just written -- so the wrong edit would be reported as saved.
+TEST(SettingsUnits, IgnoresAUnitsKeyNestedInsideAnotherObject)
+{
+    const auto out = spliceUnits(
+        R"({"phone":{"notifications":false,"units":"metric"},"units":"metric"})", true);
+    ASSERT_EQ(out.result, SettingsSplice::Result::Ok);
+    EXPECT_EQ(out.text,
+              R"({"phone":{"notifications":false,"units":"metric"},"units":"imperial"})");
+}
+
+TEST(SettingsUnits, RefusesWhenTheOnlyUnitsKeyIsNested)
+{
+    EXPECT_EQ(spliceUnits(R"({"phone":{"units":"metric"},"version":2})", true).result,
+              SettingsSplice::Result::FieldNotFound);
+}
+
+/// An array at the top level must not be mistaken for an object that could
+/// hold the key one level down.
+TEST(SettingsUnits, LooksPastAStringInsideATopLevelArray)
+{
+    const auto out = spliceUnits(R"({"tags":["units","metric"],"units":"metric"})", true);
+    ASSERT_EQ(out.result, SettingsSplice::Result::Ok);
+    EXPECT_EQ(out.text, R"({"tags":["units","metric"],"units":"imperial"})");
 }
 
 /// The two fields are spliced by different functions over the same buffer, and

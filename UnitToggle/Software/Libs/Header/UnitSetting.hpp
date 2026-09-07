@@ -28,14 +28,18 @@ inline LiveSettings::Flag liveFlag(const SettingsAddresses::AddressSet &addrs)
 }
 
 constexpr SettingsPersist::Field kField = {
-    &SettingsSplice::setUnits,
-    "units",
-    "2:/settings.json.uttmp",
-    "2:/settings.json.utprev",
-    "2:/ut-probe-a.tmp",
-    "2:/ut-probe-b.tmp",
-    "UnitToggle primitive self-test",
+    .splice     = &SettingsSplice::setUnits,
+    .name       = "units",
+    .tmpPath    = "2:/settings.json.uttmp",
+    .prevPath   = "2:/settings.json.utprev",
+    .probeAPath = "2:/ut-probe-a.tmp",
+    .probeBPath = "2:/ut-probe-b.tmp",
+    .probeText  = "UnitToggle primitive self-test",
 };
+
+static_assert(SettingsPersist::isWellFormed(kField),
+              "A path landed in the wrong member, two of them are the same, one is the real "
+              "settings file, or the probe text will not fit the buffer it is read back into.");
 
 } // namespace UnitSetting
 

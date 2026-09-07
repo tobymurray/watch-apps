@@ -30,14 +30,18 @@ inline LiveSettings::Flag liveFlag(const SettingsAddresses::AddressSet &addrs)
 }
 
 constexpr SettingsPersist::Field kField = {
-    &SettingsSplice::setNotifications,
-    "notifications",
-    "2:/settings.json.nttmp",
-    "2:/settings.json.ntprev",
-    "2:/nt-probe-a.tmp",
-    "2:/nt-probe-b.tmp",
-    "NotifyToggle primitive self-test",
+    .splice     = &SettingsSplice::setNotifications,
+    .name       = "notifications",
+    .tmpPath    = "2:/settings.json.nttmp",
+    .prevPath   = "2:/settings.json.ntprev",
+    .probeAPath = "2:/nt-probe-a.tmp",
+    .probeBPath = "2:/nt-probe-b.tmp",
+    .probeText  = "NotifyToggle primitive self-test",
 };
+
+static_assert(SettingsPersist::isWellFormed(kField),
+              "A path landed in the wrong member, two of them are the same, one is the real "
+              "settings file, or the probe text will not fit the buffer it is read back into.");
 
 } // namespace NotifySetting
 

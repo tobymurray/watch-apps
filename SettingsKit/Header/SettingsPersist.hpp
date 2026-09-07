@@ -23,35 +23,12 @@
 
 #include "DebugLog.hpp"
 #include "SettingsAddresses.hpp"
+#include "SettingsField.hpp"
+#include "SettingsPersistLimits.hpp"
 #include "SettingsSplice.hpp"
 
 namespace SettingsPersist
 {
-
-/// The field an app owns, and the scratch names it writes under. Every path
-/// here has to be that app's alone: two apps sharing one would have each
-/// mistaking the other's half-finished commit for its own, and the file being
-/// moved aside is the wearer's only settings file.
-struct Field {
-    /// Rewrites this field in a settings.json buffer.
-    SettingsSplice::Result (*splice)(char *buf, size_t &len, size_t capacity, bool value,
-                                     size_t *valueOffsetOut);
-    const char *name;        ///< DebugLog only.
-    const char *tmpPath;     ///< Written whole before the real file is touched at all.
-    const char *prevPath;    ///< Where the current file waits while the rename lands.
-    const char *probeAPath;  ///< validatePrimitives scratch; never settings.json.
-    const char *probeBPath;
-    const char *probeText;
-};
-
-/// Upper bound on the settings file this app will read or write. The real file
-/// was 245 bytes on 2026-09-05; this leaves headroom for the firmware adding
-/// fields while still refusing an unexpectedly huge read.
-constexpr size_t kMaxSettingsFileSize = 512;
-/// One byte for a null terminator this app adds, two for the largest length
-/// delta a rewrite here can introduce, and slack. The deltas are one byte for
-/// `true` to `false` and two for `"metric"` to `"imperial"`.
-constexpr size_t kBufferCapacity = kMaxSettingsFileSize + 8;
 
 enum class Status {
     Ok,
