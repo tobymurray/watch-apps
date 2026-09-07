@@ -102,5 +102,19 @@ That last one is the check worth having, and it is cheap: unlike
 `phone.notifications`, this field *is* reported through a supported message, so
 an app can compare its raw read against the kernel's own answer and flip the
 byte to see the message follow. `UnitToggle` does exactly that at launch and
-refuses when they disagree — the offset above has been derived statically but
-never yet confirmed against a running watch.
+refuses when they disagree.
+
+**Confirmed on a watch on 2026-09-07**, author's unit, kernel 1.4.0. The raw
+read at `0x20010CB4` — `settingsStructBase + 4` — agreed with
+`RequestSystemSettings::imperialUnits` on every refresh across three app
+launches, and the message followed the write on all three presses, in both
+directions:
+
+```
+LiveSettings: writing unitsImperial raw=0x00 to addr=0x20010CB4
+LiveSettings: readback raw=0x00
+witness: raw=0 kernel=0 (agree)
+```
+
+A byte that merely accepted a write would have left the message reporting the
+old value. Log in `UnitToggle/DeviceBackups/2026-09-07-first-run/`, local-only.

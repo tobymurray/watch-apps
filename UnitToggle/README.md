@@ -12,12 +12,12 @@ that owns only pixels over a checked C ABI, and
 [`SettingsKit`](../SettingsKit) underneath both for everything that touches the
 watch's real settings.
 
-> **Not yet run on a watch.** Everything below that says "measured" was measured
-> at a desk: the file format off a real device over USB, the struct offset out
-> of a firmware image, the screens out of the renderer, the footprint out of a
-> real linker map. Nothing here has been installed on a wrist. The section
-> [What has not been proved](#what-has-not-been-proved) is the list, and it is
-> not short.
+> **Run on a watch on 2026-09-07**, on the author's unit, kernel 1.4.0: the gate
+> accepted, the offset held against the kernel's own report, and three presses
+> moved the units in both directions. What has *not* run is the file write —
+> saving is off by default and was off for that run, so the commit path has
+> never executed for this field. [What has not been proved](#what-has-not-been-proved)
+> is the remaining list.
 
 ## What it actually changes
 
@@ -90,11 +90,34 @@ there is no store to find. Both match branches converge on
 `strb r0, [r4, #4]`. The firmware's own comparison table gives the two spellings
 lengths 6 and 8, which is the same +2 delta arrived at from the other direction.
 
-Only one derivation, though, and the standard in this repository is two. **The
-second is the gate, and it runs on the watch**: the app compares its raw read
-against `RequestSystemSettings` at launch and after every write, and refuses if
-they disagree. So the offset is asserted here and checked there — which is why
-the app can ship before it has ever run, and why its first run is the experiment.
+Only one derivation from the image, and the standard in this repository is two.
+**The second is the gate, and it ran on the watch on 2026-09-07.** The app
+compares its raw read against `RequestSystemSettings` at launch and after every
+write, and refuses if they disagree. They agreed on every read across three app
+launches, and — the part that matters — the kernel's own report *followed the
+write* each time:
+
+```
+LiveSettings: unitsImperial raw=0x01 (addr=0x20010CB4) watchFaceId=0
+witness: raw=1 kernel=1 (agree)
+R1 pressed
+LiveSettings: writing unitsImperial raw=0x00 to addr=0x20010CB4
+LiveSettings: readback raw=0x00
+witness: raw=0 kernel=0 (agree)
+```
+
+`0x20010CB4` is `settingsStructBase + 4`. A byte that merely accepted a write
+would have left the message reporting the old value; this one moved the setting.
+Three presses, both directions, and the gate's own cross-check on fields this app
+never writes agreed too (`activityMinutes` 30/30, `steps` 5000/5000, all nine
+signatures matched). Falsified by a run where the message does not follow the
+write. The full log is in `DeviceBackups/2026-09-07-first-run/`, which is
+local-only.
+
+That run also confirms the default is inert: with no config file on the watch,
+`saveToSettings` read false, the log says `saving is off, leaving settings.json
+alone`, and `2:/settings.json` came back byte-identical to the capture taken the
+previous day — with no scratch file of any kind left on the volume.
 
 **The file passes through zero bytes mid-write.** In the same session,
 `2:/settings.json` was observed at 0 bytes with a null FAT timestamp while a
@@ -166,18 +189,17 @@ the screen says so either way.
 
 ## What has not been proved
 
-Everything in this section needs a watch, and none of it has had one.
+The offset and the live write are settled (above). These are not.
 
-- **That the offset is right on a running kernel.** Derived statically from one
-  firmware image. The gate is built to catch a wrong one — it refuses rather
-  than writing when the raw byte and `RequestSystemSettings` disagree — but a
-  gate that has never refused is a gate that has never been tested either.
-- **That the write takes effect at all**, and that the kernel's report follows
-  it.
-- **That the commit works**, that the file is byte-identical apart from `units`
-  after a round trip, and that the change survives a power cycle. `NotifyToggle`
-  proved all three for its own field on this firmware through the same
-  primitives, which is evidence about the mechanism but not about this field.
+- **That the commit works** for this field: that `settings.json` comes back
+  byte-identical apart from `units`, and that the change survives a power cycle.
+  Saving is off by default and was off for the 2026-09-07 run, so the whole
+  commit path — `validatePrimitives`, the tmp write, the rename dance — has never
+  executed for `units` on any watch. `NotifyToggle` proved all of it for its own
+  field on this firmware through the same primitives, which is evidence about the
+  mechanism but not about this field.
+- **That the gate ever refuses.** It accepted on the only firmware it has seen. A
+  gate that has never said no is a gate whose refusal path is untested.
 - **What the change actually does to the rest of the watch, and when.** This is
   the open question that most affects what the screen should say.
   `phone.notifications` is a behaviour the kernel acts on continuously, so
@@ -188,9 +210,9 @@ Everything in this section needs a watch, and none of it has had one.
   screen deliberately claims none of it.** It says what the setting is and
   whether it will last, and nothing about what else will change.
 
-The first run on a watch is what closes these, and the app is built to fail
-safe until then: with saving off — the default — it never writes a file at all,
-and with the gate refused it never touches a raw address.
+Turning saving on is what closes the first of these, and it is the one that can
+leave a wearer without a settings file — which is why it is a decision made in
+the companion app rather than a default.
 
 ## Building
 
@@ -224,7 +246,7 @@ From a real build against the pinned toolchain image and SDK revision
 (`arm-none-eabi-size -A`, 600 KiB GUI RAM window, code executing from RAM):
 
 ```
-GUI      .text 49,200   .data 580   .bss 58,536   .stack 10,240   .uapp 57,524
+GUI      .text 49,252   .data 580   .bss 58,536   .stack 10,240   .uapp 57,572
 Service  .text  2,180   .data  36   .bss    556   .stack 10,240
 ```
 

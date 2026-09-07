@@ -41,6 +41,11 @@ include(${SETTINGSKIT_PATH}/settingskit.cmake)
 project(${APP_NAME})
 una_app_setup_version(BUILD_VERSION ${CMAKE_CURRENT_SOURCE_DIR})
 
+# So a build can say which build it is. Docs/INSTALLING.md is four failed
+# installs' worth of reasons: every one of them was diagnosed from an app that
+# could not report its own version over USB.
+add_compile_definitions(UNIT_TOGGLE_VERSION="${BUILD_VERSION}")
+
 # Off for anything a wearer installs: with it on, the app writes diagnostics
 # into its own directory on the watch. See SettingsKit's DebugLog.hpp.
 option(UNIT_TOGGLE_DEBUG_LOG "Write diagnostic logs to the watch's filesystem" OFF)

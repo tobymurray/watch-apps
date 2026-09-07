@@ -283,7 +283,9 @@ void Gui::run()
 {
     LOG_INFO("Started\n");
     DebugLog::setLogPath("gui-debug.log");
-    DebugLog::append(mKernel.fs, "=== UnitToggle GUI started (debug build) ===");
+    DebugLog::appendf(mKernel.fs, "=== UnitToggle GUI %s started (debug build) ===",
+                       UNIT_TOGGLE_VERSION);
+    LOG_INFO("UnitToggle %s\n", UNIT_TOGGLE_VERSION);
 
     if (unit_toggle_abi_fingerprint() != unit_toggle_abi::fingerprint()) {
         LOG_ERROR("ABI mismatch: Rust 0x%08X, C++ 0x%08X -- stale libunit_toggle_gui.a\n",
