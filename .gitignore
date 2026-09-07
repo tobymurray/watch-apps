@@ -19,3 +19,7 @@ generated/**/UnicodeList*.txt
 # worktrees and scratch files under .claude/ are local to one machine.
 .claude/*
 !.claude/commands/
+
+# Evidence bundles from /adversarial-review; a number worth keeping is copied
+# into the design record it belongs to, never cited from here.
+tmp/
