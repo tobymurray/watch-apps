@@ -41,6 +41,24 @@ Rust `CustomGUI` pattern, and `UnitToggle` is built from `NotifyToggle` — the
 two share everything that touches the watch's settings, which lives once in
 [`SettingsKit`](SettingsKit) rather than in either app.
 
+## The shared directories
+
+Five directories here are not apps. Each is code more than one app needs, kept
+in one place so it cannot drift into several slightly different copies — which
+is what happened before each of them existed.
+
+| | |
+|---|---|
+| [`MapKit`](MapKit) | The map: tiles, the cache and the RAM arbitration, for `BikeMap`, `HikeMap` and `RunMap`, which are otherwise the same app three times over. |
+| [`SettingsKit`](SettingsKit) | Everything that touches the watch's live settings struct and `settings.json`, shared by `NotifyToggle`, `UnitToggle` and `SettingsEditor`. GUI only: every file in it either carries a raw firmware address or is reached by something that does. |
+| [`EffortKit`](EffortKit) | Heart-rate recovery and the shared session log, linked by `Spin`'s and `Squash`'s Service halves, which have no host test of their own. |
+| [`TextKit`](TextKit) | Text for the Rust GUIs: Poppins pre-rendered into 2bpp atlases and blitted through the lit disc, held to TouchGFX's own converter by a parity test over 376 glyphs. |
+| [`PanelKit`](PanelKit) | The GUI kit under those same Rust renderers: the round panel's geometry, the `ABGR2222` surface and its clip, ordered dithering, the measured arc sampler, a four-button focus model with a screen stack, and the scene catalogue that drives the preview and the tests together. Distilled from the seven `CustomGUI` apps, each of which had written its own copy — the framebuffer's `DrawTarget` impl was byte-identical in all seven. Shaped so the Rust half could be published for round low-bit-depth panels generally; the C ABI, `GuiShell.hpp` and `panelkit.cmake` are this repository's glue and stay here. |
+
+A shared directory belongs to no app, so no app's workflow builds it: each has
+its own, and `TextKit` and `PanelKit` are additionally discovered by
+`app-build.yml` from the adopting crate's `Cargo.toml`.
+
 ## Building
 
 Each app is a self-contained app root: a `Software/` directory holding exactly one
