@@ -1,0 +1,22 @@
+{
+  "manifest_version": 1,
+  "type": [
+    "utility"
+  ],
+  "name": "Doorbell",
+  "binary": "Doorbell_0.1.0.uapp",
+  "appVersion": "0.1.0",
+  "minKernelVersion": "1.4.0",
+  "requiredHardware": [],
+  "description": "A probe. It asks whether an ordinary app can make the watch say something to the phone at a moment of the wearer's choosing, by sending the kernel the same end-of-activity message a workout app sends and watching the BLE link for what comes out. Three clicks of the top-right button write a small command file and ring; the other buttons ring without a file, ring through the service instead of the screen, and ring three times in a row.",
+  "id": "139F8F20291E9C1D",
+  "stravaExport": false,
+  "supportsLaps": false,
+  "supportsDistance": false,
+  "supportsTrack": false,
+  "supportsHeartbeat": false,
+  "supportsElevation": false,
+  "supportsStep": false,
+  "supportsSpeed": "none",
+  "customMeasures": []
+}
