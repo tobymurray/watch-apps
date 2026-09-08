@@ -1,0 +1,48 @@
+[package]
+name = "panelkit"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+license = "MIT OR Apache-2.0"
+description = "Immediate-mode GUI primitives for round, low-bit-depth, button-driven panels: lit-disc geometry, ordered dithering, a four-button focus model and a scene catalogue, on embedded-graphics."
+repository = "https://github.com/tobymurray/watch-apps"
+categories = ["embedded", "no-std", "gui"]
+keywords = ["embedded-graphics", "no-std", "gui", "smartwatch", "dithering"]
+# The published crate is the Rust half only. The C ABI, GuiShell.hpp and
+# panelkit.cmake are this repo's glue to one vendor's SDK and are not part of
+# what anyone else would install.
+include = ["src/**/*.rs", "README.md", "LICENSE-*"]
+
+[features]
+default = ["round"]
+## The lit-disc clip and the chord table. Off, the surface is a plain rectangle.
+round = []
+## The concrete `Abgr2222` colour type and its palette.
+abgr2222 = []
+## Ordered dithering, and the gamut-hull hue dither.
+dither = []
+## Tier 2 widgets.
+widgets = []
+## The scene catalogue trait and its byte-hash golden helper.
+scenes = []
+## A `#[panic_handler]` that reports `file:line` through `panelkit_host_panic`.
+## Inert under `std`, so `--all-features` and a host test build still work; a
+## device build enables it without `std` and gets the handler.
+panic-handler = []
+## Host-side helpers: PNG contact sheets, `std` assertions in tests.
+std = []
+
+[dependencies]
+embedded-graphics = "0.8"
+
+[dev-dependencies]
+embedded-graphics = "0.8"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1

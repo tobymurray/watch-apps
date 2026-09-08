@@ -1,0 +1,24 @@
+[package]
+name = "probe"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[features]
+default = []
+t0 = []
+t1 = ["panelkit/dither"]
+t2 = ["panelkit/widgets"]
+t3 = []
+
+[dependencies]
+panelkit = { path = "../../..", default-features = false, features = ["round"] }
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false
