@@ -135,6 +135,12 @@ jobs:
           # them, so it is what checks they are current.
           textkit=no
           if [ -n "$crate" ] && grep -q 'TextKit' "$crate"; then textkit=yes; fi
+          # A renderer built on the shared PanelKit crate takes its surface,
+          # its panic handler and its measured constants from there. Found the
+          # same way as TextKit -- from the crate's own Cargo.toml, so it is
+          # discovered rather than declared.
+          panelkit=no
+          if [ -n "$crate" ] && grep -q 'PanelKit' "$crate"; then panelkit=yes; fi
           # A Service that measures heart-rate recovery or writes the shared
           # session log links the EffortKit crate, whose own tests are the only
           # thing that covers either -- Service.cpp has no host test at all.
@@ -149,6 +155,7 @@ jobs:
             echo "cmake=$([ -n "$cmake" ] && dirname "$cmake" || echo '')"
             echo "crate=$([ -n "$crate" ] && dirname "$crate" || echo '')"
             echo "textkit=$textkit"
+            echo "panelkit=$panelkit"
             echo "effortkit=$effortkit"
           } >> "$GITHUB_OUTPUT"
 
@@ -157,6 +164,7 @@ jobs:
           echo "tests     $([ -f "$tests" ] && echo yes || echo no)"
           echo "crate     $([ -n "$crate" ] && echo yes || echo no)"
           echo "textkit   $textkit"
+          echo "panelkit  $panelkit"
           echo "buildable $([ -n "$cmake" ] && echo yes || echo no)"
 
           if [ ! -f "$manifest" ] && [ ! -f "$tests" ] && [ -z "$cmake" ]; then
@@ -376,6 +384,18 @@ jobs:
           set -euo pipefail
           python3 Tools/atlas.py --check
           cargo test --features std
+
+      # The kit owns the bezel, determinism and geometry checks every adopting
+      # app inherits without declaring them, and the measured constants -- the
+      # arc step's unpainted-pixel count, the dither's error against flat
+      # truncation, the chord table -- are re-derived here rather than quoted.
+      # panelkit.yml covers the crate on its own; this is what says the app's
+      # build still agrees with it.
+      - name: PanelKit still holds its measurements
+        if: steps.app.outputs.panelkit == 'yes'
+        shell: bash
+        working-directory: apps/PanelKit
+        run: cargo test --all-features
 
       - name: Build the app
         if: steps.app.outputs.cmake != ''

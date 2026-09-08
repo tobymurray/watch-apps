@@ -1,0 +1,108 @@
+name: PanelKit
+
+# A shared crate belongs to no app, so no app's workflow builds it.
+# SettingsEditor rebuilds when it changes -- its paths filter says so -- but that
+# only proves its archive still links. This is what proves the crate itself is
+# still correct, still no_std, still free of anything that crept in behind
+# `feature = "std"`, and still holding the measurements it claims.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'PanelKit/**'
+      - '.github/workflows/panelkit.yml'
+  pull_request:
+    paths:
+      - 'PanelKit/**'
+      - '.github/workflows/panelkit.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: panelkit-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # The container's default shell is sh, where `set -o pipefail` is an illegal
+    # option and every step below that uses a pipe would report success for a
+    # command that failed. Declared once for the job rather than per step.
+    defaults:
+      run:
+        shell: bash
+    container:
+      image: ghcr.io/tobymurray/watch-apps-toolchain@sha256:cca44e2ca090850480a612f4ed3d4acbd317f3bd32516b0d8fe323cf37c0ee26
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Every measured constant in the crate re-runs here: the arc step's
+      # unpainted-pixel count, the dither's error against flat truncation, the
+      # chord table, the trig bound. A number that rots fails this.
+      - name: Tests
+        working-directory: PanelKit
+        run: cargo test --all-features
+
+      # The floor has to keep working on its own: a `std` type or a widget
+      # reached for from tier 0 compiles fine above and fails here.
+      - name: Tier 0 alone
+        working-directory: PanelKit
+        run: cargo build --release --target thumbv8m.main-none-eabihf --no-default-features --features round
+
+      # The one that matters most. Nothing in the crate may need an allocator or
+      # a host, and this is the only step that says so.
+      - name: The watch target, every feature
+        working-directory: PanelKit
+        run: |
+          set -euo pipefail
+          for f in round round,dither round,widgets round,scenes "round,dither,widgets,scenes"; do
+            echo "--- $f"
+            cargo build --release --target thumbv8m.main-none-eabihf --no-default-features --features "$f"
+          done
+
+      # "Platform-generic" is a claim until something other than one ARM target
+      # compiles it. This is what tests it rather than asserting it.
+      - name: A second, non-ARM target
+        working-directory: PanelKit
+        run: |
+          set -euo pipefail
+          rustup target add riscv32imac-unknown-none-elf
+          cargo build --release --target riscv32imac-unknown-none-elf --no-default-features --features round,dither,widgets
+
+      # The C++ half is header-only precisely so this can run without an ARM
+      # toolchain, and it is the only thing that catches a rename across the C
+      # ABI (RustGuiPoc/Docs/FINDINGS.md, "Toolchain").
+      - name: The shell header type-checks against the SDK
+        run: |
+          set -euo pipefail
+          cat > /tmp/pk_check.cpp <<'EOF'
+          #include "GuiShell.hpp"
+          struct DemoApp {
+              static uint32_t abiFingerprint() { return 1; }
+              static uint32_t expectedFingerprint() { return 1; }
+              static void render(uint8_t*, uint32_t, uint16_t, uint16_t) {}
+              static panelkit::Action onButton(panelkit::Button, panelkit::Press) { return panelkit::Action::Redraw; }
+              static panelkit::Action onTick(uint32_t) { return panelkit::Action::Ignore; }
+              static void onResume() {}
+              static void onSuspend() {}
+          };
+          template class panelkit::Shell<DemoApp>;
+          EOF
+          "${CXX:-g++}" -fsyntax-only -std=c++17 -fno-exceptions \
+            -I"$UNA_SDK/Libs/Header" -I PanelKit/Header /tmp/pk_check.cpp
+
+      # docs.rs builds with all features; a doc link that only resolves under
+      # one of them breaks there and nowhere else.
+      - name: Documentation, with the feature matrix
+        working-directory: PanelKit
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --all-features --no-deps
