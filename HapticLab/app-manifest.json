@@ -1,0 +1,24 @@
+{
+  "manifest_version": 1,
+  "type": [
+    "utility"
+  ],
+  "name": "Haptic Lab",
+  "icon": "icon.png",
+  "binary": "Haptic_Lab_0.1.0.uapp",
+  "appVersion": "0.1.0",
+  "minKernelVersion": "1.4.0",
+  "requiredHardware": [],
+  "description": "An instrument, not an app: it measures how many vibration patterns a wrist can reliably tell apart. It plays a pattern, offers three names, and records which one you pressed, along with every clock and every button event behind the answer. The condition and the seed come from a config.json written into the app's folder over USB, so a run is reproducible.",
+  "id": "5983D82DFEFF2626",
+  "stravaExport": false,
+  "supportsLaps": false,
+  "supportsDistance": false,
+  "supportsTrack": false,
+  "supportsHeartbeat": false,
+  "supportsElevation": false,
+  "supportsStep": false,
+  "supportsSpeed": "none",
+  "customMeasures": [],
+  "configFields": []
+}

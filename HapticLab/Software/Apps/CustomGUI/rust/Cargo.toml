@@ -1,0 +1,30 @@
+[package]
+name = "haptic_lab_gui"
+version = "0.1.0"
+edition = "2021"
+description = "no_std Rust rendering core for the UNA Watch HapticLab app's CustomGUI: draws the probe, training and forced-choice trial screens into an 8bpp ABGR2222 framebuffer over a C ABI, with a host previewer that runs the same render() and masks the round bezel."
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["staticlib", "lib"]
+
+[[bin]]
+name = "preview"
+required-features = ["preview"]
+
+[features]
+std = []
+preview = ["std", "dep:png"]
+
+[dependencies]
+png = { version = "0.17", optional = true }
+# A dependency, never a second staticlib: two archives each carrying a
+# #[panic_handler] collide at link time.
+textkit = { path = "../../../../../TextKit" }
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false

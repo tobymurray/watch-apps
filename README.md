@@ -13,6 +13,7 @@ than living inside it.
 | [`BikeMap`](BikeMap) | The stock Cycling activity with a live map on the in-activity screen: offline basemap tiles under the GPS breadcrumb, instead of breadcrumb-on-black. |
 | [`Chrono`](Chrono) | The SDK's Stopwatch example backported to SDK 1.3, which upstream never had a build of — so it launches on a watch whose kernel is still on interface version 2. |
 | [`GpsLab`](GpsLab) | The Running activity plus GNSS instrumentation — per-sample error estimate, fix and dead-reckoning state, recorded alongside the activity. |
+| [`HapticLab`](HapticLab) | An instrument for one question: how many vibration patterns can a wrist reliably tell apart? It plays a pattern, offers three names, and records which button you pressed along with every clock and every press behind the answer. The whole app-facing haptic surface is one eight-note message that cannot be stopped and never says when it finished, and whether a haptics-first navigation app can exist depends on a number nobody has. |
 | [`HikeMap`](HikeMap) | The stock Hiking activity with the same live map. |
 | [`MapManager`](MapManager) | A background, autostart `Utility` app that discovers and CRC-verifies offline map packs dropped into the shared `SharedData/maps/` directory, so map-consuming apps read from one already-verified location instead of each running their own copy of this pipeline. |
 | [`NotifyToggle`](NotifyToggle) | A single on/off switch for phone-notification forwarding, reading and writing the watch's real `settings.json` flag directly, in-process — because the SDK's sandboxed filesystem API cannot reach that file at all on this firmware, and the paired phone app itself turns out to persist it over a plain BLE file overwrite rather than any documented mechanism. |
@@ -39,7 +40,11 @@ already right — and then given a Rust `CustomGUI` frontend instead of `Squash`
 TouchGFX one. `NotifyToggle` is new here too, built from scratch on the same
 Rust `CustomGUI` pattern, and `UnitToggle` is built from `NotifyToggle` — the
 two share everything that touches the watch's settings, which lives once in
-[`SettingsKit`](SettingsKit) rather than in either app.
+[`SettingsKit`](SettingsKit) rather than in either app. `HapticLab` is new here
+as well, and is the one app whose GUI half owns the app rather than the Service:
+`EventButton` reaches a `CustomGUI` with its own timestamp and reaches a
+TouchGFX screen as a key code with the timestamp discarded, so the half that
+measures a reaction time has to be the one the kernel hands the event to.
 
 ## Building
 
@@ -81,7 +86,10 @@ kira build-app --app GpsLab --sdk /path/to/una-sdk --version 1.0.0 --out GpsLab.
 [`MapManager/Tests`](MapManager/Tests), `SleepLab` carries its sleep engine and
 storage under [`SleepLab/Tests`](SleepLab/Tests), `SunGlance` carries its solar
 core, its wording and its glance wiring under
-[`SunGlance/Tests`](SunGlance/Tests), `Barcode` carries its Code 128 encoder,
+[`SunGlance/Tests`](SunGlance/Tests), `HapticLab` carries the trial plan, the
+protocol state machine, the row formats and the statistics behind its report
+under [`HapticLab/Tests`](HapticLab/Tests), where the report generator is
+built too so there is one implementation of the arithmetic rather than two, `Barcode` carries its Code 128 encoder,
 the round-panel geometry that encoder is drawn into, and the service that turns
 `input.json` into a barcode, under [`Barcode/Tests`](Barcode/Tests), and the
 three map apps share one suite
@@ -94,7 +102,7 @@ in a `Tests/` directory — see [RustGuiPoc's README](RustGuiPoc/README.md#tests
 of the three apps that ship a Rust GUI, `Barcode`, `NotifyToggle` and `Spin`,
 which CI runs by discovering the crate rather than by being told about it.
 
-`SleepLab`, `SunGlance`, `Spin`, `RustGuiPoc` and `QrGuiPoc` target `apps-v1.4.0`. `Chrono`,
+`SleepLab`, `SunGlance`, `Spin`, `RustGuiPoc`, `QrGuiPoc` and `HapticLab` target `apps-v1.4.0`. `Chrono`,
 `MapManager` and the three map apps were pinned to `apps-v1.3.0` back when no
 1.4 firmware had shipped — their binaries still run on 1.4, since the launch
 check only refuses a kernel older than the app, but the pinning rationale in

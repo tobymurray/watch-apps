@@ -1,0 +1,4 @@
+# One PNG per scene, written by Tools/docker-build.sh preview. The sheets beside
+# this directory are what is committed; these are one command away.
+*
+!.gitignore

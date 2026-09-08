@@ -1,0 +1,5 @@
+schema,run_id,set,set_hash,index,pattern_id,name,family,pulses,rhythm,amplitude,length,note_count,modelled_duration_ms,needs_amplitude_axis,notes
+1,20260908T101500,rhythm-and-family,1A2B3C4D,0,P01,TAP,click,1,single,full,brief,1,3400,0,e1
+1,20260908T101500,rhythm-and-family,1A2B3C4D,1,P02,TICK,tick,1,single,full,brief,1,3400,0,e24
+1,20260908T101500,rhythm-and-family,1A2B3C4D,2,P03,BUZZ,buzz,1,single,full,brief,1,3400,0,e14
+1,20260908T101500,rhythm-and-family,1A2B3C4D,3,P04,TWOTICK,tick,2,even,full,brief,3,3400,0,e24;p80;e24

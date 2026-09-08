@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "seed": 0,
+  "set": "rhythm-and-family",
+  "test_passes": 4,
+  "contact": "wrist",
+  "masking": "unmasked",
+  "wrist": "left",
+  "watch_position": "one finger above the ulnar head",
+  "strap_tightness": "snug, no gap under the case",
+  "arm_posture": "arm down at the side between trials",
+  "ambient_temp_c": 21,
+  "sweep_repeats": 2,
+  "sweep_first_effect": 1,
+  "sweep_last_effect": 127
+}
