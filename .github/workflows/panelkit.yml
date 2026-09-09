@@ -26,6 +26,14 @@ permissions:
   contents: read
   packages: read
 
+env:
+  # The C++ half type-checks against the SDK's headers, so this workflow needs
+  # the SDK the same way app-build.yml does. Kept in step with app-build.yml's
+  # pin by hand: two workflows measuring against two different SDK commits is
+  # two instruments.
+  SDK_REPO: tobymurray/una-sdk
+  SDK_REF: 8cdb73140a3d97455b80c22d32e5012e26f72291
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -44,6 +52,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out the SDK
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SDK_REPO }}
+          ref: ${{ env.SDK_REF }}
+          persist-credentials: false
+          path: sdk
+
       # Every measured constant in the crate re-runs here: the arc step's
       # unpainted-pixel count, the dither's error against flat truncation, the
       # chord table, the trig bound. A number that rots fails this.
@@ -55,7 +71,7 @@ jobs:
       # reached for from tier 0 compiles fine above and fails here.
       - name: Tier 0 alone
         working-directory: PanelKit
-        run: cargo build --release --target thumbv8m.main-none-eabihf --no-default-features --features round
+        run: cargo build --release --target thumbv8m.main-none-eabihf --no-default-features
 
       # The one that matters most. Nothing in the crate may need an allocator or
       # a host, and this is the only step that says so.
@@ -63,9 +79,14 @@ jobs:
         working-directory: PanelKit
         run: |
           set -euo pipefail
-          for f in round round,dither round,widgets round,scenes "round,dither,widgets,scenes"; do
+          # panic-handler and panic-message are here because they are what an
+          # app actually ships, and nothing else in this workflow compiles them:
+          # cargo test --all-features enables std, and both handlers are gated
+          # `not(feature = "std")`, so the tests cfg them straight out.
+          for f in "" dither widgets scenes panic-handler panic-message \
+                   "dither,widgets,scenes" "dither,widgets,scenes,panic-message"; do
             echo "--- $f"
-            cargo build --release --target thumbv8m.main-none-eabihf --no-default-features --features "$f"
+            cargo build --release --target thumbv8m.main-none-eabihf --no-default-features ${f:+--features "$f"}
           done
 
       # "Platform-generic" is a claim until something other than one ARM target
@@ -75,12 +96,14 @@ jobs:
         run: |
           set -euo pipefail
           rustup target add riscv32imac-unknown-none-elf
-          cargo build --release --target riscv32imac-unknown-none-elf --no-default-features --features round,dither,widgets
+          cargo build --release --target riscv32imac-unknown-none-elf --no-default-features --features dither,widgets
 
       # The C++ half is header-only precisely so this can run without an ARM
       # toolchain, and it is the only thing that catches a rename across the C
       # ABI (RustGuiPoc/Docs/FINDINGS.md, "Toolchain").
       - name: The shell header type-checks against the SDK
+        env:
+          UNA_SDK: ${{ github.workspace }}/sdk
         run: |
           set -euo pipefail
           cat > /tmp/pk_check.cpp <<'EOF'
