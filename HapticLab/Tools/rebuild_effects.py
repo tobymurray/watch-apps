@@ -29,6 +29,7 @@ FACTOR = 4
 FLOOR_LSB = 24
 RUN_IN = 3
 GAP_US = 250 * 1000
+OFFSET_PEAK_PERCENT = 10
 
 # The Service's own window, in microseconds either side of the play instant.
 SETTLE_US = 600 * 1000
@@ -63,7 +64,7 @@ def measure(window, play):
     threshold = max(baseline * FACTOR, FLOOR_LSB)
 
     after = [(t, v) for t, v in d if t >= play]
-    onset = offset = None
+    onset = None
     burst = []
     run = []
     for t, v in after:
@@ -74,12 +75,19 @@ def measure(window, play):
                 burst = list(run)
             elif onset is not None:
                 burst.append((t, v))
-            if onset is not None:
-                offset = t
         else:
             run = []
-            if onset is not None and t - offset >= GAP_US:
+            if onset is not None and burst and t - burst[-1][0] >= GAP_US:
                 break
+
+    # Where the burst ends, against its own peak rather than the wrist's quiet
+    # level, so the ring-down is not counted as drive. `SweepStats.hpp` explains
+    # what settles the figure.
+    if burst:
+        cut = max(v for _, v in burst) * OFFSET_PEAK_PERCENT // 100
+        while len(burst) > 1 and burst[-1][1] < cut:
+            burst.pop()
+    offset = burst[-1][0] if burst else None
 
     return {
         "baseline_delta": baseline,

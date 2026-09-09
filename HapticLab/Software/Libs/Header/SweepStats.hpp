@@ -120,6 +120,12 @@ constexpr uint32_t kOnsetFloorLsb = 24;
 /// `ASingleStraySampleIsNotAnOnset` is what holds it.
 constexpr uint8_t kOnsetRunLength = 3;
 
+/// How far the burst has to fall below its own peak before it has ended, as a
+/// percentage. This is what stops the ring-down being counted as drive: see
+/// `finish()` for the two effects that settle it and why the figure is not
+/// fitted to them.
+constexpr uint32_t kOffsetPeakPercent = 10;
+
 /// Quiet time that ends the burst. Without it the offset is the last sample
 /// above threshold anywhere in the window, so a wrist that moves a second
 /// after the effect finished extends the effect: the first sweep read
@@ -204,7 +210,9 @@ public:
     }
 
     /// Splits the window at the play, takes the baseline from what came before
-    /// and the burst from what came after.
+    /// and the burst from what came after, in three passes: the quiet stretch
+    /// sets the threshold, the threshold finds the burst, and the burst's own
+    /// peak decides where it ends.
     void finish()
     {
         if (mPlayAtUs == kNoPlay) {
@@ -229,48 +237,67 @@ public:
 
         // The first run of consecutive loud samples after the play, ended by a
         // gap rather than by the window closing.
-        uint16_t runStart = 0;
-        uint8_t  run      = 0;
-        bool     started  = false;
-        uint64_t burstSum = 0;
+        uint16_t first   = 0;
+        uint16_t last    = 0;
+        uint16_t runFrom = 0;
+        uint8_t  run     = 0;
+        bool     started = false;
         for (uint16_t i = 0; i < mCount; i++) {
-            const int32_t at = mEntries[i].atUs;
-            if (at < mPlayAtUs) {
+            if (mEntries[i].atUs < mPlayAtUs) {
                 continue;
             }
-            const int64_t since = static_cast<int64_t>(at) - mPlayAtUs;
-
             if (mEntries[i].delta > mThreshold) {
                 if (run == 0) {
-                    runStart = i;
+                    runFrom = i;
                 }
                 run++;
                 if (!started && run >= kOnsetRunLength) {
-                    started  = true;
-                    mOnsetUs = static_cast<int64_t>(mEntries[runStart].atUs) - mPlayAtUs;
-                    for (uint16_t j = runStart; j < i; j++) {
-                        burstSum += mEntries[j].delta;
-                        mBurstSamples++;
-                        if (mEntries[j].delta > mBurstPeak) {
-                            mBurstPeak = mEntries[j].delta;
-                        }
-                    }
+                    started = true;
+                    first   = runFrom;
                 }
                 if (started) {
-                    burstSum += mEntries[i].delta;
-                    mBurstSamples++;
-                    if (mEntries[i].delta > mBurstPeak) {
-                        mBurstPeak = mEntries[i].delta;
-                    }
-                    mOffsetUs = since;
+                    last = i;
                 }
             } else {
                 run = 0;
-                if (started && since - mOffsetUs >= static_cast<int64_t>(kBurstGapMs) * 1000) {
+                if (started && static_cast<int64_t>(mEntries[i].atUs) - mEntries[last].atUs >=
+                                   static_cast<int64_t>(kBurstGapMs) * 1000) {
                     break;
                 }
             }
         }
+        if (!started) {
+            return;
+        }
+
+        for (uint16_t i = first; i <= last; i++) {
+            if (mEntries[i].delta > mBurstPeak) {
+                mBurstPeak = mEntries[i].delta;
+            }
+        }
+
+        // Where the burst ends, measured against its own peak rather than
+        // against the wrist's quiet level. The two effects that name a duration
+        // are the only ground truth this app has, and against a baseline
+        // multiple both read long: 793 ms against a declared 750 and 1040
+        // against a declared 1000. Trimming the tail to a tenth of the peak
+        // puts them at 751 and 996, and the answer moves by under 1 % anywhere
+        // between a twentieth and a fifth, so this is a criterion rather than a
+        // constant fitted to two points. What it removes is the ring-down: the
+        // actuator is still moving after it has stopped being driven, and a
+        // threshold set by the wrist cannot tell the difference.
+        const uint32_t tail = mBurstPeak * kOffsetPeakPercent / 100;
+        while (last > first && mEntries[last].delta < tail) {
+            last--;
+        }
+
+        uint64_t burstSum = 0;
+        for (uint16_t i = first; i <= last; i++) {
+            burstSum += mEntries[i].delta;
+            mBurstSamples++;
+        }
+        mOnsetUs  = static_cast<int64_t>(mEntries[first].atUs) - mPlayAtUs;
+        mOffsetUs = static_cast<int64_t>(mEntries[last].atUs) - mPlayAtUs;
         // Over the burst rather than over the whole window: a mean diluted by
         // three seconds of quiet is not an energy, which is why the first
         // sweep's table put effect 1 at 101 against a peak of 4599.

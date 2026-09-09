@@ -374,3 +374,51 @@ TEST(SweepWindow, ThePreviousRepeatsTailDoesNotMakeAWindowLookCovered)
     EXPECT_FALSE(window.coversPlayPlus(0));
     EXPECT_EQ(window.windowSamples(), 0);
 }
+
+/// The actuator is still moving after it has stopped being driven, and a
+/// threshold set by the wrist's quiet level cannot tell the two apart. Against
+/// a baseline multiple the two effects that name a duration both read long, by
+/// 5.7 % and 4.0 %; trimming the tail to a tenth of the burst's own peak puts
+/// them within 1 % of what their names claim.
+TEST(SweepWindow, TheRingDownIsNotCountedAsDrive)
+{
+    // Thirty samples of drive and then sixty of a tail at a twentieth of it,
+    // which is above the wrist's quiet level and well under a tenth of the peak.
+    std::vector<ImuSample> samples;
+    for (uint16_t i = 0; i < 200; i++) {
+        ImuSample sample {};
+        sample.timestampUs = static_cast<uint64_t>(i) * kPeriodUs;
+        const int16_t sign = (i % 2 == 0) ? 1 : -1;
+        int16_t       amplitude = 3;
+        if (i >= 50 && i <= 80) {
+            amplitude = 400;
+        } else if (i > 80 && i <= 140) {
+            amplitude = 20;
+        }
+        sample.ax = static_cast<int16_t>(sign * amplitude);
+        sample.az = 4096;
+        samples.push_back(sample);
+    }
+
+    const SweepWindow window = run(samples, /*playIndex=*/40);
+
+    ASSERT_NE(window.onsetUs(), SweepWindow::kNoEdge);
+    EXPECT_EQ(window.onsetUs(), 10 * kPeriodUs);
+    EXPECT_EQ(window.peakDelta(), 800u);
+    // The tail's own deltas are 40, a twentieth of the peak, so the burst ends
+    // at the last sample that still straddles the drive. Untrimmed the offset
+    // would be at sample 140, a hundred periods on.
+    EXPECT_EQ(window.offsetUs(), 41 * kPeriodUs);
+    EXPECT_EQ(window.durationUs(), 31 * kPeriodUs);
+}
+
+/// The trim is a criterion and not a fitted constant: the answer has to be
+/// insensitive to where in the reasonable range the cut is put. A burst with no
+/// tail is unaffected by it at all.
+TEST(SweepWindow, ABurstWithNoTailIsNotTrimmed)
+{
+    const SweepWindow window = run(synthesise(200, 50, 130, 400), /*playIndex=*/40);
+    ASSERT_NE(window.offsetUs(), SweepWindow::kNoEdge);
+    EXPECT_GE(window.offsetUs(), 89 * kPeriodUs)
+        << "a flat burst lost samples to the ring-down trim";
+}
