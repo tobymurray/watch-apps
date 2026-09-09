@@ -31,6 +31,28 @@ env:
   SDK_REF: 8cdb73140a3d97455b80c22d32e5012e26f72291
 
 jobs:
+  # Not in the toolchain container: that image carries cargo-clippy and
+  # clippy-driver on PATH but no clippy component, so `cargo clippy` fails with
+  # "not installed for the toolchain" -- a tool that answers rather than being
+  # absent. This crate needs no SDK and no ARM toolchain to lint, so it runs on a
+  # stock runner instead.
+  #
+  # -D warnings covers rustc's own as well as clippy's. That matters: the lint
+  # this job was added for was an unused import, and a `grep` over a warm
+  # `cargo build` had reported the crate clean three times, because cargo does
+  # not re-emit warnings for a crate it did not recompile.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clippy, and rustc's own warnings
+        working-directory: PanelKit
+        run: |
+          set -euo pipefail
+          rustup component add clippy
+          cargo clippy --all-features --all-targets -- -D warnings
+
   test:
     runs-on: ubuntu-latest
     # The container's default shell is sh, where `set -o pipefail` is an illegal
