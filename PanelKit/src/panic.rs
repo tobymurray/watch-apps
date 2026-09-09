@@ -72,7 +72,7 @@ impl<const N: usize> core::fmt::Write for Buf<N> {
 /// indexing and `copy_from_slice` it costs 2,513 — eight times more, for
 /// byte-identical output. Falsified by
 /// `PanelKit/Docs/measurements/panic-handler`.
-#[cfg(feature = "panic-handler")]
+#[cfg(all(feature = "panic-handler", not(feature = "panic-message")))]
 fn write_location(buf: &mut [u8], loc: &core::panic::Location<'_>) -> usize {
     let mut n = 0usize;
     for (dst, src) in buf.iter_mut().zip(loc.file().as_bytes()) {
