@@ -1,26 +1,13 @@
-//! The scene catalogue: one table of named frames driving the preview, the
-//! simulator and the tests.
+//! One table of named frames, driving the preview, the simulator and the tests.
 //!
-//! This is what replaces a visual designer on this class of panel, and it is a
-//! better instrument than one. The failures here — a glyph dropping out on the
-//! glass, a footer losing its ends behind the bezel, a gradient banding, holes
-//! inside a swept arc — are invisible in a WYSIWYG canvas and obvious on a
-//! sheet of real frames.
-//!
-//! # Why the table is `const`
-//!
-//! The catalogue this was distilled from returned a `Vec` behind
-//! `#[cfg(feature = "std")]`, which meant the device could never draw its own
-//! scenes. A `const` slice can, and a self-demo screen on hardware is how this
-//! platform's dark-on-light dropout was found in the first place — no simulator
-//! shows it.
+//! The table is a `const` slice rather than built at runtime so a device can
+//! draw its own scenes.
 
 use crate::surface::{ByteColor, Surface};
 
 /// One named frame worth looking at.
 ///
-/// The name is the filename in a contact sheet and the label in a failure, so
-/// it should say what is special about the frame rather than number it.
+/// The name is its filename in a contact sheet and its label in a failure.
 pub struct Scene<S: 'static> {
     /// What makes this frame worth keeping.
     pub name: &'static str,
@@ -29,17 +16,13 @@ pub struct Scene<S: 'static> {
 }
 
 /// An app's catalogue, and the renderer that draws it.
-///
-/// Implementing this is what buys an app the bezel test, the determinism test
-/// and the contact sheet, without it having to declare any of them.
 pub trait Scenes {
     /// The state one frame is drawn from.
     type State: 'static;
     /// The colour this app draws in.
     type Color: ByteColor;
 
-    /// Every frame worth reviewing: the narrowest and widest each field gets,
-    /// both ends of every range, and each state that has ever looked wrong.
+    /// Every frame worth reviewing.
     fn scenes() -> &'static [Scene<Self::State>];
 
     /// Draws one.
@@ -54,12 +37,7 @@ pub trait Scenes {
     fn ground() -> Self::Color;
 }
 
-/// FNV-1a over a frame's bytes.
-///
-/// A golden per scene, small enough to check in and to diff. Chosen over a
-/// snapshot library because a changed hash is one line in a review and a
-/// changed 57,600-byte frame is not — the contact sheet is what a human looks
-/// at when the hash moves.
+/// FNV-1a over a frame's bytes: a golden per scene, small enough to diff.
 pub fn frame_hash(bytes: &[u8]) -> u32 {
     let mut h: u32 = 0x811C_9DC5;
     for &b in bytes {
@@ -69,9 +47,6 @@ pub fn frame_hash(bytes: &[u8]) -> u32 {
 }
 
 /// Renders every scene and hands each to `f` as `(name, bytes)`.
-///
-/// The one traversal the preview binary, the simulator and the tests all use,
-/// so a scene cannot be in the sheet but out of the tests.
 pub fn for_each_frame<S: Scenes>(buf: &mut [u8], mut f: impl FnMut(&'static str, &[u8])) {
     let (w, h) = S::size();
     for scene in S::scenes() {
@@ -90,8 +65,7 @@ pub fn for_each_frame<S: Scenes>(buf: &mut [u8], mut f: impl FnMut(&'static str,
 ///
 /// # Panics
 ///
-/// With the name of the offending scene, which is why this takes the catalogue
-/// rather than one frame.
+/// Naming the offending scene.
 #[cfg(any(test, feature = "std"))]
 pub fn check_every_scene<S: Scenes>() {
     let (w, h) = S::size();
@@ -131,9 +105,8 @@ pub fn check_every_scene<S: Scenes>() {
         }
     }
 
-    // Determinism, which is weaker than it looks once a renderer holds state
-    // across ticks: what it proves is that a frame is a function of the state
-    // it is handed, which is what a golden hash relies on.
+    // A frame must be a function of the state it is handed, which is what a
+    // golden hash relies on.
     let mut a = vec![0u8; n];
     let mut b = vec![0u8; n];
     for scene in S::scenes() {
@@ -204,10 +177,9 @@ mod tests {
         assert_eq!(hashes, again, "the same catalogue hashed differently twice");
     }
 
-    /// The bezel check is belt and braces: a renderer that goes through
-    /// [`Surface`] cannot violate it, because the surface clips. What it
-    /// catches is a renderer that got at the bytes another way, which is how
-    /// two apps in this crate's home repository lost a glyph on the glass.
+    /// A renderer going through [`Surface`] cannot fail the bezel check,
+    /// because the surface clips; this is for one that got at the bytes another
+    /// way, through [`Surface::bytes_mut`].
     #[test]
     fn the_bezel_check_catches_a_frame_the_surface_did_not_clip() {
         let (w, h) = (240i32, 240i32);

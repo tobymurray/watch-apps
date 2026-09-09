@@ -1,28 +1,14 @@
-//! One panic handler, so no app has to get it right twice.
-//!
-//! Five of the seven renderers this crate was distilled from captured
-//! `file:line` and the panic message; two sent the literal `"panic"`, having
-//! been forked before the improvement landed. The two were the most complex
-//! shipping apps, so the worst diagnostics were on the code most likely to
-//! need them. Adopting this module is what fixes that, and it is why the
-//! handler is here rather than in a template.
+//! One panic handler, reporting through one host symbol.
 
 #[cfg(all(feature = "panic-message", not(feature = "std"), not(test)))]
 use core::fmt::Write as _;
 
 extern "C" {
     /// Defined by the host shell. Must not return normally.
-    ///
-    /// One symbol for every app, where the seven crates each declared their
-    /// own: there is nothing per-app left for a rename to break.
     pub fn panelkit_host_panic(msg: *const u8, len: u32) -> !;
 }
 
 /// A stack-allocated formatting buffer.
-///
-/// Sized against a 10 KiB GUI stack: 192 bytes is a path, a line number and a
-/// message, and is small enough to build while unwinding a stack that may
-/// already be deep.
 pub struct Buf<const N: usize> {
     b: [u8; N],
     n: usize,
@@ -63,14 +49,10 @@ impl<const N: usize> core::fmt::Write for Buf<N> {
 
 /// Writes `loc.file():loc.line()` into `buf`, returning how many bytes.
 ///
-/// **Every operation here is one that cannot itself panic** — iterator zips
-/// rather than indexing, no `copy_from_slice`. That is not fastidiousness: a
-/// handler that can panic pulls its own panic paths' formatting into the
-/// binary, and the formatting is the expensive part. MEASURED on
-/// `thumbv8m.main-none-eabihf`, in a linked ELF: written this way the location
-/// costs 319 bytes over a handler that reports nothing; written with slice
-/// indexing and `copy_from_slice` it costs 2,513 — eight times more, for
-/// byte-identical output. Falsified by
+/// Nothing here can itself panic — iterator zips, no indexing, no
+/// `copy_from_slice`. MEASURED: written this way the location costs 319 bytes;
+/// written with indexing it costs 2,513, because a panicking operation inside a
+/// panic handler pulls its own panic path's formatting in. Re-run
 /// `PanelKit/Docs/measurements/panic-handler`.
 #[cfg(all(feature = "panic-handler", not(feature = "panic-message")))]
 fn write_location(buf: &mut [u8], loc: &core::panic::Location<'_>) -> usize {
@@ -107,10 +89,9 @@ fn write_location(buf: &mut [u8], loc: &core::panic::Location<'_>) -> usize {
 
 /// Reports `file:line` and nothing else.
 ///
-/// The cheap half, and the half that carries most of the debugging value: on a
-/// device with no debugger a panic is otherwise a silent hang, and the line is
-/// usually enough to see what. MEASURED, linking `Spin`'s real renderer:
-/// **+706 bytes** over the `b"panic"` literal it shipped.
+/// MEASURED, linked: +706 bytes over a handler that reports nothing, against
+/// +3,226 for one that adds the message. Re-run
+/// `PanelKit/Docs/measurements/panic-handler`.
 #[cfg(all(
     feature = "panic-handler",
     not(feature = "panic-message"),
@@ -129,13 +110,9 @@ fn on_panic(info: &core::panic::PanicInfo) -> ! {
 
 /// Reports `file:line: message`.
 ///
-/// The message needs `core::fmt`, which is the expensive part of a panic
-/// handler by a wide margin. MEASURED, linking `Spin`'s real renderer against
-/// the `b"panic"` literal it shipped: the location alone is **+706 bytes**, and
-/// the message takes it to **+3,226** — so the message is 78% of the cost and
-/// 2.5 KB of a 600 KiB window. Take this when the message is worth that and
-/// the line is not enough; take `panic-handler` alone otherwise. Falsified by
-/// re-running `PanelKit/Docs/measurements/panic-handler`.
+/// MEASURED, linked: +3,226 bytes against +706 for the location alone, because
+/// the message needs `core::fmt`. Re-run
+/// `PanelKit/Docs/measurements/panic-handler`.
 #[cfg(all(feature = "panic-message", not(feature = "std"), not(test)))]
 #[panic_handler]
 fn on_panic(info: &core::panic::PanicInfo) -> ! {

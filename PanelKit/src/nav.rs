@@ -1,29 +1,11 @@
 //! Navigation for four buttons, a screen stack, and a clock for animation.
 //!
-//! # Why focus and not a pointer
-//!
-//! Every immediate-mode toolkit worth borrowing from — egui, and
-//! `kolibri-embedded-gui` after it — takes a pointer position and hit-tests
-//! widgets against it. There is no pointer here and there never will be: the
-//! devices this crate is for have four buttons at the bezel corners, and in
-//! every app it was distilled from two of those four were already spoken for as
-//! Back and Select. So the navigable state is a **focus index**, the two
-//! remaining buttons move it, and a widget reports what happened to it rather
-//! than being asked whether a point is inside it.
-//!
-//! # Why a stack and not a screen number
-//!
-//! Six of the seven renderers dispatched on a `screen: u8` held in a flat
-//! struct the C++ half owned. That cannot express *where you came from*, so
-//! list → item → confirm → back → back has nowhere to record the list position
-//! to return to. A stack can, it costs one array, and it is the difference
-//! between a kit that reaches a notification list and one that has to be
-//! rewritten for the first person who wants one.
+//! Why a focus ring rather than hit testing, and why a stack rather than a
+//! screen number: `PanelKit/README.md`.
 
 /// A press, as the four buttons of a round bezel deliver it.
 ///
-/// Named for position rather than for meaning, because which corner is Back is
-/// a product decision and not this crate's.
+/// Named for position, not meaning: which corner is Back is [`Bindings`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[repr(u8)]
 pub enum Button {
@@ -52,10 +34,11 @@ impl Button {
 
 /// What happened to a press.
 ///
-/// A hold is deliberately absent from the vocabulary a widget can require: on
-/// the hardware this was distilled from, enabling the system's music control
-/// makes it swallow `HOLD_1S` before the app sees it, so a design that needs a
-/// hold stops working when an unrelated capability is switched on.
+/// PROVEN ON THE WATCH: with the system's `enMusicControl` capability on, a long
+/// press is consumed before the app sees it, so `Hold` never arrives. A design
+/// that requires a hold therefore breaks when an unrelated capability is
+/// switched on, and no widget here requires one. Falsified by requesting
+/// capabilities with `enMusicControl` false and seeing `HOLD_1S` arrive.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Press {
     /// Pressed and released.
@@ -80,10 +63,6 @@ pub enum Role {
 }
 
 /// Which corner does what.
-///
-/// The default is the arrangement every app in this crate's home repository
-/// converged on independently: the right-hand buttons act and leave, the
-/// left-hand ones move.
 #[derive(Clone, Copy, Debug)]
 pub struct Bindings {
     /// What the top-left button does.
@@ -116,8 +95,7 @@ impl Bindings {
 
 /// A focus ring over `len` items.
 ///
-/// Wraps, because with two buttons and no pointer a wearer who overshoots the
-/// last item should not have to press back through the whole list.
+/// Wraps: with two buttons, overshooting the last item should not cost a lap.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct Focus {
     index: usize,
@@ -134,7 +112,7 @@ impl Focus {
         self.index
     }
 
-    /// Clamps rather than wraps, for a caller whose list shrank underneath it.
+    /// Clamps, for a list that shrank underneath the ring.
     pub fn clamp(&mut self, len: usize) {
         if len == 0 {
             self.index = 0;
@@ -157,8 +135,7 @@ impl Focus {
         }
     }
 
-    /// Applies a press through `bindings`, returning the role it played so the
-    /// caller can act on `Select` and `Back` in the same expression.
+    /// Applies a press and returns the role it played.
     pub fn apply(&mut self, bindings: &Bindings, button: Button, len: usize) -> Role {
         let role = bindings.role(button);
         match role {
@@ -170,11 +147,8 @@ impl Focus {
     }
 }
 
-/// A screen stack with real back behaviour.
-///
-/// `S` is the caller's own screen enum; the stack holds it and the focus that
-/// screen had, so returning to a list lands on the item that was selected
-/// rather than at the top.
+/// A screen stack, holding each screen's own [`Focus`] so `pop` lands where the
+/// caller left rather than at the top.
 #[derive(Clone, Debug)]
 pub struct Stack<S, const N: usize> {
     entries: [Option<(S, Focus)>; N],
@@ -209,9 +183,8 @@ impl<S: Copy, const N: usize> Stack<S, N> {
         self.depth
     }
 
-    /// Pushes a screen. Returns `false` when the stack is full, rather than
-    /// dropping the bottom: a navigation that silently forgets where it came
-    /// from is worse than one that refuses to go deeper.
+    /// Pushes a screen, or returns `false` when full rather than dropping the
+    /// root and forgetting where the caller came from.
     pub fn push(&mut self, screen: S) -> bool {
         if self.depth >= N {
             return false;
@@ -221,8 +194,7 @@ impl<S: Copy, const N: usize> Stack<S, N> {
         true
     }
 
-    /// Pops back one screen, restoring the focus that screen had. Returns
-    /// `false` at the root, which is a caller's cue to leave the app.
+    /// Pops one screen, restoring its focus; `false` at the root.
     pub fn pop(&mut self) -> bool {
         if self.depth <= 1 {
             return false;
@@ -233,17 +205,10 @@ impl<S: Copy, const N: usize> Stack<S, N> {
     }
 }
 
-/// A monotonic millisecond clock for animation.
+/// An animation, against a caller-supplied millisecond clock.
 ///
-/// # What the clock is, and what suspend does to it
-///
-/// The tick that drives a GUI stops arriving while the app is suspended, so an
-/// animation driven by counting ticks freezes and then resumes mid-stride,
-/// while one driven by wall-clock time jumps to where it should be. This holds
-/// the host's own millisecond count and therefore does the second — and
-/// [`Anim::resumed`] exists for the case where a caller wants the first,
-/// because an animation the wearer never saw start should not be shown
-/// half-finished.
+/// Wall-clock, so an animation that spans a suspend resumes where it should be
+/// rather than where it stopped; [`Anim::resumed`] replays instead.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Anim {
     start_ms: u32,
@@ -256,8 +221,7 @@ impl Anim {
         Anim { start_ms: now_ms, duration_ms }
     }
 
-    /// Progress from 0 to 255. Saturates at the end rather than wrapping, and
-    /// a zero-length animation is instantly complete.
+    /// Progress from 0 to 255, saturating; a zero-length animation is done.
     pub const fn progress(&self, now_ms: u32) -> u8 {
         if self.duration_ms == 0 {
             return 255;
@@ -274,19 +238,15 @@ impl Anim {
         self.progress(now_ms) == 255
     }
 
-    /// Restarts from `now_ms`, for a caller that suspended and came back and
-    /// would rather replay than resume mid-stride.
+    /// Restarts from `now_ms`.
     pub const fn resumed(&self, now_ms: u32) -> Self {
         Anim { start_ms: now_ms, duration_ms: self.duration_ms }
     }
 }
 
-/// Ease-in-out over 0..=255, in integers.
+/// Ease-in-out over 0..=255.
 ///
-/// `matrix-gui` chose integer easing deliberately for targets with no FPU.
-/// This target has hard single-precision float and would not need to, but the
-/// integer form is exact, identical on host and device, and therefore golden-
-/// testable — which the float form is not.
+/// Integer, so a host golden and a device frame agree exactly.
 pub const fn ease_in_out(t: u8) -> u8 {
     let t = t as u32;
     // 3t² − 2t³ scaled to 0..=255, in one division so truncation cannot make it

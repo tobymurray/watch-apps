@@ -1,21 +1,11 @@
-//! Tier 2: widgets with two existing callers or a measured platform reason.
-//!
-//! Nothing enters here on the grounds that it looks reusable. Each item below
-//! names the callers it was distilled from.
+//! Tier 2 widgets. The bar for adding one is in `PanelKit/README.md`.
 
 use crate::surface::{ByteColor, Surface};
 
 /// A centred row of marks saying which of `count` screens is showing.
 ///
-/// Distilled from three independent implementations — `RustGuiPoc::page_dots`,
-/// `Barcode::draw_pager` and `SettingsEditor::draw_position` — which used three
-/// different centring expressions and two different coordinate conventions.
-/// All three centre correctly; what they disagree about is rounding, and only
-/// at even counts: `Barcode`'s `(panel - total) / 2` truncates the whole
-/// quantity where the others truncate each term, which puts its row half a
-/// pixel left of centre at counts of 2, 4, 6 and 8. This one truncates the
-/// span, which is the form that stays centred at every count — see
-/// `a_row_is_centred_at_every_count`.
+/// The span is truncated once rather than each term, which is the form that
+/// stays centred at even counts as well as odd.
 #[derive(Clone, Copy, Debug)]
 pub struct Marks<C> {
     /// Centre-to-centre distance between marks.
@@ -33,7 +23,7 @@ pub struct Marks<C> {
 }
 
 impl<C: ByteColor> Marks<C> {
-    /// A round dot row, in the proportions the three callers converged on.
+    /// A round dot row.
     pub const fn dots(y: i32, on: C, off: C) -> Self {
         Marks { pitch: 14, width: 6, height: 6, y, on, off }
     }
@@ -52,8 +42,7 @@ impl<C: ByteColor> Marks<C> {
         panel_width / 2 - ((count - 1) * self.pitch) / 2 - self.width / 2
     }
 
-    /// Draws the row. A single page draws nothing: a pager that says "1 of 1"
-    /// is a mark the wearer has to interpret to learn there is nothing to page.
+    /// Draws the row. A single page draws nothing.
     pub fn draw(&self, s: &mut Surface<C>, count: i32, index: i32) {
         if count < 2 {
             return;
@@ -67,9 +56,6 @@ impl<C: ByteColor> Marks<C> {
 }
 
 /// A two-state pill, lit for on and outlined for off.
-///
-/// Two callers: `NotifyToggle` and `UnitToggle`, which after normalising names
-/// are 56% line-identical and differ here only in their palettes.
 #[derive(Clone, Copy, Debug)]
 pub struct Pill<C> {
     /// Left edge.

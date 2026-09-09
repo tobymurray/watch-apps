@@ -73,11 +73,7 @@ fn dim(c: Abgr2222) -> Abgr2222 {
 
 // -- Framebuffer -------------------------------------------------------------
 
-/// The kit's surface, which owns the clip. Before this the shapes here clipped
-/// to the square buffer and only text clipped to the disc, over the same bytes;
-/// what kept the two agreeing was that every layout constant happened to stay
-/// inside the glass, which `nothing_is_drawn_outside_the_bezel` checks after the
-/// fact rather than prevents.
+/// The kit's surface, which owns the clip for both shapes and glyphs.
 type FrameBuf<'a> = Surface<'a, Abgr2222>;
 
 /// A direct row-fill: `Rectangle::into_styled().draw()` would pull in the
@@ -347,9 +343,7 @@ fn text_width(face: &Face, s: &str) -> u32 {
 
 fn draw_text(fb: &mut FrameBuf, face: &Face, s: &str, x: i32, top: i32, align: Align, color: Abgr2222) {
     // TextKit rasterises through its own surface type, so it is handed the
-    // bytes. Both apply the identical disc rule -- a pixel centre within 119.5
-    // pitches -- which is why this does not reopen the seam the type alias
-    // above closes.
+    // bytes; it applies the same disc rule, a pixel centre within 119.5 pitches.
     let (w, h) = (fb.width() as u32, fb.height() as u32);
     let mut canvas = Canvas::round(fb.bytes_mut(), w, h);
     face.draw(&mut canvas, s, x, top + cap_height(face), align, color.0);
@@ -948,8 +942,8 @@ fn draw_discarded(fb: &mut FrameBuf) {
 // -- Entry points ------------------------------------------------------------
 
 pub fn render(buf: &mut [u8], width: u32, height: u32, frame: &Frame) {
-    // The geometry arrives from a kernel message, so a surface that refuses is
-    // better than a renderer that writes past the end.
+    // The geometry arrives from a kernel message, so refuse rather than write
+    // past the end.
     let Some(mut fb) = Surface::<Abgr2222>::round(buf, width, height) else {
         return;
     };

@@ -135,10 +135,8 @@ jobs:
           # them, so it is what checks they are current.
           textkit=no
           if [ -n "$crate" ] && grep -q 'TextKit' "$crate"; then textkit=yes; fi
-          # A renderer built on the shared PanelKit crate takes its surface,
-          # its panic handler and its measured constants from there. Found the
-          # same way as TextKit -- from the crate's own Cargo.toml, so it is
-          # discovered rather than declared.
+          # Found the same way as TextKit, from the crate's own Cargo.toml, so
+          # it is discovered rather than declared.
           panelkit=no
           if [ -n "$crate" ] && grep -q 'PanelKit' "$crate"; then panelkit=yes; fi
           # A Service that measures heart-rate recovery or writes the shared
@@ -385,12 +383,8 @@ jobs:
           python3 Tools/atlas.py --check
           cargo test --features std
 
-      # The kit owns the bezel, determinism and geometry checks every adopting
-      # app inherits without declaring them, and the measured constants -- the
-      # arc step's unpainted-pixel count, the dither's error against flat
-      # truncation, the chord table -- are re-derived here rather than quoted.
-      # panelkit.yml covers the crate on its own; this is what says the app's
-      # build still agrees with it.
+      # panelkit.yml covers the crate on its own; this is what says an adopting
+      # app's build still agrees with it.
       - name: PanelKit still holds its measurements
         if: steps.app.outputs.panelkit == 'yes'
         shell: bash

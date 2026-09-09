@@ -1,16 +1,7 @@
-//! Does generic-over-`PixelColor` cost more `.text` on thumbv8m.main-none-eabihf
-//! than the concrete `Abgr2222` path the apps use today?
+//! What generic-over-`PixelColor` costs against a concrete colour type.
 //!
-//! The same four primitives -- the ones tier 0 and tier 1 of the kit would
-//! actually contain -- written three ways, with only the abstraction differing:
-//!
-//!   `concrete`     one colour type, direct byte writes, row `fill` fast path
-//!   `generic`      `DrawTarget`-generic, instantiated at one colour type
-//!   `generic_two`  the same generic code, instantiated at two colour types
-//!
-//! `generic` against `concrete` is the cost of the abstraction; `generic_two`
-//! against `generic` is the cost of the publishable claim, which is what a
-//! second adopter's colour type would add.
+//! Four primitives written three ways, with only the abstraction differing.
+//! Method and results: `PanelKit/Docs/2026-09-08-generic-vs-concrete.md`.
 #![no_std]
 
 use embedded_graphics::{

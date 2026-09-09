@@ -1,13 +1,8 @@
 //! Every scene still draws the frame it drew, byte for byte.
 //!
-//! `nothing_is_drawn_outside_the_bezel` and the layout tests say a frame is
-//! *allowed*; this says it is *unchanged*. That is what a refactor needs — the
-//! PanelKit conversion was held to it, and all 43 frames came out identical —
-//! and it is what catches a pixel moving on a screen nobody thought to look at.
-//!
-//! A changed hash is not a failure to be silenced. Look at the screen
-//! (`cargo run --features preview --bin preview`), decide whether the change is
-//! wanted, and regenerate the file if it is.
+//! A changed hash is not a failure to silence: look at the screen with
+//! `cargo run --features preview --bin preview`, decide whether the change was
+//! wanted, and regenerate the file if it was.
 
 use spin_gui::{render, scenes};
 
