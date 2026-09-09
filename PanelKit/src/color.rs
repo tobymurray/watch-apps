@@ -1,8 +1,7 @@
 //! `ABGR2222`: one byte a pixel, two bits a channel.
 //!
-//! Sixty-four colours, and the only greys are 0, 85, 170 and 255. Anti-aliasing
-//! here is a choice among two intermediate shades, not 254, which is why
-//! [`crate::dither`] exists and why a gradient drawn flat bands.
+//! Sixty-four colours, and the only greys are 0, 85, 170 and 255, so
+//! anti-aliasing is a choice among two intermediate shades rather than 254.
 
 use embedded_graphics::pixelcolor::{raw::RawU8, PixelColor};
 
@@ -62,8 +61,7 @@ impl Abgr2222 {
         (self.0 >> BLUE_SHIFT) & CHANNEL_MASK
     }
 
-    /// Level 0 on every channel: the ground every screen in this repository
-    /// draws on, because bright-on-dark is the only contrast proven on the glass.
+    /// Level 0 on every channel.
     pub const BLACK: Abgr2222 = Abgr2222::from_levels(0, 0, 0);
     /// Level 3 on every channel.
     pub const WHITE: Abgr2222 = Abgr2222::from_levels(3, 3, 3);
@@ -81,7 +79,7 @@ impl Abgr2222 {
     pub const CYAN: Abgr2222 = Abgr2222::from_levels(0, 3, 3);
     /// Full red and green.
     pub const YELLOW: Abgr2222 = Abgr2222::from_levels(3, 3, 0);
-    /// The one warm colour this palette can mix: red at 3, green at 2.
+    /// Red at 3, green at 2.
     pub const AMBER: Abgr2222 = Abgr2222::from_levels(3, 2, 0);
 }
 
@@ -100,10 +98,8 @@ impl ByteColor for Abgr2222 {
     }
 }
 
-/// `ink` at `level` of three over `ground`, channel by channel, rounded.
-///
-/// What a partially covered pixel becomes. The same rule `TextKit::shade` uses,
-/// so a glyph edge and a shape edge blend identically.
+/// `ink` at `level` of three over `ground`, channel by channel, rounded: what a
+/// partially covered pixel becomes.
 pub fn shade(ink: Abgr2222, ground: Abgr2222, level: u8) -> Abgr2222 {
     let ch = |i: u8, g: u8| -> u8 {
         let (i, g, l) = (i as u16, g as u16, level.min(CHANNEL_MAX) as u16);

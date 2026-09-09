@@ -1,10 +1,8 @@
 name: PanelKit
 
-# A shared crate belongs to no app, so no app's workflow builds it.
-# SettingsEditor rebuilds when it changes -- its paths filter says so -- but that
-# only proves its archive still links. This is what proves the crate itself is
-# still correct, still no_std, still free of anything that crept in behind
-# `feature = "std"`, and still holding the measurements it claims.
+# A shared crate belongs to no app, so no app's workflow builds it. This is what
+# proves the crate is still correct, still no_std, and still holding the
+# measurements it claims.
 
 on:
   push:
@@ -27,10 +25,8 @@ permissions:
   packages: read
 
 env:
-  # The C++ half type-checks against the SDK's headers, so this workflow needs
-  # the SDK the same way app-build.yml does. Kept in step with app-build.yml's
-  # pin by hand: two workflows measuring against two different SDK commits is
-  # two instruments.
+  # The C++ half type-checks against the SDK's headers. Must track
+  # app-build.yml's pin: two workflows on two SDK commits are two instruments.
   SDK_REPO: tobymurray/una-sdk
   SDK_REF: 8cdb73140a3d97455b80c22d32e5012e26f72291
 
@@ -60,15 +56,13 @@ jobs:
           persist-credentials: false
           path: sdk
 
-      # Every measured constant in the crate re-runs here: the arc step's
-      # unpainted-pixel count, the dither's error against flat truncation, the
-      # chord table, the trig bound. A number that rots fails this.
+      # Every measured constant in the crate re-runs here, so a number that
+      # rots fails.
       - name: Tests
         working-directory: PanelKit
         run: cargo test --all-features
 
-      # The floor has to keep working on its own: a `std` type or a widget
-      # reached for from tier 0 compiles fine above and fails here.
+      # A `std` type reached for from tier 0 compiles fine above and fails here.
       - name: Tier 0 alone
         working-directory: PanelKit
         run: cargo build --release --target thumbv8m.main-none-eabihf --no-default-features
@@ -79,10 +73,9 @@ jobs:
         working-directory: PanelKit
         run: |
           set -euo pipefail
-          # panic-handler and panic-message are here because they are what an
-          # app actually ships, and nothing else in this workflow compiles them:
-          # cargo test --all-features enables std, and both handlers are gated
-          # `not(feature = "std")`, so the tests cfg them straight out.
+          # panic-handler and panic-message are what an app ships, and nothing
+          # else here compiles them: --all-features enables std, and both
+          # handlers are gated `not(feature = "std")`.
           for f in dither widgets scenes panic-handler panic-message \
                    "dither,widgets,scenes"; do
             echo "--- $f"
@@ -98,9 +91,7 @@ jobs:
           rustup target add riscv32imac-unknown-none-elf
           cargo build --release --target riscv32imac-unknown-none-elf --no-default-features --features dither,widgets
 
-      # The C++ half is header-only precisely so this can run without an ARM
-      # toolchain, and it is the only thing that catches a rename across the C
-      # ABI (RustGuiPoc/Docs/FINDINGS.md, "Toolchain").
+      # Catches a rename across the C ABI, which needs no ARM toolchain.
       - name: The shell header type-checks against the SDK
         env:
           UNA_SDK: ${{ github.workspace }}/sdk
@@ -122,8 +113,8 @@ jobs:
           "${CXX:-g++}" -fsyntax-only -std=c++17 -fno-exceptions \
             -I"$UNA_SDK/Libs/Header" -I PanelKit/Header /tmp/pk_check.cpp
 
-      # docs.rs builds with all features; a doc link that only resolves under
-      # one of them breaks there and nowhere else.
+      # docs.rs builds with all features, where a doc link that resolves under
+      # only one of them breaks.
       - name: Documentation, with the feature matrix
         working-directory: PanelKit
         env:

@@ -1,18 +1,8 @@
-//! Text, as a trait rather than a dependency.
-//!
-//! This crate does not rasterise and ships no font. A kit that depended on one
-//! text implementation would ship its atlases, inherit its licence question and
-//! force every adopter onto its typeface. What the widgets need is four
-//! questions — how wide, how tall, draw it, and did anything not have a glyph —
-//! and any of `TextKit`, `u8g2-fonts` or an `embedded-graphics` `MonoFont` can
-//! answer them.
+//! Text, as a trait rather than a dependency: this crate ships no font.
 
 use crate::surface::{ByteColor, Surface};
 
 /// Where a string sits relative to the x it is given.
-///
-/// The same three `embedded-layout`, `embedded-text` and `TextKit` all use;
-/// coining a fourth set of names would help nobody.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Align {
     /// `x` is the left edge.
@@ -31,18 +21,12 @@ pub struct Measure {
     pub width: i32,
     /// Pixels the glyphs actually cover, which is narrower than `width`.
     pub ink_width: i32,
-    /// Characters that had no glyph in this face.
-    ///
-    /// Non-zero is a decision the caller has to make, not a detail: `Barcode`'s
-    /// rule is to refuse rather than draw a code it cannot promise, and a
-    /// caller that cannot refuse should at least know.
+    /// Characters that had no glyph in this face; non-zero is the caller's
+    /// decision to make, not this crate's.
     pub missing: u16,
 }
 
-/// Enough of a font for this crate's widgets to lay out and draw a line.
-///
-/// Deliberately smaller than any real text library's API: a widget needs to
-/// place a string, not to shape one.
+/// Enough of a font to place a line, which is all a widget needs.
 pub trait TextFace<C: ByteColor> {
     /// Baseline-to-baseline distance for stacked lines.
     fn line_height(&self) -> i32;
@@ -65,20 +49,16 @@ pub trait TextFace<C: ByteColor> {
     }
 }
 
-/// The first face in `faces` whose advance for `text` fits `max_width`.
-///
-/// The ladder a value row climbs down when the number grows a digit. Returns
-/// `None` when even the last does not fit, so a caller can shorten the string
-/// rather than have it silently overflow.
+/// The first face in `faces` whose advance for `text` fits `max_width`, or
+/// `None` so a caller can shorten the string rather than overflow it.
 pub fn pick<'f, C: ByteColor, F: TextFace<C>>(faces: &'f [&'f F], text: &str, max_width: i32) -> Option<&'f F> {
     faces.iter().copied().find(|f| f.measure(text).width <= max_width)
 }
 
-/// Greedy word wrap into caller-owned line slots.
+/// Greedy word wrap into caller-owned slots.
 ///
 /// Returns how many lines the text *needed*, which may exceed `lines.len()`, so
-/// overflow is a number the caller sees rather than a line that vanished. The
-/// slots are filled up to their capacity either way.
+/// overflow is a number the caller sees rather than a line that vanished.
 pub fn wrap<'t, C: ByteColor, F: TextFace<C>>(
     face: &F,
     text: &'t str,

@@ -1,9 +1,7 @@
 //! The framebuffer, as `embedded-graphics` sees it.
 //!
 //! One surface owns the clip, so a shape and a glyph drawn into the same bytes
-//! cannot disagree about where the glass ends. In the apps this crate was
-//! distilled from they could: `FrameBuf` clipped to the rectangle and
-//! `TextKit::Canvas`, built over the same buffer, clipped to the disc.
+//! cannot disagree about where the glass ends.
 
 use core::marker::PhantomData;
 
@@ -22,12 +20,9 @@ pub enum Clip {
 
 /// A byte-per-pixel framebuffer that clips to the panel.
 ///
-/// Generic over the colour so the crate is not tied to one panel's encoding.
-/// Measured on `thumbv8m.main-none-eabihf`: the genericity costs 66 bytes of
-/// `.text` over the same primitives written against one concrete colour type,
-/// against 884 for the concrete set, and a *second* colour type in the same
-/// binary costs 848 more. An app instantiates one, so it pays the 66 and not
-/// the 848. Re-measure with `PanelKit/Docs/measurements/genericity`.
+/// MEASURED: generic over the colour costs 66 bytes of `.text` against 884 for
+/// the same primitives written concretely, and a second colour type in one
+/// binary costs 848 more. Re-run `PanelKit/Docs/measurements/genericity`.
 pub struct Surface<'a, C> {
     buf: &'a mut [u8],
     w: i32,
@@ -37,9 +32,6 @@ pub struct Surface<'a, C> {
 }
 
 /// A colour this crate can write into a byte-per-pixel framebuffer.
-///
-/// One byte a pixel is the whole point: `RequestDisplayUpdate` hands the kernel
-/// a raw buffer, and anything wider would have it read past the end.
 pub trait ByteColor: PixelColor + Copy {
     /// The byte this colour occupies in the framebuffer.
     fn to_byte(self) -> u8;
@@ -50,10 +42,8 @@ pub trait ByteColor: PixelColor + Copy {
 impl<'a, C: ByteColor> Surface<'a, C> {
     /// A round panel: only the inscribed disc is glass.
     ///
-    /// Returns `None` rather than panicking when the buffer is smaller than the
-    /// stated geometry, because on this platform that argument arrives from a
-    /// kernel message and a renderer that refuses is better than one that
-    /// writes past the end.
+    /// `None` rather than a panic when the buffer is smaller than the geometry
+    /// says, because that geometry arrives from outside the app.
     pub fn round(buf: &'a mut [u8], w: u32, h: u32) -> Option<Self> {
         Self::new(buf, w, h, Clip::Disc)
     }
@@ -100,20 +90,15 @@ impl<'a, C: ByteColor> Surface<'a, C> {
 
     /// The raw bytes, mutably, **bypassing the clip**.
     ///
-    /// The one escape hatch, and it exists for exactly one job: a text
-    /// implementation that rasterises through its own surface type cannot go
-    /// through [`DrawTarget`] a glyph at a time and stay affordable. An adapter
-    /// that uses this **must** apply [`crate::geometry::is_lit`] itself, and
-    /// must have a test that says so — the two clips disagreeing over the same
-    /// buffer is the defect this type was made to close, so reopening it here
-    /// without a test puts it straight back.
+    /// For a text implementation that rasterises through its own surface type.
+    /// An adapter using this must apply [`crate::geometry::is_lit`] itself, and
+    /// must have a test that says it does.
     pub fn bytes_mut(&mut self) -> &mut [u8] {
         self.buf
     }
 
-    /// Every pixel, including the ones behind the bezel: the buffer is handed
-    /// to the kernel whole, so the bezel must hold the ground colour and not
-    /// whatever was there last frame.
+    /// Every pixel, bezel included: the whole buffer is handed to the display,
+    /// so the corners must hold the ground colour and not the last frame's.
     pub fn clear(&mut self, color: C) {
         self.buf.fill(color.to_byte());
     }
@@ -125,8 +110,7 @@ impl<'a, C: ByteColor> Surface<'a, C> {
         }
     }
 
-    /// The byte at a pixel, or `None` behind the bezel. For tests and for the
-    /// dither, which reads what it is blending toward.
+    /// The byte at a pixel, or `None` outside the buffer.
     pub fn get(&self, x: i32, y: i32) -> Option<u8> {
         if x < 0 || y < 0 || x >= self.w || y >= self.h {
             return None;
@@ -136,9 +120,8 @@ impl<'a, C: ByteColor> Surface<'a, C> {
 
     /// A rectangle filled a row at a time.
     ///
-    /// The reason this exists rather than `Rectangle::into_styled().draw()`:
-    /// that pulls in the point-iterator layer once per distinct colour it is
-    /// called with, which `Spin` recorded and this crate keeps.
+    /// Not `Rectangle::into_styled().draw()`, which pulls in the point-iterator
+    /// layer once per distinct colour it is called with.
     pub fn fill_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: C) {
         if w <= 0 || h <= 0 {
             return;
@@ -192,10 +175,9 @@ impl<C: ByteColor> DrawTarget for Surface<'_, C> {
         Ok(())
     }
 
-    /// Overridden because the default walks `fill_contiguous` a pixel at a
-    /// time. MEASURED: supplying it costs 16 bytes of `.text` *less* than
-    /// leaving the default in place, because the specialised body replaces the
-    /// generic machinery rather than adding to it.
+    /// MEASURED: overriding this costs 16 bytes of `.text` *less* than the
+    /// default, which walks `fill_contiguous` a pixel at a time. Re-run
+    /// `PanelKit/Docs/measurements/genericity`.
     fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
         self.fill_rect(
             area.top_left.x,

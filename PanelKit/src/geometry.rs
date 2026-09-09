@@ -1,15 +1,11 @@
 //! Where the glass is.
 //!
 //! On a round panel the framebuffer is square and the display is not, so a box
-//! inset from the buffer's edge is not inset from the glass. Two shipped apps
-//! in this crate's home repository lost their last glyph that way, and no
-//! simulator showed it, because a simulator draws the square.
+//! inset from the buffer's edge is not inset from the glass, and no simulator
+//! shows the difference.
 
-/// Whether the panel would show this pixel at all.
-///
-/// A pixel centre within the inscribed disc, doubled so the half-pitch is
-/// exact in integers: `BarcodeLayout::pixelIsLit`'s rule and
-/// `TextKit::Canvas::is_lit`'s, which agree.
+/// Whether the panel would show this pixel at all: a pixel centre within the
+/// inscribed disc, doubled so the half-pitch is exact in integers.
 #[inline]
 pub const fn is_lit(x: i32, y: i32, w: i32, h: i32) -> bool {
     if x < 0 || y < 0 || x >= w || y >= h {
@@ -22,10 +18,6 @@ pub const fn is_lit(x: i32, y: i32, w: i32, h: i32) -> bool {
 }
 
 /// How many pixels of row `y` are glass, on a `w` by `h` panel.
-///
-/// The number a layout needs and the one that is easy to get wrong: the widest
-/// row of a 240-pixel panel is 238, not 240, and row 222 holds 122 where row
-/// 220 holds 129.
 pub const fn lit_chord(y: i32, w: i32, h: i32) -> i32 {
     if y < 0 || y >= h {
         return 0;
@@ -72,15 +64,11 @@ const fn isqrt(v: i32) -> i32 {
 
 /// The leftmost lit pixel of row `y`, or `w` if the row is entirely bezel.
 ///
-/// Closed form rather than a scan from x = 0. The lit pixels of a row are the
-/// x with `(2x - (w-1))^2 <= d^2 - dy^2`, so the half-chord is one integer
-/// square root and the left edge is `ceil(((w-1) - R) / 2)`.
-///
-/// The scan it replaces was O(width) and reached once per row of every clipped
-/// fill, which for a caller plotting single pixels is once per pixel: it cost
-/// Spin 128 us a frame against 43 for byte-identical output. Checked against the
-/// scan over 80,340 rows across 1,521 panel shapes, 0 mismatches, and
-/// `lit_start_agrees_with_a_scan` is that check in the suite.
+/// Closed form: the lit x are those with `(2x - (w-1))^2 <= d^2 - dy^2`, so the
+/// half-chord is one integer square root. MEASURED: the O(width) scan this
+/// replaces cost 128 us a frame against 43 for byte-identical output, because
+/// it ran once per row of every clipped fill and callers plot single pixels.
+/// `lit_start_agrees_with_a_scan` checks the two agree.
 pub fn lit_start(y: i32, w: i32, h: i32) -> i32 {
     #[cfg(test)]
     EDGE_SCANS.with(|c| c.set(c.get() + 1));
@@ -109,9 +97,7 @@ pub fn lit_start(y: i32, w: i32, h: i32) -> i32 {
 /// The lit part of `[x0, x1)` on `row`, or `None` if none of it is glass.
 ///
 /// A row's lit pixels are an interval, because [`is_lit`] depends on x only
-/// through `(2x - (w-1))^2`, which is convex in x. So this is the caller's span
-/// intersected with `[lit_start, w - lit_start)`, and both ends of that come
-/// from arithmetic rather than a search.
+/// through `(2x - (w-1))^2`, which is convex in x.
 pub(crate) fn lit_span(x0: i32, x1: i32, row: i32, w: i32, h: i32) -> Option<(i32, i32)> {
     if x0 >= x1 {
         return None;
@@ -119,9 +105,8 @@ pub(crate) fn lit_span(x0: i32, x1: i32, row: i32, w: i32, h: i32) -> Option<(i3
     let left = is_lit(x0, row, w, h);
 
     // A single pixel first, answered from `left` alone: callers plot far more
-    // single pixels than anything else -- 296,233 of Spin's 296,241 spans in a
-    // frame -- and asking about the other end spends a second `is_lit` on the
-    // pixel just tested.
+    // single pixels than anything else, and asking about the other end would
+    // spend a second `is_lit` on the pixel just tested.
     if x1 - x0 == 1 {
         return if left { Some((x0, x1)) } else { None };
     }
@@ -129,11 +114,11 @@ pub(crate) fn lit_span(x0: i32, x1: i32, row: i32, w: i32, h: i32) -> Option<(i3
         return Some((x0, x1));
     }
 
-    // Only a span that straddles the rim reaches the arithmetic below. It is
-    // O(1) but its integer square root is dearer than the two tests above:
-    // MEASURED over Spin's 43 scenes, going straight to it costs 160 us a frame
-    // against 55 with these early-outs, and the scan it replaced cost 128.
-    // Falsified by `Spin/Software/Apps/CustomGUI/rust/examples/frametime.rs`.
+    // Only a span straddling the rim reaches the arithmetic below. It is O(1),
+    // but its integer square root is dearer than the two tests above: MEASURED,
+    // going straight to it costs 160 us a frame against 55 with these
+    // early-outs, and the scan it replaced cost 128. Re-run
+    // `Spin/Software/Apps/CustomGUI/rust/examples/frametime.rs`.
     let start = lit_start(row, w, h);
     if start >= w {
         return None;
@@ -149,9 +134,6 @@ pub(crate) fn lit_span(x0: i32, x1: i32, row: i32, w: i32, h: i32) -> Option<(i3
 }
 
 /// Whether every pixel of this box is glass.
-///
-/// The predicate a layout constant should be held to, so the bezel trap is a
-/// failing test rather than a photograph.
 pub const fn box_is_lit(x: i32, y: i32, w: i32, h: i32, panel_w: i32, panel_h: i32) -> bool {
     if w <= 0 || h <= 0 {
         return false;
@@ -166,10 +148,9 @@ pub const fn box_is_lit(x: i32, y: i32, w: i32, h: i32, panel_w: i32, panel_h: i
 
 /// The side of the largest centred axis-aligned square wholly on the glass.
 ///
-/// Searched against [`box_is_lit`] rather than computed as `floor(d / sqrt 2)`,
-/// because the square is centred on integer pixels and the closed form is one
-/// too large for a 240-pixel panel: side 169 puts its corner at 169² + 169² =
-/// 57,122 against the disc's 239² = 57,121, and misses by one.
+/// Searched rather than `floor(d / sqrt 2)`: MEASURED, on a 240-pixel panel the
+/// closed form gives 169, whose corner is at 169² + 169² = 57,122 against the
+/// disc's 239² = 57,121. The answer is 168.
 pub const fn inscribed_square(w: i32, h: i32) -> i32 {
     let limit = if w < h { w } else { h };
     let mut best = 0;
@@ -190,29 +171,24 @@ mod tests {
     const W: i32 = 240;
     const H: i32 = 240;
 
-    /// MEASURED, and the number every layout in this repository is cut against:
-    /// the widest row of this panel is 238 pixels, not 240. Falsified by a
-    /// panel of a different size or a display whose glass is not the inscribed
-    /// disc.
+    /// MEASURED: the widest row of a 240-pixel panel is 238, not 240.
     #[test]
     fn widest_row_is_238() {
         let widest = (0..H).map(|y| lit_chord(y, W, H)).max().unwrap();
         assert_eq!(widest, 238);
     }
 
-    /// MEASURED: the footer row 220 holds 130 pixels of glass and row 222 holds
-    /// 122, which is why a 117-pixel footer sits at 220 and not two rows lower.
-    /// Falsified by a panel of a different size or a different lit rule.
+    /// MEASURED: row 220 holds 130 pixels of glass and row 222 holds 122, so a
+    /// footer wider than 122 cannot sit two rows lower than 220.
     #[test]
     fn footer_rows_hold_their_measured_chords() {
         assert_eq!(lit_chord(220, W, H), 130);
         assert_eq!(lit_chord(222, W, H), 122);
     }
 
-    /// Every chord is even, because the disc is symmetric about x = 119.5 on an
-    /// even-width panel: a lit pixel at `x` implies one at `w - 1 - x`. An odd
-    /// chord quoted for this panel is arithmetically impossible, whatever
-    /// measured it. Falsified by an odd-width panel, where it should not hold.
+    /// Every chord is even on an even-width panel, because the disc is
+    /// symmetric about x = 119.5: a lit pixel at `x` implies one at `w-1-x`. An
+    /// odd chord quoted for this panel is arithmetically impossible.
     #[test]
     fn every_chord_is_even() {
         for y in 0..H {
@@ -220,7 +196,7 @@ mod tests {
         }
     }
 
-    /// The rows a full-width clock can use: 218 pixels at rows 70 and 168.
+    /// MEASURED: rows 70 and 168 hold 218 pixels.
     #[test]
     fn clock_rows_hold_218() {
         assert_eq!(lit_chord(70, W, H), 218);
@@ -249,14 +225,7 @@ mod tests {
         assert!(box_is_lit((W - s) / 2, (H - s) / 2, s, s, W, H));
     }
 
-    /// `lit_start`'s closed form must agree with the scan it replaced,
-    /// everywhere.
-    ///
-    /// The scan was O(width) and ran once per row of every clipped fill, which
-    /// for a caller plotting single pixels is once per pixel -- it cost Spin
-    /// 128 us a frame against 43 for byte-identical output. This is what says
-    /// the arithmetic that replaced it is the same function. Falsified by any
-    /// panel shape where they disagree.
+    /// The closed form must agree with the scan it replaced, everywhere.
     #[test]
     fn lit_start_agrees_with_a_scan() {
         fn by_scan(y: i32, w: i32, h: i32) -> i32 {
@@ -279,13 +248,12 @@ mod tests {
         }
     }
 
-    /// The early-outs must fire for the shapes callers actually draw, and the
-    /// arithmetic path must still be reachable.
+    /// The early-outs must fire for the shapes callers draw, and the arithmetic
+    /// must still be reachable.
     ///
-    /// Counts calls to `lit_start` rather than timing anything: a timing test
-    /// was tried and discarded, because the disc/rect ratio is 1.86 broken
-    /// against 1.42 fixed in a debug build and 4.56 against 2.75 in release, so
-    /// no threshold separates them in both profiles.
+    /// Counts rather than times: MEASURED, the disc/rect ratio is 1.86 with the
+    /// fault and 1.42 without it in a debug build, and 4.56 against 2.75 in
+    /// release, so no single threshold separates them in both profiles.
     #[test]
     fn the_shapes_callers_draw_never_reach_the_arithmetic() {
         let arc = |r_outer: f32| {

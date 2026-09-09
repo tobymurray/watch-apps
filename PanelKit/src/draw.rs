@@ -1,7 +1,4 @@
-//! Primitives whose shape was decided by a measurement rather than a taste.
-//!
-//! Each one carries the number that chose it and the way to prove that number
-//! wrong.
+//! Primitives whose constants came from a measurement.
 
 use crate::surface::{ByteColor, Surface};
 
@@ -12,24 +9,16 @@ use crate::surface::{ByteColor, Surface};
 /// `1/sqrt(2) ≈ 0.707` a pixel can fall between four samples and never be
 /// painted.
 ///
-/// MEASURED here, filling the ring between r=100 and r=118 on a 240×240 panel
-/// and counting pixels inside it that stayed unpainted: 0.95 leaves 520, 0.85
-/// leaves 142, **0.75 leaves 4**, and 0.70 is clean. 0.65 is that with margin,
-/// and is what ships.
-///
-/// The 4 at 0.75 is the same count `Spin` recorded independently on its own
-/// ring, which is the agreement worth having; the coarser counts differ from
-/// its 95 at 0.85 because the radii differ, and holes grow with the arc.
-/// Re-measure with `unpainted_pixels_at` in this module's tests, which is the
-/// falsifier and is run on every build.
+/// MEASURED, filling the ring between r=100 and r=118 on a 240×240 panel and
+/// counting pixels inside it left unpainted: 0.95 leaves 520, 0.85 leaves 142,
+/// 0.75 leaves 4, 0.70 is clean. 0.65 is that with margin. Re-measure with
+/// `unpainted_pixels_at` in this module's tests, which runs on every build.
 pub const ARC_STEP_PX: f32 = 0.65;
 
 /// Fills the wedge between two radii and two angles, clockwise from twelve.
 ///
-/// Swept rather than scanned: walking the angle and drawing a radial run at
-/// each step touches only the pixels of the arc, where testing every pixel of
-/// the bounding box for membership would be the whole panel and an `atan2` per
-/// pixel.
+/// Swept rather than scanned, so the cost is the arc's pixels and not the
+/// bounding box's.
 pub fn fill_arc<C: ByteColor>(
     s: &mut Surface<C>,
     cx: f32,
@@ -84,14 +73,10 @@ pub fn fill_circle<C: ByteColor>(s: &mut Surface<C>, cx: i32, cy: i32, radius: i
 /// Accumulates how much of `[x0, x1)`, in fractional pixels, each integer
 /// column of `coverage` is covered by.
 ///
-/// Order-independent by construction: a column's final coverage is the sum of
-/// every span's overlap with it, so two adjacent sub-pixel-wide spans still add
-/// up correctly whichever is processed first — unlike blitting each as its own
-/// independently rounded rectangle, which is how a barcode's bars blur.
-///
-/// This is the only correct way to scale on a panel with four levels a channel:
-/// with 254 intermediate shades a rounding error is invisible, and with two it
-/// is a missing bar.
+/// Order-independent: a column's coverage is the sum of every span's overlap
+/// with it, so adjacent sub-pixel spans add up rather than each rounding
+/// separately. With two intermediate shades a rounding error is a missing bar,
+/// not an invisible one.
 pub fn accumulate_coverage(coverage: &mut [f32], x0: f32, x1: f32) {
     if x1 <= x0 {
         return;
@@ -128,11 +113,8 @@ fn isqrt(v: i32) -> i32 {
     x
 }
 
-// `libm` is a dependency this crate does not want and `core` has no `sin`, so
-// the two it needs are here. Held to 1e-6 against the host by
-// `trig_agrees_with_the_host`; at the largest radius this panel has, 120
-// pixels, that is 1.2e-4 of a pixel, against the half-pixel the sampler rounds
-// to. Falsified by that test, which is what would notice a term dropped.
+// `core` has no `sin` and this crate does not want `libm`.
+// `trig_agrees_with_the_host_to_within_four_millionths` is what holds these.
 fn wrap(a: f32) -> f32 {
     const TAU: f32 = core::f32::consts::PI * 2.0;
     let turns = a * (1.0 / TAU);
@@ -220,10 +202,7 @@ mod tests {
         holes
     }
 
-    /// `ARC_STEP_PX`'s falsifier, run rather than quoted.
-    ///
-    /// Asserts the shape of the curve and not only its end, because a sampler
-    /// that painted everything regardless of step would pass the end alone.
+    /// `ARC_STEP_PX`'s falsifier, asserting the curve and not only its end.
     #[test]
     fn the_arc_step_was_chosen_by_counting_unpainted_pixels() {
         assert_eq!(unpainted_pixels_at(0.85), 142);
@@ -232,9 +211,8 @@ mod tests {
         assert_eq!(unpainted_pixels_at(ARC_STEP_PX), 0, "the shipped step left holes");
     }
 
-    /// The geometry the step is chosen against: past 1/sqrt(2) a pixel can fall
-    /// between four samples, so a step above it must leave holes. If this ever
-    /// passes with a coarse step, the sampler stopped being a point sampler.
+    /// Past 1/sqrt(2) a pixel can fall between four samples, so a coarser step
+    /// must leave holes.
     #[test]
     fn a_step_past_the_diagonal_leaves_holes() {
         assert!(unpainted_pixels_at(0.95) > 100);
@@ -285,13 +263,11 @@ mod tests {
         assert!(c.iter().all(|&v| v <= 1.0 + 1e-6));
     }
 
-    /// MEASURED: the worst absolute error at one-degree steps over ±720° is
-    /// 3.6e-6, which at this panel's largest radius of 120 pixels is 4.3e-4 of
-    /// a pixel — three orders finer than the half-pixel the sampler rounds to.
-    /// Most of it is `wrap` losing f32 precision on the large arguments, not
-    /// the series; over the 0..2π an arc actually uses it is far smaller.
-    /// Falsified by a dropped series term or a lost range reduction, either of
-    /// which moves it by three orders and shows up as holes in every arc.
+    /// MEASURED: worst absolute error at one-degree steps over ±720° is 3.6e-6,
+    /// which at this panel's largest radius of 120 pixels is 4.3e-4 of a pixel.
+    /// Most of it is `wrap` losing f32 precision on the large arguments. A
+    /// dropped series term or a lost range reduction moves it by three orders
+    /// and shows up as holes in every arc.
     #[test]
     fn trig_agrees_with_the_host_to_within_four_millionths() {
         let mut worst = 0.0f32;

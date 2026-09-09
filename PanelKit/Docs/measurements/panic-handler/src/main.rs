@@ -1,13 +1,8 @@
-//! What does a panic handler that says where it panicked actually cost?
+//! What a panic handler that says where it panicked costs.
 //!
-//! Three handlers over the identical workload, linked into a real ELF so the
-//! answer includes what each drags out of `core` — which an archive-level
-//! measurement misses entirely, because `core::fmt` lives in `core`'s own
-//! object and the linker takes it or does not.
-//!
-//!   `literal`   sends `b"panic"`. What Spin and Barcode shipped.
-//!   `location`  sends `file:line`. No message, so no `Display` machinery.
-//!   `full`      sends `file:line: message`. What PanelKit has.
+//! Four handlers over one workload, linked into a real ELF so the answer
+//! includes what each drags out of `core`. Method and results:
+//! `PanelKit/Docs/2026-09-09-panic-handler-cost.md`.
 #![no_std]
 #![no_main]
 

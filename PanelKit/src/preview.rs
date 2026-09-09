@@ -1,39 +1,23 @@
-//! Frames as images, for looking at.
+//! Frames as images.
 //!
-//! # How faithful this is, exactly
+//! Faithful in three things, and no image can be faithful in the rest.
 //!
-//! What it reproduces, and these are not approximations:
+//! **The colours**: two bits a channel means each is one of 0, 85, 170 or 255,
+//! so a frame decodes to at most 64 distinct triples. **The glass**: the mask
+//! is [`crate::geometry::is_lit`], the same predicate the renderer clips with,
+//! so an image cannot show a pixel the renderer was forbidden to draw. **The
+//! grid**: scaling is integer nearest-neighbour, because smoothing would invent
+//! shades the panel cannot produce.
 //!
-//! - **The colours.** Two bits a channel means each channel is one of 0, 85,
-//!   170 or 255, and [`decode`] expands the framebuffer byte to exactly those.
-//!   A frame's 240×240 bytes map to at most 64 distinct RGB triples, which is
-//!   what the panel can show and nothing else.
-//! - **The glass.** Only the inscribed disc is display; the corners of the
-//!   square buffer are behind the bezel. The mask here is
-//!   [`crate::geometry::is_lit`] — the same predicate the renderer clips with,
-//!   so an image cannot show a pixel the renderer was not allowed to draw.
-//!   Preview code that rolls its own rule gets this wrong in the dangerous
-//!   direction: the implementation this replaced admitted 436 pixels the panel
-//!   does not light, by testing against `240²` where the rule is `239²`.
-//! - **The pixel grid.** Scaling is nearest-neighbour and integer only.
-//!   Smoothing would invent intermediate colours the panel cannot produce, and
-//!   the whole point of looking at these is to see what four levels a channel
-//!   does to an edge.
+//! PROVEN ON THE WATCH, and not reproducible here: the panel is reflective, not
+//! emissive, and dark thin strokes on light fills drop out on the glass — an
+//! early black-on-white readout came back as a blank white band. **This will
+//! show text the watch will not, so it is not evidence for a dark-on-light
+//! claim; a device photograph is.** Falsified by a device capture that shows
+//! such a readout rendering.
 //!
-//! # What it cannot reproduce, and no image can
-//!
-//! - **The panel is reflective, not emissive.** A monitor emits; this glass
-//!   reflects ambient light. Contrast, and how a shade reads outdoors against
-//!   indoors, do not transfer.
-//! - **Dark thin strokes on light fills drop out.** Measured on hardware: an
-//!   early black-text-on-white readout came back as a blank white band. That is
-//!   the glass, not the framebuffer, so this will happily show text the watch
-//!   will not. **A quality claim about dark-on-light needs a device
-//!   photograph; this image is not evidence for one.**
-//! - **Size.** The panel is 240 pixels at 0.126 mm, about 30 mm across. At 1:1
-//!   on a 96 dpi monitor the image is roughly twice life size, so it flatters
-//!   legibility. Judge a font size against the measured floors, not against
-//!   how it looks here.
+//! Size is the third: 240 px at 0.126 mm is about 30 mm across, so a 1:1 image
+//! on a 96 dpi monitor is roughly twice life size and flatters legibility.
 
 use std::io;
 use std::path::Path;
@@ -48,19 +32,18 @@ const LEVELS: [u8; 4] = [0, 85, 170, 255];
 /// What to draw where the panel has no glass.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Bezel {
-    /// Fully transparent, so the viewer's own background shows through and the
-    /// image cannot be mistaken for a square screen. The honest default.
+    /// Transparent, so the image cannot be mistaken for a square screen.
     #[default]
     Transparent,
-    /// A flat colour, for a contact sheet or a README where transparency reads
-    /// as a checkerboard.
+    /// A flat colour, for a sheet or a page where transparency reads as a
+    /// checkerboard.
     Fill([u8; 3]),
 }
 
 /// How to turn a frame into an image.
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
-    /// Integer, nearest-neighbour. 1 is one image pixel per panel pixel.
+    /// Integer, nearest-neighbour; 1 is one image pixel per panel pixel.
     pub scale: u32,
     /// What fills the corners the panel has no glass behind.
     pub bezel: Bezel,
@@ -109,11 +92,7 @@ pub fn to_rgba(frame: &[u8], w: u32, h: u32, opts: Options) -> Vec<u8> {
     out
 }
 
-/// Writes RGBA as a PNG.
-///
-/// Emits RGB when every pixel is opaque, which is the case for a contact sheet
-/// and for any frame drawn with an opaque [`Bezel`]: a channel that is 255
-/// everywhere is a quarter of the file saying nothing.
+/// Writes RGBA as a PNG, or RGB when every pixel is opaque.
 pub fn write_png(path: impl AsRef<Path>, rgba: &[u8], w: u32, h: u32) -> io::Result<()> {
     let opaque = rgba.chunks_exact(4).all(|px| px[3] == 255);
     let file = std::fs::File::create(path)?;
@@ -148,10 +127,6 @@ pub fn write_frame<S: Scenes>(path: impl AsRef<Path>, state: &S::State, opts: Op
 }
 
 /// One PNG per scene, named for the scene.
-///
-/// This is the whole of what an adopting app needs to write: the catalogue is
-/// the review artefact and the test corpus at once, so the preview, the
-/// simulator and the golden hashes all walk the same list.
 pub fn write_scenes<S: Scenes>(dir: impl AsRef<Path>, opts: Options) -> io::Result<Vec<String>> {
     let dir = dir.as_ref();
     std::fs::create_dir_all(dir)?;
@@ -177,13 +152,7 @@ pub fn write_scenes<S: Scenes>(dir: impl AsRef<Path>, opts: Options) -> io::Resu
 
 /// Every scene on one sheet, in catalogue order, `columns` wide.
 ///
-/// The artefact a human actually reviews, and a better instrument than a
-/// WYSIWYG canvas for this panel: a glyph dropping out on the glass, a footer
-/// losing its ends behind the bezel, a banded gradient and holes inside a swept
-/// arc are all invisible in an editor and obvious on a sheet of real frames.
-///
-/// Scene names are not drawn — this crate has no font, by design. Order is the
-/// catalogue's, so the sheet reads against `scenes()` beside it.
+/// Names are not drawn; this crate has no font.
 pub fn contact_sheet<S: Scenes>(
     path: impl AsRef<Path>,
     columns: u32,
@@ -204,11 +173,7 @@ pub fn contact_sheet<S: Scenes>(
     sheet_from_frames(path, &frames, w, h, columns, opts)
 }
 
-/// A sheet from frames already rendered.
-///
-/// The form for a catalogue this crate's [`Scenes`] trait cannot describe —
-/// one built at runtime, or one whose states are not `'static`. Every frame
-/// must be `w * h` bytes.
+/// A sheet from frames already rendered, each `w * h` bytes.
 pub fn sheet_from_frames(
     path: impl AsRef<Path>,
     frames: &[Vec<u8>],
@@ -264,10 +229,7 @@ pub fn sheet_from_frames(
     Ok((sw, sh))
 }
 
-/// Every distinct colour the panel can show, as a 8×8 sheet.
-///
-/// Not decoration: it is the reference a palette choice is made against, and
-/// the thing that makes "there are only 64 of these" concrete.
+/// Every colour the panel can show, as an 8×8 sheet.
 pub fn gamut_sheet(path: impl AsRef<Path>, cell: u32) -> io::Result<()> {
     let cell = cell.max(1);
     let (w, h) = (8 * cell, 8 * cell);
@@ -324,10 +286,9 @@ mod tests {
         assert_eq!(distinct.len(), 64);
     }
 
-    /// The defect in the implementation this replaced, held as a test: the mask
-    /// is the renderer's own predicate, so an image cannot show a pixel the
-    /// renderer was forbidden to draw. Testing against `240²` instead of `239²`
-    /// admits 436 such pixels.
+    /// MEASURED: this panel lights 44,808 of its 57,600 pixels. A mask testing
+    /// `240²` where the rule is `239²` admits 436 it does not. Re-count by
+    /// summing `is_lit` over the buffer.
     #[test]
     fn nothing_outside_the_glass_is_ever_opaque() {
         let (w, h) = (240u32, 240u32);

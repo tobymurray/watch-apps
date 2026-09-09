@@ -1,26 +1,17 @@
 #ifndef PANELKIT_GUISHELL_HPP
 #define PANELKIT_GUISHELL_HPP
 
-// The C++ half of PanelKit: the part that cannot live in a Rust crate, because
-// it talks to the kernel.
+// The C++ half of PanelKit: the framebuffer, the display config, the render and
+// push, the message loop and the panic trampoline.
 //
 // Header-only so it type-checks on a host with
 //   clang++ -fsyntax-only -std=c++17 -I"$UNA_SDK/Libs/Header" -I PanelKit/Header
-// which is the only thing that catches a rename across the C ABI without an ARM
-// toolchain (RustGuiPoc/Docs/FINDINGS.md, "Toolchain").
+// which catches a rename across the C ABI without an ARM toolchain.
 //
-// What it owns, and what six hand-written shells each owned a copy of:
-//   * the framebuffer, and the guard that keeps a wider panel from reading past
-//     it -- present in two of the six, missing from four;
-//   * queryDisplayConfig, identical modulo comments in four of six;
-//   * renderAndPush, identical modulo the render function's name;
-//   * the message loop's shape: stop, resume, suspend, tick, button;
-//   * the startup ABI fingerprint check;
-//   * the panic trampoline, under one symbol rather than seven.
-//
-// No std::string, no nothrow new, no exceptions: each drags libstdc++'s EH
-// runtime into an otherwise -fno-exceptions app, which measured 10,036 bytes on
-// NotifyToggle (56,108 -> 46,072).
+// MEASURED: no std::string, no nothrow new and no exceptions, because each
+// drags libstdc++'s EH runtime into an otherwise -fno-exceptions app -- 10,036
+// bytes of one app's .uapp, 56,108 -> 46,072. Re-measure by reintroducing one
+// and repacking.
 
 #include <cstddef>
 #include <cstdint>
@@ -49,10 +40,8 @@ enum class Press : uint8_t {
 
 /// What the Rust half asks the shell to do about an event.
 ///
-/// Every value here is something the shell can actually execute. An `Action`
-/// the shell silently ignores is the same bug class as an ABI mismatch, so this
-/// enum stays small and total, and `Shell::onAction` switches over it without a
-/// default.
+/// `applyAction` switches over this without a default, so adding a value is a
+/// compiler warning rather than a press that silently does nothing.
 enum class Action : uint8_t {
     /// The frame changed and nothing else.
     Redraw = 0,
@@ -81,17 +70,17 @@ struct Config {
     static constexpr uint32_t kBytesPerPixel = 1;
     static constexpr uint32_t kMaxPixels = 240u * 240u;
     static constexpr uint32_t kResponseTimeoutMs = 1000;
-    /// This panel reports 6 -- ABGR2222, six colour bits and two of alpha, one
-    /// byte a pixel. More than a byte would have the kernel read past the
-    /// framebuffer, so a frame is withheld rather than truncated.
+    /// PROVEN ON THE WATCH: this panel reports 6 -- ABGR2222, six colour bits
+    /// and two of alpha, one byte a pixel. Anything above 8 would have the
+    /// kernel read past the framebuffer, so a frame is withheld rather than
+    /// truncated. Falsified by a panel reporting a depth this refuses.
     static constexpr uint8_t kMaxBitsPerPixel = 8;
     static constexpr uint32_t kWaitForever = 0xFFFFFFFFu;
 };
 
 /// What an app must supply to be pumped by [`Shell`].
 ///
-/// Deliberately not a base class with virtuals: `Shell` is a template, so these
-/// are resolved at compile time and cost no vtable in a 600 KiB window.
+/// A template rather than a base class, so there is no vtable.
 ///
 /// ```
 /// struct MyApp {
@@ -147,8 +136,7 @@ public:
     /// Renders one frame and hands the whole buffer to the kernel.
     ///
     /// Whole frames only: `RequestDisplayUpdate`'s x/y/width/height are marked
-    /// reserved, which is why there is no partial path here and no damage
-    /// tracking anywhere in this kit.
+    /// reserved.
     void renderAndPush()
     {
         if (!mResumed || !mDisplay.usable) {
@@ -169,10 +157,8 @@ public:
 
     /// Whether the linked archive is the one this header describes.
     ///
-    /// The compile-time offset assertions cannot answer this: a stale archive
-    /// and a newer header each satisfy their own, having been compiled at
-    /// different times. A stale archive has already faked a sensor fault in
-    /// this repository once.
+    /// Compile-time offset assertions cannot answer this: a stale archive and a
+    /// newer header each satisfy their own, having been compiled separately.
     bool abiMatches() const { return App::abiFingerprint() == App::expectedFingerprint(); }
 
     /// The pump. Returns the process exit code.
@@ -249,9 +235,9 @@ public:
     }
 
 private:
-    /// The GUI ticks at 10 fps -- a median 100 ms frame gap across every
-    /// hardware run, against the SDK's documented "typically 30-60 FPS".
-    /// Falsified by re-running the frame-gap capture in RustGuiPoc/Captures.
+    /// PROVEN ON THE WATCH: the GUI ticks at 10 fps, a median 100 ms frame gap
+    /// across every hardware run, against the SDK's documented 30-60. Falsified
+    /// by re-running the frame-gap capture in RustGuiPoc/Captures.
     static constexpr uint32_t kTickPeriodMs = 100;
 
     /// Returns true when the app should exit.
@@ -264,14 +250,11 @@ private:
             case Action::Ignore:
                 return false;
             case Action::Request:
-                // The shell owns every kernel interaction, so a fetch happens
-                // here; the app sees the result as a payload on a later tick.
+                // The app sees the result as a payload on a later tick.
                 return false;
             case Action::Exit:
                 return true;
         }
-        // No default above, so a new Action is a compiler warning rather than a
-        // press that silently does nothing.
         return false;
     }
 
@@ -298,17 +281,13 @@ private:
 
 extern "C" {
 
-/// Called by the kit's Rust panic handler with `file:line: message`.
-///
-/// One symbol for every app that adopts the kit, where seven crates each
-/// declared their own. Must not return normally.
+/// Called by the kit's Rust panic handler. Must not return normally.
 void panelkit_host_panic(const uint8_t* msg, uint32_t len);
 }
 
 /// Defines `panelkit_host_panic` to log and exit.
 ///
-/// A macro rather than an inline definition because exactly one translation
-/// unit must define it, and which one is the app's choice.
+/// A macro because exactly one translation unit must define it.
 #define PANELKIT_DEFINE_HOST_PANIC(LOG_ERROR_FN)                                      \
     extern "C" void panelkit_host_panic(const uint8_t* msg, uint32_t len)             \
     {                                                                                 \

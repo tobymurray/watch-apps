@@ -1,11 +1,8 @@
-//! Ordered dithering, which is the one thing this class of panel needs and the
-//! frameworks aimed at it do not have.
+//! Ordered dithering.
 //!
-//! Four levels a channel bands any gradient. Spatial dithering removes the
-//! banding by making a value between two levels land on the lower one in some
-//! pixels and the upper one in others, so the eye averages them. TouchGFX has
-//! zero occurrences of the word across the entire framework; it will draw a
-//! gradient on this panel with its own painter and band it.
+//! Four levels a channel bands any gradient. Dithering makes a value between
+//! two levels land on the lower one in some pixels and the upper one in others,
+//! so the eye averages them.
 
 use crate::color::Abgr2222;
 
@@ -27,8 +24,7 @@ pub const BAYER_8X8: [[u8; BAYER_SIZE]; BAYER_SIZE] = [
     [63, 31, 55, 23, 61, 29, 53, 21],
 ];
 
-/// Quantise 0..=255 to a level by truncation: what asking for a colour the
-/// panel cannot show gets you, and the reason a ramp becomes four bands.
+/// Quantise 0..=255 to a level by truncation, which is what bands a ramp.
 #[inline]
 pub const fn quantise_flat(value: u8) -> u8 {
     (value >> 6) & 3
@@ -69,13 +65,10 @@ pub fn flat_rgb(r: u8, g: u8, b: u8) -> Abgr2222 {
 mod tests {
     use super::*;
 
-    /// The claim the `DITHER` screen makes, held as a test rather than a
-    /// screenshot: across a full-width ramp, dithering tracks the true value
-    /// more closely than truncation does.
-    ///
-    /// Measured as mean absolute error against the ideal, in level units, over
-    /// a 240-pixel ramp averaged down each 8-pixel dither cell. Falsified by a
-    /// matrix or a quantiser that makes flat truncation the better of the two.
+    /// MEASURED: mean absolute error against the ideal, in level units, over a
+    /// 240-pixel ramp averaged down each 8-pixel cell. Dithering must be under
+    /// *half* truncation's error, not merely under it, or it is not worth the
+    /// code. Falsified by a matrix or quantiser that reverses the two.
     #[test]
     fn dithering_beats_flat_quantisation() {
         const W: i32 = 240;
