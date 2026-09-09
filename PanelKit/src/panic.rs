@@ -7,7 +7,7 @@
 //! need them. Adopting this module is what fixes that, and it is why the
 //! handler is here rather than in a template.
 
-#[cfg(all(feature = "panic-handler", not(feature = "std"), not(test)))]
+#[cfg(all(feature = "panic-message", not(feature = "std"), not(test)))]
 use core::fmt::Write as _;
 
 extern "C" {
@@ -61,7 +61,82 @@ impl<const N: usize> core::fmt::Write for Buf<N> {
     }
 }
 
-#[cfg(all(feature = "panic-handler", not(feature = "std"), not(test)))]
+/// Writes `loc.file():loc.line()` into `buf`, returning how many bytes.
+///
+/// **Every operation here is one that cannot itself panic** — iterator zips
+/// rather than indexing, no `copy_from_slice`. That is not fastidiousness: a
+/// handler that can panic pulls its own panic paths' formatting into the
+/// binary, and the formatting is the expensive part. MEASURED on
+/// `thumbv8m.main-none-eabihf`, in a linked ELF: written this way the location
+/// costs 319 bytes over a handler that reports nothing; written with slice
+/// indexing and `copy_from_slice` it costs 2,513 — eight times more, for
+/// byte-identical output. Falsified by
+/// `PanelKit/Docs/measurements/panic-handler`.
+#[cfg(feature = "panic-handler")]
+fn write_location(buf: &mut [u8], loc: &core::panic::Location<'_>) -> usize {
+    let mut n = 0usize;
+    for (dst, src) in buf.iter_mut().zip(loc.file().as_bytes()) {
+        *dst = *src;
+        n += 1;
+    }
+    for (dst, src) in buf.iter_mut().skip(n).zip(b":") {
+        *dst = *src;
+        n += 1;
+    }
+    let mut digits = [0u8; 10];
+    let mut d = 0usize;
+    let mut line = loc.line();
+    loop {
+        for (i, slot) in digits.iter_mut().enumerate() {
+            if i == d {
+                *slot = b'0' + (line % 10) as u8;
+            }
+        }
+        d += 1;
+        line /= 10;
+        if line == 0 || d == digits.len() {
+            break;
+        }
+    }
+    for (dst, src) in buf.iter_mut().skip(n).zip(digits.iter().take(d).rev()) {
+        *dst = *src;
+        n += 1;
+    }
+    n
+}
+
+/// Reports `file:line` and nothing else.
+///
+/// The cheap half, and the half that carries most of the debugging value: on a
+/// device with no debugger a panic is otherwise a silent hang, and the line is
+/// usually enough to see what. MEASURED, linking `Spin`'s real renderer:
+/// **+706 bytes** over the `b"panic"` literal it shipped.
+#[cfg(all(
+    feature = "panic-handler",
+    not(feature = "panic-message"),
+    not(feature = "std"),
+    not(test)
+))]
+#[panic_handler]
+fn on_panic(info: &core::panic::PanicInfo) -> ! {
+    let mut buf = [0u8; 192];
+    let n = match info.location() {
+        Some(loc) => write_location(&mut buf, loc),
+        None => 0,
+    };
+    unsafe { panelkit_host_panic(buf.as_ptr(), n as u32) }
+}
+
+/// Reports `file:line: message`.
+///
+/// The message needs `core::fmt`, which is the expensive part of a panic
+/// handler by a wide margin. MEASURED, linking `Spin`'s real renderer against
+/// the `b"panic"` literal it shipped: the location alone is **+706 bytes**, and
+/// the message takes it to **+3,226** — so the message is 78% of the cost and
+/// 2.5 KB of a 600 KiB window. Take this when the message is worth that and
+/// the line is not enough; take `panic-handler` alone otherwise. Falsified by
+/// re-running `PanelKit/Docs/measurements/panic-handler`.
+#[cfg(all(feature = "panic-message", not(feature = "std"), not(test)))]
 #[panic_handler]
 fn on_panic(info: &core::panic::PanicInfo) -> ! {
     let mut msg = Buf::<192>::new();
