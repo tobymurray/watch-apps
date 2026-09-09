@@ -23,7 +23,6 @@ use std::io;
 use std::path::Path;
 
 use crate::geometry;
-use crate::scene::Scenes;
 use crate::surface::Surface;
 
 /// Each 2-bit channel is one of these.
@@ -112,67 +111,6 @@ pub fn write_png(path: impl AsRef<Path>, rgba: &[u8], w: u32, h: u32) -> io::Res
     }
 }
 
-/// Renders one frame straight to a PNG.
-pub fn write_frame<S: Scenes>(path: impl AsRef<Path>, state: &S::State, opts: Options) -> io::Result<()> {
-    let (w, h) = S::size();
-    let mut buf = vec![0u8; (w * h) as usize];
-    {
-        let mut surface = Surface::<S::Color>::round(&mut buf, w, h)
-            .ok_or_else(|| io::Error::other("the frame buffer does not fit its geometry"))?;
-        surface.clear(S::ground());
-        S::render(&mut surface, state);
-    }
-    let rgba = to_rgba(&buf, w, h, opts);
-    write_png(path, &rgba, w * opts.scale.max(1), h * opts.scale.max(1))
-}
-
-/// One PNG per scene, named for the scene.
-pub fn write_scenes<S: Scenes>(dir: impl AsRef<Path>, opts: Options) -> io::Result<Vec<String>> {
-    let dir = dir.as_ref();
-    std::fs::create_dir_all(dir)?;
-    let (w, h) = S::size();
-    let scale = opts.scale.max(1);
-    let mut written = vec![];
-    let mut buf = vec![0u8; (w * h) as usize];
-
-    for scene in S::scenes() {
-        {
-            let mut surface = Surface::<S::Color>::round(&mut buf, w, h)
-                .ok_or_else(|| io::Error::other("the frame buffer does not fit its geometry"))?;
-            surface.clear(S::ground());
-            S::render(&mut surface, &scene.state);
-        }
-        let rgba = to_rgba(&buf, w, h, opts);
-        let path = dir.join(format!("{}.png", scene.name));
-        write_png(&path, &rgba, w * scale, h * scale)?;
-        written.push(path.display().to_string());
-    }
-    Ok(written)
-}
-
-/// Every scene on one sheet, in catalogue order, `columns` wide.
-///
-/// Names are not drawn; this crate has no font.
-pub fn contact_sheet<S: Scenes>(
-    path: impl AsRef<Path>,
-    columns: u32,
-    opts: Options,
-) -> io::Result<(u32, u32)> {
-    let (w, h) = S::size();
-    let mut frames = Vec::with_capacity(S::scenes().len());
-    let mut buf = vec![0u8; (w * h) as usize];
-    for scene in S::scenes() {
-        {
-            let mut surface = Surface::<S::Color>::round(&mut buf, w, h)
-                .ok_or_else(|| io::Error::other("the frame buffer does not fit its geometry"))?;
-            surface.clear(S::ground());
-            S::render(&mut surface, &scene.state);
-        }
-        frames.push(buf.clone());
-    }
-    sheet_from_frames(path, &frames, w, h, columns, opts)
-}
-
 /// A sheet from frames already rendered, each `w * h` bytes.
 pub fn sheet_from_frames(
     path: impl AsRef<Path>,
@@ -250,31 +188,13 @@ pub fn gamut_sheet(path: impl AsRef<Path>, cell: u32) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::Abgr2222;
-    use crate::scene::Scene;
+    use crate::{color::Abgr2222, geometry, surface::Surface};
 
-    struct Demo;
-    static SCENES: &[Scene<u8>] = &[
-        Scene { name: "empty", state: 0 },
-        Scene { name: "half", state: 128 },
-        Scene { name: "full", state: 255 },
-    ];
-    impl Scenes for Demo {
-        type State = u8;
-        type Color = Abgr2222;
-        fn scenes() -> &'static [Scene<u8>] {
-            SCENES
-        }
-        fn render(s: &mut Surface<Abgr2222>, state: &u8) {
-            s.fill_rect(20, 100, (*state as i32 * 200) / 255, 40, Abgr2222::WHITE);
-        }
-        fn ground() -> Abgr2222 {
-            Abgr2222::BLACK
-        }
-    }
+    const W: u32 = 240;
+    const H: u32 = 240;
 
-    /// The panel has 64 colours, so a decoded frame can contain at most 64
-    /// distinct triples, and every channel must be one the glass can show.
+    /// The panel has 64 colours, so a decoded frame can hold at most 64 distinct
+    /// triples and every channel must be one the glass can show.
     #[test]
     fn decoding_only_ever_produces_colours_the_panel_has() {
         for byte in 0..=255u8 {
@@ -291,14 +211,13 @@ mod tests {
     /// summing `is_lit` over the buffer.
     #[test]
     fn nothing_outside_the_glass_is_ever_opaque() {
-        let (w, h) = (240u32, 240u32);
-        let frame = vec![0xFFu8; (w * h) as usize];
-        let rgba = to_rgba(&frame, w, h, Options { scale: 1, bezel: Bezel::Transparent });
+        let frame = vec![0xFFu8; (W * H) as usize];
+        let rgba = to_rgba(&frame, W, H, Options { scale: 1, bezel: Bezel::Transparent });
         let mut lit = 0;
-        for y in 0..h as i32 {
-            for x in 0..w as i32 {
-                let alpha = rgba[(((y as u32) * w + x as u32) * 4 + 3) as usize];
-                if geometry::is_lit(x, y, w as i32, h as i32) {
+        for y in 0..H as i32 {
+            for x in 0..W as i32 {
+                let alpha = rgba[(((y as u32) * W + x as u32) * 4 + 3) as usize];
+                if geometry::is_lit(x, y, W as i32, H as i32) {
                     assert_eq!(alpha, 255, "({x},{y}) is glass and was masked out");
                     lit += 1;
                 } else {
@@ -311,12 +230,9 @@ mod tests {
 
     #[test]
     fn scaling_is_nearest_neighbour_and_invents_no_colours() {
-        let (w, h) = (240u32, 240u32);
-        let mut frame = vec![0u8; (w * h) as usize];
+        let mut frame = vec![0u8; (W * H) as usize];
         frame[120 * 240 + 120] = Abgr2222::WHITE.0;
-        let rgba = to_rgba(&frame, w, h, Options { scale: 4, bezel: Bezel::Fill([0, 0, 0]) });
-        // The one white pixel became exactly a 4x4 block, with no soft edge.
-        let ow = w * 4;
+        let rgba = to_rgba(&frame, W, H, Options { scale: 4, bezel: Bezel::Fill([0, 0, 0]) });
         let mut white = 0;
         for px in rgba.chunks_exact(4) {
             assert!(LEVELS.contains(&px[0]) && LEVELS.contains(&px[1]) && LEVELS.contains(&px[2]));
@@ -325,22 +241,30 @@ mod tests {
             }
         }
         assert_eq!(white, 16, "expected a 4x4 block");
-        assert_eq!(&rgba[((480 * ow + 480) * 4) as usize..][..3], &[255, 255, 255]);
     }
 
     #[test]
-    fn a_sheet_holds_every_scene() {
+    fn a_sheet_holds_every_frame_it_was_given() {
         let dir = std::env::temp_dir().join("panelkit_preview_test");
-        let sheet = dir.join("sheet.png");
         std::fs::create_dir_all(&dir).unwrap();
-        let (w, h) = contact_sheet::<Demo>(&sheet, 2, Options { scale: 1, bezel: Bezel::Transparent }).unwrap();
-        // Three scenes at two columns is two rows, with a one-pixel gutter.
+        let sheet = dir.join("sheet.png");
+
+        let mut frames = vec![];
+        for width in [0i32, 100, 200] {
+            let mut buf = vec![0u8; (W * H) as usize];
+            {
+                let mut s = Surface::<Abgr2222>::round(&mut buf, W, H).unwrap();
+                s.clear(Abgr2222::BLACK);
+                s.fill_rect(20, 100, width, 40, Abgr2222::WHITE);
+            }
+            frames.push(buf);
+        }
+        let (w, h) = sheet_from_frames(&sheet, &frames, W, H, 2, Options { scale: 1, bezel: Bezel::Transparent }).unwrap();
         assert_eq!((w, h), (2 * 240 + 3, 2 * 240 + 3));
         assert!(std::fs::metadata(&sheet).unwrap().len() > 0);
 
-        let files = write_scenes::<Demo>(&dir, Options { scale: 1, bezel: Bezel::Transparent }).unwrap();
-        assert_eq!(files.len(), 3);
-        assert!(files[0].ends_with("empty.png"));
+        // A frame that is not w*h bytes is refused rather than sliced.
+        assert!(sheet_from_frames(&sheet, &[vec![0u8; 10]], W, H, 1, Options::default()).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
