@@ -18,7 +18,9 @@ rejected and why, and which numbers would falsify which decision.
 ## Status
 
 Built and measured: tiers 0–3, the scene harness, the C++ shell header, the
-CMake include, and one adoption. **Not** done, and listed here rather than
+CMake include, and two adoptions — `SettingsEditor`, which did not previously
+compile for the watch, and `Spin`, whose 43 scene frames are byte-identical
+after the move. **Not** done, and listed here rather than
 buried: the `Spin` adoption, the drift backports, the scaffold, and every
 number that needs a linker. See [What is not built](#what-is-not-built).
 
@@ -567,20 +569,52 @@ figure in this document is claimed, because none was measured.**
 
 ### `Spin`
 
-**Not done.** It is 1,581 lines, 115 lines of hand-mirrored ABI, six screens and
-a 117-line C++ `handleButton()`, and moving it is the test of whether this is a
-kit or a library — the brief is right about that. What it needs first is §4's
-payload reader, since `Spin` is the app whose 19-field struct the opaque payload
-is meant to replace.
+The app that had actually reached the ceiling: 1,581 lines, six screens, a zone
+ring, a measured arc sampler and 115 lines of hand-mirrored ABI. Moving it is
+the test of whether this is a kit or a library.
 
----
+It is installed on a watch, so the bar is not "still compiles" but **"draws the
+identical pixels"**. Its 43-scene catalogue is the instrument: every frame was
+hashed before the change and after.
+
+| | before | after |
+|---|---|---|
+| `lib.rs` | 1,580 lines | **1,482** (−98) |
+| host tests | 43 pass | **43 pass**, plus the golden test |
+| **all 43 scene frames** | — | **byte-identical** |
+| own `.text` (archive) | 5,082 | 5,198 (+116) |
+| own `.rodata` (archive) | 462 | 530 (+68) |
+
+The +116 bytes are not overhead, they are the diagnostics: this app's panic
+handler sent the literal `"panic"`, and the kit's formats `file:line` and the
+message. That is the drift the kit fixes by existing, and it is why the cost
+sits in the app rather than being avoided.
+
+Two things changed behaviour rather than only structure, and both are recorded
+because "byte-identical frames" could otherwise hide them:
+
+- **The surface owns the clip.** Shapes clipped to the square buffer and only
+  text clipped to the disc, over the same bytes. The frames are identical
+  because nothing was ever painted outside the glass — which is exactly what
+  `nothing_is_drawn_outside_the_bezel` had been checking *after the fact*
+  instead of preventing.
+- **The undefined symbol moved.** The archive now needs `panelkit_host_panic`
+  where it needed `spin_gui_host_panic`, and `Gui.cpp` was changed to define it.
+  Nothing but a link catches that: the crate compiled fine with the symbol
+  dangling. `llvm-nm --undefined-only` on the archive is the check, and it is
+  the one ergonomic cost of the kit owning the panic handler.
+
+**What did not move to the kit, and why.** `Spin`'s arc sampler stays on
+`micromath`'s trig rather than `draw::fill_arc`'s. The two agree to about
+1e-6, which is far below a pixel, but "about" is not "byte-identical", and the
+frames are the thing being protected. Swapping it wants its own measurement —
+count the differing pixels across all 43 scenes and decide — not a refactor that
+assumes the answer.
 
 ## What is not built
 
 Listed so the gap is not something a reader has to find:
 
-- **The `Spin` adoption**, and therefore the claim that the kit carries the app
-  that reaches the ceiling.
 - **The opaque payload reader** of §4. The fixed event ABI is built; the data
   half is designed and specified only.
 - **The backports** — the colour-depth guard to the four shells missing it, the
@@ -601,8 +635,11 @@ Listed so the gap is not something a reader has to find:
 - **`cargo semver-checks`.** Not installed here, and at 0.1.0 there is no
   published baseline for it to compare against. It belongs in CI from the first
   release, not before it.
-- **The publishing gate itself.** The brief sets *two* adopted apps before
-  publishing. There is one, and it has never run on a watch.
+- **A watch.** Two apps adopt the kit and *neither has run on hardware*.
+  `SettingsEditor` has no shell, no CMake target and no app id; `Spin` has all
+  three but nothing here has been linked or packed, because that needs the
+  pinned Docker image and its daemon was not running. The frames are proven
+  identical on the host, which is the strongest claim available without one.
 - **Anything past a byte a pixel**, as above. The public claim has to be
   "low-bit-depth, one byte a pixel" until someone lifts `ByteColor`.
 - **`nav` has no caller at all.** Tiers 0–2 came out of seven existing
