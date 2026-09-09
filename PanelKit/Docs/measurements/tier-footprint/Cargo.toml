@@ -9,9 +9,7 @@ crate-type = ["staticlib"]
 [features]
 default = []
 t0 = []
-t1 = ["panelkit/dither"]
 t2 = ["panelkit/widgets"]
-t3 = []
 
 [dependencies]
 panelkit = { path = "../../..", default-features = false }

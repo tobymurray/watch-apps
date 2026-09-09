@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.81"
 license = "MIT OR Apache-2.0"
-description = "Immediate-mode GUI primitives for round, low-bit-depth, button-driven panels: lit-disc geometry, ordered dithering, a four-button focus model and a scene catalogue, on embedded-graphics."
+description = "GUI primitives for round, low-bit-depth panels: lit-disc geometry, an ABGR2222 framebuffer that clips to the glass, and PNG previews that show exactly what the panel would."
 repository = "https://github.com/tobymurray/watch-apps"
 categories = ["embedded", "no-std", "gui"]
-keywords = ["embedded-graphics", "no-std", "gui", "smartwatch", "dithering"]
+keywords = ["embedded-graphics", "no-std", "gui", "smartwatch", "round-display"]
 # The published crate is the Rust half only. The C ABI, GuiShell.hpp and
 # panelkit.cmake are this repo's glue to one vendor's SDK and are not part of
 # what anyone else would install.
@@ -15,12 +15,8 @@ include = ["src/**/*.rs", "README.md", "LICENSE-*"]
 
 [features]
 default = []
-## Ordered dithering, and the gamut-hull hue dither.
-dither = []
 ## Tier 2 widgets.
 widgets = []
-## The scene catalogue trait and its byte-hash golden helper.
-scenes = []
 ## A `#[panic_handler]` reporting `file:line` through `panelkit_host_panic`.
 ## Measured at 319 bytes over reporting nothing. Inert under `std`, so
 ## `--all-features` and a host test build still work.
@@ -34,7 +30,7 @@ panic-message = ["panic-handler"]
 std = []
 ## PNG frames, contact sheets and the gamut sheet. Host-only, and the only
 ## thing in this crate with a dependency beyond embedded-graphics.
-preview = ["std", "scenes", "dep:png"]
+preview = ["std", "dep:png"]
 
 [dependencies]
 embedded-graphics = "0.8"

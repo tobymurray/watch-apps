@@ -76,8 +76,7 @@ jobs:
           # panic-handler and panic-message are what an app ships, and nothing
           # else here compiles them: --all-features enables std, and both
           # handlers are gated `not(feature = "std")`.
-          for f in dither widgets scenes panic-handler panic-message \
-                   "dither,widgets,scenes"; do
+          for f in widgets panic-handler panic-message "widgets,panic-message"; do
             echo "--- $f"
             cargo build --release --target thumbv8m.main-none-eabihf --no-default-features ${f:+--features "$f"}
           done
@@ -89,7 +88,7 @@ jobs:
         run: |
           set -euo pipefail
           rustup target add riscv32imac-unknown-none-elf
-          cargo build --release --target riscv32imac-unknown-none-elf --no-default-features --features dither,widgets
+          cargo build --release --target riscv32imac-unknown-none-elf --no-default-features --features widgets
 
       # Catches a rename across the C ABI, which needs no ARM toolchain.
       - name: The shell header type-checks against the SDK
