@@ -81,6 +81,10 @@ pub mod widgets;
 #[cfg_attr(docsrs, doc(cfg(feature = "scenes")))]
 pub mod scene;
 
+#[cfg(feature = "preview")]
+#[cfg_attr(docsrs, doc(cfg(feature = "preview")))]
+pub mod preview;
+
 pub mod nav;
 pub mod panic;
 

@@ -476,12 +476,56 @@ carry, and they are built.
 
 ---
 
-## 9. Publishing: the split
+## 9. Looking at frames
+
+The kit renders frames to PNG, and the point of doing it here rather than in
+each app is fidelity: three preview implementations in this repository each
+rolled their own idea of where the glass ends, and one of them was wrong in the
+dangerous direction.
+
+**What the image reproduces exactly.** The colours — two bits a channel means
+each channel is one of 0, 85, 170 or 255, and a frame decodes to at most 64
+distinct triples, which is all the panel has ([`Docs/gamut.png`](Docs/gamut.png)
+is the lot). The glass — the mask is `geometry::is_lit`, *the same predicate the
+renderer clips with*, so an image cannot show a pixel the renderer was forbidden
+to draw. And the pixel grid — scaling is integer and nearest-neighbour, because
+smoothing would invent intermediate colours the panel cannot produce, and seeing
+what four levels does to an edge is the whole reason to look.
+
+Verified end to end on a real 480×480 output file rather than only in unit
+tests: two alpha values (0 bezel, 255 glass) and no soft edge between them, zero
+colours outside the panel's 64, and exactly 179,232 opaque pixels — 44,808 lit
+pixels at scale 2, which is this panel's lit-pixel count.
+
+**The defect this replaces.** `Spin`'s own preview tested `dx² + dy² <= 240²`
+where the panel's rule is `239²`, so it showed **436 pixels the watch does not
+light**. A preview that is more generous than the glass is the §3 bezel trap
+with a picture attached, and `nothing_outside_the_glass_is_ever_opaque` is now
+the test.
+
+**What no image can reproduce**, stated in the module docs so nobody quotes a
+screenshot as evidence for it:
+
+- The panel is **reflective, not emissive**. Contrast and how a shade reads
+  outdoors do not transfer from a monitor.
+- **Dark thin strokes on light fills drop out.** Measured on hardware; the
+  preview will happily show text the watch will not. A dark-on-light quality
+  claim needs a device photograph.
+- **Size.** 240 px at 0.126 mm is about 30 mm across, so a 1:1 image on a 96 dpi
+  monitor is roughly twice life size and flatters legibility.
+
+[`Spin/Docs/screens.png`](../Spin/Docs/screens.png) is all 43 of its scenes on
+one sheet — 586 KB, which is what 43 real frames costs, and the reason the
+cheap regression check is the golden *hashes* beside it rather than the image.
+
+## 10. Publishing: the split
 
 **`panelkit` (public):** `no_std`, no allocator, generic over `PixelColor` and
 `DrawTarget`, with the round geometry, the low-bit-depth palette and dithering,
 the four-button focus model, the widget tiers and the scene harness. Features:
-`round`, `abgr2222`, `dither`, `widgets`, `scenes`, `panic-handler`, `std`.
+`round`, `abgr2222`, `dither`, `widgets`, `scenes`, `preview`, `panic-handler`,
+`std`. `preview` is the only one with a dependency beyond `embedded-graphics`
+(`png`), and it is host-only.
 `Cargo.toml`'s `include` lists `src/**/*.rs` and the README, so nothing below
 ships in the crate — `cargo package --list` is 16 files, all of them Rust and
 documentation.
@@ -538,7 +582,7 @@ slot-plus-`needed` contract is what makes overflow visible.
 
 ---
 
-## 10. Adoption
+## 11. Adoption
 
 ### `SettingsEditor`
 
@@ -674,12 +718,13 @@ PanelKit/
     widgets.rs    tier 2: the page indicator, the toggle pill
     nav.rs        tier 3: focus, the screen stack, the animation clock
     scene.rs      the scene catalogue and the checks an app inherits
+    preview.rs    frames to PNG, contact sheets, the gamut sheet
     text.rs       the text trait, wrap and the face ladder
     panic.rs      one panic handler, one host symbol
   Header/
     GuiShell.hpp  the C++ pump, header-only, host-type-checkable
   panelkit.cmake  the two lines nobody can guess
-  Docs/           one file per measurement
+  Docs/           one file per measurement, and the gamut sheet
 ```
 
 62 tests, all passing, on `cargo test --all-features`.

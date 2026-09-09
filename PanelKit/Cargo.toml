@@ -29,11 +29,15 @@ scenes = []
 ## Inert under `std`, so `--all-features` and a host test build still work; a
 ## device build enables it without `std` and gets the handler.
 panic-handler = []
-## Host-side helpers: PNG contact sheets, `std` assertions in tests.
+## Host-side helpers and `std` assertions in tests.
 std = []
+## PNG frames, contact sheets and the gamut sheet. Host-only, and the only
+## thing in this crate with a dependency beyond embedded-graphics.
+preview = ["std", "scenes", "dep:png"]
 
 [dependencies]
 embedded-graphics = "0.8"
+png = { version = "0.17", optional = true }
 
 [dev-dependencies]
 embedded-graphics = "0.8"
