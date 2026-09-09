@@ -14,7 +14,7 @@ t2 = ["panelkit/widgets"]
 t3 = []
 
 [dependencies]
-panelkit = { path = "../../..", default-features = false, features = ["round"] }
+panelkit = { path = "../../..", default-features = false }
 
 [profile.release]
 panic = "abort"
