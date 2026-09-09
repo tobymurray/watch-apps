@@ -18,7 +18,13 @@ fn main() {
     let dir = std::env::args().nth(1).unwrap_or_else(|| "/tmp/spin_gui_preview".to_string());
     std::fs::create_dir_all(&dir).expect("cannot create the output directory");
 
-    let opts = Options { scale: 2, bezel: Bezel::Transparent };
+    // 240x240 with black corners, which is what the five montages in
+    // Spin/Docs were assembled from and what Spin/README.md's "blacks out
+    // everything outside the round bezel" describes. The kit's own default is
+    // transparent at scale 2; matching the checked-in artefacts matters more
+    // here than the kit's default does, because the README documents this
+    // command as the way to regenerate them.
+    let opts = Options { scale: 1, bezel: Bezel::Fill([0, 0, 0]) };
     let mut frames = Vec::new();
 
     for (name, frame) in scenes() {
@@ -33,9 +39,12 @@ fn main() {
     }
 
     // Six across fits the catalogue on a sheet that reads at arm's length; the
-    // order is the catalogue's, so it reads against scenes() beside it.
+    // order is the catalogue's, so it reads against scenes() beside it. Named
+    // apart from Docs/screens.png, which is the README's curated four-panel
+    // banner and a different artefact -- a 43-cell sheet under a caption
+    // promising four named screens is a worse hero image whatever it contains.
     let sheet = format!("{dir}/contact-sheet.png");
-    let (w, h) = sheet_from_frames(&sheet, &frames, W, H, 6, Options { scale: 1, bezel: Bezel::Transparent })
+    let (w, h) = sheet_from_frames(&sheet, &frames, W, H, 6, Options { scale: 1, bezel: Bezel::Fill([24, 24, 24]) })
         .expect("cannot write the contact sheet");
     println!("wrote {sheet} ({w}x{h}, {} scenes)", frames.len());
 }
