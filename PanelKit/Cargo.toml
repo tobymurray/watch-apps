@@ -14,11 +14,7 @@ keywords = ["embedded-graphics", "no-std", "gui", "smartwatch", "dithering"]
 include = ["src/**/*.rs", "README.md", "LICENSE-*"]
 
 [features]
-default = ["round"]
-## The lit-disc clip and the chord table. Off, the surface is a plain rectangle.
-round = []
-## The concrete `Abgr2222` colour type and its palette.
-abgr2222 = []
+default = []
 ## Ordered dithering, and the gamut-hull hue dither.
 dither = []
 ## Tier 2 widgets.
