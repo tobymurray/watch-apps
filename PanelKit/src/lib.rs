@@ -27,6 +27,12 @@
 //! Not a pointer toolkit. There is no hit testing, because the devices this is
 //! for have buttons.
 //!
+//! Not generic past one byte a pixel. [`Surface`] is generic over the colour
+//! type but bounded on [`ByteColor`], so a 16bpp `Rgb565` panel does not
+//! compile against it. That is the honest scope: low-bit-depth means one byte
+//! a pixel here, and lifting it wants the stride arithmetic and the row fill
+//! written against `PixelColor::Raw` rather than `u8`.
+//!
 //! # Tiers
 //!
 //! - **Tier 0** ([`surface`], [`color`], [`geometry`], [`mod@panic`]) — the parts

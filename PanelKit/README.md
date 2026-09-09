@@ -486,9 +486,33 @@ documentation.
 
 Verified rather than asserted: `cargo publish --dry-run` is clean;
 `cargo doc --all-features` builds with `-D warnings`; the crate compiles for
-`riscv32imac-unknown-none-elf` as well as `thumbv8m.main-none-eabihf`, which is
-what tests the platform-generic claim instead of stating it; and tier 0 builds
-alone under `--no-default-features --features round`.
+`riscv32imac-unknown-none-elf` as well as `thumbv8m.main-none-eabihf`; and tier 0
+builds alone under `--no-default-features --features round`.
+
+**But "platform-generic" is a weaker claim than it first looks, and the limit is
+`ByteColor`.** `Surface` is generic over the colour type, but bounded on
+`ByteColor: to_byte() -> u8`, so it serves **byte-per-pixel panels only**. A
+16bpp `Rgb565` panel — much the most common thing an adopter would bring — does
+not compile against it:
+
+```
+error[E0599]: the associated function `round` exists for `Surface<'_, Rgb565>`,
+              but its trait bounds were not satisfied
+```
+
+The riscv build tests that the crate compiles on another *architecture*, not
+that it serves another *panel format*, and the genericity measurement in §2 used
+a second byte-wide type. So what is actually established is: generic over
+byte-per-pixel colour encodings, at a measured 66 bytes, on more than one
+architecture. Which is the real shape of the thing — it is a kit for
+**low-bit-depth** panels, and one byte a pixel is what "low-bit-depth" has meant
+throughout.
+
+Lifting it wants a `Raw`-width-generic buffer with the stride arithmetic and the
+row fill written against `PixelColor::Raw` rather than `u8`, which is a real
+piece of work and should not be done speculatively — it wants an adopter with a
+16bpp panel asking for it, and the §2 measurement re-run at that width, since
+`to_byte`/`from_byte` stop being free.
 
 **The UNA half (this repo, not published):** `Header/GuiShell.hpp`,
 `panelkit.cmake`, and the kernel and `SettingsKit` couplings. Nothing in the
@@ -578,7 +602,13 @@ Listed so the gap is not something a reader has to find:
   published baseline for it to compare against. It belongs in CI from the first
   release, not before it.
 - **The publishing gate itself.** The brief sets *two* adopted apps before
-  publishing. There is one.
+  publishing. There is one, and it has never run on a watch.
+- **Anything past a byte a pixel**, as above. The public claim has to be
+  "low-bit-depth, one byte a pixel" until someone lifts `ByteColor`.
+- **`nav` has no caller at all.** Tiers 0–2 came out of seven existing
+  implementations; tier 3 was written against the thirteen questions in §8 and
+  nothing uses it yet. It is the part of the API most likely to be wrong and the
+  hardest to change after a release.
 - **Tier 2 beyond two widgets.** The value row and the four-button hint ring
   have their warrants and are not written.
 
