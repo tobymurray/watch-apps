@@ -395,7 +395,7 @@ newer SDK than the running kernel installs cleanly and silently never launches;
 see the repository's own [README](../README.md#building).
 
 The current build, in the image this repository's CI pins by digest:
-**100 172 bytes, ID `5983D82DFEFF2626`, CRC `0xBC766B4C`**, version 0.1.0,
+**100 732 bytes, ID `5983D82DFEFF2626`, CRC `0xF5BB79BE`**, version 0.1.0,
 installed and launched on the watch on 2026-09-09. The GUI's `.bss` is mostly
 the 57 600-byte framebuffer plus the 5 672-byte trial plan.
 

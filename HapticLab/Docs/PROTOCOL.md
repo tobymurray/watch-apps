@@ -23,7 +23,18 @@ run every effect is modelled at its 1000 ms ceiling. A measured table shortens
 the window and the session with it. The sweep takes about thirteen minutes and
 saves considerably more than that.
 
-Only then the perceptual sessions, in this order:
+Only then the perceptual sessions. Which set to run is a decision rather than a
+default, and `Docs/LEDGER.md` row S7a is what it turns on:
+
+- `rhythm-and-family`, twelve patterns, about 42 minutes. The main measurement.
+- `bump-ladder`, three patterns, about ten minutes at twelve passes. The only
+  amplitude ladder the actuator has, and the cheapest real experiment here.
+  Set `"test_passes": 12`, not the default: three patterns make a pass one
+  triple, so the default leaves each pair at exactly the analysis floor.
+- `with-amplitude`, sixteen patterns, over an hour. **Not worth running**: the
+  click ladder it is built on measures flat.
+
+In this order:
 
 1. **Wrist, unmasked.** The measurement.
 2. **Table, unmasked.** The no-contact control. If it comes out above chance,
@@ -113,7 +124,16 @@ different from what it was built to mean.
 
 ## Phase 1: the effect sweep
 
-L2 from the menu. It runs unattended for about thirteen minutes; R2 stops it.
+L2 from the menu. It runs unattended, and how long for is `sweep_repeats` in
+`config.json`: one repeat of one effect is 3.1 s, so the whole effect space
+costs about 6.6 minutes a repeat. Two repeats is 13 minutes and six is 39. R2
+stops it.
+
+Repeats are cheap and they are what turns a pair of numbers that might disagree
+into a median with a spread. Six is a good default for an unattended run; the
+first sweep used two and 43 of 122 playable effects came out with repeats that
+disagreed. Raw samples cost about 18 KB a repeat an effect, so six repeats is
+near 14 MB against a 64 MB cap.
 
 - **The watch does not need to be worn, and is better off it.** Phase 1
   measures the actuator, not a sensation: a duration is a property of the
@@ -130,6 +150,9 @@ L2 from the menu. It runs unattended for about thirteen minutes; R2 stops it.
 - **The same setup for both runs.** The second run exists for agreement across
   setups, so a run on the wrist and a run on a pillow answers nothing: two
   things changed at once.
+- **Set `sweep_repeats` before you start.** It cannot be changed once the
+  sweep is running, and a run at two repeats is a run you will want to do
+  again.
 - **Write the setup into `watch_position`.** The sweep's `session.json` records
   that field, and it is the only thing that will later say what the numbers
   were measured against. The field is named for a session rather than a sweep,

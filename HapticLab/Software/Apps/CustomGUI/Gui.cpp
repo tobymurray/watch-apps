@@ -201,6 +201,11 @@ void Gui::buildTheSession()
     mMeta.strapTightness = mConfig.strapTightness;
     mMeta.armPosture     = mConfig.armPosture;
     mMeta.ambientTempC   = mConfig.ambientTempC;
+    // Recorded whether or not this run turns out to be a sweep: they decide
+    // what `effects.csv` means and nothing else carries them.
+    mMeta.sweepRepeats     = mConfig.sweepRepeats;
+    mMeta.sweepFirstEffect = mConfig.sweepFirstEffect;
+    mMeta.sweepLastEffect  = mConfig.sweepLastEffect;
 
     mSession.setDurations(mDurations);
     mProbeCount = Haptic::buildProbes(mProbes);

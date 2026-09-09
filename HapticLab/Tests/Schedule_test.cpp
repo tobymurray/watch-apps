@@ -243,7 +243,7 @@ TEST(Plan, PairBalanceReportsWhatThePlanActuallyDid)
 TEST(Plan, AtTheDefaultPassCountEveryPairHasEnoughTrialsToBeReported)
 {
     constexpr uint16_t kAnalysisFloor = 12;
-    for (SetId set : { SetId::RhythmAndFamily, SetId::WithAmplitude }) {
+    for (SetId set : { SetId::RhythmAndFamily, SetId::WithAmplitude, SetId::BumpLadder }) {
         const Plan plan = planFor(set, kDefaultTestPasses, 4242);
         for (uint8_t a = 0; a < plan.patternCount; a++) {
             for (uint8_t b = static_cast<uint8_t>(a + 1); b < plan.patternCount; b++) {
@@ -252,6 +252,31 @@ TEST(Plan, AtTheDefaultPassCountEveryPairHasEnoughTrialsToBeReported)
             }
         }
     }
+}
+
+/// Three patterns is one triple a pass, so the default pass count leaves each
+/// pair at exactly the analysis floor and the interval far too wide to clear a
+/// 10 % threshold. The set's own comment says twelve passes; this is the
+/// arithmetic behind it.
+TEST(Plan, TheBumpLadderNeedsMorePassesThanTheDefaultToBeReportable)
+{
+    const Plan cheap = planFor(SetId::BumpLadder, kDefaultTestPasses, 4242);
+    EXPECT_EQ(cheap.patternCount, 3);
+    for (uint8_t a = 0; a < 3; a++) {
+        for (uint8_t b = static_cast<uint8_t>(a + 1); b < 3; b++) {
+            EXPECT_GE(cheap.pairTrialsFor(a, b), 12) << "even the default falls under the floor";
+        }
+    }
+
+    // Wilson's upper bound on nought in twelve is about 24 %, so the floor is
+    // not the same thing as being able to answer.
+    const Plan proper = planFor(SetId::BumpLadder, 12, 4242);
+    for (uint8_t a = 0; a < 3; a++) {
+        for (uint8_t b = static_cast<uint8_t>(a + 1); b < 3; b++) {
+            EXPECT_GE(proper.pairTrialsFor(a, b), 36) << "twelve passes is not enough either";
+        }
+    }
+    EXPECT_LT(proper.trialCount, 60) << "a ten-minute run has grown";
 }
 
 TEST(Plan, NothingOverflowsTheFixedCapacities)

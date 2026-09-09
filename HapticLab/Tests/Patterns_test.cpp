@@ -22,7 +22,7 @@ std::vector<Pattern> setOf(SetId set)
 
 TEST(CandidateSet, EveryPatternIsSomethingTheWireFormatCanCarry)
 {
-    for (SetId set : { SetId::RhythmAndFamily, SetId::WithAmplitude }) {
+    for (SetId set : { SetId::RhythmAndFamily, SetId::WithAmplitude, SetId::BumpLadder }) {
         for (const Pattern &pattern : setOf(set)) {
             EXPECT_TRUE(isWellFormed(pattern)) << pattern.id << " in " << setName(set);
             EXPECT_LE(pattern.noteCount, kMaxNotes) << pattern.id;
@@ -32,14 +32,46 @@ TEST(CandidateSet, EveryPatternIsSomethingTheWireFormatCanCarry)
 
 TEST(CandidateSet, TheSetSizesAreWhatSetSizePromises)
 {
-    EXPECT_EQ(setOf(SetId::RhythmAndFamily).size(), setSize(SetId::RhythmAndFamily));
-    EXPECT_EQ(setOf(SetId::WithAmplitude).size(), setSize(SetId::WithAmplitude));
+    for (SetId set : { SetId::RhythmAndFamily, SetId::WithAmplitude, SetId::BumpLadder }) {
+        EXPECT_EQ(setOf(set).size(), setSize(set)) << setName(set);
+    }
     EXPECT_EQ(setSize(SetId::WithAmplitude), kMaxPatterns);
+}
+
+/// The bump ladder is the one amplitude ladder the actuator has, so the three
+/// have to differ in amplitude and in nothing else: a difference in waveform,
+/// pulse count, rhythm or note timing would give the wearer another cue and
+/// the run would stop being an intensity test.
+TEST(CandidateSet, TheBumpLadderVariesAmplitudeAndNothingElse)
+{
+    const std::vector<Pattern> ladder = setOf(SetId::BumpLadder);
+    ASSERT_EQ(ladder.size(), 3u);
+
+    std::set<uint8_t> amplitudes;
+    std::set<uint8_t> effects;
+    for (const Pattern &p : ladder) {
+        EXPECT_EQ(p.family, Family::Bump) << p.id;
+        EXPECT_EQ(p.pulses, 1) << p.id;
+        EXPECT_EQ(p.rhythm, Rhythm::Single) << p.id;
+        EXPECT_EQ(p.length, Length::Brief) << p.id;
+        EXPECT_EQ(p.noteCount, 1) << p.id;
+        EXPECT_EQ(ladder.front().noteCount, p.noteCount) << p.id;
+        amplitudes.insert(static_cast<uint8_t>(p.amplitude));
+        effects.insert(p.notes[0].effect);
+    }
+    EXPECT_EQ(amplitudes.size(), 3u) << "two of the three share an amplitude tier";
+    EXPECT_EQ(effects, (std::set<uint8_t> { kBumpFull, kBumpMid, kBumpLow }));
+
+    // Every one of them needs row V6 to hold, which is the point.
+    for (const Pattern &p : ladder) {
+        const bool needsAxis = needsAmplitudeAxis(p);
+        EXPECT_EQ(needsAxis, p.notes[0].effect != kBumpFull) << p.id;
+    }
 }
 
 TEST(CandidateSet, EveryIdAndNameIsDistinctAndFitsTheScreen)
 {
-    for (SetId set : { SetId::RhythmAndFamily, SetId::WithAmplitude }) {
+    for (SetId set : { SetId::RhythmAndFamily, SetId::WithAmplitude, SetId::BumpLadder }) {
         std::set<std::string> ids;
         std::set<std::string> names;
         for (const Pattern &pattern : setOf(set)) {
@@ -139,7 +171,7 @@ TEST(Pauses, EveryPauseIsOnTheTenMillisecondStepAndInsideTheRange)
 TEST(Timing, ThePresentationWindowCoversTheLongestPatternInTheSet)
 {
     const EffectDurations nominal = EffectDurations::nominal();
-    for (SetId set : { SetId::RhythmAndFamily, SetId::WithAmplitude }) {
+    for (SetId set : { SetId::RhythmAndFamily, SetId::WithAmplitude, SetId::BumpLadder }) {
         const std::vector<Pattern> patterns = setOf(set);
         const Timing timing = timingFor(patterns.data(), static_cast<uint8_t>(patterns.size()), nominal);
         for (const Pattern &pattern : patterns) {

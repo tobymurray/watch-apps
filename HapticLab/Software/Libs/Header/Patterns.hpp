@@ -94,13 +94,26 @@ enum class SetId : uint8_t {
     /// nothing that needs an amplitude axis to exist.
     RhythmAndFamily = 0,
     /// The same twelve plus two intensity-only siblings of `TAP` and two
-    /// ramps, so the experiment can report that intensity alone fails.
+    /// ramps. **Kept for the record and not worth running**: row S7a measured
+    /// the click ladder these are built on as flat, so it would spend an hour
+    /// confirming a foregone conclusion.
     WithAmplitude,
+    /// Three patterns and nothing else: the soft-bump ladder, which is the one
+    /// amplitude ladder the actuator has. A whole session in about ten
+    /// minutes, and the only way to ask the intensity question without
+    /// inflating the main set to sixteen.
+    ///
+    /// Needs a higher pass count than the others rather than the default: with
+    /// three patterns a pass is one triple, so four passes leaves twelve
+    /// trials a pair, exactly at the analysis floor and far too few for the
+    /// interval to clear a 10 % threshold. Twelve passes gives thirty-six.
+    BumpLadder,
     Count,
 };
 
 constexpr uint8_t kRhythmAndFamilyCount = 12;
 constexpr uint8_t kWithAmplitudeCount   = 16;
+constexpr uint8_t kBumpLadderCount      = 3;
 constexpr uint8_t kMaxPatterns          = kWithAmplitudeCount;
 
 inline const char *setName(SetId set)
@@ -108,16 +121,26 @@ inline const char *setName(SetId set)
     switch (set) {
     case SetId::RhythmAndFamily: return "rhythm-and-family";
     case SetId::WithAmplitude:   return "with-amplitude";
+    case SetId::BumpLadder:      return "bump-ladder";
     case SetId::Count:           break;
     }
     return "unknown";
 }
 
 /// Effect indices the amplitude axis reaches for, each one a gap immediately
-/// above `STRONG CLICK`'s named entry.
+/// above `STRONG CLICK`'s named entry. Docs/LEDGER.md row S7a measured these
+/// three at 100 %, 106 % and 104 % of each other's burst energy, so **this
+/// ladder is flat** and the patterns built on it test nothing.
 constexpr uint8_t kTapFull = 1;
 constexpr uint8_t kTapMid  = 2;
 constexpr uint8_t kTapLow  = 3;
+
+/// The gaps above `SOFT BUMP`, which row S7a measured at 100 %, 50 % and 41 %
+/// of each other's burst energy at an identical 85 ms. This is the only
+/// amplitude ladder the actuator actually has.
+constexpr uint8_t kBumpFull = 7;
+constexpr uint8_t kBumpMid  = 8;
+constexpr uint8_t kBumpLow  = 9;
 
 namespace detail {
 
@@ -169,6 +192,20 @@ inline uint8_t buildSet(SetId set, Pattern out[kMaxPatterns])
     const uint16_t ls[]    = { kLongGapMs, kShortGapMs };
 
     uint8_t n = 0;
+    if (set == SetId::BumpLadder) {
+        // The three share a waveform and a duration and differ only in
+        // amplitude, which is the whole point: nothing else can be the cue.
+        Pattern full = single("B01", "BUMP", kBumpFull, Family::Bump, Length::Brief);
+        Pattern mid  = single("B02", "BUMPMID", kBumpMid, Family::Bump, Length::Brief);
+        mid.amplitude = Amplitude::Mid;
+        Pattern low  = single("B03", "BUMPLOW", kBumpLow, Family::Bump, Length::Brief);
+        low.amplitude = Amplitude::Low;
+        out[n++] = full;
+        out[n++] = mid;
+        out[n++] = low;
+        return n;
+    }
+
     out[n++] = single("P01", "TAP", kTapFull, Family::Click, Length::Brief);
     out[n++] = single("P02", "TICK", 24, Family::Tick, Length::Brief);
     out[n++] = single("P03", "BUMP", 7, Family::Bump, Length::Brief);
@@ -198,7 +235,14 @@ inline uint8_t buildSet(SetId set, Pattern out[kMaxPatterns])
 
 inline uint8_t setSize(SetId set)
 {
-    return set == SetId::WithAmplitude ? kWithAmplitudeCount : kRhythmAndFamilyCount;
+    switch (set) {
+    case SetId::WithAmplitude: return kWithAmplitudeCount;
+    case SetId::BumpLadder:    return kBumpLadderCount;
+    case SetId::RhythmAndFamily:
+    case SetId::Count:
+        break;
+    }
+    return kRhythmAndFamilyCount;
 }
 
 /// Per-effect durations in ms, indexed by effect number, which Phase 1 fills in

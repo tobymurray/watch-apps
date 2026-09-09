@@ -25,7 +25,7 @@ constexpr size_t kNoteLength = 40;
 /// Bumped whenever a column is added, removed or reinterpreted. It is the first
 /// field of every row so a reader written before a change can refuse rather
 /// than misparse.
-constexpr uint16_t kSchemaVersion = 1;
+constexpr uint16_t kSchemaVersion = 2;
 
 /// Whether the watch was on the wrist, and whether the ears were masked. The
 /// no-contact condition is the control that says how much of the result came

@@ -100,9 +100,13 @@ inline bool parseConfig(const char *data, size_t len, SessionConfig &out)
     const char *value = nullptr;
     size_t      valueLen = 0;
     if (json.get("set", value, valueLen) && value != nullptr) {
-        parsed.set = detail::matches(value, valueLen, setName(SetId::WithAmplitude))
-                         ? SetId::WithAmplitude
-                         : SetId::RhythmAndFamily;
+        if (detail::matches(value, valueLen, setName(SetId::WithAmplitude))) {
+            parsed.set = SetId::WithAmplitude;
+        } else if (detail::matches(value, valueLen, setName(SetId::BumpLadder))) {
+            parsed.set = SetId::BumpLadder;
+        } else {
+            parsed.set = SetId::RhythmAndFamily;
+        }
     }
     if (json.get("contact", value, valueLen) && value != nullptr) {
         parsed.contact = detail::matches(value, valueLen, contactName(Contact::Table))

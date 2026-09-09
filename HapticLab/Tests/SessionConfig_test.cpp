@@ -91,6 +91,17 @@ TEST(SessionConfig, AFieldTheDocumentDoesNotMentionKeepsItsDefault)
     EXPECT_STREQ(config.armPosture, "unrecorded");
 }
 
+TEST(SessionConfig, EachSetNameSelectsItsOwnSet)
+{
+    bool ok = false;
+    EXPECT_EQ(parse(R"({"set":"rhythm-and-family"})", ok).set, SetId::RhythmAndFamily);
+    EXPECT_EQ(parse(R"({"set":"with-amplitude"})", ok).set, SetId::WithAmplitude);
+    EXPECT_EQ(parse(R"({"set":"bump-ladder"})", ok).set, SetId::BumpLadder);
+    // An unknown name falls back to the smallest honest set rather than
+    // guessing at the operator's meaning.
+    EXPECT_EQ(parse(R"({"set":"bump ladder"})", ok).set, SetId::RhythmAndFamily);
+}
+
 TEST(SessionConfig, BadJsonLeavesTheConfigUntouched)
 {
     SessionConfig config;

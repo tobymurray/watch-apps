@@ -10,7 +10,7 @@
   "strap_tightness": "snug, no gap under the case",
   "arm_posture": "arm down at the side between trials",
   "ambient_temp_c": 21,
-  "sweep_repeats": 2,
+  "sweep_repeats": 6,
   "sweep_first_effect": 1,
   "sweep_last_effect": 127
 }

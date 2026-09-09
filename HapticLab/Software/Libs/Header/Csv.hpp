@@ -65,9 +65,16 @@ constexpr char kProbeHeader[] =
     "schema,run_id,tick_before_send,tick_accepted,wall_clock,"
     "declared_notes_count,send_ok,result_success,label,notes";
 
+/// `onset_us` and `offset_us` rather than the `*_tick_us` of schema 1: both
+/// are relative to the play, not absolute ticks, and the old names said
+/// otherwise. `baseline_delta` and `threshold` are what the detection actually
+/// used, so a contaminated baseline is visible in the row rather than only in a
+/// re-analysis.
 constexpr char kEffectsHeader[] =
     "schema,run_id,effect,name,family,repeat,"
-    "onset_tick_us,offset_tick_us,duration_us,energy_proxy,samples,declared_duration_ms";
+    "play_tick_us,accepted_tick_us,send_ok,result_success,"
+    "baseline_delta,threshold,"
+    "onset_us,offset_us,duration_us,energy_proxy,peak_delta,samples,declared_duration_ms";
 
 /// A note list as one field: effects as `e<index>` and pauses as `p<ms>`,
 /// separated by semicolons so it never needs quoting.
@@ -204,6 +211,11 @@ struct SessionMeta {
     /// "stopped-by-kernel" or "cap-reached".
     const char *endReason = "running";
     const char *capsHit   = "none";
+
+    /// What a sweep was asked for. Zero when the run is not a sweep.
+    uint8_t sweepRepeats     = 0;
+    uint8_t sweepFirstEffect = 0;
+    uint8_t sweepLastEffect  = 0;
 };
 
 /// The run header, as JSON because it is read once by a tool rather than
@@ -246,6 +258,9 @@ inline int formatSessionJson(char *out, size_t cap, const RunHeader &run, const 
         "  \"feedback_ms\": %lu,\n"
         "  \"response_timeout_ms\": %lu,\n"
         "  \"effect_durations_measured\": %s,\n"
+        "  \"sweep_repeats\": %u,\n"
+        "  \"sweep_first_effect\": %u,\n"
+        "  \"sweep_last_effect\": %u,\n"
         "  \"byte_cap_per_file\": %lu,\n"
         "  \"duration_cap_ms\": %lu,\n"
         "  \"start_tick\": %lu,\n"
@@ -265,6 +280,7 @@ inline int formatSessionJson(char *out, size_t cap, const RunHeader &run, const 
         static_cast<unsigned long>(timing.interTrialMs),
         static_cast<unsigned long>(timing.feedbackMs),
         static_cast<unsigned long>(timing.responseTimeoutMs), durations.measured ? "true" : "false",
+        meta.sweepRepeats, meta.sweepFirstEffect, meta.sweepLastEffect,
         static_cast<unsigned long>(byteCapPerFile), static_cast<unsigned long>(durationCapMs),
         static_cast<unsigned long>(meta.startTick), static_cast<unsigned long>(meta.startWall),
         static_cast<unsigned long>(meta.endTick), static_cast<unsigned long>(meta.endWall),

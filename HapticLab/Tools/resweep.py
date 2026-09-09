@@ -18,6 +18,9 @@ and reports a duration and a relative energy per burst.
 
 It is a recovery tool, not a second implementation of the sweep: once the
 Service is fixed, `effects.csv` is the table and this script has nothing to add.
+
+Schema 2 raw rows carry a `repeat` column, so on those the repeats are split on
+what the watch recorded rather than on burst boundaries this script guesses at.
 """
 import csv
 import glob
@@ -104,17 +107,30 @@ def main():
     if not files:
         raise SystemExit("no e*.csv under %s" % imu)
 
-    print("effect,burst,duration_us,mean_delta,peak_delta,samples,threshold")
+    print("effect,repeat,burst,duration_us,mean_delta,peak_delta,samples,threshold")
     for leaf in files:
         effect = int(os.path.basename(leaf)[1:4])
         rows = list(csv.DictReader(open(leaf)))
-        found, threshold = bursts(deltas(rows))
-        if not found:
-            print("%d,-,-,-,-,%d,%d" % (effect, len(rows), threshold))
-            continue
-        for i, b in enumerate(found):
-            print("%d,%d,%d,%d,%d,%d,%d" % (effect, i, b["duration_us"], b["mean_delta"],
-                                            b["peak_delta"], b["samples"], threshold))
+
+        # Schema 2 says which repeat each sample belongs to; schema 1 does not,
+        # and there the whole file is one group and the bursts are the repeats.
+        if rows and "repeat" in rows[0]:
+            groups = {}
+            for r in rows:
+                groups.setdefault(r["repeat"], []).append(r)
+            groups = sorted(groups.items(), key=lambda kv: int(kv[0]))
+        else:
+            groups = [("-", rows)]
+
+        for repeat, group in groups:
+            found, threshold = bursts(deltas(group))
+            if not found:
+                print("%d,%s,-,-,-,-,%d,%d" % (effect, repeat, len(group), threshold))
+                continue
+            for i, b in enumerate(found):
+                print("%d,%s,%d,%d,%d,%d,%d,%d" % (effect, repeat, i, b["duration_us"],
+                                                   b["mean_delta"], b["peak_delta"],
+                                                   b["samples"], threshold))
 
 
 if __name__ == "__main__":

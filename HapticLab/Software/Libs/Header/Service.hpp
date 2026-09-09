@@ -65,7 +65,12 @@ private:
     static constexpr uint32_t skCaptureMs = 2500;
 
     /// A cap rather than device awareness: the SDK exposes no free-space query.
-    static constexpr uint32_t skRawByteCap = 8u * 1024u * 1024u;
+    /// One repeat of one effect is 3.1 s at the delivered rate, so about 18 KB
+    /// of raw rows; the whole effect space at six repeats is near 14 MB, and at
+    /// eight near 18 MB. The first cap was 8 MB, which a six-repeat sweep would
+    /// have hit around effect 60 and reported as `cap-reached` rather than
+    /// finishing. 1.6 GB was free on the card this was measured against.
+    static constexpr uint32_t skRawByteCap = 64u * 1024u * 1024u;
 
     SDK::Kernel            &mKernel;
     SDK::Sensor::Connection mImu;

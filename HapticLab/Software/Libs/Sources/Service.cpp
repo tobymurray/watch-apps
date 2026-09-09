@@ -266,12 +266,16 @@ void Service::writeEffectRow()
 
     const Haptic::NamedEffect *named = Haptic::namedEffect(mEffect);
     const int length = std::snprintf(
-        line, sizeof(line), "%u,%s,%u,%s,%s,%u,%ld,%ld,%ld,%lu,%u,%u\n", Haptic::kSchemaVersion,
-        mRunId, mEffect, Haptic::effectName(mEffect),
+        line, sizeof(line), "%u,%s,%u,%s,%s,%u,%lu,%lu,%u,%u,%lu,%lu,%ld,%ld,%ld,%lu,%lu,%u,%u\n",
+        Haptic::kSchemaVersion, mRunId, mEffect, Haptic::effectName(mEffect),
         named != nullptr ? Haptic::familyName(named->family) : "unknown", mRepeat,
-        static_cast<long>(mWindow.onsetUs()), static_cast<long>(mWindow.offsetUs()),
-        static_cast<long>(mWindow.durationUs()),
-        static_cast<unsigned long>(mWindow.meanDelta()), mWindow.samples(),
+        static_cast<unsigned long>(mPlayTick) * 1000UL,
+        static_cast<unsigned long>(mAcceptedTick) * 1000UL, mSendOk ? 1u : 0u,
+        mResultSuccess ? 1u : 0u, static_cast<unsigned long>(mBaseline.mean()),
+        static_cast<unsigned long>(mWindow.threshold()), static_cast<long>(mWindow.onsetUs()),
+        static_cast<long>(mWindow.offsetUs()), static_cast<long>(mWindow.durationUs()),
+        static_cast<unsigned long>(mWindow.meanDelta()),
+        static_cast<unsigned long>(mWindow.peakDelta()), mWindow.samples(),
         Haptic::declaredDurationMs(mEffect));
     if (length > 0) {
         handle->write(line, static_cast<size_t>(length), written);
