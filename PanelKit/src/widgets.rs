@@ -1,4 +1,4 @@
-//! Tier 2 widgets. The bar for adding one is in `PanelKit/README.md`.
+//! Two widgets. The bar for adding a third is in `PanelKit/Docs/DESIGN.md`.
 
 use crate::surface::{ByteColor, Surface};
 

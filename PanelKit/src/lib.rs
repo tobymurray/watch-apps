@@ -1,7 +1,7 @@
 //! Immediate-mode GUI primitives for round, low-bit-depth, button-driven panels.
 //!
 //! Design record, with the measurements and the architectures rejected:
-//! `PanelKit/README.md`.
+//! `PanelKit/Docs/DESIGN.md`.
 //!
 //! # What it is not
 //!

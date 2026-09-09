@@ -5,13 +5,13 @@ edition = "2021"
 rust-version = "1.81"
 license = "MIT OR Apache-2.0"
 description = "GUI primitives for round, low-bit-depth panels: lit-disc geometry, an ABGR2222 framebuffer that clips to the glass, and PNG previews that show exactly what the panel would."
-repository = "https://github.com/tobymurray/watch-apps"
+repository = "https://github.com/tobymurray/watch-apps/tree/main/PanelKit"
 categories = ["embedded", "no-std", "gui"]
 keywords = ["embedded-graphics", "no-std", "gui", "smartwatch", "round-display"]
 # The published crate is the Rust half only. The C ABI, GuiShell.hpp and
 # panelkit.cmake are this repo's glue to one vendor's SDK and are not part of
 # what anyone else would install.
-include = ["src/**/*.rs", "README.md", "LICENSE-*"]
+include = ["src/**/*.rs", "README.md", "Docs/DESIGN.md", "LICENSE-*"]
 
 [features]
 default = []
