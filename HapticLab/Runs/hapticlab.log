@@ -9,3 +9,6 @@
 23078 1788961121 start version=0.1.0 abi=3
 25716 1788961124 run open 20260909T133843 reason=sweep seed=20260909 set=rhythm-and-family contact=wrist masking=unmasked
 3091901 1788964190 run close 20260909T133843 reason=sweep-finished caps=none
+13902 1788967804 start version=0.1.0 abi=3
+17396 1788967808 run open 20260909T153007 reason=sweep seed=20260909 set=rhythm-and-family contact=table masking=unmasked
+886622 1788968677 run close 20260909T153007 reason=sweep-finished caps=none

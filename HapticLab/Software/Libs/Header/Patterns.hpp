@@ -104,17 +104,18 @@ enum class SetId : uint8_t {
     /// inflating the main set to sixteen.
     ///
     /// B01 against either of the others is a real amplitude question: effects 8
-    /// and 9 measure at 40 to 49 % of effect 7 on both sweeps, and a factor of
-    /// two is well outside what the energy proxy can confuse (row S14).
+    /// and 9 both measure near 40 % of effect 7, a step no scatter explains.
     ///
-    /// **B02 against B03 is not.** The two came out 1 % apart on one sweep and
-    /// 21 % apart on the other, so whether the actuator separates them at all
-    /// is below what this instrument can measure (row S7a). That makes the pair
-    /// worth keeping and worth reading carefully: an above-chance result on it
-    /// is either an amplitude step the IMU cannot see or something reaching the
-    /// wearer other than the skin, and the no-contact control is what tells the
-    /// two apart. It is not evidence of amplitude resolution on its own and no
-    /// vocabulary entry may read it that way.
+    /// **B02 against B03 is not an amplitude question at all.** Twenty-four
+    /// repeats in one seating put the two at the same amplitude, and their
+    /// energy ratio flips sign across the runs on record, so the only thing
+    /// separating them is 10 ms of duration (rows S7a and S17). One sample
+    /// period is below anything a wrist is likely to feel, which makes this the
+    /// most useful pair in the set rather than the weakest: it is two stimuli
+    /// the instrument says are the same, so an above-chance result on it means
+    /// something is reaching the wearer other than the skin, and the no-contact
+    /// control is what confirms which. It is not evidence of amplitude
+    /// resolution and no vocabulary entry may read it that way.
     ///
     /// Needs a higher pass count than the others rather than the default: with
     /// three patterns a pass is one triple, so four passes leaves twelve
