@@ -1,56 +1,41 @@
-//! One PNG per scene, through the same `render()` the watch calls. Needs a PNG
-//! encoder and nothing else, so it runs anywhere. Blacks out the corners
-//! outside the round bezel, which the device simulator does not.
+//! One PNG per scene plus a contact sheet, through the same `render()` the
+//! watch calls, and through PanelKit's decode and disc mask so the image cannot
+//! show a pixel the renderer was not allowed to draw.
+//!
+//! This file used to carry its own `inside_bezel`, testing `dx² + dy² <= 240²`
+//! where the panel's rule is `239²` -- so it showed 436 pixels the watch does
+//! not light, which is the wrong direction for a preview to be wrong in.
 //!
 //!   cargo run --features preview --bin preview [-- <out-dir>]
 
-use png::{BitDepth, ColorType, Encoder};
+use panelkit::preview::{sheet_from_frames, to_rgba, write_png, Bezel, Options};
 use spin_gui::scenes::scenes;
 
 const W: u32 = 240;
 const H: u32 = 240;
-/// ABGR2222 back to 8-bit RGB: each 2-bit channel is one of 0/85/170/255.
-const CHANNEL_LEVELS: u8 = 85;
-
-fn decode(byte: u8) -> [u8; 3] {
-    let expand = |two_bit: u8| two_bit * CHANNEL_LEVELS;
-    [expand(byte & 0b11), expand((byte >> 2) & 0b11), expand((byte >> 4) & 0b11)]
-}
-
-fn inside_bezel(x: u32, y: u32) -> bool {
-    let dx = 2 * x as i32 - (W as i32 - 1);
-    let dy = 2 * y as i32 - (H as i32 - 1);
-    dx * dx + dy * dy <= (W as i32) * (W as i32)
-}
 
 fn main() {
     let dir = std::env::args().nth(1).unwrap_or_else(|| "/tmp/spin_gui_preview".to_string());
     std::fs::create_dir_all(&dir).expect("cannot create the output directory");
 
+    let opts = Options { scale: 2, bezel: Bezel::Transparent };
+    let mut frames = Vec::new();
+
     for (name, frame) in scenes() {
         let mut buf = vec![0u8; (W * H) as usize];
         spin_gui::render(&mut buf, W, H, &frame);
 
-        let mut rgb = vec![0u8; (W * H * 3) as usize];
-        for y in 0..H {
-            for x in 0..W {
-                let c = if inside_bezel(x, y) { decode(buf[(y * W + x) as usize]) } else { [0; 3] };
-                let i = ((y * W + x) * 3) as usize;
-                rgb[i..i + 3].copy_from_slice(&c);
-            }
-        }
-
+        let rgba = to_rgba(&buf, W, H, opts);
         let path = format!("{dir}/{name}.png");
-        let file = std::fs::File::create(&path).expect("cannot create the PNG");
-        let mut encoder = Encoder::new(std::io::BufWriter::new(file), W, H);
-        encoder.set_color(ColorType::Rgb);
-        encoder.set_depth(BitDepth::Eight);
-        encoder
-            .write_header()
-            .expect("cannot write the PNG header")
-            .write_image_data(&rgb)
-            .expect("cannot write the PNG body");
-
+        write_png(&path, &rgba, W * opts.scale, H * opts.scale).expect("cannot write the PNG");
         println!("wrote {path}");
+        frames.push(buf);
     }
+
+    // Six across fits the catalogue on a sheet that reads at arm's length; the
+    // order is the catalogue's, so it reads against scenes() beside it.
+    let sheet = format!("{dir}/contact-sheet.png");
+    let (w, h) = sheet_from_frames(&sheet, &frames, W, H, 6, Options { scale: 1, bezel: Bezel::Transparent })
+        .expect("cannot write the contact sheet");
+    println!("wrote {sheet} ({w}x{h}, {} scenes)", frames.len());
 }
