@@ -340,6 +340,14 @@ glass as a blank white band. This is the glass, not the framebuffer, so no
 simulator shows it. Every default in this kit is bright-on-dark, and a
 dark-on-light claim needs a device capture.
 
+**The panic handler is two features, because one half is 78% of the cost.**
+Linking `Spin`'s real renderer against the `b"panic"` literal it shipped:
+`file:line` costs **+706 bytes**, and adding the message takes it to **+3,226**.
+The message is `core::fmt`. And a handler that itself uses a panicking
+operation — slice indexing, `copy_from_slice` — costs **eight times** what the
+same output costs written with iterator zips, because its own panic path drags
+the formatting in. [`Docs/2026-09-09-panic-handler-cost.md`](Docs/2026-09-09-panic-handler-cost.md).
+
 **`fill_rect` as a direct row fill**, not `Rectangle::into_styled().draw()`,
 which pulls in the point-iterator layer once per distinct colour. `Spin`
 recorded the reason and the kit keeps it, now also as `Surface`'s `fill_solid`
@@ -524,7 +532,7 @@ cheap regression check is the golden *hashes* beside it rather than the image.
 `DrawTarget`, with the round geometry, the low-bit-depth palette and dithering,
 the four-button focus model, the widget tiers and the scene harness. Features:
 `round`, `abgr2222`, `dither`, `widgets`, `scenes`, `preview`, `panic-handler`,
-`std`. `preview` is the only one with a dependency beyond `embedded-graphics`
+`panic-message`, `std`. `preview` is the only one with a dependency beyond `embedded-graphics`
 (`png`), and it is host-only.
 `Cargo.toml`'s `include` lists `src/**/*.rs` and the README, so nothing below
 ships in the crate — `cargo package --list` is 16 files, all of them Rust and
@@ -667,8 +675,10 @@ Listed so the gap is not something a reader has to find:
 - **The scaffold** (`new-gui-app <Name>`). "Get started without reinventing
   everything" is a command you can run or it is a claim, and right now it is a
   claim.
-- **Every linked number**: `.text`, `.bss`, `.uapp`, before and after, per app.
-  Archive figures only, upper bounds, marked as such.
+- **`.uapp` sizes, and `.bss`.** Those still need the packer and the pinned
+  Docker image. `.text` and `.rodata` *are* now measured linked, with `rust-lld`
+  and a minimal linker script — see the panic-handler measurement — so where a
+  figure in this file is an archive upper bound it says so.
 - **Frame time on hardware.** The 78 ms slack is the platform's; no scene in
   this kit has been timed against it, on the host or on a watch.
 - **Trusted Publishing, a CHANGELOG, and the licence text.** `Cargo.toml`

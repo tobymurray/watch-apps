@@ -25,10 +25,15 @@ dither = []
 widgets = []
 ## The scene catalogue trait and its byte-hash golden helper.
 scenes = []
-## A `#[panic_handler]` that reports `file:line` through `panelkit_host_panic`.
-## Inert under `std`, so `--all-features` and a host test build still work; a
-## device build enables it without `std` and gets the handler.
+## A `#[panic_handler]` reporting `file:line` through `panelkit_host_panic`.
+## Measured at 319 bytes over reporting nothing. Inert under `std`, so
+## `--all-features` and a host test build still work.
 panic-handler = []
+## Adds the panic message to the location. This is the expensive half: it needs
+## `core::fmt`, measured at +2,210 bytes of `.text` linking Spin's real
+## renderer, against 319 for the location alone. Opt in when the message is
+## worth three kilobytes of a 600 KiB window.
+panic-message = ["panic-handler"]
 ## Host-side helpers and `std` assertions in tests.
 std = []
 ## PNG frames, contact sheets and the gamut sheet. Host-only, and the only
