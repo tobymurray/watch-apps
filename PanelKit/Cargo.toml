@@ -3,7 +3,7 @@ name = "panelkit"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.81"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 description = "GUI primitives for round, low-bit-depth panels: lit-disc geometry, an ABGR2222 framebuffer that clips to the glass, and PNG previews that show exactly what the panel would."
 repository = "https://github.com/tobymurray/watch-apps/tree/main/PanelKit"
 categories = ["embedded", "no-std", "gui"]
@@ -11,7 +11,7 @@ keywords = ["embedded-graphics", "no-std", "gui", "smartwatch", "round-display"]
 # The published crate is the Rust half only. The C ABI, GuiShell.hpp and
 # panelkit.cmake are this repo's glue to one vendor's SDK and are not part of
 # what anyone else would install.
-include = ["src/**/*.rs", "README.md", "Docs/DESIGN.md", "LICENSE-*"]
+include = ["src/**/*.rs", "examples/*.rs", "README.md", "Docs/DESIGN.md", "LICENSE"]
 
 [features]
 default = []
@@ -31,6 +31,11 @@ std = []
 ## PNG frames, contact sheets and the gamut sheet. Host-only, and the only
 ## thing in this crate with a dependency beyond embedded-graphics.
 preview = ["std", "dep:png"]
+
+# Needs the PNG encoder, so it cannot build without the feature that brings it.
+[[example]]
+name = "gamut"
+required-features = ["preview"]
 
 [dependencies]
 embedded-graphics = "0.8"

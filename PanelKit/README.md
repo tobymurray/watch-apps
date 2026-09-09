@@ -76,6 +76,6 @@ rather than a hypothetical one.
 
 ## Licence
 
-MIT or Apache-2.0, at your option.
+MIT. See [`LICENSE`](LICENSE).
 
 [`embedded-graphics`]: https://crates.io/crates/embedded-graphics
