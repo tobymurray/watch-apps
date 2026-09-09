@@ -29,8 +29,6 @@ std = ["panelkit/std"]
 # drop panelkit/panic-message and keep the location for 319 bytes instead of
 # 3,226 -- see PanelKit/Docs/measurements/panic-handler.
 device = ["panelkit/panic-handler", "panelkit/panic-message"]
-# For the measurement in PanelKit/Docs/measurements/panic-handler.
-device_location_only = ["panelkit/panic-handler"]
 preview = ["std", "panelkit/preview"]
 sim = ["preview", "dep:embedded-graphics-simulator"]
 
@@ -45,7 +43,7 @@ embedded-graphics-simulator = { version = "0.7", optional = true }
 textkit = { path = "../../../../../TextKit" }
 # The surface and its clip, the colour, and the panic handler. A dependency,
 # never a second staticlib, for the same reason as TextKit above.
-panelkit = { path = "../../../../../PanelKit", default-features = false, features = ["round"] }
+panelkit = { path = "../../../../../PanelKit", default-features = false }
 
 [profile.release]
 panic = "abort"

@@ -522,7 +522,7 @@ screenshot as evidence for it:
 - **Size.** 240 px at 0.126 mm is about 30 mm across, so a 1:1 image on a 96 dpi
   monitor is roughly twice life size and flatters legibility.
 
-[`Spin/Docs/screens.png`](../Spin/Docs/screens.png) is all 43 of its scenes on
+[`Spin/Docs/contact-sheet.png`](../Spin/Docs/contact-sheet.png) is all 43 of its scenes on
 one sheet — 586 KB, which is what 43 real frames costs, and the reason the
 cheap regression check is the golden *hashes* beside it rather than the image.
 
@@ -531,8 +531,10 @@ cheap regression check is the golden *hashes* beside it rather than the image.
 **`panelkit` (public):** `no_std`, no allocator, generic over `PixelColor` and
 `DrawTarget`, with the round geometry, the low-bit-depth palette and dithering,
 the four-button focus model, the widget tiers and the scene harness. Features:
-`round`, `abgr2222`, `dither`, `widgets`, `scenes`, `preview`, `panic-handler`,
-`panic-message`, `std`. `preview` is the only one with a dependency beyond `embedded-graphics`
+`dither`, `widgets`, `scenes`, `preview`, `panic-handler`, `panic-message`,
+`std`. There is deliberately no `round` or `abgr2222` feature: the clip is a
+runtime choice between `Surface::round` and `Surface::rect`, and the colour type
+is always present, so a feature for either would gate nothing and say it did. `preview` is the only one with a dependency beyond `embedded-graphics`
 (`png`), and it is host-only.
 `Cargo.toml`'s `include` lists `src/**/*.rs` and the README, so nothing below
 ships in the crate — `cargo package --list` is 16 files, all of them Rust and
