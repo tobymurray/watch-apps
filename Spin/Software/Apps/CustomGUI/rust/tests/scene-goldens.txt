@@ -1,0 +1,46 @@
+# Byte hash of every scene in scenes.rs, FNV-1a over the 240x240 frame.
+# Regenerate with: cargo run --features std --example goldens > tests/scene-goldens.txt
+# A changed hash means a changed screen: look at it before accepting it.
+0dded130  ready_no_strap
+56f37b29  ready_searching
+539e412f  ready_strap
+28233672  riding_start
+9abd23af  riding_wrist
+4397c85a  riding_strap
+01a0d8e3  zone_below
+4fb728b9  zone_1
+02de408c  zone_3
+1ed8c43d  zone_5
+f1f39baa  needle_low_in_zone
+12ab6bb6  needle_high_in_zone
+53ffd547  needle_zone_4_mid
+fbac50b5  zones_3_of_3
+090729e9  zones_4_of_7
+cdd14ebc  zones_6_of_8
+be6d5793  zones_2_of_2
+2e56cd64  riding_dropout
+0b3757d8  riding_three_digit_hr
+24fab5ef  riding_lap_hint
+bdfeb6c1  lap_split
+f5960eb7  lap_split_short
+8f74b9cd  lap_split_widest
+7de5a011  lap_split_over_target
+8fb60d11  riding_target_half
+736a6872  riding_one_hour
+9652cefc  riding_long
+0c6da33f  ready_target
+f33b3d70  riding_target_met
+30acdf47  paused_after_target
+dc66f900  paused
+0df23f37  paused_no_hr
+2a18f347  discard_confirm
+65b8d654  discarded
+72ac6b00  enter_work_zero
+b8486238  enter_work_no_estimate
+7e075b53  enter_work_typical
+e1246948  enter_work_max
+63fbe86c  saved
+91d41dca  saved_kj
+0d6802bc  saved_no_hr
+1a250e35  saved_long
+1c499c0e  saved_failed
