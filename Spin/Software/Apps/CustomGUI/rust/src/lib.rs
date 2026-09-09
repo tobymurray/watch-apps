@@ -11,25 +11,11 @@
 // link one whose panics do not unwind.
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use embedded_graphics::{pixelcolor::raw::RawU8, pixelcolor::PixelColor, prelude::*};
 #[cfg(not(feature = "std"))]
 use micromath::F32Ext;
+use panelkit::color::Abgr2222;
+use panelkit::surface::Surface;
 use textkit::{faces, Align, Canvas, Face};
-
-#[cfg(not(feature = "std"))]
-extern "C" {
-    fn spin_gui_host_panic(msg: *const u8, len: u32);
-}
-
-/// Without this a panic hangs the GUI thread silently, and the only way out is
-/// a reboot with a ride in progress.
-#[cfg(not(feature = "std"))]
-#[panic_handler]
-fn on_panic(_info: &core::panic::PanicInfo) -> ! {
-    let s = b"panic";
-    unsafe { spin_gui_host_panic(s.as_ptr(), s.len() as u32) };
-    loop {}
-}
 
 /// The frames worth looking at. Host-only: the watch is handed frames.
 #[cfg(feature = "std")]
@@ -37,50 +23,7 @@ pub mod scenes;
 
 pub mod work;
 
-// -- Colour ------------------------------------------------------------------
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Abgr2222(pub u8);
-
-const ALPHA_SHIFT: u8 = 6;
-const BLUE_SHIFT: u8 = 4;
-const GREEN_SHIFT: u8 = 2;
-const RED_SHIFT: u8 = 0;
-const CHANNEL_MASK: u8 = 0b11;
-const CHANNEL_BITS: u8 = 2;
-const ALPHA_OPAQUE: u8 = 0b11;
-
-const fn keep_high_bits(channel: u8) -> u8 {
-    (channel >> (8 - CHANNEL_BITS)) & CHANNEL_MASK
-}
-
-impl Abgr2222 {
-    pub const fn from_levels(r2: u8, g2: u8, b2: u8) -> Self {
-        Abgr2222(
-            (ALPHA_OPAQUE << ALPHA_SHIFT)
-                | ((b2 & CHANNEL_MASK) << BLUE_SHIFT)
-                | ((g2 & CHANNEL_MASK) << GREEN_SHIFT)
-                | ((r2 & CHANNEL_MASK) << RED_SHIFT),
-        )
-    }
-
-    pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
-        Abgr2222::from_levels(keep_high_bits(r), keep_high_bits(g), keep_high_bits(b))
-    }
-
-    pub const BLACK: Abgr2222 = Abgr2222::rgb(0, 0, 0);
-    pub const WHITE: Abgr2222 = Abgr2222::rgb(255, 255, 255);
-}
-
-impl Default for Abgr2222 {
-    fn default() -> Self {
-        Abgr2222::BLACK
-    }
-}
-
-impl PixelColor for Abgr2222 {
-    type Raw = RawU8;
-}
+// -- Palette ----------------------------------------------------------------
 
 const WHITE: Abgr2222 = Abgr2222::WHITE;
 const BLACK: Abgr2222 = Abgr2222::BLACK;
@@ -124,66 +67,23 @@ const ZONE_HUES: [&[Abgr2222]; MAX_ZONES + 1] = [
 /// Dims a hue one level on every channel it uses, so an inactive segment reads
 /// as the same zone, quieter, rather than as a different colour.
 fn dim(c: Abgr2222) -> Abgr2222 {
-    let step = |shift: u8| {
-        let v = (c.0 >> shift) & CHANNEL_MASK;
-        if v > 0 { v - 1 } else { 0 }
-    };
-    Abgr2222::from_levels(step(RED_SHIFT), step(GREEN_SHIFT), step(BLUE_SHIFT))
+    let step = |v: u8| if v > 0 { v - 1 } else { 0 };
+    Abgr2222::from_levels(step(c.r()), step(c.g()), step(c.b()))
 }
 
 // -- Framebuffer -------------------------------------------------------------
 
-struct FrameBuf<'a> {
-    buf: &'a mut [u8],
-    w: u32,
-    h: u32,
-}
-
-impl OriginDimensions for FrameBuf<'_> {
-    fn size(&self) -> Size {
-        Size::new(self.w, self.h)
-    }
-}
-
-impl DrawTarget for FrameBuf<'_> {
-    type Color = Abgr2222;
-    type Error = core::convert::Infallible;
-
-    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Pixel<Self::Color>>,
-    {
-        let (w, h) = (self.w as i32, self.h as i32);
-        for Pixel(coord, color) in pixels {
-            if coord.x >= 0 && coord.y >= 0 && coord.x < w && coord.y < h {
-                let idx = (coord.y as u32 * self.w + coord.x as u32) as usize;
-                self.buf[idx] = color.0;
-            }
-        }
-        Ok(())
-    }
-}
+/// The kit's surface, which owns the clip. Before this the shapes here clipped
+/// to the square buffer and only text clipped to the disc, over the same bytes;
+/// what kept the two agreeing was that every layout constant happened to stay
+/// inside the glass, which `nothing_is_drawn_outside_the_bezel` checks after the
+/// fact rather than prevents.
+type FrameBuf<'a> = Surface<'a, Abgr2222>;
 
 /// A direct row-fill: `Rectangle::into_styled().draw()` would pull in the
 /// point-iterator layer once per distinct colour it is called with.
 fn fill_rect(fb: &mut FrameBuf, x: i32, y: i32, w: i32, h: i32, color: Abgr2222) {
-    if w <= 0 || h <= 0 {
-        return;
-    }
-    let fb_w = fb.w as i32;
-    let fb_h = fb.h as i32;
-    let x0 = x.max(0);
-    let y0 = y.max(0);
-    let x1 = (x + w).min(fb_w);
-    let y1 = (y + h).min(fb_h);
-    if x0 >= x1 || y0 >= y1 {
-        return;
-    }
-    for row in y0..y1 {
-        let start = (row * fb_w + x0) as usize;
-        let end = (row * fb_w + x1) as usize;
-        fb.buf[start..end].fill(color.0);
-    }
+    fb.fill_rect(x, y, w, h, color);
 }
 
 // -- The C ABI frame ---------------------------------------------------------
@@ -446,7 +346,12 @@ fn text_width(face: &Face, s: &str) -> u32 {
 }
 
 fn draw_text(fb: &mut FrameBuf, face: &Face, s: &str, x: i32, top: i32, align: Align, color: Abgr2222) {
-    let mut canvas = Canvas::round(fb.buf, fb.w, fb.h);
+    // TextKit rasterises through its own surface type, so it is handed the
+    // bytes. Both apply the identical disc rule -- a pixel centre within 119.5
+    // pitches -- which is why this does not reopen the seam the type alias
+    // above closes.
+    let (w, h) = (fb.width() as u32, fb.height() as u32);
+    let mut canvas = Canvas::round(fb.bytes_mut(), w, h);
     face.draw(&mut canvas, s, x, top + cap_height(face), align, color.0);
 }
 
@@ -1043,16 +948,12 @@ fn draw_discarded(fb: &mut FrameBuf) {
 // -- Entry points ------------------------------------------------------------
 
 pub fn render(buf: &mut [u8], width: u32, height: u32, frame: &Frame) {
-    if width == 0 || height == 0 {
+    // The geometry arrives from a kernel message, so a surface that refuses is
+    // better than a renderer that writes past the end.
+    let Some(mut fb) = Surface::<Abgr2222>::round(buf, width, height) else {
         return;
-    }
-    let needed = (width as usize).saturating_mul(height as usize);
-    if buf.len() < needed {
-        return;
-    }
-
-    let mut fb = FrameBuf { buf: &mut buf[..needed], w: width, h: height };
-    fb.buf.fill(BLACK.0);
+    };
+    fb.clear(BLACK);
 
     match frame.screen {
         SCREEN_RIDING | SCREEN_PAUSED => draw_riding(&mut fb, frame),

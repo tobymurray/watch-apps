@@ -21,7 +21,11 @@ name = "sim"
 required-features = ["sim"]
 
 [features]
-std = []
+std = ["panelkit/std"]
+# The device build takes the kit's panic handler, which reports file:line
+# through one `panelkit_host_panic` the shell defines. Spin previously sent the
+# literal "panic", having been forked before that improvement landed.
+device = ["panelkit/panic-handler"]
 preview = ["std", "dep:png"]
 sim = ["preview", "dep:embedded-graphics-simulator"]
 
@@ -35,6 +39,9 @@ png = { version = "0.17", optional = true }
 # A dependency, never a second staticlib: two archives each carrying a
 # #[panic_handler] collide at link time.
 textkit = { path = "../../../../../TextKit" }
+# The surface and its clip, the colour, and the panic handler. A dependency,
+# never a second staticlib, for the same reason as TextKit above.
+panelkit = { path = "../../../../../PanelKit", default-features = false, features = ["round"] }
 
 [profile.release]
 panic = "abort"
