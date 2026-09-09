@@ -8,7 +8,7 @@ it, so another wrist can be added later.
 
 > Unofficial. Not affiliated with, endorsed or sponsored by UNA Watch Ltd.
 
-**Phase 0 has run on the watch; nothing else has.** Every perceptual number
+**Phase 0 is complete; nothing else has run.** Every perceptual number
 this app will ever produce has to come from a hardware session, and none has
 happened.
 [`Docs/LEDGER.md`](Docs/LEDGER.md) §0 is the state of the instrument and
@@ -49,7 +49,12 @@ interface's loop counts. Ledger rows V1 and V2.
 Three consequences shape everything else.
 
 **There is no way to stop a pattern early** (V3) and **no way to learn when one
-ended** (V4): a completed `RequestVibroPlay` means accepted, never finished. So
+ended** (V4): a completed `RequestVibroPlay` means accepted, never finished.
+Phase 0 sharpened that: effects 127, 128 and 255 were all accepted with
+`SUCCESS` and played nothing, so the result does not even mean playable (V8).
+It also found that **a second message cuts off the one in flight** rather than
+queueing behind it (V7), which makes eight notes a hard ceiling on a pattern
+and contradicts `IVibro::play`'s own comment about commands being queued. So
 the app *models* each pattern's duration and Phase 1 measures the actuator to
 check the model. Until it has, an unmeasured effect is modelled at 1000 ms.
 That is a ceiling rather than a guess, taken from `ALERT_1000MS_100`, the longer
@@ -186,6 +191,15 @@ Phase 0 left three options, and the choice costs wrist time rather than code.
 
 Option 3 is the better experiment and option 1 is the cheaper one. Nothing is
 decided.
+
+There is a second question for the same session, and it costs nothing to
+answer. Ledger row V9a: the interrupting effect in `V4-interrupt` is
+`STRONG_BUZZ_100`, and the wearer described it as "a third click" without
+remarking on it feeling like a different kind of thing. Pattern `P04 BUZZ` is
+that effect and `P01 TAP` is `STRONG_CLICK_100`. If the two feel alike, the
+waveform axis is carrying less than the set assumes. The learning screen shows
+this before a single trial runs, and Phase 1 settles the physical half by
+measuring the two durations against each other.
 
 ### Getting past three
 
