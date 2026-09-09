@@ -25,7 +25,7 @@ namespace {
 /// blocks makes the liveness watchdog reboot the watch.
 constexpr uint32_t kPollMs = 20;
 
-constexpr char kRawHeader[] = "phase,t_us,ax,ay,az,gx,gy,gz";
+constexpr char kRawHeader[] = "phase,repeat,t_us,ax,ay,az,gx,gy,gz";
 
 /// One effect's raw samples, both repeats appended, beside the run rather than
 /// inside it: a file per effect keeps a partial sweep readable effect by effect.
@@ -99,7 +99,9 @@ void Service::stopSweep(const char *reason)
 
 void Service::beginSettle(uint32_t nowMs)
 {
-    mBaseline.reset();
+    // The window opens here, not at the play, because the quiet stretch before
+    // the play is where this repeat's threshold comes from.
+    mWindow.begin(static_cast<uint64_t>(nowMs) * 1000ULL);
     mPhase      = Phase::Settle;
     mPhaseStart = nowMs;
     if (!mRawFile && !openRawFile()) {
@@ -109,10 +111,10 @@ void Service::beginSettle(uint32_t nowMs)
     }
 }
 
-void Service::beginCapture(uint32_t nowMs)
+void Service::beginCapture()
 {
     mPlayTick = mKernel.sys.getTimeMs();
-    mWindow.begin(static_cast<uint64_t>(mPlayTick) * 1000ULL, mBaseline.mean());
+    mWindow.notePlay(static_cast<uint64_t>(mPlayTick) * 1000ULL);
 
     mSendOk        = false;
     mResultSuccess = false;
@@ -129,12 +131,15 @@ void Service::beginCapture(uint32_t nowMs)
         mAcceptedTick = mPlayTick;
     }
 
+    // After the send, not before: the send blocks, and a capture window timed
+    // from the tick that decided to send is short by however long it blocked.
     mPhase      = Phase::Capture;
-    mPhaseStart = nowMs;
+    mPhaseStart = mAcceptedTick;
 }
 
 void Service::finishCapture()
 {
+    mWindow.finish();
     writeEffectRow();
     publishProgress(mWindow.samples(), /*finished=*/false);
     advance();
@@ -165,15 +170,21 @@ void Service::tick(uint32_t nowMs)
     switch (mPhase) {
     case Phase::Settle:
         if (Haptic::sinceTick(mPhaseStart, nowMs) >= static_cast<int32_t>(skSettleMs)) {
-            beginCapture(nowMs);
+            beginCapture();
         }
         break;
 
-    case Phase::Capture:
-        if (Haptic::sinceTick(mPhaseStart, nowMs) >= static_cast<int32_t>(skCaptureMs)) {
+    case Phase::Capture: {
+        const int32_t elapsed = Haptic::sinceTick(mPhaseStart, nowMs);
+        if (elapsed >= static_cast<int32_t>(skCaptureDeadlineMs)) {
+            LOG_WARNING("effect %u repeat %u closed on the deadline with %u samples\n", mEffect,
+                        mRepeat, mWindow.windowSamples());
+            finishCapture();
+        } else if (elapsed >= static_cast<int32_t>(skCaptureMs) &&
+                   mWindow.coversPlayPlus(static_cast<int64_t>(skCaptureMs) * 1000)) {
             finishCapture();
         }
-        break;
+    } break;
 
     case Phase::Idle:
     case Phase::Count:
@@ -228,9 +239,10 @@ void Service::writeRawRow(const Haptic::ImuSample &sample, const char *phase)
     }
 
     char      line[96];
-    const int length = std::snprintf(line, sizeof(line), "%s,%lu,%d,%d,%d,%d,%d,%d\n", phase,
-                                     static_cast<unsigned long>(sample.timestampUs), sample.ax,
-                                     sample.ay, sample.az, sample.gx, sample.gy, sample.gz);
+    const int length = std::snprintf(line, sizeof(line), "%s,%u,%lu,%d,%d,%d,%d,%d,%d\n", phase,
+                                     mRepeat, static_cast<unsigned long>(sample.timestampUs),
+                                     sample.ax, sample.ay, sample.az, sample.gx, sample.gy,
+                                     sample.gz);
     if (length <= 0) {
         return;
     }
@@ -266,16 +278,19 @@ void Service::writeEffectRow()
 
     const Haptic::NamedEffect *named = Haptic::namedEffect(mEffect);
     const int length = std::snprintf(
-        line, sizeof(line), "%u,%s,%u,%s,%s,%u,%lu,%lu,%u,%u,%lu,%lu,%ld,%ld,%ld,%lu,%lu,%u,%u\n",
+        line, sizeof(line),
+        "%u,%s,%u,%s,%s,%u,%lu,%lu,%u,%u,%lu,%u,%lu,%ld,%ld,%ld,%lu,%lu,%u,%u,%u,%u\n",
         Haptic::kSchemaVersion, mRunId, mEffect, Haptic::effectName(mEffect),
         named != nullptr ? Haptic::familyName(named->family) : "unknown", mRepeat,
         static_cast<unsigned long>(mPlayTick) * 1000UL,
         static_cast<unsigned long>(mAcceptedTick) * 1000UL, mSendOk ? 1u : 0u,
-        mResultSuccess ? 1u : 0u, static_cast<unsigned long>(mBaseline.mean()),
-        static_cast<unsigned long>(mWindow.threshold()), static_cast<long>(mWindow.onsetUs()),
-        static_cast<long>(mWindow.offsetUs()), static_cast<long>(mWindow.durationUs()),
+        mResultSuccess ? 1u : 0u, static_cast<unsigned long>(mWindow.baselineDelta()),
+        mWindow.hadBaseline() ? 1u : 0u, static_cast<unsigned long>(mWindow.threshold()),
+        static_cast<long>(mWindow.onsetUs()), static_cast<long>(mWindow.offsetUs()),
+        static_cast<long>(mWindow.durationUs()),
         static_cast<unsigned long>(mWindow.meanDelta()),
         static_cast<unsigned long>(mWindow.peakDelta()), mWindow.samples(),
+        mWindow.windowSamples(), mWindow.overflowed() ? 1u : 0u,
         Haptic::declaredDurationMs(mEffect));
     if (length > 0) {
         handle->write(line, static_cast<size_t>(length), written);
@@ -325,13 +340,14 @@ void Service::handleSensorData(uint16_t handle, SDK::Sensor::DataBatch &batch)
         sample.gy          = data.gyro.y;
         sample.gz          = data.gyro.z;
 
-        if (mPhase == Phase::Settle) {
-            mBaseline.add(sample);
-            writeRawRow(sample, "settle");
-        } else {
-            mWindow.add(sample);
-            writeRawRow(sample, "capture");
-        }
+        // Every sample into the same window whatever phase is current, because
+        // the phase at delivery is not the phase the sample was taken in: the
+        // second sweep labelled the first four repeats of effect 1 entirely
+        // `capture` when three of them had not been played yet. The window
+        // files each sample by its own timestamp, and the label is kept only as
+        // evidence of the lag.
+        mWindow.add(sample);
+        writeRawRow(sample, mPhase == Phase::Settle ? "settle" : "capture");
     }
 }
 

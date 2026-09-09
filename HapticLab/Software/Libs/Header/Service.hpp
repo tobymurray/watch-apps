@@ -36,7 +36,7 @@ private:
     void stopSweep(const char *reason);
     void tick(uint32_t nowMs);
     void beginSettle(uint32_t nowMs);
-    void beginCapture(uint32_t nowMs);
+    void beginCapture();
     void finishCapture();
     void advance();
     void publishProgress(uint16_t samples, bool finished);
@@ -57,12 +57,20 @@ private:
     static constexpr uint32_t skSampleLatency  = 0;
 
     /// Long enough for the wrist to be quiet again after the last effect, and
-    /// long enough to have a baseline worth thresholding against.
+    /// long enough to have a baseline worth thresholding against. Samples
+    /// arrive several hundred milliseconds after they were taken, so this is a
+    /// stretch of *timestamps* rather than of deliveries: the window is what
+    /// sorts them out.
     static constexpr uint32_t skSettleMs = 600;
     /// Comfortably past the longest duration any effect's own name claims, so
     /// an effect that runs to its stated 1000 ms still has an offset inside the
-    /// window.
+    /// window. Like the settle stretch this is a span of *timestamps*: the
+    /// window closes when a sample this far past the play has arrived, not when
+    /// this much wall time has passed.
     static constexpr uint32_t skCaptureMs = 2500;
+    /// What closes the window when the samples never come. Without it a sensor
+    /// that stops delivering stops the sweep instead of costing it one row.
+    static constexpr uint32_t skCaptureDeadlineMs = 6000;
 
     /// A cap rather than device awareness: the SDK exposes no free-space query.
     /// One repeat of one effect is 3.1 s at the delivered rate, so about 18 KB
@@ -91,8 +99,6 @@ private:
     uint32_t mRawBytes = 0;
     bool     mCapHit   = false;
 
-    /// The quiet window before the play, which sets this repeat's threshold.
-    Haptic::DeltaStats  mBaseline;
     Haptic::SweepWindow mWindow;
     uint32_t            mPlayTick = 0;
     uint32_t            mAcceptedTick = 0;

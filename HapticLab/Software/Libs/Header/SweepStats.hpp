@@ -14,6 +14,18 @@
 /// and aliases. Nothing here is a waveform measurement and nothing here should
 /// be reported as one.
 ///
+/// Every sample is filed by **its own timestamp** against the play, and the
+/// threshold is computed when the window closes rather than when it opens.
+/// That is not tidiness. Samples reach the app several hundred milliseconds
+/// after they were taken, so the phase that is current when a batch is
+/// *delivered* is not the phase the samples in it were taken in. The second
+/// sweep labelled the first four repeats of effect 1 entirely `capture` when
+/// three of them had not been played yet, and its quiet stretch never reached
+/// the baseline at all: zero in 277 of 762 rows, with 298 rows reporting an
+/// onset before the play. Docs/LEDGER.md row S11 has the mechanism and the
+/// evidence that the sensor's clock and `ISystem::getTimeMs` share a base,
+/// which is what makes filing by timestamp possible.
+///
 /// Integer throughout. `%f` is not linked in the watch's newlib in every build,
 /// and when it is not it emits nothing at runtime rather than failing to link,
 /// so no figure this app writes is fractional.
@@ -95,8 +107,11 @@ constexpr uint32_t kOnsetFactorNumerator   = 4;
 constexpr uint32_t kOnsetFactorDenominator = 1;
 
 /// A floor under the threshold, so an implausibly quiet baseline cannot make
-/// every sample look like an onset. In raw LSB of the accelerometer, and the
-/// figure that would change it is a measured noise floor from a real sweep.
+/// every sample an onset. In raw LSB of the accelerometer. Reading the second
+/// sweep's raw samples back put an off-wrist quiet level at 18 LSB, giving a
+/// threshold of 72 that separated every one of effect 1's bursts cleanly, so
+/// this floor sits below a real quiet level and only ever catches a stiller
+/// wrist than that one.
 constexpr uint32_t kOnsetFloorLsb = 24;
 
 /// Consecutive samples over the threshold before an onset is believed. Three
@@ -112,64 +127,181 @@ constexpr uint8_t kOnsetRunLength = 3;
 /// delivered rate this is about 25 samples of quiet.
 constexpr uint32_t kBurstGapMs = 250;
 
-/// One effect, one repeat: the capture window and what it yields.
+/// One sample's contribution, kept until the window closes because the
+/// threshold cannot be known until the quiet part of the window is complete.
+struct WindowEntry {
+    /// Microseconds from the window's origin, which is when the quiet stretch
+    /// started rather than when the effect was played.
+    int32_t  atUs;
+    uint16_t delta;
+};
+
+/// A settle stretch plus a capture is 3.1 s at the delivered rate, so about
+/// 310 entries; this leaves room for the batching to overshoot. An overflow is
+/// reported rather than the tail being dropped silently.
+constexpr uint16_t kMaxWindowEntries = 512;
+
+/// One effect, one repeat: everything the window collected, and what it means
+/// once the play instant is known and the window has closed.
 class SweepWindow
 {
 public:
-    /// `baselineMeanDelta` comes from the settle window before the play, so
-    /// the threshold is this wrist at this moment rather than a constant.
-    void begin(uint64_t playTimestampUs, uint32_t baselineMeanDelta)
+    /// Called when the quiet stretch starts. `originUs` only has to precede
+    /// every sample the window will see.
+    void begin(uint64_t originUs)
     {
-        mPlayUs    = playTimestampUs;
-        mThreshold = baselineMeanDelta * kOnsetFactorNumerator / kOnsetFactorDenominator;
-        if (mThreshold < kOnsetFloorLsb) {
-            mThreshold = kOnsetFloorLsb;
-        }
-        mStats.reset();
-        mRun        = 0;
-        mOnsetUs    = kNoEdge;
-        mOffsetUs   = kNoEdge;
-        mBurstEnded = false;
+        mOriginUs      = originUs;
+        mPlayAtUs      = kNoPlay;
+        mNewestUs      = 0;
+        mHaveNewest    = false;
+        mCount         = 0;
+        mOverflowed    = false;
+        mBaselineDelta = 0;
+        mHadBaseline   = false;
+        mThreshold     = kOnsetFloorLsb;
+        mOnsetUs       = kNoEdge;
+        mOffsetUs      = kNoEdge;
+        mBurstMean     = 0;
+        mBurstPeak     = 0;
+        mBurstSamples  = 0;
+        mDeltas.reset();
+    }
+
+    /// Called when the effect is asked for. Everything timestamped before this
+    /// instant is the baseline and everything after it is the candidate burst,
+    /// whichever batch each sample happened to arrive in.
+    void notePlay(uint64_t playUs)
+    {
+        mPlayAtUs = static_cast<int32_t>(static_cast<int64_t>(playUs) -
+                                        static_cast<int64_t>(mOriginUs));
     }
 
     void add(const ImuSample &sample)
     {
-        const uint32_t delta = mStats.add(sample);
-        if (mStats.count() == 0) {
+        const int64_t atUs = static_cast<int64_t>(sample.timestampUs) -
+                             static_cast<int64_t>(mOriginUs);
+        // The tail of the previous repeat, delivered late. Taking it would put
+        // the previous effect's ring-down into this repeat's baseline, which is
+        // the same contamination in a new disguise. Dropping it costs nothing:
+        // it is quiet time after a burst that has already been measured.
+        if (atUs < 0) {
             return;
         }
-        const int64_t at = static_cast<int64_t>(sample.timestampUs) - static_cast<int64_t>(mPlayUs);
+        mNewestUs   = static_cast<int32_t>(atUs);
+        mHaveNewest = true;
 
-        if (delta > mThreshold) {
-            // Once the burst has ended, anything louder is the wrist rather
-            // than the actuator.
-            if (mBurstEnded) {
-                return;
-            }
-            mRun++;
-            if (mRun >= kOnsetRunLength && mOnsetUs == kNoEdge) {
-                mOnsetUs = at;
-            }
-            if (mOnsetUs != kNoEdge) {
-                mOffsetUs = at;
-            }
-        } else {
-            mRun = 0;
-            if (mOffsetUs != kNoEdge &&
-                at - mOffsetUs >= static_cast<int64_t>(kBurstGapMs) * 1000) {
-                mBurstEnded = true;
+        const uint32_t delta = mDeltas.add(sample);
+        if (mDeltas.count() == 0) {
+            return; // the first sample has nothing to difference against
+        }
+        if (mCount >= kMaxWindowEntries) {
+            mOverflowed = true;
+            return;
+        }
+        mEntries[mCount].atUs  = static_cast<int32_t>(atUs);
+        mEntries[mCount].delta = delta > UINT16_MAX ? UINT16_MAX : static_cast<uint16_t>(delta);
+        mCount++;
+    }
+
+    /// Splits the window at the play, takes the baseline from what came before
+    /// and the burst from what came after.
+    void finish()
+    {
+        if (mPlayAtUs == kNoPlay) {
+            return;
+        }
+
+        uint64_t quietSum   = 0;
+        uint16_t quietCount = 0;
+        for (uint16_t i = 0; i < mCount; i++) {
+            if (mEntries[i].atUs < mPlayAtUs) {
+                quietSum += mEntries[i].delta;
+                quietCount++;
             }
         }
+        mHadBaseline   = quietCount > 0;
+        mBaselineDelta = mHadBaseline ? static_cast<uint32_t>(quietSum / quietCount) : 0;
+
+        mThreshold = mBaselineDelta * kOnsetFactorNumerator / kOnsetFactorDenominator;
+        if (mThreshold < kOnsetFloorLsb) {
+            mThreshold = kOnsetFloorLsb;
+        }
+
+        // The first run of consecutive loud samples after the play, ended by a
+        // gap rather than by the window closing.
+        uint16_t runStart = 0;
+        uint8_t  run      = 0;
+        bool     started  = false;
+        uint64_t burstSum = 0;
+        for (uint16_t i = 0; i < mCount; i++) {
+            const int32_t at = mEntries[i].atUs;
+            if (at < mPlayAtUs) {
+                continue;
+            }
+            const int64_t since = static_cast<int64_t>(at) - mPlayAtUs;
+
+            if (mEntries[i].delta > mThreshold) {
+                if (run == 0) {
+                    runStart = i;
+                }
+                run++;
+                if (!started && run >= kOnsetRunLength) {
+                    started  = true;
+                    mOnsetUs = static_cast<int64_t>(mEntries[runStart].atUs) - mPlayAtUs;
+                    for (uint16_t j = runStart; j < i; j++) {
+                        burstSum += mEntries[j].delta;
+                        mBurstSamples++;
+                        if (mEntries[j].delta > mBurstPeak) {
+                            mBurstPeak = mEntries[j].delta;
+                        }
+                    }
+                }
+                if (started) {
+                    burstSum += mEntries[i].delta;
+                    mBurstSamples++;
+                    if (mEntries[i].delta > mBurstPeak) {
+                        mBurstPeak = mEntries[i].delta;
+                    }
+                    mOffsetUs = since;
+                }
+            } else {
+                run = 0;
+                if (started && since - mOffsetUs >= static_cast<int64_t>(kBurstGapMs) * 1000) {
+                    break;
+                }
+            }
+        }
+        // Over the burst rather than over the whole window: a mean diluted by
+        // three seconds of quiet is not an energy, which is why the first
+        // sweep's table put effect 1 at 101 against a peak of 4599.
+        mBurstMean = mBurstSamples > 0 ? static_cast<uint32_t>(burstSum / mBurstSamples) : 0;
+    }
+
+    /// Whether a sample timestamped this far past the play has arrived. This
+    /// is the only proof that the effect is inside the window: samples reach
+    /// the app several hundred milliseconds after they were taken, so a window
+    /// closed on a wall clock is closed on samples still in flight, and the
+    /// burst can be among them.
+    bool coversPlayPlus(int64_t sinceUs) const
+    {
+        return mPlayAtUs != kNoPlay && mHaveNewest &&
+               static_cast<int64_t>(mNewestUs) - mPlayAtUs >= sinceUs;
     }
 
     /// Sentinel for an edge that never happened, which is a real result: an
     /// effect index that plays nothing has no onset.
     static constexpr int64_t kNoEdge = -1;
 
-    uint16_t samples() const { return mStats.count(); }
-    uint32_t meanDelta() const { return mStats.mean(); }
-    uint32_t peakDelta() const { return mStats.peak(); }
+    bool overflowed() const { return mOverflowed; }
+    /// False when no sample landed before the play, so the threshold fell back
+    /// to its floor and the row should be doubted.
+    bool     hadBaseline() const { return mHadBaseline; }
+    uint32_t baselineDelta() const { return mBaselineDelta; }
     uint32_t threshold() const { return mThreshold; }
+    uint16_t windowSamples() const { return mCount; }
+    uint16_t samples() const { return mBurstSamples; }
+    uint32_t meanDelta() const { return mBurstMean; }
+    uint32_t peakDelta() const { return mBurstPeak; }
     int64_t  onsetUs() const { return mOnsetUs; }
     int64_t  offsetUs() const { return mOffsetUs; }
 
@@ -181,13 +313,25 @@ public:
     }
 
 private:
-    uint64_t   mPlayUs    = 0;
-    uint32_t   mThreshold = kOnsetFloorLsb;
-    uint8_t    mRun        = 0;
-    int64_t    mOnsetUs    = kNoEdge;
-    int64_t    mOffsetUs   = kNoEdge;
-    bool       mBurstEnded = false;
-    DeltaStats mStats;
+    static constexpr int32_t kNoPlay = INT32_MIN;
+
+    uint64_t    mOriginUs = 0;
+    int32_t     mPlayAtUs = kNoPlay;
+    WindowEntry mEntries[kMaxWindowEntries] {};
+    uint16_t    mCount      = 0;
+    bool        mOverflowed = false;
+    int32_t     mNewestUs   = 0;
+    bool        mHaveNewest = false;
+    DeltaStats  mDeltas;
+
+    uint32_t mBaselineDelta = 0;
+    bool     mHadBaseline   = false;
+    uint32_t mThreshold     = kOnsetFloorLsb;
+    int64_t  mOnsetUs       = kNoEdge;
+    int64_t  mOffsetUs      = kNoEdge;
+    uint32_t mBurstMean     = 0;
+    uint32_t mBurstPeak     = 0;
+    uint16_t mBurstSamples  = 0;
 };
 
 /// The duration an effect's own name claims, or 0 for the ones that claim

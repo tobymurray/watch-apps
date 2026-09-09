@@ -73,8 +73,9 @@ constexpr char kProbeHeader[] =
 constexpr char kEffectsHeader[] =
     "schema,run_id,effect,name,family,repeat,"
     "play_tick_us,accepted_tick_us,send_ok,result_success,"
-    "baseline_delta,threshold,"
-    "onset_us,offset_us,duration_us,energy_proxy,peak_delta,samples,declared_duration_ms";
+    "baseline_delta,had_baseline,threshold,"
+    "onset_us,offset_us,duration_us,energy_proxy,peak_delta,samples,"
+    "window_samples,overflowed,declared_duration_ms";
 
 /// A note list as one field: effects as `e<index>` and pauses as `p<ms>`,
 /// separated by semicolons so it never needs quoting.
