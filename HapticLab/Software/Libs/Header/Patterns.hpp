@@ -103,15 +103,18 @@ enum class SetId : uint8_t {
     /// minutes, and the only way to ask the intensity question without
     /// inflating the main set to sixteen.
     ///
-    /// It has two rungs and not three. Six repeats of each effect put the burst
-    /// energy of effects 8 and 9 within 1 % of each other at half of effect 7
-    /// (row S7a), so B01 against either of the others is a real amplitude
-    /// question and **B02 against B03 is a pair the actuator has already
-    /// answered**. It is kept, and it is now the most useful pair in the set:
-    /// two stimuli the instrument says are identical are a leakage check, and
-    /// an above-chance result on that pair means something is reaching the
-    /// wearer other than the skin. It is not evidence of amplitude resolution
-    /// and no vocabulary entry may read it that way.
+    /// B01 against either of the others is a real amplitude question: effects 8
+    /// and 9 measure at 40 to 49 % of effect 7 on both sweeps, and a factor of
+    /// two is well outside what the energy proxy can confuse (row S14).
+    ///
+    /// **B02 against B03 is not.** The two came out 1 % apart on one sweep and
+    /// 21 % apart on the other, so whether the actuator separates them at all
+    /// is below what this instrument can measure (row S7a). That makes the pair
+    /// worth keeping and worth reading carefully: an above-chance result on it
+    /// is either an amplitude step the IMU cannot see or something reaching the
+    /// wearer other than the skin, and the no-contact control is what tells the
+    /// two apart. It is not evidence of amplitude resolution on its own and no
+    /// vocabulary entry may read it that way.
     ///
     /// Needs a higher pass count than the others rather than the default: with
     /// three patterns a pass is one triple, so four passes leaves twelve

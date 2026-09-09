@@ -1,0 +1,1 @@
+schema,run_id,seed,contact,masking,tick_before_send,tick_accepted,wall_clock,trial_in_run,pattern_id,declared_notes_count,send_ok,result_success,modelled_end_tick,notes
