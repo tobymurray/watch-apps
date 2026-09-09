@@ -103,6 +103,16 @@ enum class SetId : uint8_t {
     /// minutes, and the only way to ask the intensity question without
     /// inflating the main set to sixteen.
     ///
+    /// It has two rungs and not three. Six repeats of each effect put the burst
+    /// energy of effects 8 and 9 within 1 % of each other at half of effect 7
+    /// (row S7a), so B01 against either of the others is a real amplitude
+    /// question and **B02 against B03 is a pair the actuator has already
+    /// answered**. It is kept, and it is now the most useful pair in the set:
+    /// two stimuli the instrument says are identical are a leakage check, and
+    /// an above-chance result on that pair means something is reaching the
+    /// wearer other than the skin. It is not evidence of amplitude resolution
+    /// and no vocabulary entry may read it that way.
+    ///
     /// Needs a higher pass count than the others rather than the default: with
     /// three patterns a pass is one triple, so four passes leaves twelve
     /// trials a pair, exactly at the analysis floor and far too few for the
