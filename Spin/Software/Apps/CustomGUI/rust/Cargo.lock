@@ -243,6 +243,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "panelkit"
+version = "0.1.0"
+dependencies = [
+ "embedded-graphics",
+ "png 0.17.16",
+]
+
+[[package]]
 name = "png"
 version = "0.17.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -341,7 +349,7 @@ dependencies = [
  "embedded-graphics",
  "embedded-graphics-simulator",
  "micromath",
- "png 0.17.16",
+ "panelkit",
  "textkit",
 ]
 
