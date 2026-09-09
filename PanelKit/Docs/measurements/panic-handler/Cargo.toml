@@ -11,7 +11,7 @@ full = []
 location_min = []
 
 [dependencies]
-panelkit = { path = "../../..", default-features = false, features = ["round"] }
+panelkit = { path = "../../..", default-features = false }
 
 [profile.release]
 panic = "abort"

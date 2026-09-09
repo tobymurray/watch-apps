@@ -40,10 +40,10 @@ An isolated probe, to separate what is being paid for:
 
 | handler | `.text` | `.rodata` | total |
 |---|---|---|---|
-| `b"panic"` | 634 | 5 | 639 |
-| `file:line`, written not to panic | 838 | 120 | **958** |
-| `file:line`, written naively | 2,460 | 692 | **3,152** |
-| `file:line: message` | 3,142 | 888 | 4,030 |
+| `b"panic"` | 654 | 5 | 659 |
+| `file:line`, written not to panic | 858 | 120 | **978** |
+| `file:line`, written naively | 2,472 | 692 | **3,164** |
+| `file:line: message` | 3,162 | 888 | 4,050 |
 
 Both location handlers produce byte-identical output. The naive one costs
 **eight times more** because it used slice indexing and `copy_from_slice` — and
