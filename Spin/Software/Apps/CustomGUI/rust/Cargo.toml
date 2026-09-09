@@ -9,9 +9,9 @@ license = "MIT OR Apache-2.0"
 crate-type = ["staticlib", "lib"]
 
 # Two host binaries rather than one, because they need very different things.
-# `preview` writes PNGs and needs nothing but a PNG encoder, so it runs
-# anywhere -- including a machine with no SDL2, which is where the screenshots
-# in the README were actually taken. `sim` opens a window and needs SDL2.
+# `preview` writes PNGs through PanelKit and runs anywhere -- including a
+# machine with no SDL2, which is where the screenshots in the README were
+# actually taken. `sim` opens a window and needs SDL2.
 [[bin]]
 name = "preview"
 required-features = ["preview"]
@@ -26,7 +26,7 @@ std = ["panelkit/std"]
 # through one `panelkit_host_panic` the shell defines. Spin previously sent the
 # literal "panic", having been forked before that improvement landed.
 device = ["panelkit/panic-handler"]
-preview = ["std", "dep:png"]
+preview = ["std", "panelkit/preview"]
 sim = ["preview", "dep:embedded-graphics-simulator"]
 
 [dependencies]
@@ -35,7 +35,6 @@ sim = ["preview", "dep:embedded-graphics-simulator"]
 micromath = "2.1"
 embedded-graphics = "0.8"
 embedded-graphics-simulator = { version = "0.7", optional = true }
-png = { version = "0.17", optional = true }
 # A dependency, never a second staticlib: two archives each carrying a
 # #[panic_handler] collide at link time.
 textkit = { path = "../../../../../TextKit" }
