@@ -115,12 +115,37 @@ different from what it was built to mean.
 
 L2 from the menu. It runs unattended for about thirteen minutes; R2 stops it.
 
-- **Arm still and flat on a table for the whole sweep, wrist strapped as
-  normal.** The baseline before each play sets that repeat's detection
-  threshold, so a moving wrist raises the bar and a quiet effect can disappear
-  under it.
+- **The watch does not need to be worn, and is better off it.** Phase 1
+  measures the actuator, not a sensation: a duration is a property of the
+  waveform driven into the LRA, and an energy is only ever used relatively
+  between effects measured under the same conditions. Nothing in the
+  perceptual protocol depends on the sweep's absolute energy. Off the wrist the
+  baseline is quieter, so the threshold drops and a weak effect is detected
+  rather than lost under a breathing wrist.
+- **On a pillow or a folded towel, screen up, touching nothing else.** Not a
+  bare hard surface: a strong effect can skitter the watch across one, and a
+  case that physically moves is motion the accelerometer cannot tell from the
+  actuator. It merges bursts, which is the failure mode `kBurstGapMs` exists
+  for. Foam damps that and adds no resonance of its own.
+- **The same setup for both runs.** The second run exists for agreement across
+  setups, so a run on the wrist and a run on a pillow answers nothing: two
+  things changed at once.
+- **Write the setup into `watch_position`.** The sweep's `session.json` records
+  that field, and it is the only thing that will later say what the numbers
+  were measured against. The field is named for a session rather than a sweep,
+  which is a wart, and it is still the right place.
+- An energy ratio is comparable within one sweep and not across a change of
+  coupling. The ladder figures in ledger row S7a came from a worn sweep; a
+  pillow run that reproduces them roughly is independent confirmation, and one
+  that does not is the coupling rather than the finding failing.
 - Run it twice, as two separate runs, and compare. The disagreement between two
-  independent sweeps is the figure to report, not either one alone.
+  independent sweeps is the figure to report, not either one alone. Two repeats
+  inside one run is not the same measurement: it says how steady one setup is,
+  not how much the setup itself matters.
+- **Check `hapticlab.log` afterwards.** A `run open` line with no matching
+  `run close` means the app was killed mid-sweep and the run is partial.
+  Whether the kernel stops an app while the watch sits idle and unworn is not
+  known, and this is how it would show.
 - Check `effects.csv` afterwards: the two effects whose names state a duration
   are the only independent check the sweep has, so their measured duration
   against their declared one is the first thing to look at. A large discrepancy
