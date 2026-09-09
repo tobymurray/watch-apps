@@ -100,10 +100,17 @@ constexpr uint32_t kOnsetFactorDenominator = 1;
 constexpr uint32_t kOnsetFloorLsb = 24;
 
 /// Consecutive samples over the threshold before an onset is believed. Three
-/// rather than two because a *single* stray sample produces two large deltas --
+/// rather than two because a *single* stray sample produces two large deltas,
 /// one going into it and one coming out, so two would accept a knock.
 /// `ASingleStraySampleIsNotAnOnset` is what holds it.
 constexpr uint8_t kOnsetRunLength = 3;
+
+/// Quiet time that ends the burst. Without it the offset is the last sample
+/// above threshold anywhere in the window, so a wrist that moves a second
+/// after the effect finished extends the effect: the first sweep read
+/// `STRONG_CLICK_100` as 2717 ms in one repeat and 80 ms in the other. At the
+/// delivered rate this is about 25 samples of quiet.
+constexpr uint32_t kBurstGapMs = 250;
 
 /// One effect, one repeat: the capture window and what it yields.
 class SweepWindow
@@ -119,9 +126,10 @@ public:
             mThreshold = kOnsetFloorLsb;
         }
         mStats.reset();
-        mRun      = 0;
-        mOnsetUs  = kNoEdge;
-        mOffsetUs = kNoEdge;
+        mRun        = 0;
+        mOnsetUs    = kNoEdge;
+        mOffsetUs   = kNoEdge;
+        mBurstEnded = false;
     }
 
     void add(const ImuSample &sample)
@@ -130,18 +138,27 @@ public:
         if (mStats.count() == 0) {
             return;
         }
+        const int64_t at = static_cast<int64_t>(sample.timestampUs) - static_cast<int64_t>(mPlayUs);
 
         if (delta > mThreshold) {
+            // Once the burst has ended, anything louder is the wrist rather
+            // than the actuator.
+            if (mBurstEnded) {
+                return;
+            }
             mRun++;
             if (mRun >= kOnsetRunLength && mOnsetUs == kNoEdge) {
-                mOnsetUs = static_cast<int64_t>(sample.timestampUs) - static_cast<int64_t>(mPlayUs);
+                mOnsetUs = at;
             }
             if (mOnsetUs != kNoEdge) {
-                mOffsetUs =
-                    static_cast<int64_t>(sample.timestampUs) - static_cast<int64_t>(mPlayUs);
+                mOffsetUs = at;
             }
         } else {
             mRun = 0;
+            if (mOffsetUs != kNoEdge &&
+                at - mOffsetUs >= static_cast<int64_t>(kBurstGapMs) * 1000) {
+                mBurstEnded = true;
+            }
         }
     }
 
@@ -166,9 +183,10 @@ public:
 private:
     uint64_t   mPlayUs    = 0;
     uint32_t   mThreshold = kOnsetFloorLsb;
-    uint8_t    mRun       = 0;
-    int64_t    mOnsetUs   = kNoEdge;
-    int64_t    mOffsetUs  = kNoEdge;
+    uint8_t    mRun        = 0;
+    int64_t    mOnsetUs    = kNoEdge;
+    int64_t    mOffsetUs   = kNoEdge;
+    bool       mBurstEnded = false;
     DeltaStats mStats;
 };
 

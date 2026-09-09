@@ -8,7 +8,7 @@ it, so another wrist can be added later.
 
 > Unofficial. Not affiliated with, endorsed or sponsored by UNA Watch Ltd.
 
-**Phase 0 is complete; nothing else has run.** Every perceptual number
+**Phase 0 and a first sweep have run; no perceptual session has.** Every perceptual number
 this app will ever produce has to come from a hardware session, and none has
 happened.
 [`Docs/LEDGER.md`](Docs/LEDGER.md) §0 is the state of the instrument and
@@ -192,6 +192,11 @@ Phase 0 left three options, and the choice costs wrist time rather than code.
 Option 3 is the better experiment and option 1 is the cheaper one. Nothing is
 decided.
 
+Ledger row S7a adds a prediction to option 3 that is worth having on the record
+before it is run: effects 8 and 9 are only 19 % apart in energy, against a 50 %
+step from 7 to 8. A two-way test of the bump ladder should be easy and a
+three-way one may fail on the bottom pair.
+
 There is a second question for the same session, and it costs nothing to
 answer. Ledger row V9a: the interrupting effect in `V4-interrupt` is
 `STRONG_BUZZ_100`, and the wearer described it as "a third click" without
@@ -199,7 +204,10 @@ remarking on it feeling like a different kind of thing. Pattern `P04 BUZZ` is
 that effect and `P01 TAP` is `STRONG_CLICK_100`. If the two feel alike, the
 waveform axis is carrying less than the set assumes. The learning screen shows
 this before a single trial runs, and Phase 1 settles the physical half by
-measuring the two durations against each other.
+measuring the two durations against each other, which it now has: 220 ms and
+3 087 of burst energy for the buzz against 75 ms and 1 639 for the nearest
+cleanly measured click. They are physically distinct, so only the perceptual
+question is open.
 
 ### Getting past three
 
@@ -387,7 +395,7 @@ newer SDK than the running kernel installs cleanly and silently never launches;
 see the repository's own [README](../README.md#building).
 
 The current build, in the image this repository's CI pins by digest:
-**100 116 bytes, ID `5983D82DFEFF2626`, CRC `0xCA6C206A`**, version 0.1.0,
+**100 172 bytes, ID `5983D82DFEFF2626`, CRC `0xBC766B4C`**, version 0.1.0,
 installed and launched on the watch on 2026-09-09. The GUI's `.bss` is mostly
 the 57 600-byte framebuffer plus the 5 672-byte trial plan.
 

@@ -1,0 +1,3 @@
+schema,run_id,seed,contact,masking,button_timestamp,tick_at_handling,wall_clock,trial_in_run,button_id,button_event,disposition
+1,20260909T031146,1788923292,wrist,unmasked,228465,228496,1788923506,-1,2,2,response
+1,20260909T031146,1788923292,wrist,unmasked,228465,228702,1788923506,-1,2,1,not-a-click

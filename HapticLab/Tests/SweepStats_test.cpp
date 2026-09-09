@@ -185,6 +185,41 @@ TEST(SweepWindow, AnEdgeIsOnlyEverAsPreciseAsOneSamplePeriod)
     EXPECT_NEAR(static_cast<double>(b.durationUs()), 1650000.0, 70000.0);
 }
 
+/// The defect the first sweep exposed: the offset was the last sample above
+/// threshold anywhere in the window, so a wrist that moved a second after the
+/// effect finished extended the effect. `STRONG_CLICK_100` came out as 2717 ms
+/// in one repeat and 80 ms in the other.
+TEST(SweepWindow, MotionLongAfterTheEffectDoesNotExtendIt)
+{
+    // A short burst, then a long quiet stretch, then the wrist moves.
+    std::vector<ImuSample> samples = synthesise(300, 20, 28, 400);
+    for (uint16_t i = 200; i < 220; i++) {
+        samples[i].ax = static_cast<int16_t>((i % 2 == 0 ? 1 : -1) * 900);
+    }
+
+    const SweepWindow window = run(samples, /*baseline=*/6);
+    ASSERT_NE(window.onsetUs(), SweepWindow::kNoEdge);
+    // The burst is samples 20 to 28, so about 80 ms at a 10 ms period. Without
+    // the gap rule the offset would land at sample 220, near 2000 ms.
+    EXPECT_LT(window.durationUs(), 200000)
+        << "the later motion was counted as part of the effect";
+    EXPECT_GT(window.durationUs(), 40000);
+}
+
+TEST(SweepWindow, AGapShorterThanTheRuleDoesNotEndTheBurst)
+{
+    // Two stretches 100 ms apart, which is inside kBurstGapMs, so they are one
+    // effect: a pulsing waveform is exactly this shape.
+    std::vector<ImuSample> samples = synthesise(300, 20, 30, 400);
+    for (uint16_t i = 41; i < 52; i++) {
+        samples[i].ax = static_cast<int16_t>((i % 2 == 0 ? 1 : -1) * 400);
+    }
+
+    const SweepWindow window = run(samples, /*baseline=*/6);
+    ASSERT_NE(window.onsetUs(), SweepWindow::kNoEdge);
+    EXPECT_GT(window.durationUs(), 250000) << "a pulsing effect was cut at its first gap";
+}
+
 TEST(SelfTimedEffects, OnlyTheTwoThatNameADurationDeclareOne)
 {
     EXPECT_EQ(declaredDurationMs(15), 750);
