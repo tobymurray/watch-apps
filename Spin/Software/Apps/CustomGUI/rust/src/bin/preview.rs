@@ -44,7 +44,7 @@ fn main() {
     // banner and a different artefact -- a 43-cell sheet under a caption
     // promising four named screens is a worse hero image whatever it contains.
     let sheet = format!("{dir}/contact-sheet.png");
-    let (w, h) = sheet_from_frames(&sheet, &frames, W, H, 6, Options { scale: 1, bezel: Bezel::Fill([24, 24, 24]) })
+    let (w, h) = sheet_from_frames(&sheet, &frames, W, H, 6, Options { scale: 1, bezel: Bezel::Transparent })
         .expect("cannot write the contact sheet");
     println!("wrote {sheet} ({w}x{h}, {} scenes)", frames.len());
 }
