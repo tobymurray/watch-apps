@@ -47,7 +47,18 @@ pub const fn lit_chord(y: i32, w: i32, h: i32) -> i32 {
     0
 }
 
+// Counts calls to `lit_start`, the only unbounded thing in this module.
+// Thread-local because `cargo test` runs in parallel and a shared counter picks
+// up every other test's fills -- as a global it read 1,826 against a correct
+// fast path. A `///` here is an `unused doc comment`, which is why it is not one.
+#[cfg(test)]
+thread_local! {
+    pub(crate) static EDGE_SCANS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+}
+
 /// The leftmost lit pixel of row `y`, or `w` if the row is entirely bezel.
+///
+/// A linear scan, and the reason [`lit_span`] exists to avoid calling it.
 pub const fn lit_start(y: i32, w: i32, h: i32) -> i32 {
     let mut x = 0;
     while x < w {
@@ -57,6 +68,45 @@ pub const fn lit_start(y: i32, w: i32, h: i32) -> i32 {
         x += 1;
     }
     w
+}
+
+/// The lit part of `[x0, x1)` on `row`, or `None` if none of it is glass.
+///
+/// A row's lit pixels are an interval, because [`is_lit`] depends on x only
+/// through `(2x - (w-1))^2`, which is convex in x. So when both ends of the
+/// span are lit the whole span is, and the answer costs two tests; and when the
+/// span is a single pixel the first test has already settled it. Only a span
+/// that genuinely straddles the rim needs [`lit_start`]'s scan.
+///
+/// That matters because callers plot single pixels through it — an arc sampler
+/// does nothing else — so "per row" is "per pixel". MEASURED over Spin's 43
+/// scenes: scanning unconditionally cost 128 us a frame against 43 for
+/// byte-identical output, and 363 against 77 on the worst frame. Falsified by
+/// `Spin/Software/Apps/CustomGUI/rust/examples/frametime.rs`, and by
+/// `a_span_inside_the_disc_never_scans_for_the_edge` in this module.
+pub fn lit_span(x0: i32, x1: i32, row: i32, w: i32, h: i32) -> Option<(i32, i32)> {
+    if x0 >= x1 {
+        return None;
+    }
+    let left = is_lit(x0, row, w, h);
+    if left && is_lit(x1 - 1, row, w, h) {
+        return Some((x0, x1));
+    }
+    if x1 - x0 == 1 {
+        // One pixel, and `left` already answered for it.
+        return None;
+    }
+    #[cfg(test)]
+    EDGE_SCANS.with(|c| c.set(c.get() + 1));
+    let start = lit_start(row, w, h);
+    let end = w - start;
+    let a = if x0 > start { x0 } else { start };
+    let z = if x1 < end { x1 } else { end };
+    if a < z {
+        Some((a, z))
+    } else {
+        None
+    }
 }
 
 /// Whether every pixel of this box is glass.
@@ -158,6 +208,75 @@ mod tests {
         // The inscribed square, centred, is not.
         let s = inscribed_square(W, H);
         assert!(box_is_lit((W - s) / 2, (H - s) / 2, s, s, W, H));
+    }
+
+    /// A span already inside the disc must never scan the row for its edge, and
+    /// neither must a single pixel that is off it.
+    ///
+    /// The fault, stated as a count rather than a stopwatch: this clip once
+    /// scanned every row from x = 0 to find the lit interval, and because an arc
+    /// sampler plots single pixels, "per row" meant "per pixel". A timing test
+    /// was tried and discarded — the disc/rect ratio is 1.86 broken against 1.42
+    /// fixed in a debug build and 4.56 against 2.75 in release, so no threshold
+    /// separates them in both profiles.
+    #[test]
+    fn a_span_inside_the_disc_never_scans_for_the_edge() {
+        let arc = |r_outer: f32| {
+            EDGE_SCANS.with(|c| c.set(0));
+            let (cx, cy) = (119.5f32, 119.5f32);
+            let mut a = 0.0f32;
+            while a < core::f32::consts::PI * 2.0 {
+                let (sa, ca) = (a.sin(), a.cos());
+                let mut r = 100.0f32;
+                while r <= r_outer {
+                    let (x, y) = ((cx + r * sa) as i32, (cy - r * ca) as i32);
+                    let _ = lit_span(x, x + 1, y, W, H);
+                    r += 0.65;
+                }
+                a += 0.65 / r_outer;
+            }
+            EDGE_SCANS.with(|c| c.get())
+        };
+
+        assert_eq!(arc(118.0), 0, "an arc inside the disc scanned for an edge");
+        // The case the first version of this fix missed: an arc that runs off
+        // the glass. Every one of those pixels failed both tests and paid a full
+        // scan to be told it was dark.
+        assert_eq!(arc(130.0), 0, "an arc crossing the rim scanned for an edge");
+
+        // The instrument, proven: a wide span that really does straddle the rim
+        // must reach the scan, or the counts above measure nothing.
+        EDGE_SCANS.with(|c| c.set(0));
+        for row in 0..H {
+            let _ = lit_span(0, W, row, W, H);
+        }
+        assert!(EDGE_SCANS.with(|c| c.get()) > 0, "a full-width span never scanned");
+    }
+
+    #[test]
+    fn a_lit_span_matches_a_per_pixel_reference() {
+        for w in [1, 2, 3, 7, 16, 33, 64, 240] {
+            for h in [1, 2, 5, 17, 240] {
+                for row in -1..=h {
+                    for x0 in -2..w + 2 {
+                        for x1 in x0..=(x0 + 5).min(w + 2) {
+                            let got = lit_span(x0.max(0), x1.min(w), row, w, h);
+                            let want: Vec<i32> = (x0.max(0)..x1.min(w))
+                                .filter(|&x| is_lit(x, row, w, h))
+                                .collect();
+                            match (got, want.is_empty()) {
+                                (None, true) => {}
+                                (Some((a, z)), false) => {
+                                    assert_eq!((a, z), (want[0], want[want.len() - 1] + 1),
+                                        "w{w} h{h} row{row} [{x0},{x1})");
+                                }
+                                _ => panic!("w{w} h{h} row{row} [{x0},{x1}): got {got:?}, want {want:?}"),
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]

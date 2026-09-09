@@ -11,19 +11,6 @@ use embedded_graphics::{prelude::*, primitives::Rectangle};
 
 use crate::geometry;
 
-/// Counts how often the disc clip fell back to scanning a row for the lit
-/// interval's edge. Test-only, and the whole point of the fast path is that a
-/// span already inside the disc never reaches it.
-///
-/// Thread-local rather than a global: `cargo test` runs tests in parallel, and
-/// a shared counter picks up every other test's fills. It read 1,826 that way
-/// against a correct fast path, which is a broken instrument reporting a broken
-/// fix.
-#[cfg(test)]
-thread_local! {
-    pub(crate) static EDGE_SCANS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
-}
-
 /// What the panel shows of what is drawn.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Clip {
@@ -174,31 +161,7 @@ impl<'a, C: ByteColor> Surface<'a, C> {
             }
             Clip::Disc => {
                 for row in y0..y1 {
-                    // A row's lit pixels are an interval: `is_lit` depends on x
-                    // only through (2x - (w-1))^2, which is a parabola in x. So
-                    // if both ends of the span are lit, all of it is, and the
-                    // common case costs two tests rather than a scan for the
-                    // interval's edge.
-                    //
-                    // That matters more than it looks: an arc sampler plots
-                    // single pixels through this, so "per row" is "per pixel".
-                    // MEASURED on the host over Spin's 43 scenes: scanning for
-                    // the edge every row costs 128 us a frame against 43 for
-                    // the same output, and 363 us against 77 on the worst
-                    // frame. Falsified by
-                    // Spin/.../examples/frametime.rs, which is what measured it.
-                    let (a, z) = if geometry::is_lit(x0, row, self.w, self.h)
-                        && geometry::is_lit(x1 - 1, row, self.w, self.h)
-                    {
-                        (x0, x1)
-                    } else {
-                        #[cfg(test)]
-                        EDGE_SCANS.with(|c| c.set(c.get() + 1));
-                        let start = geometry::lit_start(row, self.w, self.h);
-                        let end = self.w - start;
-                        (x0.max(start), x1.min(end))
-                    };
-                    if a < z {
+                    if let Some((a, z)) = geometry::lit_span(x0, x1, row, self.w, self.h) {
                         let i = (row * self.w + a) as usize;
                         let j = (row * self.w + z) as usize;
                         self.buf[i..j].fill(b);
@@ -334,55 +297,6 @@ mod tests {
         assert_eq!(buf[(100 * 240 + 100) as usize], Abgr2222::WHITE.to_byte());
         assert_eq!(buf[(109 * 240 + 139) as usize], Abgr2222::WHITE.to_byte());
         assert_eq!(buf[(110 * 240 + 100) as usize], Abgr2222::BLACK.to_byte());
-    }
-
-    /// A span already inside the disc must never scan the row for its edge.
-    ///
-    /// This is the fault, stated as a property rather than as a stopwatch: the
-    /// first version of this clip scanned every row from x = 0 to find the lit
-    /// interval, and because an arc sampler plots single pixels through
-    /// `fill_rect`, "per row" meant "per pixel". MEASURED over Spin's 43
-    /// scenes: 43 us a frame became 128, and 77 became 363 on the worst frame,
-    /// for byte-identical output.
-    ///
-    /// A timing test was tried first and discarded: the disc/rect ratio is 1.86
-    /// broken against 1.42 fixed in a debug build, and 4.56 against 2.75 in
-    /// release, so no single threshold separates them in both profiles. Counting
-    /// the fallback is exact and profile-independent.
-    #[test]
-    fn a_span_inside_the_disc_never_scans_for_the_edge() {
-        let n = (W * H) as usize;
-        let mut buf = vec![0u8; n];
-
-        // Spin's arc: single pixels between r=100 and r=118, all of them well
-        // inside the disc's 119.5.
-        EDGE_SCANS.with(|c| c.set(0));
-        {
-            let mut s = surface(&mut buf);
-            let (cx, cy) = (119.5f32, 119.5f32);
-            let mut a = 0.0f32;
-            while a < core::f32::consts::PI * 2.0 {
-                let (sa, ca) = (a.sin(), a.cos());
-                let mut r = 100.0f32;
-                while r <= 118.0 {
-                    s.fill_rect((cx + r * sa) as i32, (cy - r * ca) as i32, 1, 1, Abgr2222::WHITE);
-                    r += 0.65;
-                }
-                a += 0.65 / 118.0;
-            }
-        }
-        let inside = EDGE_SCANS.with(|c| c.get());
-        assert_eq!(inside, 0, "an arc wholly inside the disc scanned {inside} row edges");
-
-        // The instrument, proven: a span that really does cross the rim must
-        // reach the fallback, or the counter above is measuring nothing.
-        EDGE_SCANS.with(|c| c.set(0));
-        {
-            let mut s = surface(&mut buf);
-            s.fill_rect(0, 0, W as i32, H as i32, Abgr2222::WHITE);
-        }
-        let crossing = EDGE_SCANS.with(|c| c.get());
-        assert!(crossing > 0, "a full-panel fill took the fast path on every row");
     }
 
     #[test]
