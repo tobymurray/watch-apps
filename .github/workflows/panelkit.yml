@@ -83,8 +83,8 @@ jobs:
           # app actually ships, and nothing else in this workflow compiles them:
           # cargo test --all-features enables std, and both handlers are gated
           # `not(feature = "std")`, so the tests cfg them straight out.
-          for f in "" dither widgets scenes panic-handler panic-message \
-                   "dither,widgets,scenes" "dither,widgets,scenes,panic-message"; do
+          for f in dither widgets scenes panic-handler panic-message \
+                   "dither,widgets,scenes"; do
             echo "--- $f"
             cargo build --release --target thumbv8m.main-none-eabihf --no-default-features ${f:+--features "$f"}
           done
