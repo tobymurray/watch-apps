@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn a_message_that_fits_survives_whole() {
         let mut b = Buf::<64>::new();
-        let _ = write!(b, "src/lib.rs:42: {}", "assertion failed");
+        let _ = write!(b, "src/lib.rs:42: assertion failed");
         assert_eq!(b.as_str(), "src/lib.rs:42: assertion failed");
     }
 

@@ -23,7 +23,6 @@ use std::io;
 use std::path::Path;
 
 use crate::geometry;
-use crate::surface::Surface;
 
 /// Each 2-bit channel is one of these.
 const LEVELS: [u8; 4] = [0, 85, 170, 255];
@@ -92,6 +91,10 @@ pub fn to_rgba(frame: &[u8], w: u32, h: u32, opts: Options) -> Vec<u8> {
 }
 
 /// Writes RGBA as a PNG, or RGB when every pixel is opaque.
+///
+/// # Errors
+///
+/// If the file cannot be created, or the encoder rejects the data.
 pub fn write_png(path: impl AsRef<Path>, rgba: &[u8], w: u32, h: u32) -> io::Result<()> {
     let opaque = rgba.chunks_exact(4).all(|px| px[3] == 255);
     let file = std::fs::File::create(path)?;
@@ -112,6 +115,11 @@ pub fn write_png(path: impl AsRef<Path>, rgba: &[u8], w: u32, h: u32) -> io::Res
 }
 
 /// A sheet from frames already rendered, each `w * h` bytes.
+///
+/// # Errors
+///
+/// If `frames` is empty, if any frame is not `w * h` bytes, or if the file
+/// cannot be written. A wrongly sized frame is refused rather than sliced.
 pub fn sheet_from_frames(
     path: impl AsRef<Path>,
     frames: &[Vec<u8>],
@@ -168,6 +176,10 @@ pub fn sheet_from_frames(
 }
 
 /// Every colour the panel can show, as an 8×8 sheet.
+///
+/// # Errors
+///
+/// If the file cannot be written.
 pub fn gamut_sheet(path: impl AsRef<Path>, cell: u32) -> io::Result<()> {
     let cell = cell.max(1);
     let (w, h) = (8 * cell, 8 * cell);
