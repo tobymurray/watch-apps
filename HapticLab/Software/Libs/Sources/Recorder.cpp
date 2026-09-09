@@ -201,14 +201,42 @@ bool Recorder::writeSession(const char *reason, uint32_t endTick, uint32_t endWa
         return false;
     }
 
-    char       body[1024];
-    const int  length  = formatSessionJson(body, sizeof(body), mRun, *mPlan, mTiming, mDurations,
-                                           meta, kByteCapPerFile, kRunDurationCapMs);
-    size_t     written = 0;
-    const bool ok = length > 0 && static_cast<size_t>(length) < sizeof(body) &&
-                    handle->write(body, static_cast<size_t>(length), written);
+    char      body[kSessionJsonBytes];
+    const int length = formatSessionJson(body, sizeof(body), mRun, *mPlan, mTiming, mDurations,
+                                         meta, kByteCapPerFile, kRunDurationCapMs);
+
+    // The open above truncated the file, so refusing to write here is what
+    // leaves an empty header behind. A short header naming the run is worth
+    // more than none, so anything unusable from the formatter falls back to
+    // the fields the other files cannot be read without.
+    char       fallback[256];
+    const char *out = body;
+    size_t     count = 0;
+    if (length > 0 && static_cast<size_t>(length) < sizeof(body)) {
+        count = static_cast<size_t>(length);
+    } else {
+        const int shortLength = std::snprintf(
+            fallback, sizeof(fallback),
+            "{\n  \"schema\": %u,\n  \"run_id\": \"%s\",\n  \"seed\": %lu,\n"
+            "  \"contact\": \"%s\",\n  \"masking\": \"%s\",\n"
+            "  \"candidate_set\": \"%s\",\n  \"candidate_set_hash\": \"%08lX\",\n"
+            "  \"end_reason\": \"%s\",\n  \"header_truncated\": true\n}\n",
+            kSchemaVersion, mRun.runId, static_cast<unsigned long>(mRun.seed),
+            contactName(mRun.contact), maskingName(mRun.masking), setName(mRun.set),
+            static_cast<unsigned long>(mRun.setHash), reason);
+        LOG_ERROR("session header would not format (%d into %u); wrote the short form\n", length,
+                  static_cast<unsigned>(sizeof(body)));
+        out   = fallback;
+        count = shortLength > 0 ? static_cast<size_t>(shortLength) : 0;
+    }
+
+    size_t written = 0;
+    const bool ok = count > 0 && handle->write(out, count, written) && written == count;
     handle->flush();
     handle->close();
+    if (!ok) {
+        LOG_ERROR("could not write %s\n", pathBuf);
+    }
     return ok;
 }
 

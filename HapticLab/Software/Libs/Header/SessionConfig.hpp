@@ -19,10 +19,6 @@ namespace Haptic {
 
 constexpr char kConfigPath[] = "/config.json";
 
-/// One operator note, short enough to be worth typing and long enough to say
-/// where on the wrist the watch was.
-constexpr size_t kNoteLength = 40;
-
 struct SessionConfig {
     uint32_t seed        = 0;
     SetId    set         = SetId::RhythmAndFamily;

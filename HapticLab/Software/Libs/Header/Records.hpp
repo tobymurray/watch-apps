@@ -1,6 +1,7 @@
 #ifndef HAPTICLAB_RECORDS_HPP
 #define HAPTICLAB_RECORDS_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 #include "Patterns.hpp"
@@ -14,6 +15,12 @@ namespace Haptic {
 /// Where run directories go. Outside any activity tree, so a research input
 /// does not ride along with whatever syncs workouts.
 constexpr char kRunsDir[] = "Runs";
+
+/// One operator note, short enough to be worth typing and long enough to say
+/// where on the wrist the watch was. Here rather than with the config reader,
+/// because `session.json`'s size has to be checked against it and that check
+/// builds without the SDK.
+constexpr size_t kNoteLength = 40;
 
 /// Bumped whenever a column is added, removed or reinterpreted. It is the first
 /// field of every row so a reader written before a change can refuse rather

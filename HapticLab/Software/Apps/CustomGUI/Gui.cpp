@@ -1,5 +1,6 @@
 #include "Gui.hpp"
 
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -32,6 +33,10 @@ namespace {
 
 constexpr uint32_t kWaitForever = 0xFFFFFFFF;
 
+/// Beside the run directories rather than under a `Debug/` of its own, because
+/// `mkdir` is single level and one fewer directory is one fewer thing to fail.
+constexpr char kLogPath[] = "/hapticlab.log";
+
 } // namespace
 
 extern "C" void haptic_lab_gui_host_panic(const uint8_t *msg, uint32_t len)
@@ -53,6 +58,42 @@ Gui::Gui(SDK::Kernel &kernel)
 uint32_t Gui::wallClock() const
 {
     return static_cast<uint32_t>(std::time(nullptr));
+}
+
+void Gui::note(const char *format, ...)
+{
+    char line[192];
+    const int prefix = std::snprintf(line, sizeof(line), "%lu %lu ",
+                                     static_cast<unsigned long>(mKernel.sys.getTimeMs()),
+                                     static_cast<unsigned long>(wallClock()));
+    if (prefix <= 0 || static_cast<size_t>(prefix) >= sizeof(line)) {
+        return;
+    }
+
+    va_list args;
+    va_start(args, format);
+    const int body = std::vsnprintf(line + prefix, sizeof(line) - static_cast<size_t>(prefix) - 2,
+                                    format, args);
+    va_end(args);
+    if (body <= 0) {
+        return;
+    }
+
+    size_t length = static_cast<size_t>(prefix) + static_cast<size_t>(body);
+    if (length > sizeof(line) - 2) {
+        length = sizeof(line) - 2;
+    }
+    line[length++] = '\n';
+
+    std::unique_ptr<SDK::Interface::IFile> file = mKernel.fs.file(kLogPath);
+    if (!file || !file->open(/*wMode=*/true, /*override=*/false)) {
+        return;
+    }
+    file->seek(file->size());
+    size_t written = 0;
+    file->write(line, length, written);
+    file->flush();
+    file->close();
 }
 
 void Gui::queryDisplayConfig()
@@ -188,9 +229,13 @@ void Gui::openRun(const char *reason)
     if (!mRunOpen) {
         mFilesUsable = false;
         LOG_ERROR("cannot open a run for %s; nothing will be recorded\n", reason);
+        note("run open FAILED reason=%s", reason);
         return;
     }
     LOG_INFO("run %s open in %s (%s)\n", mRun.runId, mRecorder.directory(), reason);
+    note("run open %s reason=%s seed=%lu set=%s contact=%s masking=%s", mRun.runId, reason,
+         static_cast<unsigned long>(mRun.seed), Haptic::setName(mRun.set),
+         Haptic::contactName(mRun.contact), Haptic::maskingName(mRun.masking));
 }
 
 void Gui::closeRun(const char *reason)
@@ -199,6 +244,7 @@ void Gui::closeRun(const char *reason)
         return;
     }
     mRecorder.close(reason, mKernel.sys.getTimeMs(), wallClock());
+    note("run close %s reason=%s caps=%s", mRun.runId, reason, mRecorder.capsHit());
     mRunOpen = false;
 }
 
@@ -295,6 +341,14 @@ void Gui::advanceProbeStep(uint32_t nowMs)
     mProbeStepAt = nowMs;
     if (mProbeStep >= probe.stepCount) {
         mProbeRunning = false;
+        return;
+    }
+
+    // A zero delay means the same handler, not the next frame. The first run
+    // sent `V4-queue`'s two messages 73 ms apart because the advance waited for
+    // a tick, which made a probe labelled "no gap" into an interrupt test.
+    if (probe.steps[mProbeStep].delayBeforeMs == 0) {
+        advanceProbeStep(nowMs);
     }
 }
 
@@ -411,7 +465,11 @@ void Gui::onButton(const SDK::Message::EventButton &button, uint32_t nowMs)
     const uint8_t id    = static_cast<uint8_t>(button.id);
     const uint8_t event = static_cast<uint8_t>(button.event);
 
-    Haptic::EventDisposition disposition = Haptic::EventDisposition::Unmapped;
+    // Said once here rather than in every arm: the kernel sends PRESS and
+    // RELEASE alongside every CLICK, and only CLICK means anything to this app.
+    Haptic::EventDisposition disposition = button.event == Event::CLICK
+                                               ? Haptic::EventDisposition::Unmapped
+                                               : Haptic::EventDisposition::NotAClick;
 
     switch (mMode) {
     case Haptic::Mode::Menu:
@@ -468,7 +526,9 @@ void Gui::onButton(const SDK::Message::EventButton &button, uint32_t nowMs)
         break;
 
     case Haptic::Mode::ProbeSent:
-        disposition = Haptic::EventDisposition::AfterResponse;
+        if (button.event == Event::CLICK) {
+            disposition = Haptic::EventDisposition::AfterResponse;
+        }
         break;
 
     case Haptic::Mode::Sweep:
@@ -558,6 +618,9 @@ void Gui::run()
         mKernel.sys.exit(1);
         return;
     }
+
+    note("start version=%s abi=%lu", HAPTICLAB_VERSION,
+         static_cast<unsigned long>(gIKernel != nullptr ? gIKernel->version : 0));
 
     queryDisplayConfig();
     takeCapabilities();

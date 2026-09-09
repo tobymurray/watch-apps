@@ -55,6 +55,10 @@ private:
     bool sendVibro(const Haptic::Note notes[], uint8_t count, uint32_t declaredNotesCount,
                    uint32_t &tickBeforeSend, uint32_t &tickAtAccepted, bool &resultSuccess);
     uint32_t wallClock() const;
+    /// Appends one line to `/hapticlab.log`. An app that cannot say which
+    /// build is running cannot be debugged over USB, which is the position the
+    /// first hardware run left this one in.
+    void note(const char *format, ...);
 
     static constexpr int16_t  kFallbackWidth     = 240;
     static constexpr int16_t  kFallbackHeight    = 240;

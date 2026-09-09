@@ -256,6 +256,45 @@ TEST(Csv, EveryRowRepeatsTheRunLevelFieldsItWouldOtherwiseNeedAJoinFor)
     EXPECT_NE(row.find("DEADBEEF"), std::string::npos) << "the set hash is missing";
 }
 
+/// Operator notes at their cap are the longest a real header gets, and the
+/// combination that would have overflowed the buffer the first run used.
+TEST(SessionJson, TheHeaderStillFitsWithEveryOperatorNoteAtItsCap)
+{
+    Pattern patterns[kMaxPatterns] {};
+    const uint8_t count = buildSet(SetId::WithAmplitude, patterns);
+    Plan plan {};
+    buildPlan(SetId::WithAmplitude, kDefaultTestPasses, 0xFFFFFFFFu, plan);
+    const Timing timing = timingFor(patterns, count, EffectDurations::nominal());
+
+    const std::string longest(kNoteLength, 'M');
+    SessionMeta meta;
+    meta.appVersion     = "0.1.0-99-abcdef1-dirty";
+    meta.firmware       = "1.4.0";
+    meta.kernelAbi      = 3;
+    meta.wrist          = longest.c_str();
+    meta.watchPosition  = longest.c_str();
+    meta.strapTightness = longest.c_str();
+    meta.armPosture     = longest.c_str();
+    meta.ambientTempC   = -32768;
+    meta.startTick      = 0xFFFFFFFFu;
+    meta.startWall      = 0xFFFFFFFFu;
+    meta.endTick        = 0xFFFFFFFFu;
+    meta.endWall        = 0xFFFFFFFFu;
+    meta.endReason      = "stopped-by-kernel";
+    meta.capsHit        = "commands.csv";
+
+    RunHeader run = header();
+    run.seed = 0xFFFFFFFFu;
+
+    char      body[kSessionJsonBytes];
+    const int length = formatSessionJson(body, sizeof(body), run, plan, timing,
+                                         EffectDurations::nominal(), meta, 0xFFFFFFFFu,
+                                         0xFFFFFFFFu);
+    ASSERT_GT(length, 0);
+    EXPECT_LT(static_cast<size_t>(length), kSessionJsonBytes)
+        << "the worst-case header does not fit the buffer the Recorder uses";
+}
+
 TEST(SessionJson, TheHeaderIsValidJsonAndCarriesTheEndReason)
 {
     Pattern patterns[kMaxPatterns] {};
@@ -274,11 +313,11 @@ TEST(SessionJson, TheHeaderIsValidJsonAndCarriesTheEndReason)
     meta.endWall    = 1757325999;
     meta.endReason  = "completed";
 
-    char      body[2048];
+    char      body[kSessionJsonBytes];
     const int length = formatSessionJson(body, sizeof(body), header(), plan, timing,
                                          EffectDurations::nominal(), meta, 1024, 60000);
     ASSERT_GT(length, 0);
-    ASSERT_LT(static_cast<size_t>(length), sizeof(body)) << "the header was truncated";
+    ASSERT_LT(static_cast<size_t>(length), kSessionJsonBytes) << "the header was truncated";
 
     const std::string json(body);
     EXPECT_EQ(std::count(json.begin(), json.end(), '{'), 1);

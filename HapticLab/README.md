@@ -8,8 +8,9 @@ it, so another wrist can be added later.
 
 > Unofficial. Not affiliated with, endorsed or sponsored by UNA Watch Ltd.
 
-**Nothing here has been run on the watch.** Every perceptual number this app
-will ever produce has to come from a hardware session, and none has happened.
+**Phase 0 has run on the watch; nothing else has.** Every perceptual number
+this app will ever produce has to come from a hardware session, and none has
+happened.
 [`Docs/LEDGER.md`](Docs/LEDGER.md) §0 is the state of the instrument and
 [`Docs/VOCABULARY.md`](Docs/VOCABULARY.md) is the deliverable, currently
 refusing to answer. What is built and checked is the instrument: the vibro
@@ -168,6 +169,23 @@ key, and the two are separate columns. A press during playback is recorded with
 its own disposition, because it is evidence the wearer decided before the
 pattern finished, which is a real result about that pattern and is invisible if
 only accepted responses are kept.
+
+### The open decision: where the intensity axis gets tested
+
+Phase 0 left three options, and the choice costs wrist time rather than code.
+
+1. **Run `rhythm-and-family` and leave intensity alone.** Twelve patterns, about
+   42 minutes, and the intensity question stays answered only as "not on
+   clicks". This is the default.
+2. **Rebuild the four `with-amplitude` patterns on the bump ladder** (7, 8, 9
+   instead of 1, 2, 3) and run the sixteen. Gives intensity a fair test on the
+   waveform where the step is perceptible, at over an hour of trials.
+3. **Test the bump ladder on its own.** A three-pattern set of BUMP, BUMPMID
+   and BUMPLOW answers the intensity question in roughly ten minutes without
+   inflating the main set. Needs a third `SetId`, which is a small change.
+
+Option 3 is the better experiment and option 1 is the cheaper one. Nothing is
+decided.
 
 ### Getting past three
 
@@ -355,9 +373,14 @@ newer SDK than the running kernel installs cleanly and silently never launches;
 see the repository's own [README](../README.md#building).
 
 The current build, in the image this repository's CI pins by digest:
-**98 940 bytes, ID `5983D82DFEFF2626`, CRC `0x2A3B67FE`**, version 0.1.0. GUI
-ELF `.text` 84 072, `.bss` 77 680, of which 57 600 is the framebuffer and 5 672
-the trial plan; Service ELF `.text` 8 104, `.bss` 11 044.
+**100 116 bytes, ID `5983D82DFEFF2626`, CRC `0xCA6C206A`**, version 0.1.0,
+installed and launched on the watch on 2026-09-09. The GUI's `.bss` is mostly
+the 57 600-byte framebuffer plus the 5 672-byte trial plan.
+
+The app appends a line to `/hapticlab.log` at launch and around every run,
+carrying its own `BUILD_VERSION`. `Docs/INSTALLING.md` asks every app for that
+and this one shipped without it, which is why the first hardware run's one
+defect could not be diagnosed from the run it left behind.
 
 There is no TouchGFX simulator here, because there is no TouchGFX: the
 renderer's `preview` binary is what a simulator would have been, and unlike the

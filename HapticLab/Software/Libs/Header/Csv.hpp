@@ -21,6 +21,12 @@ namespace Haptic {
 /// The widest row any formatter here writes, with room for the note list.
 constexpr size_t kMaxRowLength = 512;
 
+/// The buffer `formatSessionJson` is given. Named here rather than at the call
+/// site so `TheHeaderStillFitsWithEveryOperatorNoteAtItsCap` constrains the
+/// size the Recorder really uses: the first hardware run left a 0-byte header
+/// from a 1024-byte buffer while a test passed against a 2048-byte one.
+constexpr size_t kSessionJsonBytes = 2048;
+
 /// The run-level fields every row repeats, so a row can be read without a
 /// join back to `session.json`.
 struct RunHeader {
