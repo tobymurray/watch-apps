@@ -614,8 +614,9 @@ framebuffer they already have is what that adopter gets, and it is not a
 consolation prize: it is the composition this crate recommends.
 
 **The UNA half (this repo, not published):** `Header/GuiShell.hpp`,
-`inscribed-disc.cmake`, and the kernel and `SettingsKit` couplings. Nothing in the
-public crate names UNA, and it ships no font.
+`inscribed-disc.cmake`, and the kernel and `SettingsKit` couplings. No code in
+the published crate names UNA — this design record ships with it and is the
+only packaged file that does — and it ships no font.
 
 **Text is not in the crate at all.** It ships no font and no text interface. The
 trait that was here — four questions a widget needs answered — is parked,
