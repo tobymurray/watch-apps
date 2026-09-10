@@ -1,0 +1,46 @@
+[package]
+name = "settings_editor_gui"
+version = "0.1.0"
+edition = "2021"
+description = "no_std Rust rendering core and editor state machine for SettingsEditor: one watch setting per screen, paged and stepped over a checked C ABI, drawn into an 8bpp ABGR2222 framebuffer."
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["staticlib", "lib"]
+
+[[bin]]
+name = "sim"
+required-features = ["sim"]
+
+[features]
+std = ["inscribed-disc/std"]
+# The location half only, which reports file:line through one
+# `inscribed_disc_host_panic` the shell defines. Not
+# inscribed-disc/panic-message: this app is eight screens of settings with no
+# arithmetic worth a message, and the message is 2,520 of the 3,226 bytes a
+# full handler costs -- see
+# InscribedDisc/Docs/2026-09-09-panic-handler-cost.md. Add it if a panic here
+# ever turns out to need more than a line number.
+device = ["inscribed-disc/panic-handler"]
+sim = ["std", "dep:embedded-graphics-simulator"]
+
+[dependencies]
+embedded-graphics = "0.8"
+# A dependency, never a second staticlib: two archives each carrying a
+# #[panic_handler] collide at link time.
+textkit = { path = "../../../../../TextKit" }
+# The surface, the colour, the panic handler and the page indicator. A path
+# dependency and never a second staticlib: two archives each carrying a
+# #[panic_handler] collide at link time.
+inscribed-disc = { path = "../../../../../InscribedDisc", default-features = false, features = [
+    "embedded-graphics",
+    "abgr2222",
+] }
+embedded-graphics-simulator = { version = "0.7", optional = true }
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false
