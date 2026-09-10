@@ -4,14 +4,14 @@
 use core::fmt::Write as _;
 
 use embedded_graphics::{
-    pixelcolor::{raw::RawU8, PixelColor},
     prelude::*,
     primitives::{
         CornerRadii, CornerRadiiBuilder, Line, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle,
         RoundedRectangle,
     },
 };
-use textkit::{faces, Align, Canvas, Face};
+use inscribed_disc::{Abgr2222, Surface};
+use textkit::{faces, Face, Style};
 
 #[cfg(not(feature = "std"))]
 extern "C" {
@@ -93,52 +93,6 @@ impl State {
     }
 }
 
-const ALPHA_SHIFT: u8 = 6;
-const BLUE_SHIFT: u8 = 4;
-const GREEN_SHIFT: u8 = 2;
-const RED_SHIFT: u8 = 0;
-const CHANNEL_MASK: u8 = 0b11;
-const CHANNEL_BITS: u8 = 2;
-const ALPHA_OPAQUE: u8 = 0b11;
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Abgr2222(pub u8);
-
-const fn keep_high_bits(channel: u8) -> u8 {
-    (channel >> (8 - CHANNEL_BITS)) & CHANNEL_MASK
-}
-
-impl Abgr2222 {
-    pub const fn from_levels(r2: u8, g2: u8, b2: u8) -> Self {
-        Abgr2222(
-            (ALPHA_OPAQUE << ALPHA_SHIFT)
-                | ((b2 & CHANNEL_MASK) << BLUE_SHIFT)
-                | ((g2 & CHANNEL_MASK) << GREEN_SHIFT)
-                | ((r2 & CHANNEL_MASK) << RED_SHIFT),
-        )
-    }
-
-    pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
-        Abgr2222::from_levels(keep_high_bits(r), keep_high_bits(g), keep_high_bits(b))
-    }
-
-    pub const BLACK: Abgr2222 = Abgr2222::rgb(0, 0, 0);
-    pub const WHITE: Abgr2222 = Abgr2222::rgb(255, 255, 255);
-    pub const GRAY: Abgr2222 = Abgr2222::rgb(170, 170, 170);
-    pub const DARK_GRAY: Abgr2222 = Abgr2222::rgb(85, 85, 85);
-    pub const AMBER: Abgr2222 = Abgr2222::rgb(255, 170, 0);
-}
-
-impl Default for Abgr2222 {
-    fn default() -> Self {
-        Abgr2222::BLACK
-    }
-}
-
-impl PixelColor for Abgr2222 {
-    type Raw = RawU8;
-}
-
 // Every label on this screen is bright text on a dark fill: RustGuiPoc's
 // hardware runs found dark thin glyphs on a light fill drop out on this panel
 // (Docs/FINDINGS.md), so light-on-dark is a rule here, not a preference. It is
@@ -146,42 +100,12 @@ impl PixelColor for Abgr2222 {
 // -- a bright fill would need dark text on it.
 const GROUND: Abgr2222 = Abgr2222::BLACK;
 const HEADING: Abgr2222 = Abgr2222::WHITE;
-const CHROME: Abgr2222 = Abgr2222::GRAY;
-const CHOSEN_FILL: Abgr2222 = Abgr2222::DARK_GRAY;
+const CHROME: Abgr2222 = Abgr2222::GREY;
+const CHOSEN_FILL: Abgr2222 = Abgr2222::DARK_GREY;
 const CHOSEN_TEXT: Abgr2222 = Abgr2222::WHITE;
-const UNCHOSEN_TEXT: Abgr2222 = Abgr2222::GRAY;
+const UNCHOSEN_TEXT: Abgr2222 = Abgr2222::GREY;
 const WARN_ACCENT: Abgr2222 = Abgr2222::AMBER;
 
-struct FrameBuf<'a> {
-    buf: &'a mut [u8],
-    w: u32,
-    h: u32,
-}
-
-impl OriginDimensions for FrameBuf<'_> {
-    fn size(&self) -> Size {
-        Size::new(self.w, self.h)
-    }
-}
-
-impl DrawTarget for FrameBuf<'_> {
-    type Color = Abgr2222;
-    type Error = core::convert::Infallible;
-
-    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Pixel<Self::Color>>,
-    {
-        let (w, h) = (self.w as i32, self.h as i32);
-        for Pixel(coord, color) in pixels {
-            if coord.x >= 0 && coord.y >= 0 && coord.x < w && coord.y < h {
-                let idx = (coord.y as u32 * self.w + coord.x as u32) as usize;
-                self.buf[idx] = color.0;
-            }
-        }
-        Ok(())
-    }
-}
 
 #[cfg(not(feature = "std"))]
 struct Buf<const N: usize> {
@@ -248,9 +172,8 @@ const FOOTER_BASELINE_Y: i32 = 220;
 static WORD_FACE: &Face = &faces::SEMIBOLD_18_ASCII;
 static HINT_FACE: &Face = &faces::REGULAR_12_ASCII;
 
-fn text(fb: &mut FrameBuf, face: &Face, s: &str, x: i32, baseline: i32, color: Abgr2222) {
-    let mut canvas = Canvas::round(fb.buf, fb.w, fb.h);
-    face.draw(&mut canvas, s, x, baseline, Align::Center, color.0);
+fn text(fb: &mut Surface<Abgr2222>, face: &Face, s: &str, x: i32, baseline: i32, color: Abgr2222) {
+    face.draw(fb, s, x, baseline, Style::centered(color, GROUND)).ok();
 }
 
 /// The chosen half's fill, or none when nothing may be claimed as chosen.
@@ -261,7 +184,7 @@ fn chosen_half_x(state: &State) -> Option<i32> {
     Some(if state.is_imperial() { SEG_X + SEG_HALF_W } else { SEG_X })
 }
 
-fn draw_choice(fb: &mut FrameBuf, state: &State) {
+fn draw_choice(fb: &mut Surface<Abgr2222>, state: &State) {
     // The outline carries the same news as the footer, so a glance gets it
     // without reading.
     let outline = match state.status() {
@@ -319,7 +242,7 @@ fn draw_choice(fb: &mut FrameBuf, state: &State) {
     text(fb, WORD_FACE, LABEL_IMPERIAL, IMPERIAL_CX, SEG_TEXT_BASELINE_Y, imperial_color);
 }
 
-fn draw(fb: &mut FrameBuf, state: &State) {
+fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
     text(fb, WORD_FACE, TITLE, PANEL_CX, TITLE_BASELINE_Y, HEADING);
 
     // Nothing to show a choice about: the units themselves could not be read,
@@ -370,13 +293,10 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {
     if width == 0 || height == 0 {
         return;
     }
-    let needed = (width as usize).saturating_mul(height as usize);
-    if buf.len() < needed {
+    let Some(mut fb) = Surface::<Abgr2222>::round(buf, width, height) else {
         return;
-    }
-
-    let mut fb = FrameBuf { buf: &mut buf[..needed], w: width, h: height };
-    fb.buf.fill(GROUND.0);
+    };
+    fb.clear(GROUND);
     draw(&mut fb, state);
 }
 
