@@ -15,13 +15,13 @@ required-features = ["sim"]
 [features]
 std = ["inscribed-disc/std"]
 # The location half only, which reports file:line through one
-# `inscribed_disc_host_panic` the shell defines. Not
-# inscribed-disc/panic-message: this app is eight screens of settings with no
+# `panickit_host_panic` the shell defines. Not
+# panickit/panic-message: this app is eight screens of settings with no
 # arithmetic worth a message, and the message is 2,520 of the 3,226 bytes a
 # full handler costs -- see
-# InscribedDisc/Docs/2026-09-09-panic-handler-cost.md. Add it if a panic here
+# PanicKit/Docs/2026-09-09-panic-handler-cost.md. Add it if a panic here
 # ever turns out to need more than a line number.
-device = ["inscribed-disc/panic-handler"]
+device = ["panickit/panic-handler"]
 sim = ["std", "dep:embedded-graphics-simulator"]
 
 [dependencies]
@@ -32,6 +32,9 @@ textkit = { path = "../../../../../TextKit" }
 # The surface, the colour, the panic handler and the page indicator. A path
 # dependency and never a second staticlib: two archives each carrying a
 # #[panic_handler] collide at link time.
+# The panic handler, which draws nothing and so is not the graphics
+# crate's. A dependency, never a second staticlib.
+panickit = { path = "../../../../../PanicKit", default-features = false }
 inscribed-disc = { path = "../../../../../InscribedDisc", default-features = false, features = [
     "embedded-graphics",
     "abgr2222",

@@ -2,11 +2,9 @@
 name = "inscribed-disc"
 version = "0.1.0"
 edition = "2021"
-# MEASURED, not inherited: the crate builds at 1.71.1 -- embedded-graphics' own
-# floor -- with no features, with `embedded-graphics`, and with `abgr2222`.
-# `panic-message` is what needs 1.81, for `PanicInfo::message()`; `preview`
-# needs 1.74 for `io::Error::other`. Re-run with `cargo +1.80.1 build
-# --no-default-features --features panic-message`, which fails.
+# `panic-message` was what needed 1.81, for `PanicInfo::message()`, and it has
+# left with the handler. The floor is now lower and unmeasured; it is left here
+# until it is established rather than guessed at.
 rust-version = "1.81"
 license = "MIT"
 description = "Round displays whose glass is the inscribed disc of a square framebuffer: where the glass is, and embedded-graphics draw targets that clip every pixel to it, at any colour depth."
@@ -33,17 +31,6 @@ embedded-graphics = ["dep:embedded-graphics"]
 ## right type for the three round Sharp `DD` panels and for nothing else, which
 ## is why it is off.
 abgr2222 = ["embedded-graphics"]
-## A `#[panic_handler]` reporting `file:line` through `inscribed_disc_host_panic`.
-## Measured at 319 bytes over reporting nothing. Inert under `std`, and a host
-## test build needs that: with this on and `std` off the crate owns
-## `panic_impl`, so every doc-test fails to link with E0152. Test it as
-## `--features panic-handler,std`, or with `--all-features`.
-panic-handler = []
-## Adds the panic message to the location. This is the expensive half: it needs
-## `core::fmt`, measured at +2,210 bytes of `.text` linking Spin's real
-## renderer, against 319 for the location alone. Opt in when the message is
-## worth three kilobytes of a 600 KiB window.
-panic-message = ["panic-handler"]
 ## Host-side helpers and `std` assertions in tests.
 std = []
 ## PNG frames, contact sheets and the gamut sheet. Host-only, and the only

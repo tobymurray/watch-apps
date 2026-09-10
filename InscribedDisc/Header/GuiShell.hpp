@@ -2,7 +2,7 @@
 #define INSCRIBED_DISC_GUISHELL_HPP
 
 // The C++ half of InscribedDisc: the framebuffer, the display config, the
-// render and push, the message loop and the panic trampoline.
+// render and push, and the message loop.
 //
 // Header-only so it type-checks on a host with
 //   clang++ -fsyntax-only -std=c++17 \
@@ -279,24 +279,5 @@ private:
 };
 
 }  // namespace inscribed_disc
-
-extern "C" {
-
-/// Called by the kit's Rust panic handler. Must not return normally.
-void inscribed_disc_host_panic(const uint8_t* msg, uint32_t len);
-}
-
-/// Defines `inscribed_disc_host_panic` to log and exit.
-///
-/// A macro because exactly one translation unit must define it.
-#define INSCRIBED_DISC_DEFINE_HOST_PANIC(LOG_ERROR_FN)                                \
-    extern "C" void inscribed_disc_host_panic(const uint8_t* msg, uint32_t len)       \
-    {                                                                                 \
-        LOG_ERROR_FN("Rust panic: %.*s\n", static_cast<int>(len),                     \
-                     reinterpret_cast<const char*>(msg));                             \
-        SDK::KernelProviderGUI::GetInstance().getKernel().sys.exit(1);                 \
-        for (;;) {                                                                    \
-        }                                                                             \
-    }
 
 #endif  // INSCRIBED_DISC_GUISHELL_HPP

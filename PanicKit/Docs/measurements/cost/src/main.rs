@@ -2,11 +2,15 @@
 //!
 //! Four handlers over one workload, linked into a real ELF so the answer
 //! includes what each drags out of `core`. Method and results:
-//! `InscribedDisc/Docs/2026-09-09-panic-handler-cost.md`.
+//! `PanicKit/Docs/2026-09-09-panic-handler-cost.md`.
 #![no_std]
 #![no_main]
 
 use inscribed_disc::{color::Abgr2222, surface::Surface};
+// `full` takes PanicKit's handler; a lang item is only linked if the crate is
+// referenced, and nothing below names it.
+#[cfg(feature = "full")]
+use panickit as _;
 
 /// A workload with a real panic reachable from it, so the handler cannot be
 /// proved unreachable and deleted.
@@ -28,7 +32,7 @@ pub extern "C" fn _start() -> ! {
 #[panic_handler]
 fn on_panic(_info: &core::panic::PanicInfo) -> ! {
     let s = b"panic";
-    unsafe { inscribed_disc_host_panic(s.as_ptr(), s.len() as u32) }
+    unsafe { panickit_host_panic(s.as_ptr(), s.len() as u32) }
 }
 
 #[cfg(feature = "location")]
@@ -61,7 +65,7 @@ fn on_panic(info: &core::panic::PanicInfo) -> ! {
             n += 1;
         }
     }
-    unsafe { inscribed_disc_host_panic(buf.as_ptr(), n as u32) }
+    unsafe { panickit_host_panic(buf.as_ptr(), n as u32) }
 }
 
 // `full` has no handler here: the feature turns on `inscribed-disc`'s own
@@ -71,7 +75,7 @@ fn on_panic(info: &core::panic::PanicInfo) -> ! {
 /// Stands in for the C++ shell's trampoline, which logs and exits. Kept as
 /// small as possible so it does not itself colour the comparison.
 #[no_mangle]
-pub extern "C" fn inscribed_disc_host_panic(msg: *const u8, len: u32) -> ! {
+pub extern "C" fn panickit_host_panic(msg: *const u8, len: u32) -> ! {
     unsafe {
         core::ptr::write_volatile(0x2008_0000 as *mut u32, len);
         core::ptr::write_volatile(0x2008_0004 as *mut u32, msg as u32);
@@ -112,5 +116,5 @@ fn on_panic(info: &core::panic::PanicInfo) -> ! {
             n += 1;
         }
     }
-    unsafe { inscribed_disc_host_panic(buf.as_ptr(), n as u32) }
+    unsafe { panickit_host_panic(buf.as_ptr(), n as u32) }
 }

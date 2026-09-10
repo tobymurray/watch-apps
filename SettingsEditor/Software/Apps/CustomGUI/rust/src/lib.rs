@@ -12,6 +12,12 @@ use inscribed_disc::color::Abgr2222;
 use inscribed_disc::surface::Surface;
 use textkit::{faces, Align, Face, Style};
 
+// PanicKit owns this app's `#[panic_handler]`. A lang item is only linked if
+// something references the crate, and nothing here calls it by name, so this
+// import is what pulls it in.
+#[cfg(feature = "device")]
+use panickit as _;
+
 /// What may be claimed about the field on screen. Every one of these leaves the
 /// setting somewhere different, and a value that just changes cannot tell them
 /// apart.

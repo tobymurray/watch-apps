@@ -91,7 +91,6 @@ paints 12,792 pixels the glass never shows, 22.2% of the framebuffer.
 | `surface` | the framebuffer, the clip, a row-fill `fill_solid` | `embedded-graphics`, on by default |
 | `color` | `Abgr2222`, its palette, and `shade` for partial coverage | `abgr2222` |
 | `preview` | frames to PNG in the panel's own colours, host-only | `preview` |
-| `panic` | a `#[panic_handler]` reporting `file:line` | `panic-handler` |
 
 Text is not included and neither is a font: bring your own rasteriser and hand
 it the buffer through `Surface::bytes_mut`, applying `geometry::is_lit` yourself.

@@ -31,8 +31,6 @@
 //! | `embedded-graphics` | on | [`clip`], [`surface`] |
 //! | `abgr2222` | off | [`color`] |
 //! | `preview` | off | [`preview`]; implies `std` and `abgr2222` |
-//! | `panic-handler` | off | [`mod@panic`], location only |
-//! | `panic-message` | off | implies `panic-handler`; adds the message |
 //! | `std` | off | host assertions |
 //!
 //! # Example
@@ -77,10 +75,6 @@ pub mod color;
 #[cfg(feature = "preview")]
 #[cfg_attr(docsrs, doc(cfg(feature = "preview")))]
 pub mod preview;
-
-#[cfg(feature = "panic-handler")]
-#[cfg_attr(docsrs, doc(cfg(feature = "panic-handler")))]
-pub mod panic;
 
 #[cfg(feature = "embedded-graphics")]
 pub use clip::DiscClipped;

@@ -17,6 +17,12 @@ use inscribed_disc::color::Abgr2222;
 use inscribed_disc::surface::Surface;
 use textkit::{faces, Align, Face, Style};
 
+// PanicKit owns this app's `#[panic_handler]`. A lang item is only linked if
+// something references the crate, and nothing here calls it by name, so this
+// import is what pulls it in.
+#[cfg(feature = "device")]
+use panickit as _;
+
 /// The frames worth looking at. Host-only: the watch is handed frames.
 #[cfg(feature = "std")]
 pub mod scenes;

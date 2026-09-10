@@ -1,0 +1,118 @@
+name: PanicKit
+
+# A shared directory belongs to no app, so no app's workflow builds it. This is
+# what proves the handler still compiles for the watch, still costs what its
+# design record says, and still links against the SDK header that defines its
+# symbol.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'PanicKit/**'
+      - '.github/workflows/panickit.yml'
+  pull_request:
+    paths:
+      - 'PanicKit/**'
+      - '.github/workflows/panickit.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: panickit-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  # The C++ half type-checks against the SDK's headers. Must track
+  # app-build.yml's pin: two workflows on two SDK commits are two instruments.
+  SDK_REPO: tobymurray/una-sdk
+  SDK_REF: 40dc55004b129d0503aafb4473ad285e7fc9aff2
+
+jobs:
+  # Not in the toolchain container, for the same reason inscribed-disc.yml says:
+  # that image carries cargo-clippy on PATH but no clippy component. This crate
+  # needs no SDK and no ARM toolchain to lint.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clippy, and rustc's own warnings, across the feature matrix
+        working-directory: PanicKit
+        run: |
+          set -euo pipefail
+          rustup component add clippy
+          cargo clippy --all-features --all-targets -- -D warnings
+          cargo clippy --no-default-features --all-targets -- -D warnings
+          for f in panic-handler panic-message std "panic-handler,std"; do
+            echo "--- $f"
+            cargo clippy --no-default-features --features "$f" --all-targets \
+              -- -D warnings
+          done
+
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    container:
+      image: ghcr.io/tobymurray/watch-apps-toolchain@sha256:cca44e2ca090850480a612f4ed3d4acbd317f3bd32516b0d8fe323cf37c0ee26
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the SDK
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SDK_REPO }}
+          ref: ${{ env.SDK_REF }}
+          persist-credentials: false
+          path: sdk
+
+      # `--features panic-handler` alone cannot host-test: with the handler
+      # compiled and std off the crate owns panic_impl, so doc-tests fail to
+      # link with E0152. This is the combination that runs the location
+      # formatter's tests.
+      - name: Tests
+        working-directory: PanicKit
+        run: |
+          set -euo pipefail
+          cargo test --all-features
+          cargo test --no-default-features --features panic-handler,std
+
+      # The one that matters: an app ships this into a no_std binary with no
+      # allocator, and nothing else here says it still fits.
+      - name: The watch target, and a second architecture
+        working-directory: PanicKit
+        run: |
+          set -euo pipefail
+          rustup target add riscv32imac-unknown-none-elf
+          for t in thumbv8m.main-none-eabihf riscv32imac-unknown-none-elf; do
+            for f in panic-handler panic-message; do
+              echo "--- $t $f"
+              cargo build --release --target "$t" --no-default-features \
+                --features "$f"
+            done
+          done
+
+      # Catches a rename across the C ABI, which needs no ARM toolchain. The
+      # symbol is the whole contract: the Rust side compiles perfectly well with
+      # it dangling, and only a link says otherwise.
+      - name: The host header type-checks against the SDK
+        env:
+          UNA_SDK: ${{ github.workspace }}/sdk
+        run: |
+          set -euo pipefail
+          cat > /tmp/panic_check.cpp <<'EOF'
+          #include "HostPanic.hpp"
+          static void log_error(const char*, ...) {}
+          PANICKIT_DEFINE_HOST_PANIC(log_error)
+          EOF
+          "${CXX:-g++}" -fsyntax-only -std=c++17 -fno-exceptions \
+            -I"$UNA_SDK/Libs/Header" -I PanicKit/Header /tmp/panic_check.cpp

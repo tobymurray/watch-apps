@@ -53,7 +53,7 @@ cannot panic, removes it.
 
 This is the sharpest lesson here: in a panic handler, an operation that can
 panic is not merely a correctness worry, it is most of the code size. The
-implementation in `src/panic.rs` is written that way and says so.
+implementation in `src/lib.rs` is written that way and says so.
 
 ## Re-run on 2026-09-10, and the falsifier fired
 
@@ -66,17 +66,23 @@ so this is the compiler and not the code:
 | `b"panic"` | 730 | 5 | 735 | 659 |
 | `file:line`, written not to panic | 942 | 204 | **1,146** | 978 |
 | `file:line`, written naively | 2,502 | 804 | **3,306** | 3,164 |
-| `file:line: message` | 3,306 | 1,004 | 4,310 | 4,050 |
+| `file:line: message` | 3,306 | 996 | 4,302 | 4,050 |
 
 **The lesson survives, smaller.** Over the `literal` baseline the careful
 location handler costs 411 bytes and the naive one 2,571 — **6.3×**, where
 1.97.1 gave 319 against 2,505, which is the 8× quoted above. An operation that
 can panic inside a panic handler is still most of the code size.
 
-The `file:line: message` row now measures **the crate's own handler** rather
-than a copy of it: `panic` moved behind the `panic-handler` feature, so `full`
-turns on `inscribed-disc/panic-message` and the probe defines no handler of its
-own for that variant. A replica would have stopped tracking what ships.
+The `file:line: message` row measures **the crate's own handler** rather than a
+copy of it: `full` turns on `panickit/panic-message` and the probe defines no
+handler of its own for that variant. A replica would have stopped tracking what
+ships.
+
+Re-run again on 2026-09-10 after the handler moved out of `inscribed-disc` into
+`PanicKit`: every row is unchanged except `full`, which fell 4,310 → **4,302**.
+Those 8 bytes are the panic location string — `PanicKit/src/lib.rs` is shorter
+than `InscribedDisc/src/panic.rs` — which is the `.rodata` file-path effect this
+file's falsifier list already names.
 
 The Spin-linked figures in "The result" above were **not** re-run, and are
 still 1.97.1 numbers.
@@ -96,7 +102,7 @@ still 1.97.1 numbers.
 ## Re-running it
 
 ```
-cd InscribedDisc/Docs/measurements/panic-handler
+cd PanicKit/Docs/measurements/cost
 for f in literal location_min location full; do
   cargo build --release --target thumbv8m.main-none-eabihf --features $f
   llvm-size --format=sysv target/thumbv8m.main-none-eabihf/release/panicprobe

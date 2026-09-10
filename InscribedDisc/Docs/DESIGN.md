@@ -329,13 +329,18 @@ glass as a blank white band. This is the glass, not the framebuffer, so no
 simulator shows it. Every default in this kit is bright-on-dark, and a
 dark-on-light claim needs a device capture.
 
-**The panic handler is two features, because one half is 78% of the cost.**
+**The panic handler moved to [`PanicKit`](../../PanicKit), and the measurement
+went with it.** Nothing in it draws, and a published graphics crate that owns
+`panic_impl` collides with `panic-halt`, `panic-probe` and `defmt` for anyone
+who enables it — §6 of the publish investigation names that as the regret worth
+acting on. What it found, kept here because it is why the split is two features
+rather than one:
 Linking `Spin`'s real renderer against the `b"panic"` literal it shipped:
 `file:line` costs **+706 bytes**, and adding the message takes it to **+3,226**.
 The message is `core::fmt`. And a handler that itself uses a panicking
 operation — slice indexing, `copy_from_slice` — costs **eight times** what the
 same output costs written with iterator zips, because its own panic path drags
-the formatting in. [`Docs/2026-09-09-panic-handler-cost.md`](2026-09-09-panic-handler-cost.md).
+the formatting in. [`PanicKit/Docs/2026-09-09-panic-handler-cost.md`](../../PanicKit/Docs/2026-09-09-panic-handler-cost.md).
 
 **`fill_rect` as a direct row fill**, not `Rectangle::into_styled().draw()`,
 which pulls in the point-iterator layer once per distinct colour. `Spin`
@@ -537,8 +542,6 @@ dependency tree, passes its own tests there, and builds for
 | `embedded-graphics` | **on** | `clip` (`DiscClipped`), `surface` (`Surface`, `ByteColor`) |
 | `abgr2222` | off | `color` (`Abgr2222`, `shade`, the palette, `GREY_LEVELS`, `CHANNEL_MAX`) |
 | `preview` | off | `preview`; implies `std` and `abgr2222`; brings `png` |
-| `panic-handler` | off | `panic`, location only |
-| `panic-message` | off | implies `panic-handler`; adds the message |
 | `std` | off | host assertions |
 
 **An earlier version of this section said there was deliberately no `abgr2222`
@@ -697,11 +700,12 @@ because "byte-identical frames" could otherwise hide them:
   because nothing was ever painted outside the glass — which is exactly what
   `nothing_is_drawn_outside_the_bezel` had been checking *after the fact*
   instead of preventing.
-- **The undefined symbol moved.** The archive now needs `inscribed_disc_host_panic`
-  where it needed `spin_gui_host_panic`, and `Gui.cpp` was changed to define it.
+- **The undefined symbol moved.** The archive needed `spin_gui_host_panic`,
+  then this crate's, and now `PanicKit`'s `panickit_host_panic`; `Gui.cpp` was
+  changed each time to define it.
   Nothing but a link catches that: the crate compiled fine with the symbol
   dangling. `llvm-nm --undefined-only` on the archive is the check, and it is
-  the one ergonomic cost of the kit owning the panic handler.
+  the one ergonomic cost of a kit owning the panic handler.
 
 **What did not move to the kit, and why.** `Spin`'s arc sampler stays on
 `micromath`'s trig rather than `draw::fill_arc`'s. The two agree to about
@@ -749,14 +753,15 @@ Listed so the gap is not something a reader has to find:
 - **The opaque payload reader** of §4. The fixed event ABI is built; the data
   half is designed and specified only.
 - **The backports** — the colour-depth guard to the four shells missing it, the
-  real panic handler to `Spin` and `Barcode`. Both are what the kit fixes *by
-  existing*, and both still need doing to the shipping apps.
+  real panic handler to the five renderers that still declare their own, which
+  is `PanicKit`'s to fix now rather than this crate's. Both are what a kit fixes
+  *by existing*, and both still need doing to the shipping apps.
 - **The scaffold** (`new-gui-app <Name>`). "Get started without reinventing
   everything" is a command you can run or it is a claim, and right now it is a
   claim.
 - **`.uapp` sizes, and `.bss`.** Those still need the packer and the pinned
   Docker image. `.text` and `.rodata` *are* now measured linked, with `rust-lld`
-  and a minimal linker script — see the panic-handler measurement — so where a
+  and a minimal linker script — see PanicKit's cost measurement — so where a
   figure in this file is an archive upper bound it says so.
 - **Frame time on hardware.** The 78 ms slack is the platform's; no scene in
   this kit has been timed against it, on the host or on a watch.
@@ -802,7 +807,6 @@ InscribedDisc/
     surface.rs    the framebuffer, the clip, the fill_solid fast path
     color.rs      Abgr2222, the palette, shade()
     preview.rs    frames to PNG, sheets, the gamut sheet
-    panic.rs      one panic handler, one host symbol
   Header/
     GuiShell.hpp  the C++ pump, header-only, host-type-checkable
   inscribed-disc.cmake  the two lines nobody can guess

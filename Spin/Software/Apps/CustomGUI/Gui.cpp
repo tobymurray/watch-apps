@@ -37,10 +37,10 @@ uint16_t displayEnergy(float kcal, bool asKilojoules)
 
 } // namespace
 
-// One symbol for every app that adopts InscribedDisc, where each renderer
+// One symbol for every app that adopts PanicKit, where each renderer
 // used to declare its own. The kit's panic handler calls it with "file:line: message",
 // where this app's own handler sent the literal "panic".
-extern "C" void inscribed_disc_host_panic(const uint8_t *msg, uint32_t len)
+extern "C" void panickit_host_panic(const uint8_t *msg, uint32_t len)
 {
     LOG_ERROR("Rust panic: %.*s\n", static_cast<int>(len),
               reinterpret_cast<const char *>(msg));

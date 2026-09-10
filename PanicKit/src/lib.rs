@@ -1,11 +1,30 @@
-//! One panic handler, reporting through one host symbol.
+//! One `#[panic_handler]` for this repository's Rust halves, reporting through
+//! one symbol the C++ host defines.
+//!
+//! On this device a panic is a silent hang with a ride in progress, there is no
+//! debugger, and the only recovery is a reboot — so the handler says where it
+//! panicked. `.text` executes from the same 600 KiB window as the framebuffer,
+//! so that diagnostic is charged against the pixels, which is why the location
+//! and the message are separate features. What each costs, and the trap that
+//! cost eight times the answer, are in
+//! `PanicKit/Docs/2026-09-09-panic-handler-cost.md`.
+//!
+//! Nothing here draws, so this crate is not part of `inscribed-disc`: a
+//! published graphics crate that owns `panic_impl` collides with `panic-halt`,
+//! `panic-probe` and `defmt` for anyone who enables it. It is also usable by a
+//! Service half, which has no framebuffer at all.
+//!
+//! The host side is `Header/HostPanic.hpp`.
+
+#![cfg_attr(not(any(test, feature = "std")), no_std)]
+#![deny(missing_docs)]
 
 #[cfg(all(feature = "panic-message", not(feature = "std"), not(test)))]
 use core::fmt::Write as _;
 
 extern "C" {
     /// Defined by the host shell. Must not return normally.
-    pub fn inscribed_disc_host_panic(msg: *const u8, len: u32) -> !;
+    pub fn panickit_host_panic(msg: *const u8, len: u32) -> !;
 }
 
 /// A stack-allocated formatting buffer.
@@ -53,8 +72,17 @@ impl<const N: usize> core::fmt::Write for Buf<N> {
 /// `copy_from_slice`. MEASURED: written this way the location costs 319 bytes;
 /// written with indexing it costs 2,513, because a panicking operation inside a
 /// panic handler pulls its own panic path's formatting in. Re-run
-/// `InscribedDisc/Docs/measurements/panic-handler`.
-#[cfg(all(feature = "panic-handler", not(feature = "panic-message")))]
+/// `PanicKit/Docs/measurements/cost`.
+// Compiled exactly where it has a caller: the location handler below, which
+// needs `not(std)` and `not(test)`, or the tests, which need `test`. Under
+// `panic-handler,std` -- the combination that host-tests this crate -- the
+// handler is inert and the lib target has no tests, so without `any(...)` this
+// is dead code.
+#[cfg(all(
+    feature = "panic-handler",
+    not(feature = "panic-message"),
+    any(test, not(feature = "std"))
+))]
 fn write_location(buf: &mut [u8], loc: &core::panic::Location<'_>) -> usize {
     let mut n = 0usize;
     for (dst, src) in buf.iter_mut().zip(loc.file().as_bytes()) {
@@ -91,7 +119,7 @@ fn write_location(buf: &mut [u8], loc: &core::panic::Location<'_>) -> usize {
 ///
 /// MEASURED, linked: +706 bytes over a handler that reports nothing, against
 /// +3,226 for one that adds the message. Re-run
-/// `InscribedDisc/Docs/measurements/panic-handler`.
+/// `PanicKit/Docs/measurements/cost`.
 #[cfg(all(
     feature = "panic-handler",
     not(feature = "panic-message"),
@@ -105,14 +133,14 @@ fn on_panic(info: &core::panic::PanicInfo) -> ! {
         Some(loc) => write_location(&mut buf, loc),
         None => 0,
     };
-    unsafe { inscribed_disc_host_panic(buf.as_ptr(), n as u32) }
+    unsafe { panickit_host_panic(buf.as_ptr(), n as u32) }
 }
 
 /// Reports `file:line: message`.
 ///
 /// MEASURED, linked: +3,226 bytes against +706 for the location alone, because
 /// the message needs `core::fmt`. Re-run
-/// `InscribedDisc/Docs/measurements/panic-handler`.
+/// `PanicKit/Docs/measurements/cost`.
 #[cfg(all(feature = "panic-message", not(feature = "std"), not(test)))]
 #[panic_handler]
 fn on_panic(info: &core::panic::PanicInfo) -> ! {
@@ -123,7 +151,7 @@ fn on_panic(info: &core::panic::PanicInfo) -> ! {
     let _ = write!(msg, "{}", info.message());
 
     let s = msg.as_str();
-    unsafe { inscribed_disc_host_panic(s.as_ptr(), s.len() as u32) }
+    unsafe { panickit_host_panic(s.as_ptr(), s.len() as u32) }
 }
 
 #[cfg(test)]

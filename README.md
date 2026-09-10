@@ -43,7 +43,7 @@ two share everything that touches the watch's settings, which lives once in
 
 ## The shared directories
 
-Five directories here are not apps. Each is code more than one app needs, kept
+Six directories here are not apps. Each is code more than one app needs, kept
 in one place so it cannot drift into several slightly different copies — which
 is what happened before each of them existed.
 
@@ -54,11 +54,12 @@ is what happened before each of them existed.
 | [`EffortKit`](EffortKit) | Heart-rate recovery and the shared session log, linked by `Spin`'s and `Squash`'s Service halves, which have no host test of their own. |
 | [`TextKit`](TextKit) | Text for the Rust GUIs: Poppins pre-rendered into 2bpp atlases and blitted through the lit disc, held to TouchGFX's own converter by a parity test over 376 glyphs. |
 | [`InscribedDisc`](InscribedDisc) | The drawing under those same Rust renderers, and the one directory here that is also a crate: `inscribed-disc`, for round panels whose glass is the inscribed disc of a square framebuffer. It holds where the glass is, a disc clip over any `embedded-graphics` `DrawTarget` at any colour depth, the `ABGR2222` surface this watch's panel needs, and a PNG preview that shows exactly the 64 colours it can. Distilled from the seven `CustomGUI` apps, each of which had written its own copy — the framebuffer's `DrawTarget` impl was byte-identical in all seven. The C ABI, `GuiShell.hpp` and `inscribed-disc.cmake` are this repository's glue to one vendor's SDK and are not part of the crate. [`InscribedDisc/Docs/DESIGN.md`](InscribedDisc/Docs/DESIGN.md) is the design record and [`Docs/2026-09-10-publish-or-not.md`](InscribedDisc/Docs/2026-09-10-publish-or-not.md) is why it is shaped this way. |
+| [`PanicKit`](PanicKit) | One `#[panic_handler]`, reporting `file:line` through one symbol the C++ shell defines. `Spin` and `SettingsEditor` take it; the other five Rust renderers still declare their own, differing only in that symbol's name, which is the drift this exists to end. Not part of `inscribed-disc` because nothing in it draws, and a published graphics crate that owns `panic_impl` collides with `panic-halt` and `defmt` for anyone who enables it. Two features, because `file:line` costs 319 bytes and the message costs 2,210 more. |
 
 A shared directory belongs to no app, so no app's workflow builds it.
-`SettingsKit`, `EffortKit` and `InscribedDisc` have their own workflow;
-`app-build.yml` additionally finds `TextKit` and `InscribedDisc` from an adopting
-app's `Cargo.toml`, and `EffortKit` from its CMake. **`MapKit` is covered by
+`SettingsKit`, `EffortKit`, `InscribedDisc` and `PanicKit` have their own
+workflow; `app-build.yml` additionally finds `TextKit`, `InscribedDisc` and
+`PanicKit` from an adopting app's `Cargo.toml`, and `EffortKit` from its CMake. **`MapKit` is covered by
 neither**: it has no workflow of its own, and no map app has one to discover it
 from, so nothing in CI compiles it.
 

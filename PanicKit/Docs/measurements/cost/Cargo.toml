@@ -9,11 +9,15 @@ literal = []
 location = []
 # The crate's own message handler, not a replica: `panic` is behind
 # `panic-handler`, and measuring a copy would stop tracking what ships.
-full = ["inscribed-disc/panic-message"]
+full = ["panickit/panic-message"]
 location_min = []
 
 [dependencies]
-inscribed-disc = { path = "../../..", default-features = false, features = ["embedded-graphics", "abgr2222"] }
+panickit = { path = "../../..", default-features = false }
+inscribed-disc = { path = "../../../../InscribedDisc", default-features = false, features = [
+    "embedded-graphics",
+    "abgr2222",
+] }
 
 [profile.release]
 panic = "abort"

@@ -58,8 +58,8 @@ jobs:
           rustup component add clippy
           cargo clippy --all-features --all-targets -- -D warnings
           cargo clippy --no-default-features --all-targets -- -D warnings
-          for f in embedded-graphics abgr2222 panic-handler panic-message std \
-                   preview "embedded-graphics,panic-handler"; do
+          for f in embedded-graphics abgr2222 std preview \
+                   "embedded-graphics,abgr2222"; do
             echo "--- $f"
             cargo clippy --no-default-features --features "$f" --all-targets \
               -- -D warnings
@@ -101,10 +101,6 @@ jobs:
           # second was a compile error nothing caught.
           cargo test --no-default-features
           cargo test --no-default-features --features embedded-graphics
-          # `std` is not optional here: with panic-handler on and std off the
-          # crate owns panic_impl and doc-tests cannot link. It is the only
-          # command that runs the location formatter's tests.
-          cargo test --no-default-features --features panic-handler,std
 
       # A `std` type reached for from the geometry core compiles fine above and
       # fails here.
@@ -130,11 +126,7 @@ jobs:
         working-directory: InscribedDisc
         run: |
           set -euo pipefail
-          # panic-handler and panic-message are what an app ships, and nothing
-          # else here compiles them: --all-features enables std, and both
-          # handlers are gated `not(feature = "std")`.
-          for f in embedded-graphics abgr2222 panic-handler panic-message \
-                   "abgr2222,panic-message"; do
+          for f in embedded-graphics abgr2222 "embedded-graphics,abgr2222"; do
             echo "--- $f"
             cargo build --release --target thumbv8m.main-none-eabihf \
               --no-default-features --features "$f"

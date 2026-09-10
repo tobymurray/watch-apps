@@ -23,12 +23,12 @@ required-features = ["sim"]
 [features]
 std = ["inscribed-disc/std"]
 # The device build takes the kit's panic handler, which reports file:line
-# through one `inscribed_disc_host_panic` the shell defines. Spin previously
+# through one `panickit_host_panic` the shell defines. Spin previously
 # sent the literal "panic", having been forked before that improvement landed.
 # Both halves: this app's panics are worth a message. An app tighter on RAM can
-# drop inscribed-disc/panic-message and keep the location for 319 bytes
-# instead of 3,226 -- see InscribedDisc/Docs/measurements/panic-handler.
-device = ["inscribed-disc/panic-handler", "inscribed-disc/panic-message"]
+# drop panickit/panic-message and keep the location for 319 bytes
+# instead of 3,226 -- see PanicKit/Docs/measurements/cost.
+device = ["panickit/panic-handler", "panickit/panic-message"]
 preview = ["std", "inscribed-disc/preview"]
 sim = ["preview", "dep:embedded-graphics-simulator"]
 
@@ -43,6 +43,9 @@ embedded-graphics-simulator = { version = "0.7", optional = true }
 textkit = { path = "../../../../../TextKit" }
 # The surface and its clip, the colour, and the panic handler. A dependency,
 # never a second staticlib, for the same reason as TextKit above.
+# The panic handler, which draws nothing and so is not the graphics
+# crate's. A dependency, never a second staticlib.
+panickit = { path = "../../../../../PanicKit", default-features = false }
 inscribed-disc = { path = "../../../../../InscribedDisc", default-features = false, features = [
     "embedded-graphics",
     "abgr2222",

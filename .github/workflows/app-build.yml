@@ -139,6 +139,10 @@ jobs:
           # it is discovered rather than declared.
           inscribed_disc=no
           if [ -n "$crate" ] && grep -q 'InscribedDisc' "$crate"; then inscribed_disc=yes; fi
+          # Found the same way: an app that ships the shared panic handler is
+          # what exercises it, and nothing else in this workflow would.
+          panickit=no
+          if [ -n "$crate" ] && grep -q 'PanicKit' "$crate"; then panickit=yes; fi
           # A Service that measures heart-rate recovery or writes the shared
           # session log links the EffortKit crate, whose own tests are the only
           # thing that covers either -- Service.cpp has no host test at all.
@@ -154,6 +158,7 @@ jobs:
             echo "crate=$([ -n "$crate" ] && dirname "$crate" || echo '')"
             echo "textkit=$textkit"
             echo "inscribed_disc=$inscribed_disc"
+            echo "panickit=$panickit"
             echo "effortkit=$effortkit"
           } >> "$GITHUB_OUTPUT"
 
@@ -163,6 +168,7 @@ jobs:
           echo "crate          $([ -n "$crate" ] && echo yes || echo no)"
           echo "textkit        $textkit"
           echo "inscribed_disc $inscribed_disc"
+          echo "panickit       $panickit"
           echo "buildable      $([ -n "$cmake" ] && echo yes || echo no)"
 
           if [ ! -f "$manifest" ] && [ ! -f "$tests" ] && [ -z "$cmake" ]; then
@@ -385,6 +391,12 @@ jobs:
 
       # inscribed-disc.yml covers the crate on its own; this is what says an
       # adopting app's build still agrees with it.
+      - name: PanicKit still holds its measurements
+        if: steps.app.outputs.panickit == 'yes'
+        shell: bash
+        working-directory: apps/PanicKit
+        run: cargo test --no-default-features --features panic-handler,std
+
       - name: InscribedDisc still holds its measurements
         if: steps.app.outputs.inscribed_disc == 'yes'
         shell: bash

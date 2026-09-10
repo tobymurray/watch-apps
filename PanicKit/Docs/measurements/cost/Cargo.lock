@@ -75,8 +75,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "panickit"
+version = "0.1.0"
+
+[[package]]
 name = "panicprobe"
 version = "0.0.0"
 dependencies = [
  "inscribed-disc",
+ "panickit",
 ]
