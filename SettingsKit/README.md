@@ -30,6 +30,8 @@ and what was proved on a watch. Read it before changing anything here.
 
 ## What an app supplies
 
+### A single-field app
+
 Two descriptors, and nothing else:
 
 - **`LiveSettings::Flag`** — the byte's offset in the live struct, paired with a
@@ -78,6 +80,32 @@ could not work across apps.
 `Field` still carries the two paths the primitive self-test writes, and those
 must be the app's own — `isWellFormed` refuses one that collides with the
 settings file or with either shared name.
+
+### An app with more than one field
+
+The same two halves, separated: a **`FieldDescriptor`** per field and one
+**`AppIdentity`** for the app. `Field` conflated them, which is fine while an app
+owns exactly one field and wrong the moment it owns eight — the probe paths exist
+for `validatePrimitives`, which proves a property of the firmware and of nothing
+a field says.
+
+`EditableFields.hpp` holds the census: which of the twelve fields are editable,
+what shape each has in the file, which member of the resolved `AddressSet` holds
+its live offset, how wide it is there, which supported message corroborates it,
+and the range this kit will write. It lives here rather than in an app for the
+reason above — it is derived from the same firmware image the addresses are, by
+hand, and no compiler checks it.
+
+The offset is a **pointer-to-member of `AddressSet`**, never a number: a plain
+offset in a descriptor would be a per-firmware value frozen at compile time,
+which is the thing this directory exists to prevent.
+
+[`SettingsEditor/README.md`](../SettingsEditor/README.md) is the design record
+for that app and for every decision the census encodes, including the four fields
+it refuses and why.
+[`Docs/2026-09-07-live-settings-struct.md`](Docs/2026-09-07-live-settings-struct.md)
+derives all ten fields the kernel parses — offsets, widths, and what each reader
+does with a value the app would not have written.
 
 ## The two fields, and how they differ
 

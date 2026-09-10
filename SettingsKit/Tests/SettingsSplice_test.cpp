@@ -1,5 +1,6 @@
 #include "SettingsSplice.hpp"
 
+#include "EditableFields.hpp"
 #include "SettingsField.hpp"
 
 #include <gtest/gtest.h>
@@ -718,6 +719,540 @@ TEST(SettingsUnits, DoesNotDisturbTheNotificationsFlag)
     const auto notifications = splice(kRealMetric, true);
     ASSERT_EQ(notifications.result, SettingsSplice::Result::Ok);
     EXPECT_NE(notifications.text.find("\"units\":\"metric\""), std::string::npos);
+}
+
+} // namespace
+
+namespace
+{
+
+/// A value that runs to the last byte read is a truncated file, and the
+/// firmware's own reader would refuse or misread it. Rewriting one commits a
+/// shorter truncation, and the readback confirms it because it compares the
+/// file against the buffer just written.
+TEST(SettingsShape, RefusesAValueThatReachesTheEndOfTheBuffer)
+{
+    char buf[kCapacity] = {};
+    const std::string input = R"({"height":190)";
+    std::memcpy(buf, input.data(), input.size());
+    size_t len = input.size();
+
+    EXPECT_EQ(SettingsSplice::setUnsigned(buf, len, kCapacity, {nullptr, "height"}, 183u),
+              SettingsSplice::Result::FieldNotFound);
+    EXPECT_EQ(std::string(buf, len), input);
+}
+
+/// `false` and `falsey` share a prefix, and matching the prefix alone rewrote
+/// the latter to `truey`: not valid JSON, ignored by the kernel's own bool
+/// reader, and reported as saved by the commit.
+TEST(SettingsShape, RefusesABooleanThatIsOnlyAPrefixOfTheToken)
+{
+    for (const char *file : {R"({"phone":{"notifications":falsey}})",
+                             R"({"phone":{"notifications":truely}})"}) {
+        EXPECT_EQ(splice(file, true).result, SettingsSplice::Result::FieldNotFound) << file;
+    }
+}
+
+} // namespace
+
+namespace
+{
+
+using SettingsPersist::FieldDescriptor;
+
+/// Splices `f`'s value through the read cap, the way the write path does.
+struct FieldSplice {
+    SettingsSplice::Result result;
+    std::string text;
+    size_t at;
+};
+
+FieldSplice spliceField(const std::string &input, const FieldDescriptor &f, const char *token)
+{
+    char buf[SettingsPersist::kBufferCapacity] = {};
+    std::memcpy(buf, input.data(), input.size());
+    size_t len = input.size();
+    size_t at  = 0;
+    const auto result = SettingsPersist::spliceWithinReadCap(f, buf, len, token,
+                                                             std::strlen(token), &at);
+    return {result, std::string(buf, len), at};
+}
+
+/// Asserts that the only bytes that changed are the ones at the offset the
+/// splice reported, and that the rest of the file moved by the length delta and
+/// nothing more. This is the whole promise of the mechanism -- a real personal
+/// settings file comes back byte for byte apart from the one value asked for --
+/// and it holds for every field without a hand-written expectation per field.
+void expectOnlyTheReportedValueChanged(const std::string &before, const FieldSplice &out,
+                                       const char *token)
+{
+    ASSERT_EQ(out.result, SettingsSplice::Result::Ok);
+    const size_t newLen = std::strlen(token);
+    ASSERT_GE(newLen + before.size(), out.text.size());
+    const size_t oldLen = newLen + before.size() - out.text.size();
+    ASSERT_LE(out.at + oldLen, before.size());
+
+    const std::string expected =
+        before.substr(0, out.at) + token + before.substr(out.at + oldLen);
+    EXPECT_EQ(out.text, expected);
+}
+
+TEST(SettingsFields, EveryEditableFieldLeavesTheRestOfTheRealFileAlone)
+{
+    const struct {
+        const FieldDescriptor &field;
+        const char *token;
+    } cases[] = {
+        {SettingsPersist::fields::kUnits, "\"imperial\""},
+        {SettingsPersist::fields::kNotifications, "true"},
+        {SettingsPersist::fields::kActivityMinutes, "45"},
+        {SettingsPersist::fields::kSteps, "12000"},
+        {SettingsPersist::fields::kFloors, "12"},
+        {SettingsPersist::fields::kHeight, "183"},
+        {SettingsPersist::fields::kWeight, "75"},
+        {SettingsPersist::fields::kMaxHeartRate, "[92,110,129,147,166,184]"},
+    };
+
+    for (const auto &c : cases) {
+        const auto out = spliceField(kRealFile, c.field, c.token);
+        SCOPED_TRACE(c.field.name);
+        expectOnlyTheReportedValueChanged(kRealFile, out, c.token);
+    }
+}
+
+/// The personal fields the kit cannot name are the reason the file is spliced
+/// rather than regenerated, and the kernel's own `save()` would drop both of
+/// these -- it writes no `gender` and no `dateOfBirth` key at all.
+TEST(SettingsFields, TheFieldsThisAppRefusesSurviveEveryEditItMakes)
+{
+    for (const auto *f : SettingsPersist::kEditable) {
+        const char *token = f->shape == SettingsSplice::JsonShape::NumberArray6
+                                ? "[92,110,129,147,166,184]"
+                                : (f->shape == SettingsSplice::JsonShape::UnitsToken
+                                       ? "\"imperial\""
+                                       : (f->shape == SettingsSplice::JsonShape::Boolean ? "true"
+                                                                                         : "7"));
+        const auto out = spliceField(kRealFile, *f, token);
+        SCOPED_TRACE(f->name);
+        ASSERT_EQ(out.result, SettingsSplice::Result::Ok);
+        EXPECT_NE(out.text.find(R"("gender":"M")"), std::string::npos);
+        EXPECT_NE(out.text.find(R"("dateOfBirth":"1990-01-01")"), std::string::npos);
+        EXPECT_NE(out.text.find(R"("watchFaceId":0)"), std::string::npos);
+        EXPECT_NE(out.text.find(R"("version":2)"), std::string::npos);
+    }
+}
+
+TEST(SettingsNumbers, RefusesATokenTheParserWouldNotHaveWritten)
+{
+    for (const char *value : {"+5", ".5", "5.", "1e3", "--1", "true", "null", "\"190\"",
+                              "0x10", "1 0", "190x"}) {
+        const std::string file = std::string(R"({"height":)") + value + R"(,"version":2})";
+        char buf[kCapacity] = {};
+        std::memcpy(buf, file.data(), file.size());
+        size_t len = file.size();
+        EXPECT_EQ(SettingsSplice::setUnsigned(buf, len, kCapacity, {nullptr, "height"}, 183u),
+                  SettingsSplice::Result::FieldNotFound)
+            << value;
+        EXPECT_EQ(std::string(buf, len), file) << value;
+    }
+}
+
+/// A fraction is a token this understands and replaces, not one it refuses:
+/// `weight` is read with `strtod`, so a wearer's phone may have written one,
+/// and refusing it would make the field uneditable rather than safe.
+TEST(SettingsNumbers, ReplacesAFractionalWeightWithAWholeOne)
+{
+    const std::string file = R"({"weight":90.5,"version":2})";
+    char buf[kCapacity] = {};
+    std::memcpy(buf, file.data(), file.size());
+    size_t len = file.size();
+
+    ASSERT_EQ(SettingsSplice::setUnsigned(buf, len, kCapacity, {nullptr, "weight"}, 75u),
+              SettingsSplice::Result::Ok);
+    EXPECT_EQ(std::string(buf, len), R"({"weight":75,"version":2})");
+}
+
+/// A negative number is a shape this can replace. The file holding one is how a
+/// wearer would find their way to a screen that can fix it; refusing the token
+/// would leave them with no way to.
+TEST(SettingsNumbers, ReplacesANegativeNumber)
+{
+    const std::string file = R"({"height":-5,"version":2})";
+    char buf[kCapacity] = {};
+    std::memcpy(buf, file.data(), file.size());
+    size_t len = file.size();
+
+    ASSERT_EQ(SettingsSplice::setUnsigned(buf, len, kCapacity, {nullptr, "height"}, 183u),
+              SettingsSplice::Result::Ok);
+    EXPECT_EQ(std::string(buf, len), R"({"height":183,"version":2})");
+}
+
+TEST(SettingsNumbers, MovesTheTailCorrectlyInBothDirections)
+{
+    const std::string tail = R"(,"weight":90,"version":2})";
+    char buf[kCapacity] = {};
+    const std::string grown = R"({"height":9)" + tail;
+    std::memcpy(buf, grown.data(), grown.size());
+    size_t len = grown.size();
+
+    ASSERT_EQ(SettingsSplice::setUnsigned(buf, len, kCapacity, {nullptr, "height"}, 190u),
+              SettingsSplice::Result::Ok);
+    EXPECT_EQ(std::string(buf, len), R"({"height":190)" + tail);
+
+    ASSERT_EQ(SettingsSplice::setUnsigned(buf, len, kCapacity, {nullptr, "height"}, 9u),
+              SettingsSplice::Result::Ok);
+    EXPECT_EQ(std::string(buf, len), grown);
+}
+
+/// The same depth discipline `phone.notifications` needed. A `steps` key one
+/// level deeper inside `dailyGoals` is not the one the kernel parses, and the
+/// readback would confirm the wrong edit.
+TEST(SettingsNumbers, IgnoresAGoalKeyNestedInsideTheGoalsObject)
+{
+    const std::string file = R"({"dailyGoals":{"last":{"steps":1},"steps":5000}})";
+    char buf[kCapacity] = {};
+    std::memcpy(buf, file.data(), file.size());
+    size_t len = file.size();
+
+    ASSERT_EQ(SettingsSplice::setUnsigned(buf, len, kCapacity, {"dailyGoals", "steps"}, 12000u),
+              SettingsSplice::Result::Ok);
+    EXPECT_EQ(std::string(buf, len), R"({"dailyGoals":{"last":{"steps":1},"steps":12000}})");
+}
+
+TEST(SettingsNumbers, IgnoresAGoalKeyOutsideTheGoalsObject)
+{
+    const std::string file = R"({"steps":1,"dailyGoals":{"steps":5000}})";
+    char buf[kCapacity] = {};
+    std::memcpy(buf, file.data(), file.size());
+    size_t len = file.size();
+
+    ASSERT_EQ(SettingsSplice::setUnsigned(buf, len, kCapacity, {"dailyGoals", "steps"}, 12000u),
+              SettingsSplice::Result::Ok);
+    EXPECT_EQ(std::string(buf, len), R"({"steps":1,"dailyGoals":{"steps":12000}})");
+}
+
+TEST(SettingsNumbers, RefusesWhenTheGoalsObjectIsAbsent)
+{
+    char buf[kCapacity] = {};
+    const std::string file = R"({"steps":5000,"version":2})";
+    std::memcpy(buf, file.data(), file.size());
+    size_t len = file.size();
+    EXPECT_EQ(SettingsSplice::setUnsigned(buf, len, kCapacity, {"dailyGoals", "steps"}, 12000u),
+              SettingsSplice::Result::FieldNotFound);
+}
+
+} // namespace
+
+namespace
+{
+
+/// The firmware's own default ladder, read out of the settings constructor at
+/// `0x080abbb4`: a word store of `0x9885725F` at `structBase+0x10` followed by a
+/// halfword store of `0xBEAB`, which is the six bytes 95, 114, 133, 152, 171,
+/// 190. Those are 50/60/70/80/90/100% of 190 exactly.
+///
+/// This is the whole argument for one control instead of six: the rule is the
+/// kernel's, and reproducing it means writing what the watch itself would.
+/// Falsified by a firmware whose default ladder is a different set of
+/// percentages.
+TEST(SettingsZoneLadder, MatchesTheFirmwareDefault)
+{
+    char token[SettingsSplice::kMaxTokenBytes] = {};
+    const size_t n = SettingsSplice::format::zoneLadder(token, sizeof(token), 190u);
+    EXPECT_EQ(std::string(token, n), "[95,114,133,152,171,190]");
+}
+
+/// The ladder measured on this watch, from `Spin`'s own recovery log: a real
+/// maximum of 184, reported through `RequestSystemSettings` as
+/// `[92,110,129,147,166,184]`.
+TEST(SettingsZoneLadder, MatchesTheLadderMeasuredOnAWatch)
+{
+    char token[SettingsSplice::kMaxTokenBytes] = {};
+    const size_t n = SettingsSplice::format::zoneLadder(token, sizeof(token), 184u);
+    EXPECT_EQ(std::string(token, n), "[92,110,129,147,166,184]");
+}
+
+/// Zone *N* runs from its own floor to the next, so two equal floors are a zone
+/// no heart rate can be in. This is where `kMaxHeartRate`'s lower bound comes
+/// from, rather than from taste.
+TEST(SettingsZoneLadder, EveryLadderInTheWritableRangeStrictlyIncreases)
+{
+    for (uint32_t maxHr = SettingsPersist::fields::kMaxHeartRate.writeMin;
+         maxHr <= SettingsPersist::fields::kMaxHeartRate.writeMax; ++maxHr) {
+        char token[SettingsSplice::kMaxTokenBytes] = {};
+        const size_t n =
+            SettingsSplice::format::zoneLadder(token, sizeof(token), static_cast<uint8_t>(maxHr));
+        ASSERT_GT(n, 0u) << maxHr;
+
+        std::string text(token, n);
+        ASSERT_EQ(text.front(), '[');
+        ASSERT_EQ(text.back(), ']');
+        int previous = -1;
+        size_t at = 1;
+        int values = 0;
+        while (at < text.size()) {
+            const size_t stop = text.find_first_of(",]", at);
+            const int value = std::stoi(text.substr(at, stop - at));
+            EXPECT_GT(value, previous) << "maxHr " << maxHr << " ladder " << text;
+            previous = value;
+            ++values;
+            at = stop + 1;
+        }
+        EXPECT_EQ(values, 6) << text;
+        EXPECT_EQ(previous, static_cast<int>(maxHr)) << "the last value is the maximum";
+    }
+}
+
+/// A ladder is at most `[255,255,255,255,255,255]`, and the token buffer every
+/// caller declares is sized from that constant.
+TEST(SettingsZoneLadder, EveryLadderFitsTheTokenBuffer)
+{
+    for (uint32_t maxHr = 0; maxHr <= 255u; ++maxHr) {
+        char token[SettingsSplice::kMaxTokenBytes] = {};
+        EXPECT_GT(SettingsSplice::format::zoneLadder(token, sizeof(token),
+                                                     static_cast<uint8_t>(maxHr)),
+                  0u)
+            << maxHr;
+    }
+}
+
+/// Left as it was, not half written: a caller that ignored the length would
+/// otherwise splice part of a ladder.
+TEST(SettingsZoneLadder, LeavesABufferItWouldOverrunUntouched)
+{
+    char token[8] = {};
+    EXPECT_EQ(SettingsSplice::format::zoneLadder(token, sizeof(token), 184u), 0u);
+    for (char c : token) {
+        EXPECT_EQ(c, '\0');
+    }
+}
+
+/// The pulled file's `[30,60,70,80,90,100]` is 20 bytes and the real ladder
+/// `[92,110,129,147,166,184]` is 24, so this is the largest length delta any
+/// field here moves -- four bytes against the two `units` moves and the one a
+/// boolean does.
+TEST(SettingsZoneLadder, ReplacesTheWholeArrayInTheRealFile)
+{
+    char buf[SettingsPersist::kBufferCapacity] = {};
+    const std::string input = kRealFile;
+    std::memcpy(buf, input.data(), input.size());
+    size_t len = input.size();
+
+    size_t at = 0;
+    ASSERT_EQ(SettingsSplice::setZoneLadder(buf, len, SettingsPersist::kMaxSettingsFileSize, 184u,
+                                            &at),
+              SettingsSplice::Result::Ok);
+    EXPECT_EQ(at, input.find("[30,"));
+    EXPECT_EQ(len, input.size() + 4);
+    EXPECT_NE(std::string(buf, len).find("\"heartRateZones\":[92,110,129,147,166,184],"),
+              std::string::npos);
+}
+
+TEST(SettingsZoneLadder, RoundTripsBackToTheOriginal)
+{
+    char buf[SettingsPersist::kBufferCapacity] = {};
+    const std::string input = kRealFile;
+    std::memcpy(buf, input.data(), input.size());
+    size_t len = input.size();
+
+    ASSERT_EQ(SettingsSplice::setZoneLadder(buf, len, kCapacity, 184u),
+              SettingsSplice::Result::Ok);
+    ASSERT_EQ(SettingsSplice::setZoneLadder(buf, len, kCapacity, 100u),
+              SettingsSplice::Result::Ok);
+    // Not the file it started as: `[30,60,...]` is not a ladder the watch's own
+    // rule can produce, which is exactly why the editor has to refuse to open a
+    // field holding one rather than flatten it.
+    EXPECT_EQ(std::string(buf, len),
+              std::string(kRealFile).replace(std::string(kRealFile).find("[30,"),
+                                             std::strlen("[30,60,70,80,90,100]"),
+                                             "[50,60,70,80,90,100]"));
+}
+
+TEST(SettingsZoneLadder, RefusesAnArrayThatIsNotSixValues)
+{
+    for (const char *array : {"[30,60,70,80,90]", "[30,60,70,80,90,100,110]", "[]", "[30]",
+                              R"(["a","b","c","d","e","f"])", "30"}) {
+        const std::string file =
+            std::string(R"({"heartRateZones":)") + array + R"(,"version":2})";
+        char buf[kCapacity] = {};
+        std::memcpy(buf, file.data(), file.size());
+        size_t len = file.size();
+        EXPECT_EQ(SettingsSplice::setZoneLadder(buf, len, kCapacity, 184u),
+                  SettingsSplice::Result::FieldNotFound)
+            << array;
+        EXPECT_EQ(std::string(buf, len), file) << array;
+    }
+}
+
+TEST(SettingsZoneLadder, ToleratesWhitespaceInsideTheArray)
+{
+    const std::string file = R"({"heartRateZones":[ 30, 60 ,70,80,90,100 ],"version":2})";
+    char buf[kCapacity] = {};
+    std::memcpy(buf, file.data(), file.size());
+    size_t len = file.size();
+
+    ASSERT_EQ(SettingsSplice::setZoneLadder(buf, len, kCapacity, 184u),
+              SettingsSplice::Result::Ok);
+    EXPECT_EQ(std::string(buf, len),
+              R"({"heartRateZones":[92,110,129,147,166,184],"version":2})");
+}
+
+/// The five-byte growth is the one this cap has to catch, and it is caught at
+/// the reader's limit rather than the buffer's.
+TEST(SettingsZoneLadder, GrowthIsCappedAtWhatTheReaderWillAccept)
+{
+    const std::string head = R"({"heartRateZones":[30,60,70,80,90,100],"pad":")";
+    const std::string tail = R"(","version":2})";
+    const size_t len = SettingsPersist::kMaxSettingsFileSize;
+    std::string in = head + std::string(len - head.size() - tail.size(), 'x') + tail;
+    ASSERT_EQ(in.size(), len);
+
+    char buf[SettingsPersist::kBufferCapacity] = {};
+    std::memcpy(buf, in.data(), in.size());
+    size_t n = in.size();
+
+    EXPECT_EQ(SettingsPersist::spliceWithinReadCap(SettingsPersist::fields::kMaxHeartRate, buf, n,
+                                                   "[92,110,129,147,166,184]", 24, nullptr),
+              SettingsSplice::Result::WouldNotFit);
+    EXPECT_EQ(std::string(buf, n), in);
+}
+
+} // namespace
+
+namespace
+{
+
+TEST(SettingsFormat, UnsignedDecimalWritesTheWholeNumberOrNone)
+{
+    char out[10] = {};
+    EXPECT_EQ(SettingsSplice::format::unsignedDecimal(out, sizeof(out), 0u), 1u);
+    EXPECT_EQ(out[0], '0');
+
+    EXPECT_EQ(SettingsSplice::format::unsignedDecimal(out, sizeof(out), 4294967295u), 10u);
+    EXPECT_EQ(std::string(out, 10), "4294967295");
+
+    char tight[3] = {'!', '!', '!'};
+    EXPECT_EQ(SettingsSplice::format::unsignedDecimal(tight, sizeof(tight), 1000u), 0u);
+    EXPECT_EQ(std::string(tight, 3), "!!!");
+}
+
+} // namespace
+
+namespace
+{
+
+/// A `FieldDescriptor` is a name, two more `const char *`, two enums, a
+/// pointer-to-member and a range: the compiler cannot tell a transposition from
+/// a correct row, and `isWellFormed` is what does. Each declaration site
+/// `static_assert`s it; these cases say the assertion is worth having.
+constexpr FieldDescriptor kGoodDescriptor = SettingsPersist::fields::kSteps;
+
+TEST(SettingsDescriptor, AcceptsEveryRowTheKitDeclares)
+{
+    for (const auto *f : SettingsPersist::kEditable) {
+        EXPECT_TRUE(SettingsPersist::isWellFormed(*f)) << f->name;
+    }
+    EXPECT_EQ(SettingsPersist::kEditableCount, 8u);
+}
+
+TEST(SettingsDescriptor, RejectsAShapeItsLiveWidthCannotHold)
+{
+    FieldDescriptor f = kGoodDescriptor;
+    f.width = SettingsPersist::LiveWidth::U8;
+    EXPECT_FALSE(SettingsPersist::isWellFormed(f));
+
+    f = SettingsPersist::fields::kMaxHeartRate;
+    f.width = SettingsPersist::LiveWidth::U32;
+    EXPECT_FALSE(SettingsPersist::isWellFormed(f));
+
+    f = SettingsPersist::fields::kUnits;
+    f.width = SettingsPersist::LiveWidth::U8x6;
+    EXPECT_FALSE(SettingsPersist::isWellFormed(f));
+}
+
+/// A one-byte live field takes the low byte of whatever the file's number
+/// parsed to, and the truncation is silent: 300 in the file lands as 44 in the
+/// struct.
+TEST(SettingsDescriptor, RejectsARangeAOneByteFieldWouldTruncate)
+{
+    FieldDescriptor f = SettingsPersist::fields::kMaxHeartRate;
+    f.writeMax = 300u;
+    EXPECT_FALSE(SettingsPersist::isWellFormed(f));
+}
+
+TEST(SettingsDescriptor, RejectsARangeNoWearerCouldMove)
+{
+    FieldDescriptor f = kGoodDescriptor;
+    f.writeMin = 100u;
+    f.writeMax = 99u;
+    EXPECT_FALSE(SettingsPersist::isWellFormed(f));
+}
+
+TEST(SettingsDescriptor, RejectsAMissingNameKeyOrOffset)
+{
+    FieldDescriptor f = kGoodDescriptor;
+    f.name = nullptr;
+    EXPECT_FALSE(SettingsPersist::isWellFormed(f));
+
+    f = kGoodDescriptor;
+    f.key.leaf = nullptr;
+    EXPECT_FALSE(SettingsPersist::isWellFormed(f));
+
+    f = kGoodDescriptor;
+    f.key.leaf = "";
+    EXPECT_FALSE(SettingsPersist::isWellFormed(f));
+
+    f = kGoodDescriptor;
+    f.key.outer = "";
+    EXPECT_FALSE(SettingsPersist::isWellFormed(f));
+
+    f = kGoodDescriptor;
+    f.offset = nullptr;
+    EXPECT_FALSE(SettingsPersist::isWellFormed(f));
+}
+
+/// Every row's offset has to name a different member, or two fields write the
+/// same bytes of the live struct. The pointer-to-member is what makes this
+/// checkable at all -- a plain offset would be a per-firmware number frozen at
+/// compile time.
+TEST(SettingsDescriptor, NoTwoRowsShareALiveOffsetMember)
+{
+    for (size_t i = 0; i < SettingsPersist::kEditableCount; ++i) {
+        for (size_t j = i + 1; j < SettingsPersist::kEditableCount; ++j) {
+            EXPECT_NE(SettingsPersist::kEditable[i]->offset,
+                      SettingsPersist::kEditable[j]->offset)
+                << SettingsPersist::kEditable[i]->name << " and "
+                << SettingsPersist::kEditable[j]->name;
+        }
+    }
+}
+
+/// The offered range has to sit inside whatever hard bound exists for the
+/// field. Where none does, there is nothing to assert and the range is an
+/// assertion recorded in the design document instead.
+TEST(SettingsDescriptor, EveryOfferedRangeSitsInsideTheHardBoundForItsField)
+{
+    EXPECT_LE(SettingsPersist::fields::kActivityMinutes.writeMax,
+              SettingsPersist::fields::kMinutesInADay);
+    EXPECT_GE(SettingsPersist::fields::kMaxHeartRate.writeMin,
+              SettingsPersist::fields::kSmallestSpreadableMaximum);
+    EXPECT_LE(SettingsPersist::fields::kMaxHeartRate.writeMax,
+              SettingsPersist::fields::kWidestStorableMaximum);
+}
+
+/// Only `phone.notifications` is written with no supported message to
+/// corroborate it, and its range is the 0/1 the byte check already enforced --
+/// so widening the set of editable fields does not loosen anything.
+TEST(SettingsDescriptor, TheOnlyUnwitnessedWritableFieldIsStillABoolean)
+{
+    for (const auto *f : SettingsPersist::kEditable) {
+        if (f->witness != SettingsPersist::Witness::None) {
+            continue;
+        }
+        EXPECT_EQ(f->shape, SettingsSplice::JsonShape::Boolean) << f->name;
+        EXPECT_EQ(f->writeMin, 0u) << f->name;
+        EXPECT_EQ(f->writeMax, 1u) << f->name;
+    }
 }
 
 } // namespace

@@ -70,13 +70,22 @@ struct AddressSet {
 
     size_t    unitsImperialOffset;   ///< 0 = metric, 1 = imperial
 
+    /// A 64-bit field, not a 32-bit one: the parser reads it with `strtoull`
+    /// and stores eight bytes (`Docs/2026-09-07-live-settings-struct.md`).
     size_t    watchFaceIdOffset;
+
+    /// Six bytes: five zone floors and the wearer's maximum heart rate last.
+    size_t    heartRateZonesOffset;
 
     /// Daily goals, which this app never writes and the kernel also reports
     /// through the supported RequestSystemSettings message -- so the same live
     /// value can be reached two independent ways and compared.
     size_t    activityMinutesOffset;
     size_t    stepsOffset;
+    size_t    floorsOffset;
+
+    size_t    heightOffset;   ///< cm, u32
+    size_t    weightOffset;   ///< kg, f32 -- the file holds an integer here
 
     // --- SettingsPersist: the kernel's internal, non-virtual File class ---
     uintptr_t fileOpenAddr;

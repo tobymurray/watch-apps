@@ -14,7 +14,9 @@
 #define SETTINGS_FIELD_HPP
 
 #include <cstddef>
+#include <cstdint>
 
+#include "SettingsAddresses.hpp"
 #include "SettingsSplice.hpp"
 
 namespace SettingsPersist
@@ -66,10 +68,70 @@ constexpr const char *kLegacyPrevPaths[] = {
 constexpr size_t kLegacyPrevPathCount =
     sizeof(kLegacyPrevPaths) / sizeof(kLegacyPrevPaths[0]);
 
-/// The field an app owns, and the two scratch paths its primitive self-test
-/// uses. Initialise with designated initialisers and assert `isWellFormed`:
-/// four members are interchangeable `const char *`. The commit's own scratch
-/// names are not here -- they are shared, for the reason above.
+/// How wide the field is in the kernel's live struct, and how to read it.
+/// Independent of the shape it has in the file: `weight` is an integer there
+/// and an `f32` here.
+enum class LiveWidth {
+    U8,
+    U32,
+    U64,
+    F32,
+    U8x6,
+};
+
+/// Which `RequestSystemSettings` field reports this one, so a raw read can be
+/// compared against the kernel's own answer and a raw write can be seen to
+/// have moved the setting. `None` means no supported message carries it, and
+/// the only evidence available is that the byte read back what was written.
+enum class Witness {
+    None,
+    ImperialUnits,
+    ActivityMinutes,
+    Steps,
+    Floors,
+    HeightCm,
+    WeightKg,
+    HeartRateThresholds,
+};
+
+/// One editable field: which key in the file, what shape its value has there,
+/// which member of the resolved address set holds its live offset, how wide it
+/// is there, which supported message corroborates it, and the range this app
+/// will let a wearer write.
+///
+/// The offset is a pointer-to-member rather than a number, so a row cannot
+/// carry a compile-time address for a per-firmware value -- which is the whole
+/// reason `SettingsAddresses` exists. Initialise with designated initialisers
+/// and assert `isWellFormed`.
+struct FieldDescriptor {
+    const char *name;                 ///< Drawn on screen and logged.
+    SettingsSplice::KeyPath key;
+    SettingsSplice::JsonShape shape;
+    size_t SettingsAddresses::AddressSet::*offset;
+    LiveWidth width;
+    Witness  witness;
+    uint32_t writeMin;                ///< Inclusive, in the field's own unit.
+    uint32_t writeMax;                ///< Inclusive.
+};
+
+/// The scratch paths one app's primitive self-test writes. Per app, never per
+/// field: `validatePrimitives` proves the kernel's `File` primitives behave,
+/// which is a property of the firmware and of nothing a field says.
+struct AppIdentity {
+    const char *probeAPath;  ///< Never the settings file, nor a shared scratch name.
+    const char *probeBPath;
+    const char *probeText;   ///< At most kMaxProbeTextBytes.
+};
+
+/// The field a single-field app owns, and the two scratch paths its primitive
+/// self-test uses. Initialise with designated initialisers and assert
+/// `isWellFormed`: four members are interchangeable `const char *`. The
+/// commit's own scratch names are not here -- they are shared, for the reason
+/// above.
+///
+/// An app with more than one field declares a `FieldDescriptor` per field and
+/// one `AppIdentity` instead, which is the same two halves without this one's
+/// per-field splice signature.
 struct Field {
     /// Rewrites this field in a settings.json buffer.
     SettingsSplice::Result (*splice)(char *buf, size_t &len, size_t capacity, bool value,
@@ -83,14 +145,7 @@ struct Field {
 namespace detail
 {
 
-constexpr size_t constexprStrlen(const char *s)
-{
-    size_t n = 0;
-    while (s[n] != '\0') {
-        ++n;
-    }
-    return n;
-}
+using SettingsSplice::detail::constexprStrlen;
 
 constexpr bool sameString(const char *a, const char *b)
 {
@@ -109,16 +164,16 @@ constexpr bool sameString(const char *a, const char *b)
 /// True if every member holds the kind of value its name promises -- not a
 /// claim that any path is the right one, only that a value has not landed in
 /// the wrong member.
-constexpr bool isWellFormed(const Field &f)
+constexpr bool isWellFormed(const AppIdentity &a)
 {
-    if (f.splice == nullptr || f.name == nullptr || f.probeText == nullptr) {
+    if (a.probeText == nullptr) {
         return false;
     }
-    if (detail::constexprStrlen(f.probeText) > kMaxProbeTextBytes) {
+    if (detail::constexprStrlen(a.probeText) > kMaxProbeTextBytes) {
         return false;
     }
 
-    const char *const paths[] = {f.probeAPath, f.probeBPath};
+    const char *const paths[] = {a.probeAPath, a.probeBPath};
     constexpr size_t kCount = 2;
 
     // Every path proved non-null before any of them is compared: `sameString`
@@ -151,6 +206,64 @@ constexpr bool isWellFormed(const Field &f)
     return true;
 }
 
+constexpr bool isWellFormed(const Field &f)
+{
+    if (f.splice == nullptr || f.name == nullptr) {
+        return false;
+    }
+    return isWellFormed(AppIdentity{f.probeAPath, f.probeBPath, f.probeText});
+}
+
+/// Widths a `JsonShape` can be stored at. A shape and a width that cannot
+/// belong to the same field is the mistake this catches: a `Boolean` behind a
+/// four-byte read, or a six-value array behind a one-byte one.
+constexpr bool widthCanHoldShape(SettingsSplice::JsonShape shape, LiveWidth width)
+{
+    switch (shape) {
+        case SettingsSplice::JsonShape::Boolean:
+        case SettingsSplice::JsonShape::UnitsToken:
+            return width == LiveWidth::U8;
+        case SettingsSplice::JsonShape::Number:
+            return width == LiveWidth::U32 || width == LiveWidth::U64 ||
+                   width == LiveWidth::F32;
+        case SettingsSplice::JsonShape::NumberArray6:
+            return width == LiveWidth::U8x6;
+    }
+    return false;
+}
+
+/// True if every member holds the kind of value its name promises. Not a claim
+/// that the key exists or that the offset is right -- only that a value has not
+/// landed in the wrong member, which no compiler can see across two
+/// interchangeable `const char *`, two enums and a range.
+constexpr bool isWellFormed(const FieldDescriptor &f)
+{
+    if (f.name == nullptr || f.key.leaf == nullptr || f.offset == nullptr) {
+        return false;
+    }
+    if (detail::constexprStrlen(f.key.leaf) == 0) {
+        return false;
+    }
+    if (f.key.outer != nullptr && detail::constexprStrlen(f.key.outer) == 0) {
+        return false;
+    }
+    if (!widthCanHoldShape(f.shape, f.width)) {
+        return false;
+    }
+    // An empty range makes a field the wearer can open and never change, which
+    // reads on the wrist as the app being broken.
+    if (f.writeMin > f.writeMax) {
+        return false;
+    }
+    // A one-byte live field cannot hold what a wider range would write, and the
+    // truncation is silent: the kernel's own reader stores the low byte of
+    // whatever the file's number parsed to.
+    if ((f.width == LiveWidth::U8 || f.width == LiveWidth::U8x6) && f.writeMax > 255u) {
+        return false;
+    }
+    return true;
+}
+
 /// Rewrites `f`'s field in `buf`, capped at what the reader will accept.
 ///
 /// The cap is the point of this function. Handing a splice the size of the
@@ -162,6 +275,16 @@ inline SettingsSplice::Result spliceWithinReadCap(const Field &f, char *buf, siz
                                                   bool value, size_t *valueOffsetOut)
 {
     return f.splice(buf, len, kMaxSettingsFileSize, value, valueOffsetOut);
+}
+
+/// Replaces `f`'s value with `token`, capped at what the reader will accept --
+/// the same cap, and for the same reason, as the overload above.
+inline SettingsSplice::Result spliceWithinReadCap(const FieldDescriptor &f, char *buf, size_t &len,
+                                                  const char *token, size_t tokenLen,
+                                                  size_t *valueOffsetOut)
+{
+    return SettingsSplice::replaceValue(buf, len, kMaxSettingsFileSize, f.key, f.shape, token,
+                                        tokenLen, valueOffsetOut);
 }
 
 } // namespace SettingsPersist

@@ -45,11 +45,16 @@ constexpr AddressSet kFirmware_1_4_0 = {
     // memset is the only thing that writes it.
     .unitsImperialOffset      = 4u,
     .watchFaceIdOffset        = 8u,
-    // Read out of the constructor at 0x080abbb4, which stores the documented
-    // defaults 30 and 5000 at objectBase+0x20/+0x24; the same function's
-    // `str.w r3, [r0], #8` is what puts the struct 8 bytes past the object.
+    // Every offset below is read out of the settings parser at 0x080abcd6,
+    // which names each key it stores; Docs/2026-09-07-live-settings-struct.md
+    // is the derivation, with the constructor's own defaults as a second source
+    // for the four that have one.
+    .heartRateZonesOffset     = 0x10u,
     .activityMinutesOffset    = 0x18u,
     .stepsOffset              = 0x1cu,
+    .floorsOffset             = 0x20u,
+    .heightOffset             = 0x24u,
+    .weightOffset             = 0x28u,
     .fileOpenAddr             = 0x0809b254u | 1u,
     .fileReadAddr             = 0x0809b4e8u | 1u,
     .fileWriteAddr            = 0x0809b334u | 1u,
@@ -107,6 +112,38 @@ constexpr bool signaturesPairWithAddresses(const AddressSet &a)
            a.signatures[kSigRename].address  == (a.fileRenameAddr & kNoThumb);
 }
 
+/// True if no two fields in the row claim the same byte of the live struct.
+///
+/// Nine `size_t` members in a row are interchangeable to the compiler, and the
+/// mistake this catches is not a wild value -- it is two plausible offsets
+/// transposed, or one member left holding another's. A raw write then lands in
+/// a field the app believes it never touches, on a part with no MPU.
+constexpr bool noTwoFieldsOverlap(const AddressSet &a)
+{
+    struct Span {
+        size_t at;
+        size_t bytes;
+    };
+    const Span spans[] = {
+        {a.unitsImperialOffset, 1},      {a.phoneNotificationsOffset, 1},
+        {a.watchFaceIdOffset, 8},        {a.heartRateZonesOffset, 6},
+        {a.activityMinutesOffset, 4},    {a.stepsOffset, 4},
+        {a.floorsOffset, 4},             {a.heightOffset, 4},
+        {a.weightOffset, 4},
+    };
+    constexpr size_t kCount = sizeof(spans) / sizeof(spans[0]);
+    for (size_t i = 0; i < kCount; ++i) {
+        for (size_t j = i + 1; j < kCount; ++j) {
+            const bool disjoint = spans[i].at + spans[i].bytes <= spans[j].at ||
+                                  spans[j].at + spans[j].bytes <= spans[i].at;
+            if (!disjoint) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 constexpr bool isWellFormed(const AddressSet &a)
 {
     return a.abi > 0u && a.derivedFrom != nullptr && signaturesPairWithAddresses(a) &&
@@ -114,8 +151,12 @@ constexpr bool isWellFormed(const AddressSet &a)
            a.phoneNotificationsOffset < kMaxStructOffset &&
            a.unitsImperialOffset < kMaxStructOffset &&
            a.watchFaceIdOffset < kMaxStructOffset &&
+           a.heartRateZonesOffset < kMaxStructOffset &&
            a.activityMinutesOffset < kMaxStructOffset &&
            a.stepsOffset < kMaxStructOffset &&
+           a.floorsOffset < kMaxStructOffset &&
+           a.heightOffset < kMaxStructOffset &&
+           a.weightOffset < kMaxStructOffset && noTwoFieldsOverlap(a) &&
            isThumbCode(a.fileOpenAddr) && isThumbCode(a.fileReadAddr) &&
            isThumbCode(a.fileWriteAddr) && isThumbCode(a.fileCloseAddr) &&
            isThumbCode(a.fileReleaseAddr) && isThumbCode(a.setPathAddr) &&
@@ -147,8 +188,9 @@ constexpr bool everyEntryIsWellFormed()
 static_assert(everyEntryIsWellFormed(),
               "A table entry has a value in the wrong member, or its signatures do not "
               "fingerprint its own addresses: an address where an offset belongs, an offset "
-              "where an address belongs, a File layout that does not fit its own object "
-              "size, or a signature filed under the wrong function.");
+              "where an address belongs, two live-struct fields claiming the same byte, a "
+              "File layout that does not fit its own object size, or a signature filed "
+              "under the wrong function.");
 
 constexpr bool everyAbiAppearsOnce()
 {
