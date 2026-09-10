@@ -5,28 +5,24 @@
 
 use embedded_graphics::{pixelcolor::Rgb888, pixelcolor::RgbColor, prelude::*};
 use embedded_graphics_simulator::{OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window};
+use inscribed_disc::color::{Abgr2222, GREY_LEVELS};
+use inscribed_disc::geometry;
 use spin_gui::scenes::scenes;
 
 const W: u32 = 240;
 const H: u32 = 240;
-const CHANNEL_LEVELS: u8 = 85;
 const DISPLAY_SCALE: u32 = 2;
 
 fn decode(byte: u8) -> Rgb888 {
-    let expand = |two_bit: u8| two_bit * CHANNEL_LEVELS;
-    Rgb888::new(expand(byte & 0b11), expand((byte >> 2) & 0b11), expand((byte >> 4) & 0b11))
-}
-
-fn inside_bezel(x: u32, y: u32) -> bool {
-    let dx = 2 * x as i32 - (W as i32 - 1);
-    let dy = 2 * y as i32 - (H as i32 - 1);
-    dx * dx + dy * dy <= (W as i32) * (W as i32)
+    let c = Abgr2222(byte);
+    let level = |l: u8| GREY_LEVELS[l as usize];
+    Rgb888::new(level(c.r()), level(c.g()), level(c.b()))
 }
 
 fn blit(display: &mut SimulatorDisplay<Rgb888>, buf: &[u8]) {
     let pixels = (0..H).flat_map(move |y| {
         (0..W).map(move |x| {
-            let color = if inside_bezel(x, y) {
+            let color = if geometry::is_lit(x as i32, y as i32, W as i32, H as i32) {
                 decode(buf[(y * W + x) as usize])
             } else {
                 Rgb888::BLACK

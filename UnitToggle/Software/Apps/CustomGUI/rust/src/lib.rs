@@ -525,13 +525,12 @@ mod tests {
     /// outside the inscribed circle is behind it.
     #[test]
     fn nothing_is_drawn_outside_the_round_mask() {
-        let r = (W / 2) as i32;
         for state in [metric(), imperial(), unknown(), not_saved(), live_only(), unsupported()] {
             let f = frame(&state);
             for y in 0..H as i32 {
                 for x in 0..W as i32 {
-                    let (dx, dy) = (x - r, y - r);
-                    if dx * dx + dy * dy > r * r && px(&f, x, y) != GROUND.0 {
+                    let lit = inscribed_disc::geometry::is_lit(x, y, W as i32, H as i32);
+                    if !lit && px(&f, x, y) != GROUND.0 {
                         panic!("status {} lit ({x},{y}) outside the mask", state.status);
                     }
                 }

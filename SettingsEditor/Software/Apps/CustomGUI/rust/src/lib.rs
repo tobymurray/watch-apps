@@ -817,7 +817,6 @@ mod tests {
     /// UnitToggle puts its own.
     #[test]
     fn nothing_is_drawn_outside_the_round_mask() {
-        let r = (W / 2) as i32;
         for field in 0..FIELDS.len() as u8 {
             for status in 0..8u8 {
                 for editing in [0u8, 1] {
@@ -829,8 +828,9 @@ mod tests {
                     let f = frame(&s);
                     for y in 0..H as i32 {
                         for x in 0..W as i32 {
-                            let (dx, dy) = (x - r, y - r);
-                            if dx * dx + dy * dy > r * r && px(&f, x, y) != GROUND.0 {
+                            if !inscribed_disc::geometry::is_lit(x, y, W as i32, H as i32)
+                                && px(&f, x, y) != GROUND.0
+                            {
                                 panic!(
                                     "field {field} status {status} editing {editing} lit \
                                      ({x},{y}) outside the mask"

@@ -14,11 +14,17 @@ required-features = ["sim"]
 
 [features]
 std = []
-sim = ["std", "dep:embedded-graphics-simulator"]
+sim = ["std", "dep:embedded-graphics-simulator", "dep:inscribed-disc"]
 
 [dependencies]
 embedded-graphics = "0.8"
 embedded-graphics-simulator = { version = "0.7", optional = true }
+# The host simulator only, for the disc predicate and the panel's palette. This
+# app draws through its own framebuffer on purpose -- it is a proof of concept
+# the kit was distilled from -- so a device build never resolves this.
+inscribed-disc = { path = "../../../../../InscribedDisc", default-features = false, features = [
+    "abgr2222",
+], optional = true }
 
 [profile.release]
 panic = "abort"

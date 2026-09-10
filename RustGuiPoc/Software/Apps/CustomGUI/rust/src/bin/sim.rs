@@ -4,11 +4,12 @@ use embedded_graphics::{pixelcolor::Rgb888, prelude::*};
 use embedded_graphics_simulator::{
     sdl2::Keycode, OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window,
 };
+use inscribed_disc::color::{Abgr2222, GREY_LEVELS};
+use inscribed_disc::geometry;
 use poc_gui::State;
 
 const W: u32 = 240;
 const H: u32 = 240;
-const CHANNEL_LEVELS: u8 = 85;
 const DISPLAY_SCALE: u32 = 2;
 const FRAME_INTERVAL: Duration = Duration::from_millis(33);
 const SAMPLE_INTERVAL: Duration = Duration::from_millis(100);
@@ -17,18 +18,9 @@ const TILT_STEP_G: f32 = 0.1;
 const TILT_LIMIT_G: f32 = 1.5;
 
 fn decode(byte: u8) -> Rgb888 {
-    let expand = |two_bit: u8| two_bit * CHANNEL_LEVELS;
-    Rgb888::new(
-        expand(byte & 0b11),
-        expand((byte >> 2) & 0b11),
-        expand((byte >> 4) & 0b11),
-    )
-}
-
-fn inside_bezel(x: u32, y: u32) -> bool {
-    let dx = 2 * x as i32 - (W as i32 - 1);
-    let dy = 2 * y as i32 - (H as i32 - 1);
-    dx * dx + dy * dy <= (W as i32) * (W as i32)
+    let c = Abgr2222(byte);
+    let level = |l: u8| GREY_LEVELS[l as usize];
+    Rgb888::new(level(c.r()), level(c.g()), level(c.b()))
 }
 
 fn emulate_panel(_buf: &mut [u8]) {}
@@ -36,7 +28,7 @@ fn emulate_panel(_buf: &mut [u8]) {}
 fn blit(display: &mut SimulatorDisplay<Rgb888>, buf: &[u8]) {
     let pixels = (0..H).flat_map(move |y| {
         (0..W).map(move |x| {
-            let color = if inside_bezel(x, y) {
+            let color = if geometry::is_lit(x as i32, y as i32, W as i32, H as i32) {
                 decode(buf[(y * W + x) as usize])
             } else {
                 Rgb888::BLACK

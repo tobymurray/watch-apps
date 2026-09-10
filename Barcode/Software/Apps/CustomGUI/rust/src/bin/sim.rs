@@ -1,27 +1,24 @@
 use barcode_gui::{Frame, KIND_CODE128, KIND_ITF, KIND_PROMPT, KIND_QR};
 use embedded_graphics::{pixelcolor::Rgb888, pixelcolor::RgbColor, prelude::*};
 use embedded_graphics_simulator::{OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window};
+use inscribed_disc::color::{Abgr2222, GREY_LEVELS};
+use inscribed_disc::geometry;
 
 const W: u32 = 240;
 const H: u32 = 240;
-const CHANNEL_LEVELS: u8 = 85;
 const DISPLAY_SCALE: u32 = 2;
 
 fn decode(byte: u8) -> Rgb888 {
-    let expand = |two_bit: u8| two_bit * CHANNEL_LEVELS;
-    Rgb888::new(expand(byte & 0b11), expand((byte >> 2) & 0b11), expand((byte >> 4) & 0b11))
-}
-
-fn inside_bezel(x: u32, y: u32) -> bool {
-    let dx = 2 * x as i32 - (W as i32 - 1);
-    let dy = 2 * y as i32 - (H as i32 - 1);
-    dx * dx + dy * dy <= (W as i32) * (W as i32)
+    let c = Abgr2222(byte);
+    let level = |l: u8| GREY_LEVELS[l as usize];
+    Rgb888::new(level(c.r()), level(c.g()), level(c.b()))
 }
 
 fn blit(display: &mut SimulatorDisplay<Rgb888>, buf: &[u8]) {
     let pixels = (0..H).flat_map(move |y| {
         (0..W).map(move |x| {
-            let color = if inside_bezel(x, y) { decode(buf[(y * W + x) as usize]) } else { Rgb888::BLACK };
+            let lit = geometry::is_lit(x as i32, y as i32, W as i32, H as i32);
+            let color = if lit { decode(buf[(y * W + x) as usize]) } else { Rgb888::BLACK };
             Pixel(Point::new(x as i32, y as i32), color)
         })
     });
@@ -186,7 +183,8 @@ fn dump_pngs() {
             let mut rgb = vec![0u8; (W * H * 3) as usize];
             for y in 0..H {
                 for x in 0..W {
-                    let c = if inside_bezel(x, y) { decode(buf[(y * W + x) as usize]) } else { Rgb888::BLACK };
+                    let lit = geometry::is_lit(x as i32, y as i32, W as i32, H as i32);
+                    let c = if lit { decode(buf[(y * W + x) as usize]) } else { Rgb888::BLACK };
                     let i = ((y * W + x) * 3) as usize;
                     rgb[i] = c.r();
                     rgb[i + 1] = c.g();

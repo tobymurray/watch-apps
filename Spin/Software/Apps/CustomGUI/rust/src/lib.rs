@@ -1038,13 +1038,6 @@ mod tests {
         }
     }
 
-    /// The panel is a circle inscribed in the 240x240 buffer.
-    fn inside_bezel(x: u32, y: u32) -> bool {
-        let dx = 2 * x as i32 - (W as i32 - 1);
-        let dy = 2 * y as i32 - (H as i32 - 1);
-        dx * dx + dy * dy <= (W as i32) * (W as i32)
-    }
-
     #[test]
     fn nothing_is_drawn_outside_the_bezel() {
         // Every scene, because this is a layout invariant and the scenes are
@@ -1054,7 +1047,7 @@ mod tests {
             let buf = draw(&frame);
             for y in 0..H {
                 for x in 0..W {
-                    if !inside_bezel(x, y) {
+                    if !inscribed_disc::geometry::is_lit(x as i32, y as i32, W as i32, H as i32) {
                         assert_eq!(
                             buf[(y * W + x) as usize],
                             BLACK.0,
