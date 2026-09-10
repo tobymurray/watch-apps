@@ -311,6 +311,19 @@ holds **130** and row 222 **122**, and the largest centred square is **168**.
 Falsified by a panel of a different size or a display whose glass is not the
 inscribed disc.
 
+**And the largest centred square is a search, not arithmetic.** This is the one
+[`Docs/2026-09-10-publish-or-not.md`](2026-09-10-publish-or-not.md) §6 names as
+the thing that would collapse the crate to forty lines and a blog post if it
+turned out to have a closed form. It does not. Over every square panel from 2
+to 400, `floor(w / √2)` disagrees **201** times and `floor((w − 1) / √2)`
+**197** — each about half of all sizes, and in both directions: at 240 the
+first gives 169 where the answer is 168, and at 260 both give 183 where the
+answer is **184**, larger than either. What neither knows is that the side
+carries the panel's parity, in all 399 sizes, because the square is centred and
+an even panel cannot hold an odd centred side.
+`no_closed_form_replaces_the_search` re-derives all three counts on every
+build, which is what would say so if one ever did match.
+
 **Bright on dark.** An early black-text-on-white readout came back from the
 glass as a blank white band. This is the glass, not the framebuffer, so no
 simulator shows it. Every default in this kit is bright-on-dark, and a

@@ -150,9 +150,13 @@ pub const fn box_is_lit(x: i32, y: i32, w: i32, h: i32, panel_w: i32, panel_h: i
 
 /// The side of the largest centred axis-aligned square wholly on the glass.
 ///
-/// Searched rather than `floor(d / sqrt 2)`: MEASURED, on a 240-pixel panel the
-/// closed form gives 169, whose corner is at 169² + 169² = 57,122 against the
-/// disc's 239² = 57,121. The answer is 168.
+/// Searched rather than computed, because no closed form is this: MEASURED
+/// over every square panel from 2 to 400, `floor(w / sqrt 2)` disagrees 201
+/// times and `floor((w - 1) / sqrt 2)` 197. On a 240-pixel panel the first
+/// gives 169, whose corner is at 169² + 169² = 57,122 against the disc's
+/// 239² = 57,121, and the answer is 168; at 260 both give 183 where the answer
+/// is 184, which is *larger* than either. `no_closed_form_replaces_the_search`
+/// re-derives both counts.
 pub const fn largest_square(w: i32, h: i32) -> i32 {
     let limit = if w < h { w } else { h };
     let mut best = 0;
@@ -208,6 +212,36 @@ mod tests {
     #[test]
     fn largest_square_is_168() {
         assert_eq!(largest_square(W, H), 168);
+    }
+
+    /// MEASURED: over 2..=400, `floor(w / sqrt 2)` is wrong 201 times and
+    /// `floor((w - 1) / sqrt 2)` 197 — each about half of all sizes, and in
+    /// both directions. The side always carries the panel's parity, which is
+    /// what neither closed form knows: the square is centred, so an even panel
+    /// cannot hold an odd centred side.
+    ///
+    /// This is the falsifier for the search itself. If a closed form ever
+    /// matched everywhere, this function would be arithmetic rather than a
+    /// measurement, and this test is what would say so.
+    #[test]
+    fn no_closed_form_replaces_the_search() {
+        let (mut floor_w, mut floor_w_minus_1, mut wrong_parity) = (0, 0, 0);
+        for w in 2..=400i32 {
+            let side = largest_square(w, w);
+            if side != (w as f64 / core::f64::consts::SQRT_2).floor() as i32 {
+                floor_w += 1;
+            }
+            if side != ((w as f64 - 1.0) / core::f64::consts::SQRT_2).floor() as i32 {
+                floor_w_minus_1 += 1;
+            }
+            if side % 2 != w % 2 {
+                wrong_parity += 1;
+            }
+        }
+        assert_eq!(floor_w, 201);
+        assert_eq!(floor_w_minus_1, 197);
+        assert_eq!(wrong_parity, 0);
+        assert_eq!(largest_square(260, 260), 184);
     }
 
     #[test]
