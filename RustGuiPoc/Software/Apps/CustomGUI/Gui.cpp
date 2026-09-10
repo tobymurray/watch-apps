@@ -18,7 +18,7 @@ static constexpr uint32_t kWaitForever = 0xFFFFFFFF;
 // Paths are relative to the app's own directory, which already exists.
 static constexpr char     kFbDumpPath[] = "fb_dump.bin";
 
-extern "C" void poc_gui_host_panic(const uint8_t *msg, uint32_t len)
+extern "C" void panickit_host_panic(const uint8_t *msg, uint32_t len)
 {
     LOG_ERROR("Rust panic: %.*s\n", static_cast<int>(len),
               reinterpret_cast<const char *>(msg));

@@ -52,6 +52,7 @@ find_program(CARGO_EXECUTABLE cargo REQUIRED)
 # FINDINGS.md, "Let cargo decide when to rebuild".
 add_custom_target(barcode_gui_rust ALL
     COMMAND ${CARGO_EXECUTABLE} build --release --target ${RUST_TARGET}
+            --features device
     WORKING_DIRECTORY ${RUST_CRATE_DIR}
     BYPRODUCTS ${RUST_LIB}
     COMMENT "Building Rust GUI core -> libbarcode_gui.a"

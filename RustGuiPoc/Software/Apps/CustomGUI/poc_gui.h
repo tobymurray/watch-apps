@@ -29,7 +29,7 @@ uint32_t poc_gui_screen_count(void);
 uint32_t poc_gui_abi_fingerprint(void);
 
 /* Called by the Rust panic handler. Must not return normally. */
-void poc_gui_host_panic(const uint8_t* msg, uint32_t len);
+void panickit_host_panic(const uint8_t* msg, uint32_t len);
 
 void poc_gui_render(uint8_t* buf, uint32_t buf_len,
                     uint16_t width, uint16_t height,

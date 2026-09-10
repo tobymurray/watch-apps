@@ -39,7 +39,7 @@ typedef struct {
 } barcode_gui_frame;
 
 uint32_t barcode_gui_abi_fingerprint(void);
-void     barcode_gui_host_panic(const uint8_t *msg, uint32_t len);
+void     panickit_host_panic(const uint8_t *msg, uint32_t len);
 void     barcode_gui_render(uint8_t *buf, uint32_t buf_len,
                              uint16_t width, uint16_t height,
                              const barcode_gui_frame *frame);

@@ -14,9 +14,16 @@ required-features = ["sim"]
 
 [features]
 std = []
+# The device build takes PanicKit's handler, which reports through one
+# `panickit_host_panic` the shell defines. This app used to declare its own,
+# differing from the other six only in the symbol's name.
+device = ["panickit/panic-message"]
 sim = ["std", "dep:embedded-graphics-simulator", "dep:png"]
 
 [dependencies]
+# A dependency, never a second staticlib: two archives each carrying a
+# #[panic_handler] collide at link time.
+panickit = { path = "../../../../../PanicKit", default-features = false }
 embedded-graphics = "0.8"
 embedded-graphics-simulator = { version = "0.7", optional = true }
 png = { version = "0.17", optional = true }

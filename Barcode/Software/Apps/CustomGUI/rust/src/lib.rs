@@ -184,13 +184,6 @@ const WHITE: Abgr2222 = Abgr2222::WHITE;
 const BLACK: Abgr2222 = Abgr2222::BLACK;
 const DIM: Abgr2222 = Abgr2222::rgb(170, 170, 170);
 
-/// A direct row-fill rather than going through embedded-graphics's generic
-/// styled-primitive machinery (`Rectangle::into_styled().draw()`) -- this is
-/// the single most-called drawing primitive in the whole renderer (every
-/// bar, module, pager mark and backing box), so its own code size and the
-/// styled-drawable/point-iterator machinery it would otherwise pull in for
-/// every distinct color it's called with are both worth avoiding.
-
 // -- Text: TextKit's pre-rendered Poppins atlases. Why these faces and not
 // others, and what the port replaced, is in Barcode/README.md and Docs/TEXT.md.
 

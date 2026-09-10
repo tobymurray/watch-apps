@@ -10,24 +10,11 @@ use embedded_graphics::{
     text::{Alignment, Text},
 };
 
-#[cfg(not(feature = "std"))]
-extern "C" {
-    fn poc_gui_host_panic(msg: *const u8, len: u32);
-}
-
-#[cfg(not(feature = "std"))]
-#[panic_handler]
-fn on_panic(info: &core::panic::PanicInfo) -> ! {
-    let mut msg = Buf::<192>::new();
-    if let Some(loc) = info.location() {
-        let _ = write!(msg, "{}:{}: ", loc.file(), loc.line());
-    }
-    let _ = write!(msg, "{}", info.message());
-
-    let s = msg.as_str();
-    unsafe { poc_gui_host_panic(s.as_ptr(), s.len() as u32) };
-    loop {}
-}
+// PanicKit owns this app's `#[panic_handler]`. A lang item is only linked if
+// something references the crate, and nothing here calls it by name, so this
+// import is what pulls it in.
+#[cfg(feature = "device")]
+use panickit as _;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]

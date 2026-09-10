@@ -35,6 +35,7 @@ find_program(CARGO_EXECUTABLE cargo REQUIRED)
 # archive against a changed ABI.
 add_custom_target(poc_gui_rust ALL
     COMMAND ${CARGO_EXECUTABLE} build --release --target ${RUST_TARGET}
+            --features device
     WORKING_DIRECTORY ${RUST_CRATE_DIR}
     BYPRODUCTS ${RUST_LIB}
     COMMENT "Building Rust GUI core -> libpoc_gui.a"

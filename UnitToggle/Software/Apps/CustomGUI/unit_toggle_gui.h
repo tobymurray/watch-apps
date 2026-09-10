@@ -45,7 +45,7 @@ typedef struct {
 uint32_t unit_toggle_abi_fingerprint(void);
 
 /* Called by the Rust panic handler. Must not return normally. */
-void unit_toggle_host_panic(const uint8_t* msg, uint32_t len);
+void panickit_host_panic(const uint8_t* msg, uint32_t len);
 
 void unit_toggle_render(uint8_t* buf, uint32_t buf_len,
                         uint16_t width, uint16_t height,

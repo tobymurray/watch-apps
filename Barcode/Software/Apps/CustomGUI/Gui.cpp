@@ -93,7 +93,7 @@ const char *promptMessage(Barcode::Problem problem, char (&scratch)[96])
 
 } // namespace
 
-extern "C" void barcode_gui_host_panic(const uint8_t *msg, uint32_t len)
+extern "C" void panickit_host_panic(const uint8_t *msg, uint32_t len)
 {
     LOG_ERROR("Rust panic: %.*s\n", static_cast<int>(len),
               reinterpret_cast<const char *>(msg));

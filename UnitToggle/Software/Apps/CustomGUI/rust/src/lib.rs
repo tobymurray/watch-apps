@@ -1,7 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-#[cfg(not(feature = "std"))]
-use core::fmt::Write as _;
 
 use embedded_graphics::{
     prelude::*,
@@ -13,24 +11,13 @@ use embedded_graphics::{
 use inscribed_disc::{Abgr2222, Surface};
 use textkit::{faces, Face, Style};
 
-#[cfg(not(feature = "std"))]
-extern "C" {
-    fn unit_toggle_host_panic(msg: *const u8, len: u32);
-}
 
-#[cfg(not(feature = "std"))]
-#[panic_handler]
-fn on_panic(info: &core::panic::PanicInfo) -> ! {
-    let mut msg = Buf::<192>::new();
-    if let Some(loc) = info.location() {
-        let _ = write!(msg, "{}:{}: ", loc.file(), loc.line());
-    }
-    let _ = write!(msg, "{}", info.message());
 
-    let s = msg.as_str();
-    unsafe { unit_toggle_host_panic(s.as_ptr(), s.len() as u32) };
-    loop {}
-}
+// PanicKit owns this app's `#[panic_handler]`. A lang item is only linked if
+// something references the crate, and nothing here calls it by name, so this
+// import is what pulls it in.
+#[cfg(feature = "device")]
+use panickit as _;
 
 /// What the last read or write achieved -- each leaves the setting somewhere
 /// different, so each draws a different screen.
@@ -106,37 +93,6 @@ const CHOSEN_TEXT: Abgr2222 = Abgr2222::WHITE;
 const UNCHOSEN_TEXT: Abgr2222 = Abgr2222::GREY;
 const WARN_ACCENT: Abgr2222 = Abgr2222::AMBER;
 
-
-#[cfg(not(feature = "std"))]
-struct Buf<const N: usize> {
-    b: [u8; N],
-    n: usize,
-}
-
-#[cfg(not(feature = "std"))]
-impl<const N: usize> Buf<N> {
-    fn new() -> Self {
-        Buf { b: [0; N], n: 0 }
-    }
-
-    fn as_str(&self) -> &str {
-        core::str::from_utf8(&self.b[..self.n]).unwrap_or("")
-    }
-}
-
-#[cfg(not(feature = "std"))]
-impl<const N: usize> core::fmt::Write for Buf<N> {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        for &c in s.as_bytes() {
-            if self.n >= N {
-                return Err(core::fmt::Error);
-            }
-            self.b[self.n] = c;
-            self.n += 1;
-        }
-        Ok(())
-    }
-}
 
 // Layout: one screen, nothing to configure, so every position is a literal
 // rather than something computed from panel geometry -- this app only ever

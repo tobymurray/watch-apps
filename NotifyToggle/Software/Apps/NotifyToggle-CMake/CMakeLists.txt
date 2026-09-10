@@ -56,6 +56,7 @@ find_program(CARGO_EXECUTABLE cargo REQUIRED)
 # Docs/FINDINGS.md ("Let cargo decide when to rebuild") is why.
 add_custom_target(notify_toggle_gui_rust ALL
     COMMAND ${CARGO_EXECUTABLE} build --release --target ${RUST_TARGET}
+            --features device
     WORKING_DIRECTORY ${RUST_CRATE_DIR}
     BYPRODUCTS ${RUST_LIB}
     COMMENT "Building Rust GUI core -> libnotify_toggle_gui.a"

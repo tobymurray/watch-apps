@@ -1,7 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-#[cfg(not(feature = "std"))]
-use core::fmt::Write as _;
 
 use embedded_graphics::{
     pixelcolor::{raw::RawU8, PixelColor},
@@ -9,24 +7,11 @@ use embedded_graphics::{
     primitives::{PrimitiveStyle, Rectangle},
 };
 
-#[cfg(not(feature = "std"))]
-extern "C" {
-    fn qr_gui_host_panic(msg: *const u8, len: u32);
-}
-
-#[cfg(not(feature = "std"))]
-#[panic_handler]
-fn on_panic(info: &core::panic::PanicInfo) -> ! {
-    let mut msg = Buf::<192>::new();
-    if let Some(loc) = info.location() {
-        let _ = write!(msg, "{}:{}: ", loc.file(), loc.line());
-    }
-    let _ = write!(msg, "{}", info.message());
-
-    let s = msg.as_str();
-    unsafe { qr_gui_host_panic(s.as_ptr(), s.len() as u32) };
-    loop {}
-}
+// PanicKit owns this app's `#[panic_handler]`. A lang item is only linked if
+// something references the crate, and nothing here calls it by name, so this
+// import is what pulls it in.
+#[cfg(feature = "device")]
+use panickit as _;
 
 /// Mirrors Barcode::Matrix (Barcode/Software/Libs/Header/Matrix.hpp) field for
 /// field: row-major, one bit a module, 1 is dark. `dark()` below indexes it the
@@ -120,37 +105,6 @@ impl DrawTarget for FrameBuf<'_> {
                 let idx = (coord.y as u32 * self.w + coord.x as u32) as usize;
                 self.buf[idx] = color.0;
             }
-        }
-        Ok(())
-    }
-}
-
-#[cfg(not(feature = "std"))]
-struct Buf<const N: usize> {
-    b: [u8; N],
-    n: usize,
-}
-
-#[cfg(not(feature = "std"))]
-impl<const N: usize> Buf<N> {
-    fn new() -> Self {
-        Buf { b: [0; N], n: 0 }
-    }
-
-    fn as_str(&self) -> &str {
-        core::str::from_utf8(&self.b[..self.n]).unwrap_or("")
-    }
-}
-
-#[cfg(not(feature = "std"))]
-impl<const N: usize> core::fmt::Write for Buf<N> {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        for &c in s.as_bytes() {
-            if self.n >= N {
-                return Err(core::fmt::Error);
-            }
-            self.b[self.n] = c;
-            self.n += 1;
         }
         Ok(())
     }
