@@ -1,4 +1,4 @@
-# InscribedDisc — design record
+# inscribed-disc — design record
 
 What was measured, what was decided, what was rejected and why, and which
 numbers would falsify which decision. The crate's own README is one level up and
@@ -8,11 +8,11 @@ is for someone consuming it; this is for someone changing it.
 
 ## Status
 
-**Cut back to what has callers.** Five modules were written against a list of
-screens nobody has built yet and are parked — see
-[What is parked](#what-is-parked). What ships is the surface, the colour, the
-geometry, the two draw targets, the colour and the preview, with `Spin` as the
-one adopting app in this repository.
+**Cut back to what has callers.** The modules that were written against a list
+of screens nobody has built yet, and the one that never found a second caller,
+are parked — see [What is parked](#what-is-parked). What ships is the geometry,
+the two draw targets, the colour and the preview, with `Spin` as the one
+adopting app in this repository.
 
 `Spin`'s 43 scene frames are byte-identical after the move, which is the bar for
 an app already installed on wrists, and it has since recorded a session on one.
@@ -552,30 +552,53 @@ builds alone under `--no-default-features`; and
 else, which is the only thing that says the gating works — a build succeeds
 whether or not `embedded-graphics` was resolved.
 
-**But "platform-generic" is a weaker claim than it first looks, and the limit is
-`ByteColor`.** `Surface` is generic over the colour type, but bounded on
-`ByteColor: to_byte() -> u8`, so it serves **byte-per-pixel panels only**. A
-16bpp `Rgb565` panel — much the most common thing an adopter would bring — does
-not compile against it:
+**`Surface` still serves byte-per-pixel panels only, and that is now a limit on
+one module rather than on the crate.** It is bounded on `ByteColor`, so a 16bpp
+`Rgb565` panel — much the most common thing an adopter would bring — does not
+compile against it. `DiscClipped` is the answer at other widths: it has no
+colour bound, and `a_round_rgb565_panel_is_disc_clipped` paints an `Rgb565`
+frame over `embedded-graphics-framebuf` with 0 pixels behind the bezel.
+
+Two things changed at `342fba0` and this passage predated them.
+
+`ByteColor` is a blanket alias over `PixelColor<Raw = RawU8> + From<RawU8> +
+Into<RawU8> + Copy`, so **`Gray8` works with no impl written anywhere**, and the
+orphan-rule dead end an adopter used to hit — owning neither `Gray8` nor
+`ByteColor`, and so unable to write the impl without a newtype — is gone. It was
+a supertrait rather than a `where RawU8: From<Self>` clause because a
+where-clause on a trait is not an implied bound, and that spelling leaked the
+obligation into every downstream signature.
+
+It cost nothing: linked tier-0 `.text` is **656 bytes either side**, exactly,
+and one body under two bounds is 422 either side. Both figures and their method
+are in
+[`Docs/2026-09-10-publish-or-not.md`](2026-09-10-publish-or-not.md) §4, which
+owns them; they have not been re-run here.
+
+And the refusal reads better than it did. Compiling
+`Surface::<Rgb565>::round` today says:
 
 ```
-error[E0599]: the associated function `round` exists for `Surface<'_, Rgb565>`,
-              but its trait bounds were not satisfied
+doesn't satisfy `<Rgb565 as PixelColor>::Raw = RawU8`, `Rgb565: ByteColor`
+                or `Rgb565: From<RawU8>`
+note: the following trait bounds were not satisfied:
+      `<Rgb565 as PixelColor>::Raw = RawU8`
 ```
+
+which names the actual problem, where a bare `Rgb565: ByteColor` sent the reader
+to this crate's documentation to find out what that meant.
 
 The riscv build tests that the crate compiles on another *architecture*, not
 that it serves another *panel format*, and the genericity measurement in §2 used
-a second byte-wide type. So what is actually established is: generic over
-byte-per-pixel colour encodings, at a measured 66 bytes, on more than one
-architecture. Which is the real shape of the thing — it is a kit for
-**low-bit-depth** panels, and one byte a pixel is what "low-bit-depth" has meant
-throughout.
+a second byte-wide type.
 
-Lifting it wants a `Raw`-width-generic buffer with the stride arithmetic and the
-row fill written against `PixelColor::Raw` rather than `u8`, which is a real
-piece of work and should not be done speculatively — it wants an adopter with a
-16bpp panel asking for it, and the §2 measurement re-run at that width, since
-`to_byte`/`from_byte` stop being free.
+Lifting `Surface` wants a `Raw`-width-generic buffer with the stride arithmetic
+and the row fill written against `PixelColor::Raw` rather than `u8`, which is a
+real piece of work and should not be done speculatively — it wants an adopter
+with a 16bpp panel asking for it, and the §2 measurement re-run at that width,
+since `to_byte`/`from_byte` stop being free. Until then `DiscClipped` over a
+framebuffer they already have is what that adopter gets, and it is not a
+consolation prize: it is the composition this crate recommends.
 
 **The UNA half (this repo, not published):** `Header/GuiShell.hpp`,
 `inscribed-disc.cmake`, and the kernel and `SettingsKit` couplings. Nothing in the
@@ -591,10 +614,26 @@ convert between two spellings of the same thing. That escape hatch is the honest
 current state of the seam, and it is documented on the method rather than
 dressed up as an abstraction nobody uses.
 
-**Not depended on, and why.** `embedded-graphics-framebuf` already provides a
-framebuffer `DrawTarget`, and does not fit: this one is a byte-per-pixel
-`PixelColor` with a **round clip** and a row-fill `fill_solid`, and the clip is
-the entire point. `embedded-layout`'s alignment vocabulary is worth stealing
+**Not depended on, and why.** An earlier version of this passage said
+`embedded-graphics-framebuf` "does not fit". Half of that was wrong, and the
+wrong half decides who the crate is for.
+
+```rust
+pub struct FrameBuf<C: PixelColor, B: FrameBufferBackend<Color = C>> { ... }
+impl<C: PixelColor, B: FrameBufferBackend<Color = C>> DrawTarget for FrameBuf<C, B>
+```
+
+It is fully generic over `PixelColor`, which is **more** general than `Surface`,
+and it has DMA-capable backends. What it lacks is the disc clip. It also
+supplies only `draw_iter` and `clear` — no `fill_solid`, no `fill_contiguous` —
+so it is per-pixel regardless of what wraps it, and it gives no safe `&[u8]`:
+raw bytes come out through `ReadBuffer`, unsafely.
+
+So it is not a dependency, and `DiscClipped` over it is the composition this
+crate offers for the panels `Surface` refuses. It is a **dev-dependency**, which
+is where the two tests that prove that composition run.
+
+`embedded-layout`'s alignment vocabulary is worth stealing
 rather than re-coining — `text::Align` uses `Left/Center/Right`, the same three
 it, `embedded-text` and `TextKit` all use. `embedded-text` overlaps `wrap`,
 which is 45 lines here against a dependency; the kit keeps its own because the
@@ -707,11 +746,7 @@ Listed so the gap is not something a reader has to find:
   figure in this file is an archive upper bound it says so.
 - **Frame time on hardware.** The 78 ms slack is the platform's; no scene in
   this kit has been timed against it, on the host or on a watch.
-- **Trusted Publishing, a CHANGELOG, and the licence text.** `Cargo.toml`
-  declares `MIT OR Apache-2.0`, matching `TextKit` and `EffortKit`, but the
-  repository's root `LICENSE` is MIT only and no crate here ships licence files.
-  That discrepancy predates this crate and is not one to fix unilaterally, but
-  it has to be settled before anything is actually published.
+- **Trusted Publishing and a CHANGELOG.** Neither is set up.
 - **`cargo semver-checks`.** Not installed here, and at 0.1.0 there is no
   published baseline for it to compare against. It belongs in CI from the first
   release, not before it.
@@ -722,8 +757,9 @@ Listed so the gap is not something a reader has to find:
   screen have not been drawn on glass. A working app is also not a
   pixel-accurate one: the goldens say the frames match the pre-conversion build,
   and nothing has compared glass against glass.
-- **Anything past a byte a pixel**, as above. The public claim has to be
-  "low-bit-depth, one byte a pixel" until someone lifts `ByteColor`.
+- **`Surface` past a byte a pixel**, as above. `DiscClipped` reaches those
+  panels and `Surface` does not, so the public claim is round rather than
+  low-bit-depth, and `Surface`'s own documentation carries the narrower one.
 - **Tier 2 at all.** The value row and the four-button hint ring have their
   warrants and are not written, and the two widgets that were here are parked.
 - **Anything in [What is parked](#what-is-parked)**, which is where the focus

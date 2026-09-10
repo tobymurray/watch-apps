@@ -7,8 +7,11 @@ paint off it. `no_std`, no allocator, no font.
 
 ```toml
 [dependencies]
-inscribed-disc = { version = "0.1", default-features = false }
+inscribed-disc = "0.1"
 ```
+
+`default-features = false` leaves `geometry` alone — the predicate, the chords
+and the largest centred square, with nothing in your dependency tree.
 
 ## Is this for you?
 
@@ -42,13 +45,18 @@ and the only greys are 0, 85, 170 and 255.
 ## What it does
 
 ```rust
-use inscribed_disc::{color::Abgr2222, surface::Surface};
+use embedded_graphics::{pixelcolor::Gray8, prelude::*};
+use inscribed_disc::Surface;
 
 let mut fb = [0u8; 240 * 240];
-let mut s = Surface::<Abgr2222>::round(&mut fb, 240, 240).unwrap();
-s.clear(Abgr2222::BLACK);
-s.fill_rect(60, 100, 120, 40, Abgr2222::WHITE);
+let mut s = Surface::<Gray8>::round(&mut fb, 240, 240).unwrap();
+s.clear(Gray8::BLACK);
+s.fill_rect(60, 100, 120, 40, Gray8::WHITE);
 ```
+
+Any colour whose `PixelColor::Raw` is `RawU8` works there with no impl written
+anywhere. For two bits a channel, the `abgr2222` feature brings `Abgr2222` and
+`shade`.
 
 `Surface` is a `DrawTarget`, so anything in the `embedded-graphics` ecosystem
 draws onto it — and everything that does is clipped to the inscribed disc, not
@@ -74,14 +82,14 @@ let _ = Rectangle::new(Point::new(4, 4), Size::new(232, 232))
 That 4-pixel inset is the mistake the crate is about: on a rectangular target it
 paints 12,792 pixels the glass never shows, 22.2% of the framebuffer.
 
-| module | |
-|---|---|
-| `clip` | `DiscClipped`, a disc clip over any `DrawTarget`, at any colour depth |
-| `surface` | the framebuffer, the clip, a row-fill `fill_solid` |
-| `color` | `Abgr2222`, its palette, and `shade` for partial coverage |
-| `geometry` | the lit-disc predicate, row chords, the inscribed square |
-| `preview` | frames to PNG in the panel's own colours *(feature `preview`, host-only)* |
-| `panic` | a `#[panic_handler]` reporting `file:line` *(feature `panic-handler`)* |
+| module | | feature |
+|---|---|---|
+| `geometry` | the lit-disc predicate, row chords, the largest centred square | always |
+| `clip` | `DiscClipped`, a disc clip over any `DrawTarget`, at any colour depth | `embedded-graphics`, on by default |
+| `surface` | the framebuffer, the clip, a row-fill `fill_solid` | `embedded-graphics`, on by default |
+| `color` | `Abgr2222`, its palette, and `shade` for partial coverage | `abgr2222` |
+| `preview` | frames to PNG in the panel's own colours, host-only | `preview` |
+| `panic` | a `#[panic_handler]` reporting `file:line` | `panic-handler` |
 
 Text is not included and neither is a font: bring your own rasteriser and hand
 it the buffer through `Surface::bytes_mut`, applying `geometry::is_lit` yourself.
@@ -89,9 +97,16 @@ it the buffer through `Surface::bytes_mut`, applying `geometry::is_lit` yourself
 ## Constants that came from measuring
 
 The crate carries a few numbers that were counted rather than reasoned, and each
-is re-derived by a test on every build — the widest row of a 240-pixel panel is
-238 and every chord is even; the largest centred square is 168, where the closed
-form says 169; the disc clip's fast path is worth 128 µs a frame against 43.
+is re-derived by a test on every build: the widest row of a 240-pixel panel is
+238 and every chord is even, and the largest centred square is 168, where the
+closed form says 169.
+
+The frame time is the one that is not a test, so it is quoted with what it
+compares. Drawing 43 real scenes, `Surface::round` costs **57.9 µs a frame**
+with the span-ends fast path, against **128 µs** for the row scan it replaced
+and **43 µs** for rect clipping with no disc at all. So the fast path recovers
+128 to 57.9; it does not reach 43, because 43 is not a disc clip.
+
 [`Docs/DESIGN.md`](Docs/DESIGN.md) has them with what would falsify each.
 
 ## Status
