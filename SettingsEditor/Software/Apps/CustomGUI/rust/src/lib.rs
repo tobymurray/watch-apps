@@ -10,7 +10,7 @@
 use embedded_graphics::{prelude::*, primitives::{PrimitiveStyle, Triangle}};
 use inscribed_disc::color::Abgr2222;
 use inscribed_disc::surface::Surface;
-use textkit::{faces, Align, Canvas, Face};
+use textkit::{faces, Align, Face, Style};
 
 /// What may be claimed about the field on screen. Every one of these leaves the
 /// setting somewhere different, and a value that just changes cannot tell them
@@ -452,15 +452,8 @@ impl Digits {
     }
 }
 
-/// TextKit rasterises through its own surface type, so it is handed the bytes
-/// rather than the [`Surface`]. Both apply the identical disc rule -- a pixel
-/// centre within 119.5 pitches -- and `the_text_bridge_clips_where_the_surface_does`
-/// is what holds them together; without it this is the seam the kit exists to
-/// close, reopened.
 fn text_at(fb: &mut Surface<Abgr2222>, face: &Face, s: &str, x: i32, baseline: i32, align: Align, color: Abgr2222) {
-    let (w, h) = (fb.width() as u32, fb.height() as u32);
-    let mut canvas = Canvas::round(fb.bytes_mut(), w, h);
-    face.draw(&mut canvas, s, x, baseline, align, color.0);
+    face.draw(fb, s, x, baseline, Style::new(color, GROUND, align)).ok();
 }
 
 fn text(fb: &mut Surface<Abgr2222>, face: &Face, s: &str, x: i32, baseline: i32, color: Abgr2222) {
