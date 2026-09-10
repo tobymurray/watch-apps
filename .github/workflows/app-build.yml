@@ -241,6 +241,19 @@ jobs:
 
             echo "bump: $bump"
 
+            # Below 1.0 a breaking change bumps the minor, not the major: 0.x
+            # is where an API is allowed to move, and every consumer of these
+            # apps is in this repository. Reaching 1.0 is a decision a person
+            # makes, not something a `!` in a commit subject does on its own --
+            # and it did, four times in one afternoon, off `refactor!` commits
+            # to shared crates that changed nothing a wearer sees. Cross 1.0 by
+            # passing `version` explicitly to this workflow.
+            IFS=. read -r cur_major _ _ <<< "$current"
+            if [ "$bump" = major ] && [ "${cur_major:-0}" -eq 0 ]; then
+              echo "bump: major -> minor (still 0.x; 1.0 needs an explicit version)"
+              bump=minor
+            fi
+
             if [ "$bump" != none ]; then
               IFS=. read -r major minor patch <<< "$current"
               case "$bump" in
