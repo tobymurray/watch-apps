@@ -11,7 +11,7 @@ full = []
 location_min = []
 
 [dependencies]
-inscribed-disc = { path = "../../..", default-features = false }
+inscribed-disc = { path = "../../..", default-features = false, features = ["embedded-graphics", "abgr2222"] }
 
 [profile.release]
 panic = "abort"

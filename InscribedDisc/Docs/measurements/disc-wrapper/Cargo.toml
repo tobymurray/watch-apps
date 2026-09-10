@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 embedded-graphics = "0.8"
 embedded-graphics-framebuf = "0.5"
-inscribed-disc = { path = "../../..", features = ["std"] }
+inscribed-disc = { path = "../../..", features = ["std", "abgr2222"] }
 
 [profile.release]
 opt-level = "z"

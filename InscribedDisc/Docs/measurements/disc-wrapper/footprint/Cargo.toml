@@ -19,7 +19,7 @@ naive = []
 promoted = []
 
 [dependencies]
-inscribed-disc = { path = "../../../..", default-features = false }
+inscribed-disc = { path = "../../../..", default-features = false, features = ["embedded-graphics", "abgr2222"] }
 embedded-graphics = "0.8"
 
 [profile.release]

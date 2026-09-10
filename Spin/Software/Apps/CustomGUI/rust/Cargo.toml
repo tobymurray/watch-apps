@@ -43,7 +43,10 @@ embedded-graphics-simulator = { version = "0.7", optional = true }
 textkit = { path = "../../../../../TextKit" }
 # The surface and its clip, the colour, and the panic handler. A dependency,
 # never a second staticlib, for the same reason as TextKit above.
-inscribed-disc = { path = "../../../../../InscribedDisc", default-features = false }
+inscribed-disc = { path = "../../../../../InscribedDisc", default-features = false, features = [
+    "embedded-graphics",
+    "abgr2222",
+] }
 
 [profile.release]
 panic = "abort"

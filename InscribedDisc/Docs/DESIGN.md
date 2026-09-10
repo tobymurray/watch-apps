@@ -499,22 +499,48 @@ cheap regression check is the golden *hashes* beside it rather than the image.
 
 ## 10. Publishing: the split
 
-**`inscribed-disc` (public):** `no_std`, no allocator, generic over `PixelColor` and
-`DrawTarget`, with the round geometry, the low-bit-depth palette, two widgets
-and the PNG preview. Features:
-`widgets`, `preview`, `panic-handler`, `panic-message`, `std`. There is
-deliberately no `round` or `abgr2222` feature: the clip is a
-runtime choice between `Surface::round` and `Surface::rect`, and the colour type
-is always present, so a feature for either would gate nothing and say it did. `preview` is the only one with a dependency beyond `embedded-graphics`
-(`png`), and it is host-only.
-`Cargo.toml`'s `include` lists `src/**/*.rs` and the README, so nothing below
-ships in the crate — `cargo package --list` is 16 files, all of them Rust and
-documentation.
+**`inscribed-disc` (public):** `no_std`, no allocator, generic over
+`PixelColor` and `DrawTarget`, with the round geometry, the two draw targets,
+the low-bit-depth palette and the PNG preview.
+
+`geometry` is the core and it is always present, because `src/geometry.rs` has
+**no `use` statements at all**: it compiles as a standalone crate with an empty
+dependency tree, passes its own tests there, and builds for
+`thumbv8m.main-none-eabihf`. Everything else is a feature.
+
+| feature | default | gates |
+|---|---|---|
+| — | always | `geometry` |
+| `embedded-graphics` | **on** | `clip` (`DiscClipped`), `surface` (`Surface`, `ByteColor`) |
+| `abgr2222` | off | `color` (`Abgr2222`, `shade`, the palette, `GREY_LEVELS`, `CHANNEL_MAX`) |
+| `preview` | off | `preview`; implies `std` and `abgr2222`; brings `png` |
+| `panic-handler` | off | `panic`, location only |
+| `panic-message` | off | implies `panic-handler`; adds the message |
+| `std` | off | host assertions |
+
+**An earlier version of this section said there was deliberately no `abgr2222`
+feature, because "the colour type is always present, so a feature for either
+would gate nothing and say it did". That reasoning was about a crate whose only
+audience had this panel.** It is wrong now: the crate's audience is every round
+`DrawTarget`, most of which will never construct an `Abgr2222`, and gating it
+removes real code for the majority of them. The same argument does not rescue a
+`round` feature — the clip stays a runtime choice between `Surface::round` and
+`Surface::rect`, and `DiscClipped` has no `rect` mode to choose between.
+
+`preview` is still the only feature with a dependency beyond
+`embedded-graphics` (`png`), and it is host-only.
+
+`Cargo.toml`'s `include` lists the Rust sources, the README, this file and the
+licence, so nothing else ships in the crate — `cargo package --list` is the
+check, and everything it prints is Rust or documentation.
 
 Verified rather than asserted: `cargo publish --dry-run` is clean;
 `cargo doc --all-features` builds with `-D warnings`; the crate compiles for
-`riscv32imac-unknown-none-elf` as well as `thumbv8m.main-none-eabihf`; and tier 0
-builds alone under `--no-default-features --features round`.
+`riscv32imac-unknown-none-elf` as well as `thumbv8m.main-none-eabihf`; the core
+builds alone under `--no-default-features`; and
+`cargo tree --no-default-features -e normal` prints the crate and nothing
+else, which is the only thing that says the gating works — a build succeeds
+whether or not `embedded-graphics` was resolved.
 
 **But "platform-generic" is a weaker claim than it first looks, and the limit is
 `ByteColor`.** `Surface` is generic over the colour type, but bounded on

@@ -84,10 +84,23 @@ jobs:
         working-directory: InscribedDisc
         run: cargo test --all-features
 
-      # A `std` type reached for from tier 0 compiles fine above and fails here.
-      - name: Tier 0 alone
+      # A `std` type reached for from the geometry core compiles fine above and
+      # fails here.
+      - name: The zero-dependency core alone
         working-directory: InscribedDisc
         run: cargo build --release --target thumbv8m.main-none-eabihf --no-default-features
+
+      # The claim `geometry` makes to a consumer who wants only the predicate:
+      # nothing in their tree. Nothing else says so -- a build succeeds whether
+      # or not embedded-graphics was resolved.
+      - name: The core resolves no dependencies
+        working-directory: InscribedDisc
+        run: |
+          set -euo pipefail
+          tree=$(cargo tree --no-default-features -e normal)
+          echo "$tree"
+          [ "$(echo "$tree" | wc -l)" -eq 1 ] || {
+            echo "::error::--no-default-features resolved a dependency"; exit 1; }
 
       # The one that matters most. Nothing in the crate may need an allocator or
       # a host, and this is the only step that says so.
@@ -98,9 +111,11 @@ jobs:
           # panic-handler and panic-message are what an app ships, and nothing
           # else here compiles them: --all-features enables std, and both
           # handlers are gated `not(feature = "std")`.
-          for f in widgets panic-handler panic-message "widgets,panic-message"; do
+          for f in embedded-graphics abgr2222 widgets panic-handler panic-message \
+                   "abgr2222,widgets,panic-message"; do
             echo "--- $f"
-            cargo build --release --target thumbv8m.main-none-eabihf --no-default-features ${f:+--features "$f"}
+            cargo build --release --target thumbv8m.main-none-eabihf \
+              --no-default-features --features "$f"
           done
 
       # "Platform-generic" is a claim until something other than one ARM target
@@ -110,7 +125,9 @@ jobs:
         run: |
           set -euo pipefail
           rustup target add riscv32imac-unknown-none-elf
-          cargo build --release --target riscv32imac-unknown-none-elf --no-default-features --features widgets
+          cargo build --release --target riscv32imac-unknown-none-elf --no-default-features
+          cargo build --release --target riscv32imac-unknown-none-elf \
+            --no-default-features --features abgr2222,widgets
 
       # Catches a rename across the C ABI, which needs no ARM toolchain.
       - name: The shell header type-checks against the SDK

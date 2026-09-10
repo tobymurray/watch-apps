@@ -12,7 +12,7 @@ t0 = []
 t2 = ["inscribed-disc/widgets"]
 
 [dependencies]
-inscribed-disc = { path = "../../..", default-features = false }
+inscribed-disc = { path = "../../..", default-features = false, features = ["embedded-graphics", "abgr2222"] }
 
 [profile.release]
 panic = "abort"

@@ -14,9 +14,19 @@ keywords = ["embedded-graphics", "no-std", "gui", "smartwatch", "round-display"]
 include = ["src/**/*.rs", "examples/*.rs", "README.md", "Docs/DESIGN.md", "LICENSE"]
 
 [features]
-default = []
+# `geometry` is always present and needs nothing; everything else is a feature,
+# so a consumer who wants only "is this pixel on the glass" resolves an empty
+# dependency tree. `cargo tree --no-default-features -e normal` is the check.
+default = ["embedded-graphics"]
+## The `DrawTarget`s: `DiscClipped` over anyone's target, and `Surface` over a
+## byte-per-pixel buffer. On by default, because it is what most callers want.
+embedded-graphics = ["dep:embedded-graphics"]
+## `Abgr2222`, its palette and `shade`: two bits a channel, 64 colours. The
+## right type for the three round Sharp `DD` panels and for nothing else, which
+## is why it is off.
+abgr2222 = ["embedded-graphics"]
 ## Tier 2 widgets.
-widgets = []
+widgets = ["embedded-graphics"]
 ## A `#[panic_handler]` reporting `file:line` through `inscribed_disc_host_panic`.
 ## Measured at 319 bytes over reporting nothing. Inert under `std`, so
 ## `--all-features` and a host test build still work.
@@ -30,7 +40,7 @@ panic-message = ["panic-handler"]
 std = []
 ## PNG frames, contact sheets and the gamut sheet. Host-only, and the only
 ## thing in this crate with a dependency beyond embedded-graphics.
-preview = ["std", "dep:png"]
+preview = ["std", "abgr2222", "dep:png"]
 
 # Needs the PNG encoder, so it cannot build without the feature that brings it.
 [[example]]
@@ -38,7 +48,7 @@ name = "gamut"
 required-features = ["preview"]
 
 [dependencies]
-embedded-graphics = "0.8"
+embedded-graphics = { version = "0.8", optional = true }
 png = { version = "0.17", optional = true }
 
 [dev-dependencies]
