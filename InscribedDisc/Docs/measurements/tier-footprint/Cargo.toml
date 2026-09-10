@@ -1,0 +1,22 @@
+[package]
+name = "probe"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[features]
+default = []
+t0 = []
+t2 = ["inscribed-disc/widgets"]
+
+[dependencies]
+inscribed-disc = { path = "../../..", default-features = false }
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false

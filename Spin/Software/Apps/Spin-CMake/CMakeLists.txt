@@ -41,7 +41,7 @@ find_program(CARGO_EXECUTABLE cargo REQUIRED)
 # Always invoke cargo and let it decide whether to rebuild: an OUTPUT/DEPENDS
 # rule restating cargo's inputs would silently link a stale archive against a
 # changed ABI. See RustGuiPoc/Docs/FINDINGS.md.
-# --features device is not optional: it is what turns on PanelKit's
+# --features device is not optional: it is what turns on InscribedDisc's
 # #[panic_handler], and without it a no_std build fails outright with
 # "`#[panic_handler]` function required, but not found".
 add_custom_target(spin_gui_rust ALL

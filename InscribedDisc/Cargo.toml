@@ -1,0 +1,54 @@
+[package]
+name = "inscribed-disc"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+license = "MIT"
+description = "GUI primitives for round, low-bit-depth panels: lit-disc geometry, an ABGR2222 framebuffer that clips to the glass, and PNG previews that show exactly what the panel would."
+repository = "https://github.com/tobymurray/watch-apps/tree/main/InscribedDisc"
+categories = ["embedded", "no-std", "gui"]
+keywords = ["embedded-graphics", "no-std", "gui", "smartwatch", "round-display"]
+# The published crate is the Rust half only. The C ABI, GuiShell.hpp and
+# inscribed-disc.cmake are this repo's glue to one vendor's SDK and are not
+# part of what anyone else would install.
+include = ["src/**/*.rs", "examples/*.rs", "README.md", "Docs/DESIGN.md", "LICENSE"]
+
+[features]
+default = []
+## Tier 2 widgets.
+widgets = []
+## A `#[panic_handler]` reporting `file:line` through `inscribed_disc_host_panic`.
+## Measured at 319 bytes over reporting nothing. Inert under `std`, so
+## `--all-features` and a host test build still work.
+panic-handler = []
+## Adds the panic message to the location. This is the expensive half: it needs
+## `core::fmt`, measured at +2,210 bytes of `.text` linking Spin's real
+## renderer, against 319 for the location alone. Opt in when the message is
+## worth three kilobytes of a 600 KiB window.
+panic-message = ["panic-handler"]
+## Host-side helpers and `std` assertions in tests.
+std = []
+## PNG frames, contact sheets and the gamut sheet. Host-only, and the only
+## thing in this crate with a dependency beyond embedded-graphics.
+preview = ["std", "dep:png"]
+
+# Needs the PNG encoder, so it cannot build without the feature that brings it.
+[[example]]
+name = "gamut"
+required-features = ["preview"]
+
+[dependencies]
+embedded-graphics = "0.8"
+png = { version = "0.17", optional = true }
+
+[dev-dependencies]
+embedded-graphics = "0.8"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1

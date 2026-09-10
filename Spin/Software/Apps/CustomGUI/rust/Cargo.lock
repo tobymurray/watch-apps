@@ -162,6 +162,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "inscribed-disc"
+version = "0.1.0"
+dependencies = [
+ "embedded-graphics",
+ "png 0.17.16",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -240,14 +248,6 @@ dependencies = [
  "proc-macro2-diagnostics",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "panelkit"
-version = "0.1.0"
-dependencies = [
- "embedded-graphics",
- "png 0.17.16",
 ]
 
 [[package]]
@@ -348,8 +348,8 @@ version = "0.1.0"
 dependencies = [
  "embedded-graphics",
  "embedded-graphics-simulator",
+ "inscribed-disc",
  "micromath",
- "panelkit",
  "textkit",
 ]
 

@@ -1,9 +1,9 @@
 //! One PNG per scene plus a contact sheet, through the same `render()` the
-//! watch calls and PanelKit's own disc mask.
+//! watch calls and InscribedDisc's own disc mask.
 //!
 //!   cargo run --features preview --bin preview [-- <out-dir>]
 
-use panelkit::preview::{sheet_from_frames, to_rgba, write_png, Bezel, Options};
+use inscribed_disc::preview::{sheet_from_frames, to_rgba, write_png, Bezel, Options};
 use spin_gui::scenes::scenes;
 
 const W: u32 = 240;

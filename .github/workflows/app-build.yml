@@ -137,8 +137,8 @@ jobs:
           if [ -n "$crate" ] && grep -q 'TextKit' "$crate"; then textkit=yes; fi
           # Found the same way as TextKit, from the crate's own Cargo.toml, so
           # it is discovered rather than declared.
-          panelkit=no
-          if [ -n "$crate" ] && grep -q 'PanelKit' "$crate"; then panelkit=yes; fi
+          inscribed_disc=no
+          if [ -n "$crate" ] && grep -q 'InscribedDisc' "$crate"; then inscribed_disc=yes; fi
           # A Service that measures heart-rate recovery or writes the shared
           # session log links the EffortKit crate, whose own tests are the only
           # thing that covers either -- Service.cpp has no host test at all.
@@ -153,17 +153,17 @@ jobs:
             echo "cmake=$([ -n "$cmake" ] && dirname "$cmake" || echo '')"
             echo "crate=$([ -n "$crate" ] && dirname "$crate" || echo '')"
             echo "textkit=$textkit"
-            echo "panelkit=$panelkit"
+            echo "inscribed_disc=$inscribed_disc"
             echo "effortkit=$effortkit"
           } >> "$GITHUB_OUTPUT"
 
-          echo "app       $app"
-          echo "manifest  ${manifest#apps/}$([ -f "$manifest" ] || echo ' (none)')"
-          echo "tests     $([ -f "$tests" ] && echo yes || echo no)"
-          echo "crate     $([ -n "$crate" ] && echo yes || echo no)"
-          echo "textkit   $textkit"
-          echo "panelkit  $panelkit"
-          echo "buildable $([ -n "$cmake" ] && echo yes || echo no)"
+          echo "app            $app"
+          echo "manifest       ${manifest#apps/}$([ -f "$manifest" ] || echo ' (none)')"
+          echo "tests          $([ -f "$tests" ] && echo yes || echo no)"
+          echo "crate          $([ -n "$crate" ] && echo yes || echo no)"
+          echo "textkit        $textkit"
+          echo "inscribed_disc $inscribed_disc"
+          echo "buildable      $([ -n "$cmake" ] && echo yes || echo no)"
 
           if [ ! -f "$manifest" ] && [ ! -f "$tests" ] && [ -z "$cmake" ]; then
             echo "::error::$app has no manifest, no tests and nothing to build"
@@ -383,12 +383,12 @@ jobs:
           python3 Tools/atlas.py --check
           cargo test --features std
 
-      # panelkit.yml covers the crate on its own; this is what says an adopting
-      # app's build still agrees with it.
-      - name: PanelKit still holds its measurements
-        if: steps.app.outputs.panelkit == 'yes'
+      # inscribed-disc.yml covers the crate on its own; this is what says an
+      # adopting app's build still agrees with it.
+      - name: InscribedDisc still holds its measurements
+        if: steps.app.outputs.inscribed_disc == 'yes'
         shell: bash
-        working-directory: apps/PanelKit
+        working-directory: apps/InscribedDisc
         run: cargo test --all-features
 
       - name: Build the app

@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 crate-type = ["staticlib", "lib"]
 
 # Two host binaries rather than one, because they need very different things.
-# `preview` writes PNGs through PanelKit and runs anywhere -- including a
+# `preview` writes PNGs through InscribedDisc and runs anywhere -- including a
 # machine with no SDL2, which is where the screenshots in the README were
 # actually taken. `sim` opens a window and needs SDL2.
 [[bin]]
@@ -21,15 +21,15 @@ name = "sim"
 required-features = ["sim"]
 
 [features]
-std = ["panelkit/std"]
+std = ["inscribed-disc/std"]
 # The device build takes the kit's panic handler, which reports file:line
-# through one `panelkit_host_panic` the shell defines. Spin previously sent the
-# literal "panic", having been forked before that improvement landed.
+# through one `inscribed_disc_host_panic` the shell defines. Spin previously
+# sent the literal "panic", having been forked before that improvement landed.
 # Both halves: this app's panics are worth a message. An app tighter on RAM can
-# drop panelkit/panic-message and keep the location for 319 bytes instead of
-# 3,226 -- see PanelKit/Docs/measurements/panic-handler.
-device = ["panelkit/panic-handler", "panelkit/panic-message"]
-preview = ["std", "panelkit/preview"]
+# drop inscribed-disc/panic-message and keep the location for 319 bytes
+# instead of 3,226 -- see InscribedDisc/Docs/measurements/panic-handler.
+device = ["inscribed-disc/panic-handler", "inscribed-disc/panic-message"]
+preview = ["std", "inscribed-disc/preview"]
 sim = ["preview", "dep:embedded-graphics-simulator"]
 
 [dependencies]
@@ -43,7 +43,7 @@ embedded-graphics-simulator = { version = "0.7", optional = true }
 textkit = { path = "../../../../../TextKit" }
 # The surface and its clip, the colour, and the panic handler. A dependency,
 # never a second staticlib, for the same reason as TextKit above.
-panelkit = { path = "../../../../../PanelKit", default-features = false }
+inscribed-disc = { path = "../../../../../InscribedDisc", default-features = false }
 
 [profile.release]
 panic = "abort"

@@ -1,7 +1,7 @@
-//! Frame time for every scene, and the ring sweep that PanelKit's disc clip is
-//! measured against. The falsifier named by `panelkit::geometry::lit_span` and
-//! by the numbers in this app's README: if the clip regresses, this is what
-//! says so.
+//! Frame time for every scene, and the ring sweep that InscribedDisc's disc
+//! clip is measured against. The falsifier named by
+//! `inscribed_disc::geometry::lit_span` and by the numbers in this app's
+//! README: if the clip regresses, this is what says so.
 //!
 //!   cargo run --release --features std --example frametime
 use std::time::Instant;

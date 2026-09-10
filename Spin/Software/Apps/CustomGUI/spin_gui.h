@@ -73,10 +73,10 @@ uint16_t spin_gui_work_add_tens(uint16_t kj);       /* L2 */
 /* A reference to draw beside the field, never a value to pre-fill it with.
    0 = nothing worth showing. */
 uint16_t spin_gui_work_estimate_kj(float active_kcal);
-/* Defined by Gui.cpp and called by PanelKit's panic handler. Declared here
-   rather than in the kit's header because this app does not yet take the kit's
-   C++ shell, only its renderer. */
-void     panelkit_host_panic(const uint8_t *msg, uint32_t len);
+/* Defined by Gui.cpp and called by InscribedDisc's panic handler. Declared
+   here rather than in the kit's header because this app does not yet take the
+   kit's C++ shell, only its renderer. */
+void     inscribed_disc_host_panic(const uint8_t *msg, uint32_t len);
 void     spin_gui_render(uint8_t *buf, uint32_t buf_len,
                          uint16_t width, uint16_t height,
                          const spin_gui_frame *frame);

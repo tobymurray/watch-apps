@@ -13,8 +13,8 @@
 
 #[cfg(not(feature = "std"))]
 use micromath::F32Ext;
-use panelkit::color::Abgr2222;
-use panelkit::surface::Surface;
+use inscribed_disc::color::Abgr2222;
+use inscribed_disc::surface::Surface;
 use textkit::{faces, Align, Canvas, Face};
 
 /// The frames worth looking at. Host-only: the watch is handed frames.
