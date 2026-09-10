@@ -11,12 +11,12 @@ is for someone consuming it; this is for someone changing it.
 **Cut back to what has callers.** Five modules were written against a list of
 screens nobody has built yet and are parked — see
 [What is parked](#what-is-parked). What ships is the surface, the colour, the
-geometry, the widgets and the preview: about 1,500 lines with two adopting apps
-between them.
+geometry, the widgets and the preview: about 1,500 lines, with `Spin` as the one
+adopting app in this repository.
 
-`SettingsEditor` did not previously compile for the watch and now does; `Spin`'s
-43 scene frames are byte-identical after the move. **Neither has run on a
-watch**, and that is the next thing worth doing. **Not** done, and listed here rather than
+`Spin`'s 43 scene frames are byte-identical after the move, which is the bar for
+an app already installed on wrists. **It has not run on a watch since**, and
+that is the next thing worth doing. **Not** done, and listed here rather than
 buried: the `Spin` adoption, the drift backports, the scaffold, and every
 number that needs a linker. See [What is not built](#what-is-not-built).
 
@@ -239,7 +239,7 @@ compile-time assertions, and a stale archive has already faked a sensor fault in
 this repository once.
 
 **Status: designed, not built.** `Shell` takes the fixed event surface and
-`Action`, which is the half that matters for the two apps here; the opaque
+`Action`, which is the half that matters for the app here; the opaque
 payload reader is specified above and not yet written, because no adopting app
 needs one until `Spin` moves. Do not read this section as shipped.
 
@@ -288,32 +288,11 @@ here, because nothing links them.
 
 Every number the kit carries is re-run by its own tests on every build.
 
-**The arc sample step, 0.65 px.** Filling the ring between r = 100 and r = 118
-on a 240×240 panel and counting pixels inside it that stayed unpainted:
-
-| step | unpainted |
-|---|---|
-| 0.95 | 520 |
-| 0.85 | 142 |
-| **0.75** | **4** |
-| 0.70 | 0 |
-| 0.65 (ships) | 0 |
-
-The 4 at 0.75 is **the same count `Spin` recorded independently on its own
-ring**, which is the agreement worth having. The coarser counts differ from its
-95 at 0.85 because the radii differ and holes grow with the arc. Falsified by
-`the_arc_step_was_chosen_by_counting_unpainted_pixels`, which runs every build.
-
-Reproducing this found a real bug in the kit. The first run left 34 unpainted
-pixels at 0.65, in contiguous radial runs along each cardinal direction. The
-cause was not the sampler: `sin` folded its argument only to [−π, π] and then
-applied a Taylor series about zero, so `cos(a) = sin(a + π/2)` evaluated the
-series near π, where truncating at the ninth power leaves **6.9 × 10⁻³**. Adding
-the fold `sin(π − x) = sin(x)` brought the worst error over ±720° to
-**3.6 × 10⁻⁶** — 4.3 × 10⁻⁴ of a pixel at this panel's largest radius — and the
-holes to zero, at which point the kit reproduced `Spin`'s number exactly.
-`trig_agrees_with_the_host_to_within_four_millionths` is what would notice it
-coming back.
+**The arc sample step, and the dither's error bound.** Both were measured and
+both are **parked** with the modules that carried them — the counts, and the
+tests that re-derive them, are in `src/draw.rs` and `src/dither.rs` at commit
+`8055796`. They are recorded in [What is parked](#what-is-parked) rather than
+here, because a falsifier this file names must be one a reader can run.
 
 **The lit disc.** A pixel centre within 119.5 pitches, doubled so the half-pitch
 is exact in integers — `BarcodeLayout::pixelIsLit`'s rule and
@@ -322,14 +301,6 @@ row is **238**, every chord is **even**, rows 70 and 168 hold **218**, row 220
 holds **130** and row 222 **122**, and the largest centred square is **168**.
 Falsified by a panel of a different size or a display whose glass is not the
 inscribed disc.
-
-**Ordered dithering beats truncation.** Mean absolute error against the ideal,
-per 8-pixel dither cell across a 240-pixel ramp, in level units: dithering must
-be under *half* flat truncation's error, not merely under it, or it is not worth
-the code. Four levels a channel means a flat ramp reaches exactly four values;
-a dithered one reaches more than four distinct cell means, which is the banding
-gone. `dithering_beats_flat_quantisation` and
-`a_flat_ramp_bands_and_a_dithered_one_does_not`.
 
 **Bright on dark.** An early black-text-on-white readout came back from the
 glass as a blank white band. This is the glass, not the framebuffer, so no
@@ -577,8 +548,11 @@ public crate names UNA, and it ships no font.
 
 **Text is not in the crate at all.** It ships no font and no text interface. The
 trait that was here — four questions a widget needs answered — is parked,
-because both adopters route around it: they take `Surface::bytes_mut()` and hand
-the raw buffer to `TextKit`'s own rasteriser. That escape hatch is the honest
+because the adopter routes around it: it takes `Surface::bytes_mut()` and hands
+the raw buffer to `TextKit`'s own rasteriser. The orphan rule is why — an app
+owns neither the trait nor `textkit::Face`, so it cannot write the impl without
+a newtype, which was built and measured at 47 lines and 112 bytes of `.text` to
+convert between two spellings of the same thing. That escape hatch is the honest
 current state of the seam, and it is documented on the method rather than
 dressed up as an abstraction nobody uses.
 
@@ -597,30 +571,12 @@ slot-plus-`needed` contract is what makes overflow visible.
 
 ### `SettingsEditor`
 
-The first adopter, because there was nothing to break: no shell, no CMake
-target, no app id, and — as §1 records — a device build that did not compile.
-
-| | before | after |
-|---|---|---|
-| `lib.rs` | 1,202 lines | **1,094** (−108) |
-| host tests | 21 pass | **21 pass**, unchanged |
-| device build | **2 errors** | **builds** |
-| own `.text` (archive) | n/a — did not build | 2,560 |
-| `panelkit` `.text` (archive) | — | 1,566 |
-| `textkit` `.text` (archive) | — | 2,510 |
-
-What it deleted: its `FrameBuf` and the `DrawTarget` impl, the whole colour
-block, its palette constants, its broken panic handler, and its copy of the page
-indicator. What it gained: a panic handler that reports `file:line`, the
-colour-depth guard through the shell, and the bezel and determinism checks as
-things it inherits rather than declares.
-
-**These are archive figures, before linking.** The linker garbage-collects
-unused sections, so they are an upper bound: `TextKit` measures 2,510 here and
-its README records **1,530 linked** into `NotifyToggle`, a ratio of 1.64. Linked
-`.text`, `.bss` and `.uapp` numbers need the ARM toolchain, which needs the
-pinned Docker image, whose daemon was not running for this work. **No `.uapp`
-figure in this document is claimed, because none was measured.**
+**Not in this repository.** It was the first crate the kit was fitted to, and
+the numbers that exercise gave — it did not compile for the watch before and
+does after — are why the panic handler and the surface look as they do. But the
+app is uncommitted work, so nothing here can be checked against it, and none of
+its figures are quoted as evidence. `Spin` below is the adoption this repository
+can show you.
 
 ### `Spin`
 
@@ -680,7 +636,7 @@ use.
 | module | lines | why it went |
 |---|---|---|
 | `nav` | 405 | Focus ring, screen stack, animation clock. Written against §8's list of screens; **zero callers**. The two-caller rule this file sets for widgets applies to it too. |
-| `text` | 180 | `TextFace`, the trait §10 called the seam that makes publishing possible. **No implementor** — both adopters bypass it through `Surface::bytes_mut()` and hand raw bytes to `TextKit`. An interface every user routes around is evidence the interface is wrong, not merely unused. |
+| `text` | 180 | `TextFace`, the trait §10 called the seam that makes publishing possible. **No implementor**, and the orphan rule is why: an app owns neither the trait nor `textkit::Face`. A newtype bridge was built and works — 43 golden frames unchanged — at 47 lines and 112 bytes per app, to convert between two spellings of the same thing. The shape that would earn it is `TextKit` implementing the trait itself, which needs no newtype and would serve every adopter at once. |
 | `scene` | 198 | The `Scenes` catalogue trait. **No implementor** — `Spin`'s catalogue returns a `Vec` and kept its own tests, so the checks this was meant to hand an adopter were never inherited by one. |
 | `draw` | 301 | The arc sampler, `fill_circle`, `accumulate_coverage`. **Zero callers**: `Spin` kept its own sampler on `micromath` rather than take this one, because swapping the trig would move pixels. |
 | `dither` | 167 | Ordered dithering. **Zero callers** — no screen in either app draws a gradient. |
@@ -723,11 +679,10 @@ Listed so the gap is not something a reader has to find:
 - **`cargo semver-checks`.** Not installed here, and at 0.1.0 there is no
   published baseline for it to compare against. It belongs in CI from the first
   release, not before it.
-- **A watch.** Two apps adopt the kit and *neither has run on hardware*.
-  `SettingsEditor` has no shell, no CMake target and no app id; `Spin` has all
-  three but nothing here has been linked or packed, because that needs the
-  pinned Docker image and its daemon was not running. The frames are proven
-  identical on the host, which is the strongest claim available without one.
+- **A watch.** One app in this repository adopts the kit, and it has not run on
+  hardware since. The frames are proven identical on the host and the `.uapp`
+  builds with the pinned toolchain, which is the strongest claim available
+  without one.
 - **Anything past a byte a pixel**, as above. The public claim has to be
   "low-bit-depth, one byte a pixel" until someone lifts `ByteColor`.
 - **Tier 2 beyond two widgets.** The value row and the four-button hint ring

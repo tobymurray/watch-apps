@@ -67,8 +67,8 @@ form says 169; the disc clip's fast path is worth 128 µs a frame against 43.
 
 ## Status
 
-**0.1, and honest about it.** Two applications use it, neither of which has run
-on hardware yet. Five further modules — a focus ring, a screen stack, an
+**0.1, and honest about it.** One application uses it, and it has not run on
+hardware since adopting it. Five further modules — a focus ring, a screen stack, an
 animation clock, an arc sampler, ordered dithering — were written and then
 removed for having no caller; they are in git history and described in the
 design record. If you need one, say so, and it can come back with a real user
