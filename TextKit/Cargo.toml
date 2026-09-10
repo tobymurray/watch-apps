@@ -11,9 +11,19 @@ repository = "https://github.com/tobymurray/watch-apps/tree/main/TextKit"
 categories = ["embedded", "no-std", "text-processing"]
 # The discovery channel is search over the description and these, not the name.
 keywords = ["embedded-graphics", "no-std", "font", "bitmap-font", "text"]
-# The published crate is the crate. The fonts, the generator and the TouchGFX
-# oracle are how this repository builds atlases, not what anyone installs.
-include = ["src/**/*.rs", "examples/*.rs", "README.md", "Docs/FORMAT.md", "LICENSE-*"]
+# The published crate is the crate. The .ttf blobs, the generator and the
+# TouchGFX oracle are how this repository builds atlases, not what anyone
+# installs -- but FONTS.md ships, because `src/faces.rs` is glyph data derived
+# from Poppins and the OFL attribution has to travel with it.
+# `cargo package --list` silently drops a name that matches nothing, so every
+# entry here is one that exists.
+include = [
+    "src/**/*.rs",
+    "examples/*.rs",
+    "README.md",
+    "Docs/2026-09-10-drawtarget-footprint.md",
+    "Fonts/FONTS.md",
+]
 
 [features]
 # The core is generic over `DrawTarget`, so a consumer bringing their own

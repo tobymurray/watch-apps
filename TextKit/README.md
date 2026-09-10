@@ -1,10 +1,15 @@
 # TextKit
 
 Text for the UNA Watch's Rust GUIs: Poppins pre-rendered at build time into
-2bpp glyph atlases, blitted onto the `ABGR2222` framebuffer through the lit
-disc. `no_std`, no allocator, no scratch buffer, about 1.5 KB of code. Each
-app's `CustomGUI` crate takes it as a Cargo path dependency; it owns no screen,
-no frame struct and no C ABI.
+2bpp glyph atlases, blitted onto any `embedded-graphics` `DrawTarget`. `no_std`,
+no allocator, no scratch buffer. Each app's `CustomGUI` crate takes it as a
+Cargo path dependency; it owns no screen, no frame struct, no framebuffer and no
+C ABI.
+
+Clipping is the target's, not this crate's: on the watch that target is
+[`inscribed-disc`](../InscribedDisc)'s `Surface`, which clips to the glass. A
+consumer bringing its own colour implements `Ink`; `Ink for Abgr2222` is
+inscribed-disc's type, behind the default-on `abgr2222` feature.
 
 Why this shape and not the others was decided by measurement in
 [`Docs/TEXT.md`](../Docs/TEXT.md) at the repo root, with the scripts and
@@ -33,9 +38,10 @@ that contradicts either.
 - **Measure**: sum of advances, ink bounds, and how many characters had no
   glyph. Alignment and wrapping use the advance, as TouchGFX's
   `getStringWidth` did, so Barcode's measured bezel table transfers.
-- **Draw** at a baseline or a top, left, centre or right, in any `ABGR2222`
-  ink over a declared ground, clipped to the disc by
-  `BarcodeLayout::pixelIsLit`'s rule (centre within 119.5 pitches).
+- **Draw** at a baseline or a top, left, centre or right, in any ink over a
+  declared ground, both carried by a `Style`. Partial coverage is blended
+  through `Ink::shade`; where the pixels are allowed to land is the target's
+  business.
 - **Wrap**: greedy by word into caller-owned line slots, never splitting a
   word, reporting how many lines the text needed so overflow is a number
   the caller sees rather than a line that vanished.
@@ -103,12 +109,20 @@ right only least-significant pair first.
 
 ## Footprint
 
-The blit alone measured 610 bytes of code on the candidate harness
-(`Docs/text-design/measurements/sizeproto/`). Linked into NotifyToggle with
-measurement, coverage checks and composition, the crate is **1,530 bytes of
-`.text`** and 7,271 of `.rodata`, of which 6,137 are the two faces that app
-names and 966 the composition table; no `.bss` beyond the framebuffer. Per
-face, bytes of glyph data plus 12 per node:
+Measured on `thumbv8m.main-none-eabihf` by
+[`Docs/measurements/drawtarget`](Docs/measurements/drawtarget), a staticlib
+probe linking `draw`, `draw_top`, `measure`, `wrap` and `pick` against a real
+`Surface`: **2,620 bytes of `.text`** and 7,399 of `.rodata`, of which 6,137
+are the two faces the probe names and 966 the composition table; no `.bss`.
+See [`Docs/2026-09-10-drawtarget-footprint.md`](Docs/2026-09-10-drawtarget-footprint.md)
+for what drawing through a `DrawTarget` cost and what recovered most of it.
+
+The per-app rows below were measured against the previous shape, where this
+crate owned a framebuffer of its own. **They are stale**: each app has since
+deleted its private framebuffer as well, so both sides of the comparison
+moved. Re-measuring them wants the toolchain image, which is where `.uapp`
+numbers come from. Per face, bytes of glyph data plus 12 per node, which has
+not changed:
 
 | face | glyphs | bytes |
 |---|---|---|
@@ -153,7 +167,9 @@ has the licence.
 
 ## Porting notes
 
-What each port taught, so the next one starts further along.
+What each port taught, so the next one starts further along. The footprint
+numbers in each are as they were measured at that port, when this crate still
+owned a framebuffer and the app owned a second one.
 
 ### NotifyToggle
 
@@ -176,8 +192,8 @@ The smallest app, two words and a hint, on `embedded-graphics`'s fixed-width
   and every string it draws now sits on the same face Barcode's and Spin's
   will.
 - **The prototype's 610 bytes was the blit alone.** The crate an app actually
-  links carries `measure`, `covers` and composition too: 1,530 bytes. Still a
-  third of the u8g2 renderer, and there is no scratch buffer to add.
+  links carries `measure`, `covers` and composition too. Still a fraction of
+  the u8g2 renderer, and there is no scratch buffer to add.
 - **A face constant per role** (`WORD_FACE`, `HINT_FACE`) rather than a face
   name at each call site: the port was two edits to change a face and the
   coverage test checks each role's strings against its own face.
@@ -243,5 +259,5 @@ each for the clock.
   of scratch out, 19 KB less RAM. TextKit in situ 1,530 bytes of code,
   since nothing here wraps.
 - **The one test that knew the renderer** asserted part-covered red on the
-  discard screen through the old `shade`; it now asks the crate's `shade`
-  for the same two levels and passes unchanged in intent.
+  discard screen through the old `shade`; it asks inscribed-disc's `shade` for
+  the same two levels and passes unchanged in intent.
