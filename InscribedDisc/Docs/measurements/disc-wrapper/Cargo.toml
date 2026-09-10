@@ -1,0 +1,15 @@
+[package]
+name = "discwrapper"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+embedded-graphics = "0.8"
+embedded-graphics-framebuf = "0.5"
+inscribed-disc = { path = "../../..", features = ["std"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1

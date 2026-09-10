@@ -1,0 +1,30 @@
+[package]
+name = "wrapcost"
+version = "0.0.0"
+edition = "2021"
+
+[features]
+default = []
+# InscribedDisc's Surface::round, drawn through DrawTarget.
+surface = []
+# The forty-line DiscClipped wrapper over a plain rectangular target.
+wrapper = []
+# The plain target with no clip at all: the floor an adopter pays anyway.
+plain = []
+# The wrapper with a naive fill_solid (no per-row span), for the "is a naive
+# wrapper fast enough" half of the question.
+naive = []
+# The same wrapper after promotion into the crate, where it shares geometry
+# with Surface instead of carrying its own copy of the predicate.
+promoted = []
+
+[dependencies]
+inscribed-disc = { path = "../../../..", default-features = false }
+embedded-graphics = "0.8"
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false

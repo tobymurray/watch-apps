@@ -1,9 +1,9 @@
 # inscribed-disc
 
-Drawing primitives for **round, low-bit-depth** displays: an
-[`embedded-graphics`] surface that clips to the glass rather than to the
-framebuffer, and colour arithmetic for a channel with a handful of levels
-instead of 256. `no_std`, no allocator, no font.
+On a **round** display the framebuffer is square and the glass is not, so
+nothing stops you painting pixels the wearer will never see. This says where the
+glass is, and gives you [`embedded-graphics`] draw targets that will not let you
+paint off it. `no_std`, no allocator, no font.
 
 ```toml
 [dependencies]
@@ -12,19 +12,29 @@ inscribed-disc = { version = "0.1", default-features = false }
 
 ## Is this for you?
 
-Take it only if all four hold. Each is a hard constraint, not a preference.
+Two hard constraints, and they are the whole gate.
 
-- **Your display is round.** On a rectangular panel this gives you nothing: the
-  disc clip and the chord table are the whole value.
-- **Your framebuffer is one byte per pixel.** `Surface` is bounded on
-  `ByteColor`, which any colour whose `PixelColor::Raw` is `RawU8` satisfies
-  with no impl written anywhere — `Gray8` included. `Rgb565` **does not
-  compile** against it. Lifting that means writing the stride arithmetic against
-  `PixelColor::Raw` rather than `u8`, which has not been done.
-- **Your colour depth is low.** `shade()` and the palette assume a channel has a
-  few levels. At 8 bits a channel, use `embedded-graphics` directly.
+- **Your display is round, and its glass is the inscribed disc of the
+  framebuffer.** On a rectangular panel this gives you nothing, and on a round
+  bezel over a square screen whose corners show — Bangle.js 1 — a disc clip
+  would be wrong.
 - **You push whole frames.** There is no damage tracking or partial redraw, on
   purpose. A display that only accepts dirty rectangles gains nothing here.
+
+After that it is a question of which part you take.
+
+- `geometry` and `clip` have **no colour constraint at all**. `DiscClipped`
+  wraps any `DrawTarget`, so `Rgb565` — which is every GC9A01 module — and
+  `BinaryColor` are clipped as readily as anything else.
+- `Surface` is a framebuffer of its own and is bounded on `ByteColor`, so it
+  serves **one byte a pixel**: any colour whose `PixelColor::Raw` is `RawU8`
+  satisfies it with no impl written anywhere, `Gray8` included, and `Rgb565`
+  does not compile against it. Lifting that means writing the stride arithmetic
+  against `PixelColor::Raw` rather than `u8`, which has not been done —
+  `DiscClipped` over a framebuffer you already have is the answer at other
+  widths.
+- `color` assumes a channel has **a few levels**: `shade()` and the palette are
+  for two bits a channel. At 8 bits a channel, use `embedded-graphics` directly.
 
 The panel this was written for is 240×240 at two bits a channel — 64 colours,
 and the only greys are 0, 85, 170 and 255.
@@ -46,8 +56,27 @@ to the square buffer. That distinction is the reason this crate exists: a box
 inset from the framebuffer's edge is not inset from the glass, and no simulator
 shows the difference.
 
+For a panel `Surface` will not take — anything wider than a byte a pixel —
+`DiscClipped` wraps a `DrawTarget` you already have and applies the same clip:
+
+```rust
+use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::{PrimitiveStyle, Rectangle}};
+use embedded_graphics_framebuf::FrameBuf;
+use inscribed_disc::DiscClipped;
+
+let mut data = [Rgb565::BLACK; 240 * 240];
+let mut fb = FrameBuf::new(&mut data, 240, 240);
+let _ = Rectangle::new(Point::new(4, 4), Size::new(232, 232))
+    .into_styled(PrimitiveStyle::with_fill(Rgb565::WHITE))
+    .draw(&mut DiscClipped::new(&mut fb));
+```
+
+That 4-pixel inset is the mistake the crate is about: on a rectangular target it
+paints 12,792 pixels the glass never shows, 22.2% of the framebuffer.
+
 | module | |
 |---|---|
+| `clip` | `DiscClipped`, a disc clip over any `DrawTarget`, at any colour depth |
 | `surface` | the framebuffer, the clip, a row-fill `fill_solid` |
 | `color` | `Abgr2222`, its palette, and `shade` for partial coverage |
 | `geometry` | the lit-disc predicate, row chords, the inscribed square |

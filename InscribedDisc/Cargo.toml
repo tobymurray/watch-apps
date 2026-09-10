@@ -43,6 +43,9 @@ png = { version = "0.17", optional = true }
 
 [dev-dependencies]
 embedded-graphics = "0.8"
+# Only the tests: DiscClipped is shown clipping Rgb565 and BinaryColor over
+# somebody else's framebuffer, which is the population Surface cannot reach.
+embedded-graphics-framebuf = "0.5"
 
 [package.metadata.docs.rs]
 all-features = true

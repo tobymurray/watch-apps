@@ -39,6 +39,7 @@
 #![deny(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+pub mod clip;
 pub mod color;
 pub mod geometry;
 pub mod surface;
@@ -53,5 +54,6 @@ pub mod preview;
 
 pub mod panic;
 
+pub use clip::DiscClipped;
 pub use color::Abgr2222;
 pub use surface::{ByteColor, Clip, Surface};
