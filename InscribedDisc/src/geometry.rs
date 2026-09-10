@@ -98,6 +98,8 @@ pub fn lit_start(y: i32, w: i32, h: i32) -> i32 {
 ///
 /// A row's lit pixels are an interval, because [`is_lit`] depends on x only
 /// through `(2x - (w-1))^2`, which is convex in x.
+// Both callers are behind `embedded-graphics`, so without it this is dead.
+#[cfg_attr(not(any(test, feature = "embedded-graphics")), allow(dead_code))]
 pub(crate) fn lit_span(x0: i32, x1: i32, row: i32, w: i32, h: i32) -> Option<(i32, i32)> {
     if x0 >= x1 {
         return None;

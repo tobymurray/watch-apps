@@ -68,7 +68,9 @@ For a panel `Surface` will not take — anything wider than a byte a pixel —
 `DiscClipped` wraps a `DrawTarget` you already have and applies the same clip:
 
 ```rust
-use embedded_graphics::{pixelcolor::Rgb565, prelude::*, primitives::{PrimitiveStyle, Rectangle}};
+use embedded_graphics::{
+    pixelcolor::Rgb565, prelude::*, primitives::{PrimitiveStyle, Rectangle},
+};
 use embedded_graphics_framebuf::FrameBuf;
 use inscribed_disc::DiscClipped;
 

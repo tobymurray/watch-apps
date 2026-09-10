@@ -2,12 +2,20 @@
 name = "inscribed-disc"
 version = "0.1.0"
 edition = "2021"
+# MEASURED, not inherited: the crate builds at 1.71.1 -- embedded-graphics' own
+# floor -- with no features, with `embedded-graphics`, and with `abgr2222`.
+# `panic-message` is what needs 1.81, for `PanicInfo::message()`; `preview`
+# needs 1.74 for `io::Error::other`. Re-run with `cargo +1.80.1 build
+# --no-default-features --features panic-message`, which fails.
 rust-version = "1.81"
 license = "MIT"
-description = "GUI primitives for round, low-bit-depth panels: lit-disc geometry, an ABGR2222 framebuffer that clips to the glass, and PNG previews that show exactly what the panel would."
+description = "Round displays whose glass is the inscribed disc of a square framebuffer: where the glass is, and embedded-graphics draw targets that clip every pixel to it, at any colour depth."
 repository = "https://github.com/tobymurray/watch-apps/tree/main/InscribedDisc"
 categories = ["embedded", "no-std", "gui"]
-keywords = ["embedded-graphics", "no-std", "gui", "smartwatch", "round-display"]
+# The discovery channel is search over the description and these, not the name:
+# crates.io returns embedded-graphics for a `gc9a01` query without that string
+# anywhere in its name. So these are what someone holding a round panel types.
+keywords = ["embedded-graphics", "round", "circular", "gc9a01", "sharp-memory"]
 # The published crate is the Rust half only. The C ABI, GuiShell.hpp and
 # inscribed-disc.cmake are this repo's glue to one vendor's SDK and are not
 # part of what anyone else would install.
