@@ -54,7 +54,14 @@ impl<const N: usize> core::fmt::Write for Buf<N> {
 /// written with indexing it costs 2,513, because a panicking operation inside a
 /// panic handler pulls its own panic path's formatting in. Re-run
 /// `InscribedDisc/Docs/measurements/panic-handler`.
-#[cfg(all(feature = "panic-handler", not(feature = "panic-message")))]
+// Exactly its caller's cfg below: under `cargo test` or `std` the handler is
+// gone and this would be dead.
+#[cfg(all(
+    feature = "panic-handler",
+    not(feature = "panic-message"),
+    not(feature = "std"),
+    not(test)
+))]
 fn write_location(buf: &mut [u8], loc: &core::panic::Location<'_>) -> usize {
     let mut n = 0usize;
     for (dst, src) in buf.iter_mut().zip(loc.file().as_bytes()) {

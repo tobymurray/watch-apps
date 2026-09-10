@@ -211,20 +211,25 @@ impl<C: ByteColor> DrawTarget for Surface<'_, C> {
 
 #[cfg(test)]
 mod tests {
+    use embedded_graphics::pixelcolor::Gray8;
+
     use super::*;
-    use crate::color::Abgr2222;
+
+    // Gray8, not this crate's own colour: these tests are about the buffer and
+    // the clip, and a foreign `RawU8` colour is what says `ByteColor`'s blanket
+    // impl reaches one.
 
     const W: u32 = 240;
     const H: u32 = 240;
 
-    fn surface(buf: &mut [u8]) -> Surface<'_, Abgr2222> {
+    fn surface(buf: &mut [u8]) -> Surface<'_, Gray8> {
         Surface::round(buf, W, H).unwrap()
     }
 
     #[test]
     fn a_buffer_smaller_than_its_geometry_is_refused() {
         let mut buf = vec![0u8; (W * H) as usize - 1];
-        assert!(Surface::<Abgr2222>::round(&mut buf, W, H).is_none());
+        assert!(Surface::<Gray8>::round(&mut buf, W, H).is_none());
     }
 
     #[test]
@@ -233,8 +238,8 @@ mod tests {
         let mut buf = vec![0xAAu8; n + 64];
         {
             let mut s = surface(&mut buf);
-            s.clear(Abgr2222::BLACK);
-            s.fill_rect(-50, -50, 1000, 1000, Abgr2222::WHITE);
+            s.clear(Gray8::BLACK);
+            s.fill_rect(-50, -50, 1000, 1000, Gray8::WHITE);
         }
         assert!(buf[n..].iter().all(|&b| b == 0xAA), "overran the framebuffer");
     }
@@ -245,17 +250,17 @@ mod tests {
         let mut buf = vec![0u8; n];
         {
             let mut s = surface(&mut buf);
-            s.clear(Abgr2222::BLACK);
-            s.fill_rect(0, 0, W as i32, H as i32, Abgr2222::WHITE);
+            s.clear(Gray8::BLACK);
+            s.fill_rect(0, 0, W as i32, H as i32, Gray8::WHITE);
             // Through the generic path too, not only the fast one.
-            let _ = s.draw_iter((0..W as i32).map(|x| Pixel(Point::new(x, 0), Abgr2222::WHITE)));
+            let _ = s.draw_iter((0..W as i32).map(|x| Pixel(Point::new(x, 0), Gray8::WHITE)));
         }
         for y in 0..H as i32 {
             for x in 0..W as i32 {
                 if !geometry::is_lit(x, y, W as i32, H as i32) {
                     assert_eq!(
                         buf[(y * W as i32 + x) as usize],
-                        Abgr2222::BLACK.to_byte(),
+                        Gray8::BLACK.to_byte(),
                         "({x},{y}) lit behind the bezel"
                     );
                 }
@@ -271,13 +276,13 @@ mod tests {
         let (mut a, mut b) = (vec![0u8; n], vec![0u8; n]);
         {
             let mut s = surface(&mut a);
-            s.clear(Abgr2222::BLACK);
-            s.fill_rect(4, 100, 232, 20, Abgr2222::WHITE);
+            s.clear(Gray8::BLACK);
+            s.fill_rect(4, 100, 232, 20, Gray8::WHITE);
         }
         {
             let mut s = surface(&mut b);
-            s.clear(Abgr2222::BLACK);
-            let px = (100..120).flat_map(|y| (4..236).map(move |x| Pixel(Point::new(x, y), Abgr2222::WHITE)));
+            s.clear(Gray8::BLACK);
+            let px = (100..120).flat_map(|y| (4..236).map(move |x| Pixel(Point::new(x, y), Gray8::WHITE)));
             let _ = s.draw_iter(px);
         }
         assert_eq!(a, b);
@@ -289,15 +294,15 @@ mod tests {
         let mut buf = vec![0u8; n];
         {
             let mut s = surface(&mut buf);
-            s.clear(Abgr2222::BLACK);
+            s.clear(Gray8::BLACK);
             let _ = s.fill_solid(
                 &Rectangle::new(Point::new(100, 100), Size::new(40, 10)),
-                Abgr2222::WHITE,
+                Gray8::WHITE,
             );
         }
-        assert_eq!(buf[(100 * 240 + 100) as usize], Abgr2222::WHITE.to_byte());
-        assert_eq!(buf[(109 * 240 + 139) as usize], Abgr2222::WHITE.to_byte());
-        assert_eq!(buf[(110 * 240 + 100) as usize], Abgr2222::BLACK.to_byte());
+        assert_eq!(buf[(100 * 240 + 100) as usize], Gray8::WHITE.to_byte());
+        assert_eq!(buf[(109 * 240 + 139) as usize], Gray8::WHITE.to_byte());
+        assert_eq!(buf[(110 * 240 + 100) as usize], Gray8::BLACK.to_byte());
     }
 
     #[test]
@@ -305,9 +310,9 @@ mod tests {
         let n = (W * H) as usize;
         let mut buf = vec![0u8; n];
         {
-            let mut s = Surface::<Abgr2222>::rect(&mut buf, W, H).unwrap();
-            s.fill_rect(0, 0, W as i32, H as i32, Abgr2222::WHITE);
+            let mut s = Surface::<Gray8>::rect(&mut buf, W, H).unwrap();
+            s.fill_rect(0, 0, W as i32, H as i32, Gray8::WHITE);
         }
-        assert_eq!(buf[0], Abgr2222::WHITE.to_byte());
+        assert_eq!(buf[0], Gray8::WHITE.to_byte());
     }
 }

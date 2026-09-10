@@ -46,12 +46,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Clippy, and rustc's own warnings
+      # --all-features alone lints one column of the feature matrix. It missed
+      # two real defects: test modules that used `color` without `abgr2222`, so
+      # `--features embedded-graphics` would not compile at all, and a
+      # `write_location` whose cfg was wider than its only caller's. Both are
+      # invisible with every feature on.
+      - name: Clippy, and rustc's own warnings, across the feature matrix
         working-directory: InscribedDisc
         run: |
           set -euo pipefail
           rustup component add clippy
           cargo clippy --all-features --all-targets -- -D warnings
+          cargo clippy --no-default-features --all-targets -- -D warnings
+          for f in embedded-graphics abgr2222 panic-handler panic-message std \
+                   preview "embedded-graphics,panic-handler"; do
+            echo "--- $f"
+            cargo clippy --no-default-features --features "$f" --all-targets \
+              -- -D warnings
+          done
 
   test:
     runs-on: ubuntu-latest
@@ -82,7 +94,13 @@ jobs:
       # rots fails.
       - name: Tests
         working-directory: InscribedDisc
-        run: cargo test --all-features
+        run: |
+          set -euo pipefail
+          cargo test --all-features
+          # The core alone, and the default column. Neither runs above, and the
+          # second was a compile error nothing caught.
+          cargo test --no-default-features
+          cargo test --no-default-features --features embedded-graphics
 
       # A `std` type reached for from the geometry core compiles fine above and
       # fails here.

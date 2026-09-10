@@ -87,16 +87,27 @@ impl<T: DrawTarget> DrawTarget for DiscClipped<'_, T> {
 #[cfg(test)]
 mod tests {
     use embedded_graphics::{
-        pixelcolor::{BinaryColor, Rgb565},
+        pixelcolor::{BinaryColor, Gray8, Rgb565},
         primitives::{Circle, Line, PrimitiveStyle, Triangle},
     };
     use embedded_graphics_framebuf::FrameBuf;
 
     use super::*;
-    use crate::{color::Abgr2222, surface::Surface};
+    use crate::surface::Surface;
 
     const W: u32 = 240;
     const H: u32 = 240;
+
+    // Six distinct byte values rather than this crate's own colour type: the
+    // scene only needs the shapes to be told apart, and `Gray8` keeps these
+    // tests off `abgr2222`.
+    const GROUND: Gray8 = Gray8::new(0x00);
+    const BAND: Gray8 = Gray8::new(0xFF);
+    const TOP: Gray8 = Gray8::new(0xAA);
+    const RING: Gray8 = Gray8::new(0x80);
+    const DIAGONAL: Gray8 = Gray8::new(0x55);
+    const WEDGE: Gray8 = Gray8::new(0x30);
+    const DOT: Gray8 = Gray8::new(0x11);
 
     /// A plain rectangular target, standing in for one an adopter already has.
     struct Plain<'a> {
@@ -112,7 +123,7 @@ mod tests {
     }
 
     impl DrawTarget for Plain<'_> {
-        type Color = Abgr2222;
+        type Color = Gray8;
         type Error = core::convert::Infallible;
 
         fn draw_iter<I: IntoIterator<Item = Pixel<Self::Color>>>(
@@ -121,7 +132,7 @@ mod tests {
         ) -> Result<(), Self::Error> {
             for Pixel(p, c) in pixels {
                 if p.x >= 0 && p.y >= 0 && p.x < self.w && p.y < self.h {
-                    self.buf[(p.y * self.w + p.x) as usize] = c.0;
+                    self.buf[(p.y * self.w + p.x) as usize] = c.luma();
                 }
             }
             Ok(())
@@ -138,7 +149,7 @@ mod tests {
             for row in area.top_left.y.max(0)..(bottom_right.y + 1).min(self.h) {
                 let a = (row * self.w + x0) as usize;
                 let z = (row * self.w + x1) as usize;
-                self.buf[a..z].fill(c.0);
+                self.buf[a..z].fill(c.luma());
             }
             Ok(())
         }
@@ -147,24 +158,24 @@ mod tests {
     /// A scene that straddles the rim on every row: a full-width band, a ring,
     /// a diagonal past both corners, a triangle to the bottom edge, and 240
     /// single pixels.
-    fn scene<D: DrawTarget<Color = Abgr2222>>(d: &mut D) {
+    fn scene<D: DrawTarget<Color = Gray8>>(d: &mut D) {
         let _ = Rectangle::new(Point::new(0, 100), Size::new(240, 40))
-            .into_styled(PrimitiveStyle::with_fill(Abgr2222::WHITE))
+            .into_styled(PrimitiveStyle::with_fill(BAND))
             .draw(d);
         let _ = Rectangle::new(Point::new(0, 0), Size::new(240, 20))
-            .into_styled(PrimitiveStyle::with_fill(Abgr2222::GREY))
+            .into_styled(PrimitiveStyle::with_fill(TOP))
             .draw(d);
         let _ = Circle::new(Point::new(20, 20), 200)
-            .into_styled(PrimitiveStyle::with_stroke(Abgr2222::RED, 3))
+            .into_styled(PrimitiveStyle::with_stroke(RING, 3))
             .draw(d);
         let _ = Line::new(Point::new(-20, -20), Point::new(260, 260))
-            .into_styled(PrimitiveStyle::with_stroke(Abgr2222::CYAN, 1))
+            .into_styled(PrimitiveStyle::with_stroke(DIAGONAL, 1))
             .draw(d);
         let _ = Triangle::new(Point::new(0, 239), Point::new(239, 239), Point::new(120, 60))
-            .into_styled(PrimitiveStyle::with_fill(Abgr2222::AMBER))
+            .into_styled(PrimitiveStyle::with_fill(WEDGE))
             .draw(d);
         for y in 0..H as i32 {
-            let _ = d.draw_iter([Pixel(Point::new(y, y), Abgr2222::YELLOW)]);
+            let _ = d.draw_iter([Pixel(Point::new(y, y), DOT)]);
         }
     }
 
@@ -174,8 +185,8 @@ mod tests {
     fn the_wrapper_paints_exactly_what_the_surface_paints() {
         let mut via_surface = vec![0u8; (W * H) as usize];
         {
-            let mut s = Surface::<Abgr2222>::round(&mut via_surface, W, H).unwrap();
-            s.clear(Abgr2222::BLACK);
+            let mut s = Surface::<Gray8>::round(&mut via_surface, W, H).unwrap();
+            s.clear(GROUND);
             scene(&mut s);
         }
 
@@ -184,7 +195,7 @@ mod tests {
             let mut p = Plain { buf: &mut via_wrapper, w: W as i32, h: H as i32 };
             // The parent is cleared directly: the whole buffer goes to the
             // display, so the bezel holds the ground colour too.
-            p.buf.fill(Abgr2222::BLACK.0);
+            p.buf.fill(GROUND.luma());
             scene(&mut DiscClipped::new(&mut p));
         }
 

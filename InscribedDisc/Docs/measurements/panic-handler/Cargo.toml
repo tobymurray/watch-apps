@@ -7,7 +7,9 @@ edition = "2021"
 default = []
 literal = []
 location = []
-full = []
+# The crate's own message handler, not a replica: `panic` is behind
+# `panic-handler`, and measuring a copy would stop tracking what ships.
+full = ["inscribed-disc/panic-message"]
 location_min = []
 
 [dependencies]

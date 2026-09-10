@@ -64,18 +64,9 @@ fn on_panic(info: &core::panic::PanicInfo) -> ! {
     unsafe { inscribed_disc_host_panic(buf.as_ptr(), n as u32) }
 }
 
-#[cfg(feature = "full")]
-#[panic_handler]
-fn on_panic(info: &core::panic::PanicInfo) -> ! {
-    use core::fmt::Write as _;
-    let mut msg = inscribed_disc::panic::Buf::<192>::new();
-    if let Some(loc) = info.location() {
-        let _ = write!(msg, "{}:{}: ", loc.file(), loc.line());
-    }
-    let _ = write!(msg, "{}", info.message());
-    let s = msg.as_str();
-    unsafe { inscribed_disc_host_panic(s.as_ptr(), s.len() as u32) }
-}
+// `full` has no handler here: the feature turns on `inscribed-disc`'s own
+// `panic-message` one, which is what an app ships, and two `#[panic_handler]`s
+// in one binary do not link.
 
 /// Stands in for the C++ shell's trampoline, which logs and exits. Kept as
 /// small as possible so it does not itself colour the comparison.
