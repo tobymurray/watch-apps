@@ -34,8 +34,10 @@ embedded-graphics = ["dep:embedded-graphics"]
 ## is why it is off.
 abgr2222 = ["embedded-graphics"]
 ## A `#[panic_handler]` reporting `file:line` through `inscribed_disc_host_panic`.
-## Measured at 319 bytes over reporting nothing. Inert under `std`, so
-## `--all-features` and a host test build still work.
+## Measured at 319 bytes over reporting nothing. Inert under `std`, and a host
+## test build needs that: with this on and `std` off the crate owns
+## `panic_impl`, so every doc-test fails to link with E0152. Test it as
+## `--features panic-handler,std`, or with `--all-features`.
 panic-handler = []
 ## Adds the panic message to the location. This is the expensive half: it needs
 ## `core::fmt`, measured at +2,210 bytes of `.text` linking Spin's real

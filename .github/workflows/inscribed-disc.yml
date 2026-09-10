@@ -101,6 +101,10 @@ jobs:
           # second was a compile error nothing caught.
           cargo test --no-default-features
           cargo test --no-default-features --features embedded-graphics
+          # `std` is not optional here: with panic-handler on and std off the
+          # crate owns panic_impl and doc-tests cannot link. It is the only
+          # command that runs the location formatter's tests.
+          cargo test --no-default-features --features panic-handler,std
 
       # A `std` type reached for from the geometry core compiles fine above and
       # fails here.

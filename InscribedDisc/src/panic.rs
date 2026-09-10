@@ -54,14 +54,7 @@ impl<const N: usize> core::fmt::Write for Buf<N> {
 /// written with indexing it costs 2,513, because a panicking operation inside a
 /// panic handler pulls its own panic path's formatting in. Re-run
 /// `InscribedDisc/Docs/measurements/panic-handler`.
-// Exactly its caller's cfg below: under `cargo test` or `std` the handler is
-// gone and this would be dead.
-#[cfg(all(
-    feature = "panic-handler",
-    not(feature = "panic-message"),
-    not(feature = "std"),
-    not(test)
-))]
+#[cfg(all(feature = "panic-handler", not(feature = "panic-message")))]
 fn write_location(buf: &mut [u8], loc: &core::panic::Location<'_>) -> usize {
     let mut n = 0usize;
     for (dst, src) in buf.iter_mut().zip(loc.file().as_bytes()) {
@@ -137,6 +130,54 @@ fn on_panic(info: &core::panic::PanicInfo) -> ! {
 mod tests {
     use super::*;
     use core::fmt::Write as _;
+
+    /// The location formatter is only reachable from a device build, so
+    /// nothing exercised it on a host. It is also the function the design
+    /// record makes a claim about -- written with iterator zips so that no
+    /// operation in it can itself panic -- which is worth holding.
+    #[cfg(all(feature = "panic-handler", not(feature = "panic-message")))]
+    mod location {
+        use super::*;
+
+        fn rendered(buf_len: usize, loc: &core::panic::Location<'_>) -> String {
+            let mut buf = vec![0u8; buf_len];
+            let n = write_location(&mut buf, loc);
+            String::from_utf8(buf[..n].to_vec()).unwrap()
+        }
+
+        #[test]
+        fn it_writes_file_then_colon_then_line() {
+            let loc = core::panic::Location::caller();
+            let out = rendered(192, loc);
+            let (file, line) = out.rsplit_once(':').expect("no colon");
+            assert_eq!(file, loc.file());
+            assert_eq!(line.parse::<u32>().unwrap(), loc.line());
+        }
+
+        /// The digits are emitted least-significant first and reversed, which
+        /// is the part most likely to be wrong.
+        #[test]
+        fn multi_digit_lines_are_not_reversed() {
+            let out = rendered(192, core::panic::Location::caller());
+            let line: u32 = out.rsplit_once(':').unwrap().1.parse().unwrap();
+            assert_eq!(line.to_string(), out.rsplit_once(':').unwrap().1);
+            assert!(line > 9, "this call site is past line 9, so it exercises the reversal");
+        }
+
+        /// A buffer too small must truncate rather than write past its end --
+        /// a panic handler that itself panics is the one thing this must not
+        /// do.
+        #[test]
+        fn a_short_buffer_truncates_and_never_overruns() {
+            let loc = core::panic::Location::caller();
+            for len in 0..24 {
+                let mut buf = vec![0xAAu8; len + 8];
+                let n = write_location(&mut buf[..len], loc);
+                assert!(n <= len, "wrote {n} into {len} bytes");
+                assert!(buf[len..].iter().all(|&b| b == 0xAA), "overran at len {len}");
+            }
+        }
+    }
 
     #[test]
     fn a_message_that_fits_survives_whole() {
