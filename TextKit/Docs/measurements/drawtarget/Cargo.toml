@@ -1,0 +1,18 @@
+[package]
+name = "textprobe"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+textkit = { path = "../../.." }
+inscribed-disc = { path = "../../../../InscribedDisc", default-features = false, features = ["abgr2222"] }
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false

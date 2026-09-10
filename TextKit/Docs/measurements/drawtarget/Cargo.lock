@@ -81,3 +81,11 @@ dependencies = [
  "embedded-graphics",
  "inscribed-disc",
 ]
+
+[[package]]
+name = "textprobe"
+version = "0.0.0"
+dependencies = [
+ "inscribed-disc",
+ "textkit",
+]

@@ -1,12 +1,16 @@
-//! Text for the Rust GUIs: Poppins pre-rendered at build time into 2bpp glyph atlases, blitted
-//! onto an `ABGR2222` framebuffer through the lit disc. Design record: `README.md`, and
-//! `Docs/TEXT.md` at the repo root for the measurements that chose this over the alternatives.
+//! Text for `embedded-graphics` draw targets: Poppins pre-rendered at build time into 2bpp glyph
+//! atlases, measured, aligned, wrapped and blitted. Design record: `README.md`, and `Docs/TEXT.md`
+//! at the repo root for the measurements that chose this over the alternatives.
 //!
-//! PANEL. 240x240, round, four levels a channel, so a glyph's coverage is one of four shades and
-//! nothing outside the inscribed disc is glass. Falsified by a different display; `Canvas::round`
-//! is the rule, `nothing_is_lit_outside_the_disc` holds it.
+//! A glyph's coverage is one of four levels, so the ink is blended toward the ground through
+//! [`Ink`]; clipping belongs to the target, not to this crate.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+
+use embedded_graphics::{
+    prelude::{DrawTarget, Point},
+    Pixel,
+};
 
 mod compose;
 pub mod faces;
@@ -59,88 +63,49 @@ pub enum Align {
     Right,
 }
 
+/// A colour that a glyph's partial coverage can be blended in.
+///
+/// Atlas coverage is quantised to four levels, so `level` runs 0 to 3 and 3 is fully inked.
+pub trait Ink: Copy {
+    /// This ink at `level` of three over `ground`.
+    fn shade(self, ground: Self, level: u8) -> Self;
+}
+
+#[cfg(feature = "abgr2222")]
+impl Ink for inscribed_disc::Abgr2222 {
+    fn shade(self, ground: Self, level: u8) -> Self {
+        inscribed_disc::color::shade(self, ground, level)
+    }
+}
+
+/// How a run of text is coloured and where its advance sits relative to the `x` it is drawn at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Clip {
-    /// The inscribed disc of the canvas, by `BarcodeLayout::pixelIsLit`'s rule.
-    Disc,
-    Rect,
+pub struct Style<C> {
+    pub ink: C,
+    /// What a partially covered pixel is blended toward: whatever the screen already holds.
+    pub ground: C,
+    pub align: Align,
 }
 
-/// An `ABGR2222` framebuffer to draw into, one byte a pixel, row-major.
-pub struct Canvas<'a> {
-    buf: &'a mut [u8],
-    w: i32,
-    h: i32,
-    clip: Clip,
-    /// What a partially covered pixel is blended toward.
-    ground: u8,
-}
-
-pub const BLACK: u8 = 0xC0;
-pub const WHITE: u8 = 0xFF;
-
-impl<'a> Canvas<'a> {
-    /// The watch: only the inscribed disc is glass.
-    pub fn round(buf: &'a mut [u8], w: u32, h: u32) -> Self {
-        Self::new(buf, w, h, Clip::Disc)
+impl<C> Style<C> {
+    pub fn new(ink: C, ground: C, align: Align) -> Self {
+        Style { ink, ground, align }
     }
 
-    /// A square target with no bezel, for tests and host tools.
-    pub fn rect(buf: &'a mut [u8], w: u32, h: u32) -> Self {
-        Self::new(buf, w, h, Clip::Rect)
+    /// The pen starts at `x`.
+    pub fn left(ink: C, ground: C) -> Self {
+        Style::new(ink, ground, Align::Left)
     }
 
-    fn new(buf: &'a mut [u8], w: u32, h: u32, clip: Clip) -> Self {
-        let needed = (w as usize).saturating_mul(h as usize);
-        assert!(buf.len() >= needed, "canvas smaller than its stated geometry");
-        Canvas { buf, w: w as i32, h: h as i32, clip, ground: BLACK }
+    /// The advance is centred on `x`.
+    pub fn centered(ink: C, ground: C) -> Self {
+        Style::new(ink, ground, Align::Center)
     }
 
-    /// Partial coverage blends toward this colour; black unless the screen is filled otherwise.
-    pub fn with_ground(mut self, ground: u8) -> Self {
-        self.ground = ground;
-        self
+    /// The advance ends at `x`.
+    pub fn right(ink: C, ground: C) -> Self {
+        Style::new(ink, ground, Align::Right)
     }
-
-    pub fn width(&self) -> i32 {
-        self.w
-    }
-
-    pub fn height(&self) -> i32 {
-        self.h
-    }
-
-    /// Whether the panel would show this pixel at all.
-    pub fn is_lit(&self, x: i32, y: i32) -> bool {
-        if x < 0 || y < 0 || x >= self.w || y >= self.h {
-            return false;
-        }
-        match self.clip {
-            Clip::Rect => true,
-            Clip::Disc => {
-                let dx = 2 * x - (self.w - 1);
-                let dy = 2 * y - (self.h - 1);
-                let d = self.w.min(self.h) - 1;
-                dx * dx + dy * dy <= d * d
-            }
-        }
-    }
-
-    fn put(&mut self, x: i32, y: i32, color: u8) {
-        if self.is_lit(x, y) {
-            self.buf[(y * self.w + x) as usize] = color;
-        }
-    }
-}
-
-/// `ink` at `level` of three over `ground`, channel by channel, rounded.
-pub fn shade(ink: u8, ground: u8, level: u8) -> u8 {
-    let ch = |shift: u8| {
-        let i = ((ink >> shift) & 3) as u16;
-        let g = ((ground >> shift) & 3) as u16;
-        ((i * level as u16 + g * (3 - level as u16) + 1) / 3) as u8
-    };
-    0xC0 | ch(0) | (ch(2) << 2) | (ch(4) << 4)
 }
 
 fn is_combining(c: char) -> bool {
@@ -248,11 +213,28 @@ impl Face {
         (self.data[i / 4] >> (2 * (i % 4))) & 3
     }
 
-    /// Draws `text` with its pen at `x` for `Left`, its advance centred on `x` for `Center`, or
-    /// ending at `x` for `Right`, sitting on `baseline`, in `ink`. Returns what it measured.
-    pub fn draw(&self, canvas: &mut Canvas, text: &str, x: i32, baseline: i32, align: Align, ink: u8) -> Measure {
+    /// Draws `text` on `baseline`, placed at `x` as the style's alignment says, and returns what
+    /// it measured.
+    pub fn draw<D>(
+        &self,
+        target: &mut D,
+        text: &str,
+        x: i32,
+        baseline: i32,
+        style: Style<D::Color>,
+    ) -> Result<Measure, D::Error>
+    where
+        D: DrawTarget,
+        D::Color: Ink,
+    {
         let m = self.measure(text);
-        let mut pen = match align {
+        // Three shades exist, not one a pixel.
+        let ramp = [
+            style.ink.shade(style.ground, 1),
+            style.ink.shade(style.ground, 2),
+            style.ink.shade(style.ground, 3),
+        ];
+        let mut pen = match style.align {
             Align::Left => x,
             Align::Center => x - m.advance / 2,
             Align::Right => x - m.advance,
@@ -262,36 +244,51 @@ impl Face {
                 Glyph::Node(n) => {
                     let x0 = pen + n.left as i32;
                     let y0 = baseline - n.top as i32;
-                    for row in 0..n.h as i32 {
-                        for col in 0..n.w as i32 {
-                            let level = self.level(n, col, row);
-                            if level != 0 {
-                                canvas.put(x0 + col, y0 + row, shade(ink, canvas.ground, level));
-                            }
+                    let (w, h) = (n.w as i32, n.h as i32);
+                    target.draw_iter((0..w * h).filter_map(|i| {
+                        match self.level(n, i % w, i / w) {
+                            0 => None,
+                            level => Some(Pixel(
+                                Point::new(x0 + i % w, y0 + i / w),
+                                ramp[level as usize - 1],
+                            )),
                         }
-                    }
+                    }))?;
                     pen += n.adv as i32;
                 }
                 Glyph::Missing { w, h, adv } => {
                     let y0 = baseline - h;
-                    for i in 0..w {
-                        canvas.put(pen + i, y0, ink);
-                        canvas.put(pen + i, baseline - 1, ink);
-                    }
-                    for j in 0..h {
-                        canvas.put(pen, y0 + j, ink);
-                        canvas.put(pen + w - 1, y0 + j, ink);
-                    }
+                    let top = (0..w).map(move |i| (pen + i, y0));
+                    let bottom = (0..w).map(move |i| (pen + i, baseline - 1));
+                    let left = (0..h).map(move |j| (pen, y0 + j));
+                    let right = (0..h).map(move |j| (pen + w - 1, y0 + j));
+                    target.draw_iter(
+                        top.chain(bottom)
+                            .chain(left)
+                            .chain(right)
+                            .map(|(x, y)| Pixel(Point::new(x, y), style.ink)),
+                    )?;
                     pen += adv;
                 }
             }
         }
-        m
+        Ok(m)
     }
 
     /// [`Face::draw`] with the line's top at `top` instead of its baseline.
-    pub fn draw_top(&self, canvas: &mut Canvas, text: &str, x: i32, top: i32, align: Align, ink: u8) -> Measure {
-        self.draw(canvas, text, x, top + self.ascent as i32, align, ink)
+    pub fn draw_top<D>(
+        &self,
+        target: &mut D,
+        text: &str,
+        x: i32,
+        top: i32,
+        style: Style<D::Color>,
+    ) -> Result<Measure, D::Error>
+    where
+        D: DrawTarget,
+        D::Color: Ink,
+    {
+        self.draw(target, text, x, top + self.ascent as i32, style)
     }
 
     /// Greedy word wrap against `max_width`, filling `lines` in order. Returns how many lines the
@@ -344,9 +341,20 @@ pub fn pick<'f>(faces: &[&'f Face], text: &str, max_width: i32) -> Option<&'f Fa
 mod tests {
     use super::faces::*;
     use super::*;
+    use inscribed_disc::{Abgr2222, Surface};
 
     const W: u32 = 240;
     const H: u32 = 240;
+
+    const WHITE: Abgr2222 = Abgr2222::WHITE;
+    const BLACK: Abgr2222 = Abgr2222::BLACK;
+
+    fn on_white(f: impl FnOnce(&mut Surface<Abgr2222>)) -> Vec<u8> {
+        let mut buf = vec![0u8; (W * H) as usize];
+        let mut s = Surface::<Abgr2222>::rect(&mut buf, W, H).unwrap();
+        f(&mut s);
+        buf
+    }
 
     fn all_faces() -> Vec<(&'static str, &'static Face)> {
         vec![
@@ -412,12 +420,12 @@ mod tests {
     fn a_missing_glyph_is_counted_and_drawn_as_a_box() {
         let m = SEMIBOLD_20_ASCII.measure("aé");
         assert_eq!(m.missing, 1);
-        let mut buf = vec![0u8; (W * H) as usize];
-        let mut c = Canvas::rect(&mut buf, W, H);
-        SEMIBOLD_20_ASCII.draw(&mut c, "é", 100, 100, Align::Left, WHITE);
+        let buf = on_white(|s| {
+            SEMIBOLD_20_ASCII.draw(s, "é", 100, 100, Style::left(WHITE, BLACK)).unwrap();
+        });
         let lit = buf.iter().filter(|&&b| b != 0).count();
         assert!(lit > 20 && lit < 80, "a hollow box, not a filled one or nothing: {lit} lit");
-        assert_eq!(buf[(99 * 240 + 100) as usize], WHITE, "box corner at the pen, on the baseline's row above");
+        assert_eq!(buf[(99 * 240 + 100) as usize], WHITE.0, "box corner at the pen, on the baseline's row above");
     }
 
     #[test]
@@ -425,20 +433,25 @@ mod tests {
         let text = "0123456789ABCD";
         let adv = SEMIBOLD_20_ASCII.measure(text).advance;
         for (align, x, expected_left_pen) in [(Align::Left, 30, 30), (Align::Center, 120, 120 - adv / 2), (Align::Right, 200, 200 - adv)] {
-            let mut buf = vec![0u8; (W * H) as usize];
-            let mut c = Canvas::rect(&mut buf, W, H);
-            let m = SEMIBOLD_20_ASCII.draw(&mut c, text, x, 120, align, WHITE);
+            let mut m = Measure::default();
+            let buf = on_white(|s| {
+                m = SEMIBOLD_20_ASCII.draw(s, text, x, 120, Style::new(WHITE, BLACK, align)).unwrap();
+            });
             let first_lit_col = (0..240).find(|&x| (0..240).any(|y| buf[(y * 240 + x) as usize] != 0)).unwrap();
             assert_eq!(first_lit_col, expected_left_pen + m.ink_left, "{align:?}");
         }
     }
 
+    /// Glyphs reach the buffer through `draw_iter`, so a target that clips gets to; writing bytes
+    /// straight into the framebuffer would silently stop honouring it. The rule is inscribed-disc's.
     #[test]
-    fn nothing_is_lit_outside_the_disc() {
+    fn a_clipping_target_still_clips_what_this_crate_draws() {
         let mut buf = vec![0u8; (W * H) as usize];
-        let mut c = Canvas::round(&mut buf, W, H);
+        let mut c = Surface::<Abgr2222>::round(&mut buf, W, H).unwrap();
         for y in [10, 30, 120, 210, 230] {
-            SEMIBOLD_20_ASCII.draw(&mut c, "WWWWWWWWWWWWWWWWWWWWWWWW", 120, y, Align::Center, WHITE);
+            SEMIBOLD_20_ASCII
+                .draw(&mut c, "WWWWWWWWWWWWWWWWWWWWWWWW", 120, y, Style::centered(WHITE, BLACK))
+                .unwrap();
         }
         for y in 0..240i32 {
             for x in 0..240i32 {
@@ -451,25 +464,22 @@ mod tests {
         assert!(buf.iter().any(|&b| b != 0));
     }
 
+    /// The four atlas levels reach the four the panel has; the arithmetic is inscribed-disc's.
     #[test]
-    fn shading_is_the_apps_own_rule_over_black_and_blends_toward_a_ground() {
-        assert_eq!(shade(WHITE, BLACK, 3), 0xFF);
-        assert_eq!(shade(WHITE, BLACK, 2), 0xC0 | 0b10_10_10);
-        assert_eq!(shade(WHITE, BLACK, 1), 0xC0 | 0b01_01_01);
-        let dim = 0xC0 | 0b10_10_10;
-        assert_eq!(shade(dim, BLACK, 1), 0xC0 | 0b01_01_01);
-        assert_eq!(shade(BLACK, WHITE, 3), BLACK);
-        assert_eq!(shade(BLACK, WHITE, 1), 0xC0 | 0b10_10_10);
+    fn ink_spans_the_grey_levels_it_is_given() {
+        let levels: Vec<u8> = (0..=3).map(|l| WHITE.shade(BLACK, l).0 & 3).collect();
+        assert_eq!(levels, vec![0, 1, 2, 3]);
+        assert_eq!(WHITE.shade(BLACK, 3), WHITE);
+        assert_eq!(WHITE.shade(BLACK, 0), BLACK);
     }
 
     #[test]
     fn drawn_text_uses_all_four_levels() {
-        let mut buf = vec![0u8; (W * H) as usize];
-        let mut c = Canvas::rect(&mut buf, W, H);
-        REGULAR_18_LATIN.draw(&mut c, "Set it to Code128,", 120, 120, Align::Center, WHITE);
+        let buf = on_white(|s| {
+            REGULAR_18_LATIN.draw(s, "Set it to Code128,", 120, 120, Style::centered(WHITE, BLACK)).unwrap();
+        });
         for level in 1..=3u8 {
-            let colour = shade(WHITE, BLACK, level);
-            assert!(buf.contains(&colour), "level {level} never drawn");
+            assert!(buf.contains(&WHITE.shade(BLACK, level).0), "level {level} never drawn");
         }
     }
 
@@ -514,9 +524,9 @@ mod tests {
 
     #[test]
     fn draw_top_puts_the_ascent_above_the_top() {
-        let mut buf = vec![0u8; (W * H) as usize];
-        let mut c = Canvas::rect(&mut buf, W, H);
-        SEMIBOLD_20_ASCII.draw_top(&mut c, "H", 20, 50, Align::Left, WHITE);
+        let buf = on_white(|s| {
+            SEMIBOLD_20_ASCII.draw_top(s, "H", 20, 50, Style::left(WHITE, BLACK)).unwrap();
+        });
         let first_row = (0..240).find(|&y| (0..240).any(|x| buf[y * 240 + x] != 0)).unwrap();
         assert!(first_row >= 50 && first_row < 50 + SEMIBOLD_20_ASCII.ascent as usize);
     }

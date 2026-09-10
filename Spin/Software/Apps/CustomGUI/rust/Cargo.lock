@@ -373,6 +373,10 @@ dependencies = [
 [[package]]
 name = "textkit"
 version = "0.1.0"
+dependencies = [
+ "embedded-graphics",
+ "inscribed-disc",
+]
 
 [[package]]
 name = "unicode-ident"
