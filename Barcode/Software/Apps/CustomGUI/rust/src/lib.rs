@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use embedded_graphics::{pixelcolor::raw::RawU8, pixelcolor::PixelColor, prelude::*};
-use textkit::{faces, Align, Canvas, Face};
+use inscribed_disc::{Abgr2222, Surface};
+use textkit::{faces, Face, Style};
 
 #[cfg(not(feature = "std"))]
 extern "C" {
@@ -16,79 +16,6 @@ fn on_panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Abgr2222(pub u8);
-
-const ALPHA_SHIFT: u8 = 6;
-const BLUE_SHIFT: u8 = 4;
-const GREEN_SHIFT: u8 = 2;
-const RED_SHIFT: u8 = 0;
-const CHANNEL_MASK: u8 = 0b11;
-const CHANNEL_BITS: u8 = 2;
-const ALPHA_OPAQUE: u8 = 0b11;
-
-const fn keep_high_bits(channel: u8) -> u8 {
-    (channel >> (8 - CHANNEL_BITS)) & CHANNEL_MASK
-}
-
-impl Abgr2222 {
-    pub const fn from_levels(r2: u8, g2: u8, b2: u8) -> Self {
-        Abgr2222(
-            (ALPHA_OPAQUE << ALPHA_SHIFT)
-                | ((b2 & CHANNEL_MASK) << BLUE_SHIFT)
-                | ((g2 & CHANNEL_MASK) << GREEN_SHIFT)
-                | ((r2 & CHANNEL_MASK) << RED_SHIFT),
-        )
-    }
-
-    pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
-        Abgr2222::from_levels(keep_high_bits(r), keep_high_bits(g), keep_high_bits(b))
-    }
-
-    pub const BLACK: Abgr2222 = Abgr2222::rgb(0, 0, 0);
-    pub const WHITE: Abgr2222 = Abgr2222::rgb(255, 255, 255);
-}
-
-impl Default for Abgr2222 {
-    fn default() -> Self {
-        Abgr2222::BLACK
-    }
-}
-
-impl PixelColor for Abgr2222 {
-    type Raw = RawU8;
-}
-
-struct FrameBuf<'a> {
-    buf: &'a mut [u8],
-    w: u32,
-    h: u32,
-}
-
-impl OriginDimensions for FrameBuf<'_> {
-    fn size(&self) -> Size {
-        Size::new(self.w, self.h)
-    }
-}
-
-impl DrawTarget for FrameBuf<'_> {
-    type Color = Abgr2222;
-    type Error = core::convert::Infallible;
-
-    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Pixel<Self::Color>>,
-    {
-        let (w, h) = (self.w as i32, self.h as i32);
-        for Pixel(coord, color) in pixels {
-            if coord.x >= 0 && coord.y >= 0 && coord.x < w && coord.y < h {
-                let idx = (coord.y as u32 * self.w + coord.x as u32) as usize;
-                self.buf[idx] = color.0;
-            }
-        }
-        Ok(())
-    }
-}
 
 // Mirrors barcode_gui_frame (barcode_gui.h) field for field -- field order
 // chosen there so every field lands on its natural alignment with zero
@@ -263,25 +190,6 @@ const DIM: Abgr2222 = Abgr2222::rgb(170, 170, 170);
 /// bar, module, pager mark and backing box), so its own code size and the
 /// styled-drawable/point-iterator machinery it would otherwise pull in for
 /// every distinct color it's called with are both worth avoiding.
-fn fill_rect(fb: &mut FrameBuf, x: i32, y: i32, w: i32, h: i32, color: Abgr2222) {
-    if w <= 0 || h <= 0 {
-        return;
-    }
-    let fb_w = fb.w as i32;
-    let fb_h = fb.h as i32;
-    let x0 = x.max(0);
-    let y0 = y.max(0);
-    let x1 = (x + w).min(fb_w);
-    let y1 = (y + h).min(fb_h);
-    if x0 >= x1 || y0 >= y1 {
-        return;
-    }
-    for row in y0..y1 {
-        let start = (row * fb_w + x0) as usize;
-        let end = (row * fb_w + x1) as usize;
-        fb.buf[start..end].fill(color.0);
-    }
-}
 
 // -- Text: TextKit's pre-rendered Poppins atlases. Why these faces and not
 // others, and what the port replaced, is in Barcode/README.md and Docs/TEXT.md.
@@ -311,12 +219,11 @@ fn text_width(face: &Face, s: &str) -> i32 {
 }
 
 /// Centred in a box the way every TouchGFX TextArea this app had was.
-fn draw_centered(fb: &mut FrameBuf, face: &Face, s: &str, box_x: i32, box_w: i32, baseline: i32) {
-    let mut canvas = Canvas::round(fb.buf, fb.w, fb.h);
-    face.draw(&mut canvas, s, box_x + box_w / 2, baseline, Align::Center, WHITE.0);
+fn draw_centered(fb: &mut Surface<Abgr2222>, face: &Face, s: &str, box_x: i32, box_w: i32, baseline: i32) {
+    face.draw(fb, s, box_x + box_w / 2, baseline, Style::centered(WHITE, BLACK)).ok();
 }
 
-fn draw_prompt(fb: &mut FrameBuf, frame: &Frame) {
+fn draw_prompt(fb: &mut Surface<Abgr2222>, frame: &Frame) {
     let mut lines = [""; PROMPT_MAX_LINES];
     let n = SMALL.wrap(frame.message_str(), PROMPT_W, &mut lines).min(PROMPT_MAX_LINES);
     for (i, line) in lines[..n].iter().enumerate() {
@@ -336,7 +243,7 @@ fn ink_gray_for_level(level: i32) -> Option<Abgr2222> {
     }
 }
 
-fn draw_pager(fb: &mut FrameBuf, count: u8, index: u8) {
+fn draw_pager(fb: &mut Surface<Abgr2222>, count: u8, index: u8) {
     if count < 2 {
         return;
     }
@@ -344,11 +251,11 @@ fn draw_pager(fb: &mut FrameBuf, count: u8, index: u8) {
     let left = (PANEL_W - ((count - 1) * MARK_PITCH + MARK_W)) / 2;
     for i in 0..count {
         let color = if i == index as i32 { WHITE } else { DIM };
-        fill_rect(fb, left + i * MARK_PITCH, MARK_Y, MARK_W, MARK_H, color);
+        fb.fill_rect(left + i * MARK_PITCH, MARK_Y, MARK_W, MARK_H, color);
     }
 }
 
-fn draw_caption(fb: &mut FrameBuf, name: &str) {
+fn draw_caption(fb: &mut Surface<Abgr2222>, name: &str) {
     if name.is_empty() {
         return;
     }
@@ -361,7 +268,7 @@ fn draw_caption(fb: &mut FrameBuf, name: &str) {
 /// own ink budget; otherwise draw at the small face, splitting across two
 /// lines by character count -- never by width -- only when even the small
 /// face does not fit one line.
-fn draw_id(fb: &mut FrameBuf, id: &str) {
+fn draw_id(fb: &mut Surface<Abgr2222>, id: &str) {
     if text_width(SMALL, id) <= ID_W {
         if text_width(LARGE, id) <= ID_LARGE_MAX {
             draw_centered(fb, LARGE, id, ID_X, ID_W, ID_BASELINE);
@@ -440,8 +347,8 @@ fn accumulate_coverage(coverage: &mut [f32], x0: f32, x1: f32) {
 /// gray-level idea `render_smoothed()` uses for text, minus the scratch
 /// buffer, since a bar's coverage is one-dimensional and computable in closed
 /// form rather than needing a bitmap to average down.
-fn draw_code128(fb: &mut FrameBuf, frame: &Frame) {
-    fill_rect(fb, BACKING_X, BACKING_Y, BACKING_W, BACKING_H, WHITE);
+fn draw_code128(fb: &mut Surface<Abgr2222>, frame: &Frame) {
+    fb.fill_rect(BACKING_X, BACKING_Y, BACKING_W, BACKING_H, WHITE);
 
     if frame.total_modules == 0 {
         return;
@@ -462,7 +369,7 @@ fn draw_code128(fb: &mut FrameBuf, frame: &Frame) {
     for (col, &c) in coverage.iter().enumerate() {
         let level = (c.clamp(0.0, 1.0) * 3.0 + 0.5) as i32;
         if let Some(color) = ink_gray_for_level(level) {
-            fill_rect(fb, BARS_X + col as i32, BARS_Y, 1, BARS_H, color);
+            fb.fill_rect(BARS_X + col as i32, BARS_Y, 1, BARS_H, color);
         }
     }
 }
@@ -470,8 +377,8 @@ fn draw_code128(fb: &mut FrameBuf, frame: &Frame) {
 /// ITF: one whole-pixel unit for the entire symbol plus bearer bars, exactly
 /// as BarcodeLayout.hpp's itfUnitPx/itfBearerPx/itfLeftPx already specify --
 /// the trade ITF's 3:1 wide:narrow ratio affords and Code128 does not.
-fn draw_itf(fb: &mut FrameBuf, frame: &Frame) {
-    fill_rect(fb, BACKING_X, BACKING_Y, BACKING_W, BACKING_H, WHITE);
+fn draw_itf(fb: &mut Surface<Abgr2222>, frame: &Frame) {
+    fb.fill_rect(BACKING_X, BACKING_Y, BACKING_W, BACKING_H, WHITE);
 
     let total = frame.total_modules as i32;
     if total == 0 {
@@ -483,31 +390,29 @@ fn draw_itf(fb: &mut FrameBuf, frame: &Frame) {
     let width = total * unit_px;
     let left = BARS_X + (BARS_W - width) / 2;
 
-    fill_rect(fb, BARS_X, BARS_Y, BARS_W, bearer, BLACK);
-    fill_rect(fb, BARS_X, BARS_Y + bearer + bars_h, BARS_W, bearer, BLACK);
+    fb.fill_rect(BARS_X, BARS_Y, BARS_W, bearer, BLACK);
+    fb.fill_rect(BARS_X, BARS_Y + bearer + bars_h, BARS_W, bearer, BLACK);
 
     let mut x = left;
     let mut is_bar = true;
     for i in 0..frame.width_count as usize {
         let w_px = frame.widths[i] as i32 * unit_px;
         if is_bar {
-            fill_rect(fb, x, BARS_Y + bearer, w_px, bars_h, BLACK);
+            fb.fill_rect(x, BARS_Y + bearer, w_px, bars_h, BLACK);
         }
         x += w_px;
         is_bar = !is_bar;
     }
 }
 
-fn draw_qr(fb: &mut FrameBuf, frame: &Frame) {
+fn draw_qr(fb: &mut Surface<Abgr2222>, frame: &Frame) {
     let side = (frame.matrix_size as i32 + 2 * QR_QUIET_MODULES) * QR_MODULE_PX;
-    fill_rect(fb, QR_X, QR_Y, side, side, WHITE);
+    fb.fill_rect(QR_X, QR_Y, side, side, WHITE);
 
     for y in 0..frame.matrix_size {
         for x in 0..frame.matrix_size {
             if frame.dark(x, y) {
-                fill_rect(
-                    fb,
-                    QR_INK_X + x as i32 * QR_MODULE_PX,
+                fb.fill_rect(QR_INK_X + x as i32 * QR_MODULE_PX,
                     QR_INK_Y + y as i32 * QR_MODULE_PX,
                     QR_MODULE_PX,
                     QR_MODULE_PX,
@@ -527,8 +432,10 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, frame: &Frame) {
         return;
     }
 
-    let mut fb = FrameBuf { buf: &mut buf[..needed], w: width, h: height };
-    fb.buf.fill(BLACK.0);
+    let Some(mut fb) = Surface::<Abgr2222>::round(buf, width, height) else {
+        return;
+    };
+    fb.clear(BLACK);
 
     match frame.kind {
         KIND_PROMPT => {

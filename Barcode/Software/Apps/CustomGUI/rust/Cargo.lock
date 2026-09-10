@@ -32,6 +32,7 @@ version = "0.1.0"
 dependencies = [
  "embedded-graphics",
  "embedded-graphics-simulator",
+ "inscribed-disc",
  "png 0.17.16",
  "textkit",
 ]
@@ -169,6 +170,13 @@ dependencies = [
  "moxcms",
  "num-traits",
  "png 0.18.1",
+]
+
+[[package]]
+name = "inscribed-disc"
+version = "0.1.0"
+dependencies = [
+ "embedded-graphics",
 ]
 
 [[package]]
@@ -364,6 +372,10 @@ dependencies = [
 [[package]]
 name = "textkit"
 version = "0.1.0"
+dependencies = [
+ "embedded-graphics",
+ "inscribed-disc",
+]
 
 [[package]]
 name = "unicode-ident"

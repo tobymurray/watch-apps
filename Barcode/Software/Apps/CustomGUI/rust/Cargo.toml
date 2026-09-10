@@ -23,6 +23,9 @@ png = { version = "0.17", optional = true }
 # A dependency, never a second staticlib: two archives each carrying a
 # #[panic_handler] collide at link time.
 textkit = { path = "../../../../../TextKit" }
+inscribed-disc = { path = "../../../../../InscribedDisc", default-features = false, features = [
+    "abgr2222",
+] }
 
 [profile.release]
 panic = "abort"
