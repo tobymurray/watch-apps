@@ -30,7 +30,6 @@
 //! | — | always | [`geometry`] |
 //! | `embedded-graphics` | on | [`clip`], [`surface`] |
 //! | `abgr2222` | off | [`color`] |
-//! | `widgets` | off | [`widgets`] |
 //! | `preview` | off | [`preview`]; implies `std` and `abgr2222` |
 //! | `panic-handler` | off | [`mod@panic`], location only |
 //! | `panic-message` | off | implies `panic-handler`; adds the message |
@@ -74,10 +73,6 @@ pub mod surface;
 #[cfg(feature = "abgr2222")]
 #[cfg_attr(docsrs, doc(cfg(feature = "abgr2222")))]
 pub mod color;
-
-#[cfg(feature = "widgets")]
-#[cfg_attr(docsrs, doc(cfg(feature = "widgets")))]
-pub mod widgets;
 
 #[cfg(feature = "preview")]
 #[cfg_attr(docsrs, doc(cfg(feature = "preview")))]

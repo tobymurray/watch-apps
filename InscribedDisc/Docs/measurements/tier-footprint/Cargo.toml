@@ -9,7 +9,6 @@ crate-type = ["staticlib"]
 [features]
 default = []
 t0 = []
-t2 = ["inscribed-disc/widgets"]
 
 [dependencies]
 inscribed-disc = { path = "../../..", default-features = false, features = ["embedded-graphics", "abgr2222"] }

@@ -11,8 +11,8 @@ is for someone consuming it; this is for someone changing it.
 **Cut back to what has callers.** Five modules were written against a list of
 screens nobody has built yet and are parked — see
 [What is parked](#what-is-parked). What ships is the surface, the colour, the
-geometry, the widgets and the preview: about 1,500 lines, with `Spin` as the one
-adopting app in this repository.
+geometry, the two draw targets, the colour and the preview, with `Spin` as the
+one adopting app in this repository.
 
 `Spin`'s 43 scene frames are byte-identical after the move, which is the bar for
 an app already installed on wrists, and it has since recorded a session on one.
@@ -265,21 +265,31 @@ says so out loud because it is the reason the footprint argument survives.
 **A as the floor, B and C as features** — and the tiering is measured, not
 asserted:
 
-Harness: [`Docs/measurements/tier-footprint`](measurements/tier-footprint).
+Harness: [`Docs/measurements/tier-footprint`](measurements/tier-footprint),
+summing `.text` over the fixture's own archive members:
 
-Harness: [`Docs/measurements/tier-footprint`](measurements/tier-footprint).
+```sh
+cargo build --release --target thumbv8m.main-none-eabihf --features t0
+llvm-size --format=sysv target/thumbv8m.main-none-eabihf/release/libprobe.a \
+  | awk -v crate='^probe-' -f ../textsize.awk
+```
 
-| linked | `.text` | `.rodata` |
+| the fixture's own archive members | `.text` | `.rodata` |
 |---|---|---|
 | surface, colour, geometry | **278** | 0 |
-| + widgets | 694 | 0 |
 
 Tier 0 was 184 bytes before `lit_start` became closed-form; the integer square
 root that removed the per-pixel scan costs 94 bytes of the 278. That is the
 trade, and §6 has the frame times that bought it.
 
-The figures for the parked tiers are in git at `8055796` and are not repeated
-here, because nothing links them.
+The 278 has not moved through three changes that might have moved it: making
+`ByteColor` a blanket impl, adding `clip`, and gating `embedded-graphics`
+behind a feature. A module the fixture does not call is not in its archive
+members, which is the whole reason this figure is worth quoting.
+
+There is no tier 2 row any more; `widgets` went, and the figures for the
+parked tiers are in git at `8055796`, not repeated here, because nothing
+links them.
 
 ---
 
@@ -649,8 +659,8 @@ assumes the answer.
 
 ## What is parked
 
-Recoverable whole from commit `8055796`, e.g.
-`git show 8055796:InscribedDisc/src/nav.rs`.
+Recoverable whole from commit `8055796`, where this directory was still
+called `PanelKit`, e.g. `git show 8055796:PanelKit/src/nav.rs`.
 
 The measure that decided it: of 2,810 lines of `src/`, **1,251 had no consumer
 outside this crate**. The apparent callers for three of them were
@@ -665,6 +675,7 @@ use.
 | `scene` | 198 | The `Scenes` catalogue trait. **No implementor** — `Spin`'s catalogue returns a `Vec` and kept its own tests, so the checks this was meant to hand an adopter were never inherited by one. |
 | `draw` | 301 | The arc sampler, `fill_circle`, `accumulate_coverage`. **Zero callers**: `Spin` kept its own sampler on `micromath` rather than take this one, because swapping the trig would move pixels. |
 | `dither` | 167 | Ordered dithering. **Zero callers** — no screen in either app draws a gradient. |
+| `widgets` | 193 | The page indicator and the toggle pill, recoverable from `30bb381` — `git show 30bb381:InscribedDisc/src/widgets.rs`. **One caller**, below the two-caller bar this file sets in §8 item 9: no committed application code called either widget, and the two users were the uncommitted `SettingsEditor` renderer and `Docs/measurements/tier-footprint`, which this section already says is a fixture rather than a use. If `SettingsEditor` is committed and wants a page-indicator row, `widgets` comes back and brings that second caller with it. |
 
 `preview`'s three `Scenes`-generic helpers went with `scene`; `to_rgba`,
 `write_png`, `sheet_from_frames` and `gamut_sheet`, which `Spin` actually calls,
@@ -713,8 +724,8 @@ Listed so the gap is not something a reader has to find:
   and nothing has compared glass against glass.
 - **Anything past a byte a pixel**, as above. The public claim has to be
   "low-bit-depth, one byte a pixel" until someone lifts `ByteColor`.
-- **Tier 2 beyond two widgets.** The value row and the four-button hint ring
-  have their warrants and are not written.
+- **Tier 2 at all.** The value row and the four-button hint ring have their
+  warrants and are not written, and the two widgets that were here are parked.
 - **Anything in [What is parked](#what-is-parked)**, which is where the focus
   model, the text trait, the scene catalogue, the arc sampler and the dither
   now live.
@@ -736,10 +747,10 @@ rasterisation (a trait instead).
 InscribedDisc/
   src/
     lib.rs        crate root and features
+    geometry.rs   the lit disc, chords, the largest centred square
+    clip.rs       DiscClipped, the disc clip over anyone's DrawTarget
     surface.rs    the framebuffer, the clip, the fill_solid fast path
     color.rs      Abgr2222, the palette, shade()
-    geometry.rs   the lit disc, chords, the inscribed square
-    widgets.rs    the page indicator, the toggle pill
     preview.rs    frames to PNG, sheets, the gamut sheet
     panic.rs      one panic handler, one host symbol
   Header/
@@ -748,6 +759,6 @@ InscribedDisc/
   Docs/           one file per measurement, and the gamut sheet
 ```
 
-62 tests, all passing, on `cargo test --all-features`.
+`cargo test --all-features` passes.
 
 [`embedded-graphics`]: https://crates.io/crates/embedded-graphics

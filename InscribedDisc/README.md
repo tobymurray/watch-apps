@@ -80,7 +80,6 @@ paints 12,792 pixels the glass never shows, 22.2% of the framebuffer.
 | `surface` | the framebuffer, the clip, a row-fill `fill_solid` |
 | `color` | `Abgr2222`, its palette, and `shade` for partial coverage |
 | `geometry` | the lit-disc predicate, row chords, the inscribed square |
-| `widgets` | a page indicator and a toggle pill *(feature `widgets`)* |
 | `preview` | frames to PNG in the panel's own colours *(feature `preview`, host-only)* |
 | `panic` | a `#[panic_handler]` reporting `file:line` *(feature `panic-handler`)* |
 
