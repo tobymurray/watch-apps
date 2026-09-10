@@ -752,10 +752,16 @@ Listed so the gap is not something a reader has to find:
 
 - **The opaque payload reader** of §4. The fixed event ABI is built; the data
   half is designed and specified only.
-- **The backports** — the colour-depth guard to the four shells missing it, the
-  real panic handler to the five renderers that still declare their own, which
-  is `PanicKit`'s to fix now rather than this crate's. Both are what a kit fixes
-  *by existing*, and both still need doing to the shipping apps.
+- **One backport, and the other is done.** The panic handler reached all seven
+  renderers when it moved to [`PanicKit`](../../PanicKit): every archive now
+  needs `panickit_host_panic` and no app declares a handler of its own. What is
+  still outstanding is the **colour-depth guard** — `mDisplayUsable` /
+  `kMaxBitsPerPixel`, which withholds the frame when a panel reports more than
+  8bpp rather than letting the kernel read past the framebuffer. It is in
+  `NotifyToggle` and `UnitToggle` and in no other shell, which is where the
+  survey found it. That one is C++ in each app's `Gui.cpp`, so no Rust crate
+  fixes it by existing; it wants the shell that §4 designed and nobody has
+  taken.
 - **The scaffold** (`new-gui-app <Name>`). "Get started without reinventing
   everything" is a command you can run or it is a claim, and right now it is a
   claim.
