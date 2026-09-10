@@ -15,7 +15,7 @@
 use micromath::F32Ext;
 use inscribed_disc::color::Abgr2222;
 use inscribed_disc::surface::Surface;
-use textkit::{faces, Align, Canvas, Face};
+use textkit::{faces, Align, Face, Style};
 
 /// The frames worth looking at. Host-only: the watch is handed frames.
 #[cfg(feature = "std")]
@@ -342,11 +342,7 @@ fn text_width(face: &Face, s: &str) -> u32 {
 }
 
 fn draw_text(fb: &mut FrameBuf, face: &Face, s: &str, x: i32, top: i32, align: Align, color: Abgr2222) {
-    // TextKit rasterises through its own surface type, so it is handed the
-    // bytes; it applies the same disc rule, a pixel centre within 119.5 pitches.
-    let (w, h) = (fb.width() as u32, fb.height() as u32);
-    let mut canvas = Canvas::round(fb.bytes_mut(), w, h);
-    face.draw(&mut canvas, s, x, top + cap_height(face), align, color.0);
+    face.draw(fb, s, x, top + cap_height(face), Style::new(color, BLACK, align)).ok();
 }
 
 fn draw_centered(fb: &mut FrameBuf, face: &Face, s: &str, y: i32, color: Abgr2222) {
@@ -1468,7 +1464,7 @@ mod tests {
         // nothing. A part-covered white would prove nothing here, since
         // "THIS RIDE?" is drawn in DIM already.
         let buf = draw(&frame(SCREEN_CONFIRM_DISCARD));
-        let partial: Vec<u8> = [1u8, 2].iter().map(|l| textkit::shade(RED.0, BLACK.0, *l)).collect();
+        let partial: Vec<u8> = [1u8, 2].iter().map(|l| inscribed_disc::color::shade(RED, BLACK, *l).0).collect();
         assert!(buf.iter().any(|b| partial.contains(b)),
                 "no part-covered red: the discard answers are not being smoothed");
     }
