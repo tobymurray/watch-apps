@@ -3,9 +3,10 @@
 //! Sixty-four colours, and the only greys are 0, 85, 170 and 255, so
 //! anti-aliasing is a choice among two intermediate shades rather than 254.
 
-use embedded_graphics::pixelcolor::{raw::RawU8, PixelColor};
-
-use crate::surface::ByteColor;
+use embedded_graphics::pixelcolor::{
+    raw::{RawData, RawU8},
+    PixelColor,
+};
 
 const ALPHA_SHIFT: u8 = 6;
 const BLUE_SHIFT: u8 = 4;
@@ -87,14 +88,15 @@ impl PixelColor for Abgr2222 {
     type Raw = RawU8;
 }
 
-impl ByteColor for Abgr2222 {
-    #[inline]
-    fn to_byte(self) -> u8 {
-        self.0
+impl From<RawU8> for Abgr2222 {
+    fn from(raw: RawU8) -> Self {
+        Abgr2222(raw.into_inner())
     }
-    #[inline]
-    fn from_byte(b: u8) -> Self {
-        Abgr2222(b)
+}
+
+impl From<Abgr2222> for RawU8 {
+    fn from(color: Abgr2222) -> Self {
+        RawU8::new(color.0)
     }
 }
 

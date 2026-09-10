@@ -13,7 +13,8 @@
 //! hit testing.
 //!
 //! Not generic past one byte a pixel — [`Surface`] is bounded on [`ByteColor`],
-//! so an `Rgb565` panel does not compile against it.
+//! which every `RawU8` colour satisfies without an impl, so an `Rgb565` panel
+//! does not compile against it.
 //!
 //! # Features
 //!

@@ -5,7 +5,11 @@
 
 use core::marker::PhantomData;
 
-use embedded_graphics::{prelude::*, primitives::Rectangle};
+use embedded_graphics::{
+    pixelcolor::raw::{RawData, RawU8},
+    prelude::*,
+    primitives::Rectangle,
+};
 
 use crate::geometry;
 
@@ -32,12 +36,27 @@ pub struct Surface<'a, C> {
 }
 
 /// A colour this crate can write into a byte-per-pixel framebuffer.
-pub trait ByteColor: PixelColor + Copy {
+///
+/// Satisfied by any `embedded-graphics` colour whose `Raw` is [`RawU8`] with no
+/// impl written anywhere, [`Gray8`](embedded_graphics::pixelcolor::Gray8)
+/// included, because that crate's colour macros already generate the two `From`
+/// conversions this needs. `Into<RawU8>` is a supertrait rather than a
+/// `where RawU8: From<Self>` clause: a where-clause on a trait is not an implied
+/// bound, so that spelling leaks the obligation into every downstream signature.
+pub trait ByteColor: PixelColor<Raw = RawU8> + From<RawU8> + Into<RawU8> + Copy {
     /// The byte this colour occupies in the framebuffer.
-    fn to_byte(self) -> u8;
+    #[inline]
+    fn to_byte(self) -> u8 {
+        self.into().into_inner()
+    }
     /// The colour that byte encodes.
-    fn from_byte(b: u8) -> Self;
+    #[inline]
+    fn from_byte(b: u8) -> Self {
+        Self::from(RawU8::new(b))
+    }
 }
+
+impl<C: PixelColor<Raw = RawU8> + From<RawU8> + Into<RawU8> + Copy> ByteColor for C {}
 
 impl<'a, C: ByteColor> Surface<'a, C> {
     /// A round panel: only the inscribed disc is glass.

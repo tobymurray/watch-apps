@@ -17,9 +17,10 @@ Take it only if all four hold. Each is a hard constraint, not a preference.
 - **Your display is round.** On a rectangular panel this gives you nothing: the
   disc clip and the chord table are the whole value.
 - **Your framebuffer is one byte per pixel.** `Surface` is bounded on
-  `ByteColor`, so `Rgb565` **does not compile** against it. Lifting that means
-  writing the stride arithmetic against `PixelColor::Raw`, which has not been
-  done.
+  `ByteColor`, which any colour whose `PixelColor::Raw` is `RawU8` satisfies
+  with no impl written anywhere — `Gray8` included. `Rgb565` **does not
+  compile** against it. Lifting that means writing the stride arithmetic against
+  `PixelColor::Raw` rather than `u8`, which has not been done.
 - **Your colour depth is low.** `shade()` and the palette assume a channel has a
   few levels. At 8 bits a channel, use `embedded-graphics` directly.
 - **You push whole frames.** There is no damage tracking or partial redraw, on
