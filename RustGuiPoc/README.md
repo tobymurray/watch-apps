@@ -40,7 +40,7 @@ Two properties that path relies on:
   orbit. A frame-counted marker proves liveness and nothing else: timing a run by
   it would assume the frame rate it is meant to reveal.
 
-A Rust panic reaches the SDK logger through `poc_gui_host_panic` in `Gui.cpp`,
+A Rust panic reaches the SDK logger through `panickit_host_panic` in `Gui.cpp`,
 which logs the message and location and then exits the app. Without that a panic
 would hang the GUI thread silently, and the only way out would be a reboot.
 

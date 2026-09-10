@@ -3,19 +3,11 @@
 use inscribed_disc::{Abgr2222, Surface};
 use textkit::{faces, Face, Style};
 
-#[cfg(not(feature = "std"))]
-extern "C" {
-    fn barcode_gui_host_panic(msg: *const u8, len: u32);
-}
-
-#[cfg(not(feature = "std"))]
-#[panic_handler]
-fn on_panic(_info: &core::panic::PanicInfo) -> ! {
-    let s = b"panic";
-    unsafe { barcode_gui_host_panic(s.as_ptr(), s.len() as u32) };
-    loop {}
-}
-
+// PanicKit owns this app's `#[panic_handler]`. A lang item is only linked if
+// something references the crate, and nothing here calls it by name, so this
+// import is what pulls it in.
+#[cfg(feature = "device")]
+use panickit as _;
 
 // Mirrors barcode_gui_frame (barcode_gui.h) field for field -- field order
 // chosen there so every field lands on its natural alignment with zero
