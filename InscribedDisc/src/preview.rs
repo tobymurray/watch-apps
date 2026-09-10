@@ -24,6 +24,13 @@ use std::path::Path;
 
 use crate::geometry;
 
+/// `io::Error::other` in a form that predates it: it stabilised in 1.74, and
+/// `rust-version` is package-level, so this one host-only convenience would
+/// raise the floor for every embedded consumer of `geometry`.
+fn other<E: Into<Box<dyn std::error::Error + Send + Sync>>>(e: E) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, e)
+}
+
 /// Each 2-bit channel is one of these.
 const LEVELS: [u8; 4] = [0, 85, 170, 255];
 
@@ -105,12 +112,12 @@ pub fn write_png(path: impl AsRef<Path>, rgba: &[u8], w: u32, h: u32) -> io::Res
         let rgb: Vec<u8> = rgba.chunks_exact(4).flat_map(|px| [px[0], px[1], px[2]]).collect();
         enc.write_header()
             .and_then(|mut w| w.write_image_data(&rgb))
-            .map_err(io::Error::other)
+            .map_err(other)
     } else {
         enc.set_color(png::ColorType::Rgba);
         enc.write_header()
             .and_then(|mut w| w.write_image_data(rgba))
-            .map_err(io::Error::other)
+            .map_err(other)
     }
 }
 
@@ -129,11 +136,11 @@ pub fn sheet_from_frames(
     opts: Options,
 ) -> io::Result<(u32, u32)> {
     if frames.is_empty() {
-        return Err(io::Error::other("a catalogue with no scenes makes no sheet"));
+        return Err(other("a catalogue with no scenes makes no sheet"));
     }
     let need = (w as usize) * (h as usize);
     if let Some(i) = frames.iter().position(|f| f.len() != need) {
-        return Err(io::Error::other(format!(
+        return Err(other(format!(
             "frame {i} is {} bytes, not the {need} its geometry needs",
             frames[i].len()
         )));
@@ -143,7 +150,9 @@ pub fn sheet_from_frames(
     let (cw, ch) = (w * scale, h * scale);
     // One panel pixel of gutter at this scale, so cells do not touch.
     let gutter = scale;
-    let rows = (frames.len() as u32).div_ceil(columns);
+    // Not `div_ceil`, which stabilised in 1.73: see `other` above for why this
+    // crate's floor is worth a plain idiom.
+    let rows = (frames.len() as u32 + columns - 1) / columns;
     let (sw, sh) = (columns * cw + (columns + 1) * gutter, rows * ch + (rows + 1) * gutter);
 
     // The sheet's own ground is opaque: transparency between cells would make

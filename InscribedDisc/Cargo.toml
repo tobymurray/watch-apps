@@ -2,10 +2,14 @@
 name = "inscribed-disc"
 version = "0.1.0"
 edition = "2021"
-# `panic-message` was what needed 1.81, for `PanicInfo::message()`, and it has
-# left with the handler. The floor is now lower and unmeasured; it is left here
-# until it is established rather than guessed at.
-rust-version = "1.81"
+# MEASURED across five toolchains, and it is the dependency that sets this, not
+# the code: `cargo +1.70.0 build --all-features` succeeds, so nothing here needs
+# 1.71.1. It is declared because `embedded-graphics` documents 1.71.1 as its own
+# floor, and promising less than a dependency promises is not a floor at all.
+# Two host-only conveniences were given up to reach it -- `io::Error::other`
+# (1.74) and `div_ceil` (1.73) -- because `rust-version` is package-level, so a
+# `preview` nicety would have gated every embedded consumer of `geometry`.
+rust-version = "1.71.1"
 license = "MIT"
 description = "Round displays whose glass is the inscribed disc of a square framebuffer: where the glass is, and embedded-graphics draw targets that clip every pixel to it, at any colour depth."
 repository = "https://github.com/tobymurray/watch-apps/tree/main/InscribedDisc"
