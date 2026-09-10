@@ -305,6 +305,72 @@ mod tests {
         assert_eq!(buf[(110 * 240 + 100) as usize], Gray8::BLACK.to_byte());
     }
 
+    /// `bytes_mut` is documented as bypassing the clip, and §7 of the design
+    /// record calls it the one escape hatch. A test that says so is what stops
+    /// the documentation drifting into a promise it does not make: a caller
+    /// writing through it *can* light the bezel, and must apply
+    /// [`geometry::is_lit`] itself.
+    #[test]
+    fn bytes_mut_bypasses_the_clip() {
+        let n = (W * H) as usize;
+        let mut buf = vec![0u8; n];
+        {
+            let mut s = surface(&mut buf);
+            s.clear(Gray8::BLACK);
+            // The top-left corner is bezel: fill_rect refuses it.
+            s.fill_rect(0, 0, 1, 1, Gray8::WHITE);
+            assert_eq!(s.get(0, 0), Some(Gray8::BLACK.to_byte()), "fill_rect lit the bezel");
+            // The same pixel through the raw bytes is not refused.
+            s.bytes_mut()[0] = Gray8::WHITE.to_byte();
+            assert_eq!(s.get(0, 0), Some(Gray8::WHITE.to_byte()));
+        }
+        assert_eq!(buf[0], Gray8::WHITE.to_byte());
+    }
+
+    /// `bytes` is the whole buffer including the bezel, because that is what
+    /// goes to the display.
+    #[test]
+    fn bytes_is_the_whole_buffer_and_the_size_is_the_geometry() {
+        let n = (W * H) as usize;
+        let mut buf = vec![0u8; n + 8];
+        let s = surface(&mut buf);
+        assert_eq!(s.bytes().len(), n);
+        assert_eq!(s.width(), W as i32);
+        assert_eq!(s.height(), H as i32);
+        assert_eq!(s.size(), Size::new(W, H));
+        assert_eq!(s.bounding_box(), Rectangle::new(Point::zero(), Size::new(W, H)));
+    }
+
+    /// `get` answers about the buffer, not the glass: a bezel pixel is `Some`,
+    /// and only being outside the buffer is `None`.
+    #[test]
+    fn get_is_none_only_outside_the_buffer() {
+        let mut buf = vec![0u8; (W * H) as usize];
+        let s = surface(&mut buf);
+        assert!(s.get(0, 0).is_some(), "a bezel pixel is still in the buffer");
+        assert!(s.get(W as i32 - 1, H as i32 - 1).is_some());
+        for (x, y) in [(-1, 0), (0, -1), (W as i32, 0), (0, H as i32)] {
+            assert_eq!(s.get(x, y), None, "({x},{y})");
+        }
+    }
+
+    /// `is_lit` follows the clip the surface was built with, which is the only
+    /// difference between the two constructors.
+    #[test]
+    fn is_lit_follows_the_constructor() {
+        let mut buf = vec![0u8; (W * H) as usize];
+        {
+            let round = Surface::<Gray8>::round(&mut buf, W, H).unwrap();
+            assert!(!round.is_lit(0, 0));
+            assert!(round.is_lit(120, 120));
+            assert!(!round.is_lit(-1, 0));
+        }
+        let rect = Surface::<Gray8>::rect(&mut buf, W, H).unwrap();
+        assert!(rect.is_lit(0, 0));
+        assert!(!rect.is_lit(-1, 0));
+        assert!(!rect.is_lit(W as i32, 0));
+    }
+
     #[test]
     fn a_rect_surface_has_no_bezel() {
         let n = (W * H) as usize;

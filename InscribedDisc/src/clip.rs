@@ -203,6 +203,103 @@ mod tests {
         assert_eq!(differing, 0, "{differing} of {} bytes differ", via_surface.len());
     }
 
+    /// `clear` arrives through `fill_solid`, so it paints the glass and leaves
+    /// the bezel alone. That is documented on the type because it is a trap for
+    /// a caller who hands the whole buffer to a display; this is what says the
+    /// documentation is true.
+    #[test]
+    fn clear_paints_the_glass_and_leaves_the_bezel() {
+        const PRIOR: u8 = 0x7F;
+        let mut buf = vec![PRIOR; (W * H) as usize];
+        {
+            let mut p = Plain { buf: &mut buf, w: W as i32, h: H as i32 };
+            let _ = DiscClipped::new(&mut p).clear(GROUND);
+        }
+        let (mut bezel_kept, mut glass_cleared) = (0, 0);
+        for y in 0..H as i32 {
+            for x in 0..W as i32 {
+                let byte = buf[(y * W as i32 + x) as usize];
+                if geometry::is_lit(x, y, W as i32, H as i32) {
+                    glass_cleared += (byte == GROUND.luma()) as u32;
+                } else {
+                    bezel_kept += (byte == PRIOR) as u32;
+                }
+            }
+        }
+        assert_eq!(glass_cleared, 44_808, "the glass was not fully cleared");
+        assert_eq!(bezel_kept, 12_792, "clear reached behind the bezel");
+    }
+
+    /// The panel need not be square: the disc is inscribed in the shorter side,
+    /// and the wrapper and `Surface` must still agree about it.
+    #[test]
+    fn a_non_square_panel_clips_to_the_same_disc_as_the_surface() {
+        const W2: u32 = 240;
+        const H2: u32 = 160;
+        let mut via_surface = vec![0u8; (W2 * H2) as usize];
+        {
+            let mut s = Surface::<Gray8>::round(&mut via_surface, W2, H2).unwrap();
+            s.clear(GROUND);
+            let _ = Rectangle::new(Point::new(0, 0), Size::new(W2, H2))
+                .into_styled(PrimitiveStyle::with_fill(BAND))
+                .draw(&mut s);
+        }
+        let mut via_wrapper = vec![0u8; (W2 * H2) as usize];
+        {
+            let mut p = Plain { buf: &mut via_wrapper, w: W2 as i32, h: H2 as i32 };
+            p.buf.fill(GROUND.luma());
+            let _ = Rectangle::new(Point::new(0, 0), Size::new(W2, H2))
+                .into_styled(PrimitiveStyle::with_fill(BAND))
+                .draw(&mut DiscClipped::new(&mut p));
+        }
+        assert_eq!(via_surface, via_wrapper);
+        assert!(via_wrapper.iter().any(|&b| b == GROUND.luma()), "nothing was clipped");
+    }
+
+    /// The wrapper owns no buffer, so a parent that fails must fail through it
+    /// rather than be swallowed by the clip.
+    #[test]
+    fn a_failing_parent_fails_through_the_wrapper() {
+        struct Failing;
+        impl OriginDimensions for Failing {
+            fn size(&self) -> Size {
+                Size::new(W, H)
+            }
+        }
+        impl DrawTarget for Failing {
+            type Color = Gray8;
+            type Error = ();
+            fn draw_iter<I: IntoIterator<Item = Pixel<Self::Color>>>(
+                &mut self,
+                pixels: I,
+            ) -> Result<(), Self::Error> {
+                // Only a pixel that survives the clip may reach the parent, so
+                // draining the iterator is what makes this a real test.
+                if pixels.into_iter().count() > 0 { Err(()) } else { Ok(()) }
+            }
+            fn fill_solid(&mut self, _: &Rectangle, _: Self::Color) -> Result<(), Self::Error> {
+                Err(())
+            }
+        }
+
+        let mut parent = Failing;
+        let mut d = DiscClipped::new(&mut parent);
+        assert_eq!(d.fill_solid(&Rectangle::new(Point::new(100, 100), Size::new(4, 4)), BAND), Err(()));
+        assert_eq!(d.draw_iter([Pixel(Point::new(120, 120), BAND)]), Err(()));
+        // A pixel behind the bezel never reaches the parent, so it cannot fail.
+        assert_eq!(d.draw_iter([Pixel(Point::new(0, 0), BAND)]), Ok(()));
+    }
+
+    /// The wrapper reports the parent's box, not the disc's: a caller asking
+    /// where it may draw is asking about the buffer.
+    #[test]
+    fn the_bounding_box_is_the_parents() {
+        let mut buf = vec![0u8; (W * H) as usize];
+        let mut p = Plain { buf: &mut buf, w: W as i32, h: H as i32 };
+        let parent = p.bounding_box();
+        assert_eq!(DiscClipped::new(&mut p).bounding_box(), parent);
+    }
+
     /// A round GC9A01 module is `Rgb565`, which `Surface` refuses to compile
     /// against.
     #[test]
