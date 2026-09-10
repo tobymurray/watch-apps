@@ -15,10 +15,9 @@ geometry, the widgets and the preview: about 1,500 lines, with `Spin` as the one
 adopting app in this repository.
 
 `Spin`'s 43 scene frames are byte-identical after the move, which is the bar for
-an app already installed on wrists. **It has not run on a watch since**, and
-that is the next thing worth doing. **Not** done, and listed here rather than
-buried: the `Spin` adoption, the drift backports, the scaffold, and every
-number that needs a linker. See [What is not built](#what-is-not-built).
+an app already installed on wrists, and it has since recorded a session on one.
+What is still missing is listed rather than buried: see
+[What is not built](#what-is-not-built).
 
 ---
 
@@ -679,10 +678,13 @@ Listed so the gap is not something a reader has to find:
 - **`cargo semver-checks`.** Not installed here, and at 0.1.0 there is no
   published baseline for it to compare against. It belongs in CI from the first
   release, not before it.
-- **A watch.** One app in this repository adopts the kit, and it has not run on
-  hardware since. The frames are proven identical on the host and the `.uapp`
-  builds with the pinned toolchain, which is the strongest claim available
-  without one.
+- **A ride longer than 23 seconds.** `Spin 0.10.0` runs on the watch and has
+  recorded a session end to end — `start version=0.10.0`, samples, `stop
+  saved=1`, `recoveries=0 dropped=0`, and no panic — but it ceased twice as
+  `too_short`, so the lap split, the target arc filling and the confirm-discard
+  screen have not been drawn on glass. A working app is also not a
+  pixel-accurate one: the goldens say the frames match the pre-conversion build,
+  and nothing has compared glass against glass.
 - **Anything past a byte a pixel**, as above. The public claim has to be
   "low-bit-depth, one byte a pixel" until someone lifts `ByteColor`.
 - **Tier 2 beyond two widgets.** The value row and the four-button hint ring
