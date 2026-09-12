@@ -22,6 +22,7 @@
 use std::io;
 use std::path::Path;
 
+use crate::color::decode;
 use crate::geometry;
 
 /// `io::Error::other` in a form that predates it: it stabilised in 1.74, and
@@ -30,9 +31,6 @@ use crate::geometry;
 fn other<E: Into<Box<dyn std::error::Error + Send + Sync>>>(e: E) -> io::Error {
     io::Error::new(io::ErrorKind::Other, e)
 }
-
-/// Each 2-bit channel is one of these.
-const LEVELS: [u8; 4] = [0, 85, 170, 255];
 
 /// What to draw where the panel has no glass.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -60,16 +58,6 @@ impl Default for Options {
         // single pixel's shade without the file becoming unwieldy.
         Options { scale: 3, bezel: Bezel::Transparent }
     }
-}
-
-/// One `ABGR2222` byte to the RGB the panel actually shows.
-#[inline]
-pub const fn decode(byte: u8) -> [u8; 3] {
-    [
-        LEVELS[(byte & 0b11) as usize],
-        LEVELS[((byte >> 2) & 0b11) as usize],
-        LEVELS[((byte >> 4) & 0b11) as usize],
-    ]
 }
 
 /// A frame as RGBA, masked to the glass and scaled.
@@ -209,7 +197,7 @@ pub fn gamut_sheet(path: impl AsRef<Path>, cell: u32) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{color::Abgr2222, geometry, surface::Surface};
+    use crate::{color::Abgr2222, color::GREY_LEVELS, geometry, surface::Surface};
 
     const W: u32 = 240;
     const H: u32 = 240;
@@ -220,7 +208,7 @@ mod tests {
     fn decoding_only_ever_produces_colours_the_panel_has() {
         for byte in 0..=255u8 {
             for ch in decode(byte) {
-                assert!(LEVELS.contains(&ch), "byte {byte:#04x} decoded to {ch}");
+                assert!(GREY_LEVELS.contains(&ch), "byte {byte:#04x} decoded to {ch}");
             }
         }
         let distinct: std::collections::BTreeSet<[u8; 3]> = (0..=255u8).map(decode).collect();
@@ -256,7 +244,7 @@ mod tests {
         let rgba = to_rgba(&frame, W, H, Options { scale: 4, bezel: Bezel::Fill([0, 0, 0]) });
         let mut white = 0;
         for px in rgba.chunks_exact(4) {
-            assert!(LEVELS.contains(&px[0]) && LEVELS.contains(&px[1]) && LEVELS.contains(&px[2]));
+            assert!(GREY_LEVELS.contains(&px[0]) && GREY_LEVELS.contains(&px[1]) && GREY_LEVELS.contains(&px[2]));
             if px[..3] == [255, 255, 255] {
                 white += 1;
             }

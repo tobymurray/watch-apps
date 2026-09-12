@@ -1,24 +1,23 @@
 use barcode_gui::{Frame, KIND_CODE128, KIND_ITF, KIND_PROMPT, KIND_QR};
 use embedded_graphics::{pixelcolor::Rgb888, pixelcolor::RgbColor, prelude::*};
 use embedded_graphics_simulator::{OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window};
-use inscribed_disc::color::{Abgr2222, GREY_LEVELS};
+use inscribed_disc::color;
 use inscribed_disc::geometry;
+
+/// The crate decodes the panel's byte; the simulator wants its colour type.
+fn to_rgb888([r, g, b]: [u8; 3]) -> Rgb888 {
+    Rgb888::new(r, g, b)
+}
 
 const W: u32 = 240;
 const H: u32 = 240;
 const DISPLAY_SCALE: u32 = 2;
 
-fn decode(byte: u8) -> Rgb888 {
-    let c = Abgr2222(byte);
-    let level = |l: u8| GREY_LEVELS[l as usize];
-    Rgb888::new(level(c.r()), level(c.g()), level(c.b()))
-}
-
 fn blit(display: &mut SimulatorDisplay<Rgb888>, buf: &[u8]) {
     let pixels = (0..H).flat_map(move |y| {
         (0..W).map(move |x| {
             let lit = geometry::is_lit(x as i32, y as i32, W as i32, H as i32);
-            let color = if lit { decode(buf[(y * W + x) as usize]) } else { Rgb888::BLACK };
+            let color = if lit { to_rgb888(color::decode(buf[(y * W + x) as usize])) } else { Rgb888::BLACK };
             Pixel(Point::new(x as i32, y as i32), color)
         })
     });
@@ -184,7 +183,7 @@ fn dump_pngs() {
             for y in 0..H {
                 for x in 0..W {
                     let lit = geometry::is_lit(x as i32, y as i32, W as i32, H as i32);
-                    let c = if lit { decode(buf[(y * W + x) as usize]) } else { Rgb888::BLACK };
+                    let c = if lit { to_rgb888(color::decode(buf[(y * W + x) as usize])) } else { Rgb888::BLACK };
                     let i = ((y * W + x) * 3) as usize;
                     rgb[i] = c.r();
                     rgb[i + 1] = c.g();

@@ -100,6 +100,20 @@ impl From<Abgr2222> for RawU8 {
     }
 }
 
+/// One `ABGR2222` byte to the 8-bit RGB the panel actually shows.
+///
+/// Here rather than in [`preview`](crate::preview) because it is a fact about
+/// the colour, not about images: a simulator wanting it should not have to
+/// resolve a PNG encoder to get it.
+pub const fn decode(byte: u8) -> [u8; 3] {
+    let c = Abgr2222(byte);
+    [
+        GREY_LEVELS[c.r() as usize],
+        GREY_LEVELS[c.g() as usize],
+        GREY_LEVELS[c.b() as usize],
+    ]
+}
+
 /// `ink` at `level` of three over `ground`, channel by channel, rounded: what a
 /// partially covered pixel becomes.
 pub fn shade(ink: Abgr2222, ground: Abgr2222, level: u8) -> Abgr2222 {
@@ -136,6 +150,21 @@ mod tests {
         }
         assert_eq!(seen.iter().filter(|&&s| s).count(), 4);
         assert_eq!(GREY_LEVELS.len(), 4);
+    }
+
+    /// Every byte decodes to three levels the panel has, and the alpha bits
+    /// cannot leak into a channel.
+    #[test]
+    fn every_byte_decodes_to_panel_levels() {
+        for byte in 0..=255u8 {
+            for ch in decode(byte) {
+                assert!(GREY_LEVELS.contains(&ch), "byte {byte:#04x} decoded to {ch}");
+            }
+        }
+        assert_eq!(decode(Abgr2222::BLACK.0), [0, 0, 0]);
+        assert_eq!(decode(Abgr2222::WHITE.0), [255, 255, 255]);
+        // 0x00 and 0xC0 differ only in alpha, which the panel has no say over.
+        assert_eq!(decode(0x00), decode(0xC0));
     }
 
     #[test]

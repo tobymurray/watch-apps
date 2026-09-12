@@ -4,9 +4,14 @@ use embedded_graphics::{pixelcolor::Rgb888, prelude::*};
 use embedded_graphics_simulator::{
     sdl2::Keycode, OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window,
 };
-use inscribed_disc::color::{Abgr2222, GREY_LEVELS};
+use inscribed_disc::color;
 use inscribed_disc::geometry;
 use poc_gui::State;
+
+/// The crate decodes the panel's byte; the simulator wants its colour type.
+fn to_rgb888([r, g, b]: [u8; 3]) -> Rgb888 {
+    Rgb888::new(r, g, b)
+}
 
 const W: u32 = 240;
 const H: u32 = 240;
@@ -17,19 +22,13 @@ const STALE_AFTER_MS: u32 = 500;
 const TILT_STEP_G: f32 = 0.1;
 const TILT_LIMIT_G: f32 = 1.5;
 
-fn decode(byte: u8) -> Rgb888 {
-    let c = Abgr2222(byte);
-    let level = |l: u8| GREY_LEVELS[l as usize];
-    Rgb888::new(level(c.r()), level(c.g()), level(c.b()))
-}
-
 fn emulate_panel(_buf: &mut [u8]) {}
 
 fn blit(display: &mut SimulatorDisplay<Rgb888>, buf: &[u8]) {
     let pixels = (0..H).flat_map(move |y| {
         (0..W).map(move |x| {
             let color = if geometry::is_lit(x as i32, y as i32, W as i32, H as i32) {
-                decode(buf[(y * W + x) as usize])
+                to_rgb888(color::decode(buf[(y * W + x) as usize]))
             } else {
                 Rgb888::BLACK
             };

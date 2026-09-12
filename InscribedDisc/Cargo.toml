@@ -1,6 +1,6 @@
 [package]
 name = "inscribed-disc"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 # MEASURED across five toolchains, and it is the dependency that sets this, not
 # the code: `cargo +1.70.0 build --all-features` succeeds, so nothing here needs

@@ -89,7 +89,7 @@ paints 12,792 pixels the glass never shows, 22.2% of the framebuffer.
 | `geometry` | the lit-disc predicate, row chords, the largest centred square | always |
 | `clip` | `DiscClipped`, a disc clip over any `DrawTarget`, at any colour depth | `embedded-graphics`, on by default |
 | `surface` | the framebuffer, the clip, a row-fill `fill_solid` | `embedded-graphics`, on by default |
-| `color` | `Abgr2222`, its palette, and `shade` for partial coverage | `abgr2222` |
+| `color` | `Abgr2222`, its palette, `decode` to 8-bit RGB, and `shade` for partial coverage | `abgr2222` |
 | `preview` | frames to PNG in the panel's own colours, host-only | `preview` |
 
 Text is not included and neither is a font: bring your own rasteriser and hand

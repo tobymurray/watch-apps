@@ -37,12 +37,12 @@ std = []
 
 [dependencies]
 embedded-graphics = "0.8"
-inscribed-disc = { version = "0.1", path = "../InscribedDisc", default-features = false, features = [
+inscribed-disc = { version = "0.2", path = "../InscribedDisc", default-features = false, features = [
     "abgr2222",
 ], optional = true }
 
 [dev-dependencies]
-inscribed-disc = { version = "0.1", path = "../InscribedDisc", default-features = false, features = [
+inscribed-disc = { version = "0.2", path = "../InscribedDisc", default-features = false, features = [
     "abgr2222",
     "std",
 ] }
