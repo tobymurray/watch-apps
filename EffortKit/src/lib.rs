@@ -57,7 +57,7 @@ pub mod fixture;
 pub enum Provenance {
     /// A number this repository measured, and the recordings that set it.
     Measured {
-        /// Recording ids from `Squash/Docs/RECORDING-PROTOCOL.md`, e.g. `"M1,M2"`.
+        /// Recording ids, e.g. `"20260913T122111"` — the stamp a recording is named by.
         recordings: &'static str,
         /// ISO date the numbers were derived, so a stale calibration is visible.
         measured_on: &'static str,

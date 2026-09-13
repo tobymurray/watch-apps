@@ -7,9 +7,11 @@
 //! row with the same `t_ms` are the same instant, so nothing has to be
 //! correlated.
 //!
-//! Labels come from a fourth file the wearer writes, `imu_<stamp>_labels.txt`,
-//! because the watch has one marker button and cannot say what a press meant.
-//! `Squash/Docs/RECORDING-PROTOCOL.md` owns that format.
+//! Labels come from the markers themselves: each carries the state the wearer
+//! selected on the watch, and it holds until the next one that changes it. A
+//! recording made before the watch could label carries kind 0 throughout and
+//! reads back unlabelled, which is what a hand-written `imu_<stamp>_labels.txt`
+//! is for; when that file is present it wins.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,7 +26,7 @@ pub struct Marker {
     pub t_ms: u32,
     /// 1-based and gap-free, so a truncated sidecar is obvious.
     pub seq: u32,
-    /// Reserved by `ImuMarkerLog`; always 0 today.
+    /// The state the wearer selected, as `ImuMarkerLog::Kind`; 0 asserts none.
     pub kind: u8,
 }
 
@@ -43,9 +45,9 @@ pub enum Label {
     Drill,
     /// Worn but not playing — walking to court, talking, tying a shoe.
     Idle,
-    /// Named in the labels file but not one this build knows.
+    /// Named in a labels file but not one this build knows.
     Unknown,
-    /// No labels file covered this stretch. Not a state — the absence of one.
+    /// Nothing named this stretch. Not a state — the absence of one.
     Unlabelled,
 }
 
@@ -100,7 +102,8 @@ pub struct Recording {
     pub markers: Vec<Marker>,
     /// Heart rate, if a sidecar was present.
     pub hr: Vec<HrSample>,
-    /// Labelled stretches, if a labels file was present.
+    /// Labelled stretches, from the markers or from a labels file; empty when
+    /// nothing in the recording named a state.
     pub intervals: Vec<Interval>,
     /// What went wrong that did not stop the read.
     pub warnings: Vec<String>,
@@ -115,7 +118,7 @@ impl Recording {
         }
     }
 
-    /// The label covering an instant, if the labels file named one.
+    /// The label covering an instant, if anything named one.
     pub fn label_at(&self, t_ms: u32) -> Option<Label> {
         self.intervals
             .iter()
@@ -132,7 +135,7 @@ fn sidecar(path: &Path, suffix: &str) -> PathBuf {
 /// Read `imu_<stamp>.csv` and whichever of its sidecars are present.
 ///
 /// A missing sidecar is not an error — a recording taken without a strap has no
-/// heart-rate file and one taken without a protocol has no labels — but a
+/// heart-rate file and one taken without a marker log has no labels — but a
 /// malformed row is reported in [`Recording::warnings`] rather than skipped
 /// silently, since a parser that quietly drops rows makes a short recording
 /// look like a quiet one.
@@ -192,13 +195,72 @@ pub fn load(path: impl AsRef<Path>) -> std::io::Result<Recording> {
 
     let labels = sidecar(&path, "_labels.txt");
     if labels.exists() {
+        // A hand-written file wins: it is the only way to label a recording
+        // made before the watch could, and the only way to correct one.
         let (intervals, mut warnings) =
             parse_labels(&fs::read_to_string(&labels)?, &out.markers, out.duration_ms());
         out.intervals = intervals;
         out.warnings.append(&mut warnings);
+    } else {
+        out.intervals = intervals_from_markers(&out.markers, out.duration_ms());
     }
 
     Ok(out)
+}
+
+/// What a marker's `kind` column says the wearer was doing from that instant.
+///
+/// FROZEN WIRE FORMAT, shared with `ImuMarkerLog::Kind`. Kind 0 is a marker
+/// that asserts no state, which is what every recording made before the watch
+/// could label carries, so those read back as unlabelled rather than as
+/// rallies.
+fn label_from_kind(kind: u8) -> Option<Label> {
+    match kind {
+        1 => Some(Label::Rally),
+        2 => Some(Label::Rest),
+        3 => Some(Label::OffCourt),
+        4 => Some(Label::WarmUp),
+        5 => Some(Label::Drill),
+        6 => Some(Label::Idle),
+        _ => None,
+    }
+}
+
+/// Intervals from the markers alone, for a recording the watch labelled itself.
+///
+/// A label holds from its marker until the next one that carries a different
+/// state, so the wearer presses once per change rather than once per stretch.
+/// A kind-0 marker is "note this instant" and does not end the stretch it sits
+/// in: it is a bookmark, not a boundary.
+fn intervals_from_markers(markers: &[Marker], duration_ms: u32) -> Vec<Interval> {
+    let mut intervals: Vec<Interval> = Vec::new();
+    let mut start = 0u32;
+    let mut current = Label::Unlabelled;
+
+    for m in markers {
+        let Some(label) = label_from_kind(m.kind) else {
+            continue;
+        };
+        if label == current {
+            continue;
+        }
+        if m.t_ms > start {
+            intervals.push(Interval { start_ms: start, end_ms: m.t_ms, label: current });
+        }
+        start = m.t_ms;
+        current = label;
+    }
+
+    if duration_ms > start {
+        intervals.push(Interval { start_ms: start, end_ms: duration_ms, label: current });
+    }
+
+    // Nothing was ever labelled, so say so by having no intervals rather than
+    // by having one that covers everything with the absence of a label.
+    if intervals.iter().all(|i| i.label == Label::Unlabelled) {
+        return Vec::new();
+    }
+    intervals
 }
 
 fn parse_sample(line: &str) -> Option<(u32, ImuSample)> {
@@ -354,6 +416,69 @@ mod tests {
         let (iv, w) = parse_labels("wibble\n", &[], 1000);
         assert_eq!(iv[0].label, Label::Unknown);
         assert_eq!(w.len(), 1);
+    }
+
+    #[test]
+    fn the_watch_s_own_markers_label_a_recording_with_no_labels_file() {
+        // rally at 0, rest at 2 s, rally again at 5 s.
+        let markers = [
+            Marker { t_ms: 0, seq: 1, kind: 1 },
+            Marker { t_ms: 2000, seq: 2, kind: 2 },
+            Marker { t_ms: 5000, seq: 3, kind: 1 },
+        ];
+        let iv = intervals_from_markers(&markers, 7000);
+        let got: Vec<(u32, u32, Label)> =
+            iv.iter().map(|i| (i.start_ms, i.end_ms, i.label)).collect();
+        assert_eq!(
+            got,
+            vec![
+                (0, 2000, Label::Rally),
+                (2000, 5000, Label::Rest),
+                (5000, 7000, Label::Rally),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_plain_marker_is_a_bookmark_and_does_not_end_the_stretch_it_sits_in() {
+        let markers = [
+            Marker { t_ms: 0, seq: 1, kind: 1 },
+            Marker { t_ms: 1000, seq: 2, kind: 0 },
+            Marker { t_ms: 3000, seq: 3, kind: 2 },
+        ];
+        let iv = intervals_from_markers(&markers, 4000);
+        assert_eq!(iv.len(), 2);
+        assert_eq!(iv[0], Interval { start_ms: 0, end_ms: 3000, label: Label::Rally });
+        assert_eq!(iv[1], Interval { start_ms: 3000, end_ms: 4000, label: Label::Rest });
+    }
+
+    #[test]
+    fn a_stretch_before_the_first_label_is_unlabelled_rather_than_guessed() {
+        let markers = [Marker { t_ms: 2000, seq: 1, kind: 5 }];
+        let iv = intervals_from_markers(&markers, 4000);
+        assert_eq!(iv[0], Interval { start_ms: 0, end_ms: 2000, label: Label::Unlabelled });
+        assert_eq!(iv[1], Interval { start_ms: 2000, end_ms: 4000, label: Label::Drill });
+    }
+
+    #[test]
+    fn recordings_made_before_the_watch_could_label_stay_unlabelled() {
+        // Every marker in Tests/pulled carries kind 0.
+        let markers = [
+            Marker { t_ms: 266240, seq: 1, kind: 0 },
+            Marker { t_ms: 830979, seq: 2, kind: 0 },
+        ];
+        assert!(intervals_from_markers(&markers, 1_800_000).is_empty());
+        assert!(intervals_from_markers(&[], 1_800_000).is_empty());
+    }
+
+    #[test]
+    fn holding_a_label_across_a_repeat_press_does_not_split_the_stretch() {
+        let markers = [
+            Marker { t_ms: 0, seq: 1, kind: 1 },
+            Marker { t_ms: 1000, seq: 2, kind: 1 },
+        ];
+        let iv = intervals_from_markers(&markers, 2000);
+        assert_eq!(iv, vec![Interval { start_ms: 0, end_ms: 2000, label: Label::Rally }]);
     }
 
     #[test]

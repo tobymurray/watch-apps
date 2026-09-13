@@ -77,8 +77,8 @@ fn main() -> ExitCode {
         say!("No recordings given, and there are none in this repository.\n");
         say!(
             "Nothing in Phase A can be answered without them, so no threshold can be set and\n\
-             nothing can be displayed. `Squash/Docs/RECORDING-PROTOCOL.md` says which recordings\n\
-             are needed and what each one settles."
+             nothing can be displayed. `Squash/README.md` says how to record one and what\n\
+             each kind of session settles."
         );
         return ExitCode::FAILURE;
     }
