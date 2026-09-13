@@ -2,7 +2,7 @@
 #
 # Split into three executables because they need very different things:
 #
-#   * ImuCsvRecorder and ImuMarkerLog are plain C++ over a caller-supplied sink
+#   * ImuCsvRecorder, ImuMarkerLog and HrCsvLog are plain C++ over a caller-supplied sink
 #     — no SDK headers at all — so their tests build against nothing but
 #     GoogleTest.
 #   * ImuFileSink writes through SDK::Kernel, and its test asserts the round
@@ -58,6 +58,15 @@ add_executable(squash-marker-tests
 target_include_directories(squash-marker-tests PRIVATE "${APP_LIBS}/Header")
 target_link_libraries(squash-marker-tests PRIVATE GTest::gtest_main)
 add_test(NAME squash-marker-tests COMMAND squash-marker-tests)
+
+add_executable(squash-hrlog-tests
+    HrCsvLog_test.cpp
+    "${APP_LIBS}/Sources/HrCsvLog.cpp"
+)
+
+target_include_directories(squash-hrlog-tests PRIVATE "${APP_LIBS}/Header")
+target_link_libraries(squash-hrlog-tests PRIVATE GTest::gtest_main)
+add_test(NAME squash-hrlog-tests COMMAND squash-hrlog-tests)
 
 set(IMU_FUSION_SOURCE
     "${UNA_SDK_ROOT}/Libs/Source/Simulator/Components/Sensors/Imu/ImuFusionSource.cpp"

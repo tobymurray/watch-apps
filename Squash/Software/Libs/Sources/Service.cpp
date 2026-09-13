@@ -29,6 +29,7 @@ Service::Service(SDK::Kernel &kernel)
         , mGuiSender(kernel)
         , mImuSink(mKernel, "Imu")
         , mMarkerSink(mKernel, "Imu", "_events")
+        , mHrSink(mKernel, "Imu", "_hr")
         , mSensorHr(SDK::Sensor::Type::HEART_RATE_EX, skSamplePeriod, skSampleLatency)
         , mSensorWristMotion(SDK::Sensor::Type::WRIST_MOTION)
         , mSensorFusion(SDK::Sensor::Type::FUSION_RAW, 1000.0f / skFusionSampleRateHz, 100)
@@ -215,9 +216,27 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
     if (mSensorHr.matchesDriver(handle)) {
         SDK::SensorDataParser::HeartRateEx parser(data[0]);
         if (parser.isDataValid()) {
-            mHrBpm    = parser.getBpm();
-            mHrTrust  = static_cast<uint8_t>(parser.getTrustLevel());
-            mHrSource = static_cast<uint8_t>(parser.getSource());
+            mHrBpm      = parser.getBpm();
+            mHrOptical  = parser.getOpticalBpm();
+            mHrExternal = parser.getExternalBpm();
+            mHrTrust    = static_cast<uint8_t>(parser.getTrustLevel());
+            mHrSource   = static_cast<uint8_t>(parser.getSource());
+
+            if (mHrLog.isRecording()) {
+                HrCsvLog::Sample hr{};
+                hr.bpm         = mHrBpm;
+                hr.opticalBpm  = mHrOptical;
+                hr.externalBpm = mHrExternal;
+                hr.trust       = mHrTrust;
+                hr.source      = static_cast<HrCsvLog::Source>(mHrSource);
+                // The IMU tick, so the three files share one origin and a
+                // labelled transition lines up with the readings around it.
+                if (!mHrLog.onSample(mLastImuTs, hr)) {
+                    LOG_INFO("Heart-rate log ended: reason %u, %u samples\n",
+                             static_cast<unsigned>(mHrLog.stopReason()),
+                             static_cast<unsigned>(mHrLog.sampleCount()));
+                }
+            }
         }
     } else if (mSensorWristMotion.matchesDriver(handle)) {
         SDK::SensorDataParser::WristMotion parser(data[0]);
@@ -275,6 +294,9 @@ void Service::onFusionSample(uint32_t ts, int16_t ax, int16_t ay, int16_t az,
         // with the same t_ms are the same instant.
         if (mMarkerSink.isOpen() && !mMarkerLog.begin(mMarkerSink, ts)) {
             LOG_ERROR("Failed to start the marker log\n");
+        }
+        if (mHrSink.isOpen() && !mHrLog.begin(mHrSink, ts)) {
+            LOG_ERROR("Failed to start the heart-rate log\n");
         }
         // Whatever the wearer had selected before starting is true from the
         // first sample, so it is written rather than inferred from its absence.
@@ -347,11 +369,17 @@ void Service::startSession(std::time_t utc)
         mImuArmed = mImuSink.create(utc);
         if (!mImuArmed) {
             LOG_ERROR("Failed to open the research recording\n");
-        } else if (!mMarkerSink.create(utc)) {
-            // The samples are the recording; markers are labels on it. Losing
-            // the labels is worse than it was, now that they are the point, but
-            // it is still not a reason to refuse to record.
-            LOG_ERROR("Research recording started without a marker log\n");
+        } else {
+            // The samples are the recording; the sidecars are what is known
+            // about it. Losing one is bad -- the labels are the point, and the
+            // heart rate has nowhere else to go now there is no .fit -- but
+            // neither is a reason to refuse to record.
+            if (!mMarkerSink.create(utc)) {
+                LOG_ERROR("Research recording started without a marker log\n");
+            }
+            if (!mHrSink.create(utc)) {
+                LOG_ERROR("Research recording started without a heart-rate log\n");
+            }
         }
     }
 
@@ -374,18 +402,22 @@ void Service::stopSession(bool discard)
         const uint32_t samples = mImuRecorder.sampleCount();
         const uint32_t bytes   = mImuRecorder.bytesWritten();
         const uint16_t markers = mMarkerLog.markerCount();
+        const uint16_t beats   = mHrLog.sampleCount();
         mImuSink.close();
         mImuArmed = false;
         mMarkerLog.end();
         mMarkerSink.close();
+        mHrLog.end();
+        mHrSink.close();
 
-        LOG_INFO("Recording %s: intact=%u stop=%u samples=%lu bytes=%lu markers=%u\n",
+        LOG_INFO("Recording %s: intact=%u stop=%u samples=%lu bytes=%lu markers=%u beats=%u\n",
                  discard ? "kept on discard" : "saved",
                  static_cast<unsigned>(intact),
                  static_cast<unsigned>(mImuRecorder.stopReason()),
                  static_cast<unsigned long>(samples),
                  static_cast<unsigned long>(bytes),
-                 static_cast<unsigned>(markers));
+                 static_cast<unsigned>(markers),
+                 static_cast<unsigned>(beats));
     }
 
     mState = Session::State::INACTIVE;

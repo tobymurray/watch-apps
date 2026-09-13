@@ -13,6 +13,7 @@
 #include "ImuCsvRecorder.hpp"
 #include "ImuFileSink.hpp"
 #include "ImuMarkerLog.hpp"
+#include "HrCsvLog.hpp"
 #include "AppConfigFields.hpp"
 
 #include <memory>
@@ -72,9 +73,23 @@ private:
     // sensor tick as the sample recorder and stamped from the last sample seen.
     ImuFileSink  mMarkerSink;
     ImuMarkerLog mMarkerLog;
+
+    // The heart rate that went with the recording, on the recording's clock.
+    // Nothing else keeps it now: there is no .fit any more, so a reading that
+    // does not reach this file is gone.
+    ImuFileSink  mHrSink;
+    HrCsvLog     mHrLog;
     /// Sensor tick of the most recent IMU sample, which is the only clock a
     /// marker can be placed on: a key event carries no sensor timestamp, and
-    /// the two clocks are unrelated. At 100 Hz this is at most 10 ms stale.
+    /// the two clocks are unrelated.
+    ///
+    /// Stale by up to one batch, not one sample. The fusion connection asks for
+    /// a 100 ms latency, so samples arrive ~10 at a time and a press between
+    /// batches inherits the last one's tick. Two presses inside one gap get the
+    /// same t_ms: the 2026-09-13 shakedown recording has exactly that at
+    /// 20082 ms, seq 3 and 4. Harmless downstream — a label held for no time is
+    /// collapsed when the file is read — but it is why a marker is not evidence
+    /// of an instant finer than the batch.
     uint32_t     mLastImuTs = 0;
 
     /// The most recently completed epoch, from the Rust accumulator.
@@ -96,9 +111,11 @@ private:
     Session::Label mLabel     = Session::Label::NONE;
     uint32_t       mLabelS    = 0;   ///< seconds held in mLabel
 
-    float   mHrBpm    = 0.0f;
-    uint8_t mHrTrust  = 0;
-    uint8_t mHrSource = 0;
+    float   mHrBpm      = 0.0f;
+    float   mHrOptical  = 0.0f;
+    float   mHrExternal = 0.0f;
+    uint8_t mHrTrust    = 0;
+    uint8_t mHrSource   = 0;
 
     // -- Wrist tilt -----------------------------------------------------------
 
