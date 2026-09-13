@@ -39,6 +39,8 @@ constexpr char kConfigFile[] = "input.json";
 /// which is also the order the phone renders the form in.
 enum Index : size_t {
     kRecordImu = 0,
+    kMaxMinutes,
+    kMaxMegabytes,
     kIndexCount,
 };
 

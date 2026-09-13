@@ -26,8 +26,26 @@
       "id": "recordImu",
       "type": "bool",
       "label": "Record raw IMU",
-      "description": "Stream the wrist sensor's raw 100 Hz motion to a CSV file beside the activity, for research. It fills flash fast and stops itself at 8 MB or 30 minutes, whichever comes first.",
+      "description": "Stream the wrist sensor's raw 100 Hz motion to a CSV file, for research. It fills flash fast and stops itself at the caps below, whichever comes first.",
       "default": false
+    },
+    {
+      "id": "maxMinutes",
+      "type": "int",
+      "label": "Stop after (minutes)",
+      "description": "How long one recording may run. A 70-minute match needs more than 70; the default leaves room for a long one.",
+      "default": 90,
+      "min": 1,
+      "max": 240
+    },
+    {
+      "id": "maxMegabytes",
+      "type": "int",
+      "label": "Stop after (MB)",
+      "description": "How large one recording may grow. Motion costs about 4.3 KB a second, so 90 minutes is roughly 22 MB.",
+      "default": 32,
+      "min": 1,
+      "max": 256
     }
   ]
 }

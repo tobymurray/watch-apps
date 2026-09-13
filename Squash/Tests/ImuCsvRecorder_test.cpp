@@ -326,10 +326,46 @@ TEST(ImuCsvRecorder, RowWidthMatchesTheDocumentedSizeBudget)
     EXPECT_GT(bytesPerRow, 20.0);
     EXPECT_LT(bytesPerRow, static_cast<double>(ImuCsvRecorder::skMaxRowBytes));
 
-    // 30 min at 100 Hz must fit the default size cap -- the property the cap
-    // was chosen for.
-    const double thirtyMinBytes = bytesPerRow * 100.0 * 60.0 * 30.0;
-    EXPECT_LT(thirtyMinBytes, static_cast<double>(ImuCsvRecorder::skDefaultMaxBytes))
-        << "30 min at 100 Hz (" << thirtyMinBytes / 1e6
+    // The two caps must be matched: a full duration cap's worth of samples has
+    // to fit the size cap, or the size cap is the one that stops a recording
+    // and the duration the wearer was given is a fiction. This is the property
+    // the pair was chosen for, so it is asserted against both rather than
+    // against a horizon written out here.
+    const double capSeconds  = ImuCsvRecorder::skDefaultMaxDurationMs / 1000.0;
+    const double fullRunBytes = bytesPerRow * 100.0 * capSeconds;
+    EXPECT_LT(fullRunBytes, static_cast<double>(ImuCsvRecorder::skDefaultMaxBytes))
+        << capSeconds / 60.0 << " min at 100 Hz (" << fullRunBytes / 1e6
         << " MB) no longer fits skDefaultMaxBytes";
+}
+
+// The screen shows recorded seconds against the cap, and a session outliving
+// its recording is the case that cost 40 minutes of a real match, so the span
+// the file covers is a number the recorder has to report rather than one the
+// caller estimates from its own clock.
+TEST(ImuCsvRecorder, RecordedMsIsTheSpanTheFileCoversAndStopsWhenTheRunDoes)
+{
+    MemorySink     sink;
+    ImuCsvRecorder rec;
+
+    ImuCsvRecorder::Limits limits;
+    limits.maxBytes      = 10u * 1024u * 1024u;  // not the binding cap here
+    limits.maxDurationMs = 1000;
+
+    ASSERT_TRUE(rec.begin(sink, 5000, limits));
+    EXPECT_EQ(rec.recordedMs(), 0u);
+
+    ASSERT_TRUE(rec.onSample(5000, sample(1)));
+    EXPECT_EQ(rec.recordedMs(), 0u);
+
+    ASSERT_TRUE(rec.onSample(5400, sample(2)));
+    EXPECT_EQ(rec.recordedMs(), 400u);
+
+    // The sample that trips the cap is refused, so it is not part of the span.
+    EXPECT_FALSE(rec.onSample(6000, sample(3)));
+    EXPECT_EQ(rec.stopReason(), ImuCsvRecorder::Stop::DURATION_LIMIT);
+    EXPECT_EQ(rec.recordedMs(), 400u);
+
+    // And it stays put while the session that owns it keeps running.
+    EXPECT_FALSE(rec.onSample(9000, sample(4)));
+    EXPECT_EQ(rec.recordedMs(), 400u);
 }

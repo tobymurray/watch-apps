@@ -99,22 +99,29 @@ public:
     /// 500 KB budget.
     static constexpr size_t skBufferBytes = 1024;
 
-    /// Default size cap.
+    /// Default size cap, matched to the duration cap below.
     ///
     /// MEASURED, not assumed: a row averages ~44 bytes and is at most 53, so
-    /// 100 Hz costs ~4.3 KiB/s and 30 minutes of recording is ~7.9 MB — not the
-    /// ~2.9 MB a 16 B/row estimate would suggest. 8 MB therefore buys just over
-    /// 30 minutes.
+    /// 100 Hz costs ~4.3 KiB/s — not the ~2.9 MB/30 min a 16 B/row estimate
+    /// would suggest. The 2026-09-13 recording is the number to re-derive it
+    /// from: 179,158 samples in 6,650,901 bytes is 37.1 B/row including the
+    /// timestamp, so 90 minutes is ~22 MB and 32 MiB leaves room for a session
+    /// whose rows run wider than that one's.
     ///
-    /// TODO: this is a self-defence limit, not a device-aware one. The SDK file
-    /// system interface exposes no free-space query, so the recorder cannot size
-    /// itself to the sandbox. Confirm the activity partition's free space on
-    /// real hardware and either lower this default or add a free-space API.
-    static constexpr uint32_t skDefaultMaxBytes = 8u * 1024u * 1024u;
+    /// Still a self-defence limit rather than a device-aware one: the SDK file
+    /// system interface exposes no free-space query, so the recorder cannot
+    /// size itself to the sandbox. The watch had 1.6 GB free on 2026-09-13, so
+    /// the partition is not what either cap is protecting.
+    static constexpr uint32_t skDefaultMaxBytes = 32u * 1024u * 1024u;
 
-    /// Default duration cap: 30 minutes, about one squash match's worth of
-    /// play, and the horizon the size cap is matched to.
-    static constexpr uint32_t skDefaultMaxDurationMs = 30u * 60u * 1000u;
+    /// Default duration cap: 90 minutes.
+    ///
+    /// 30 minutes was set on the belief that it was "about one squash match's
+    /// worth of play". The 2026-09-13 session ran 4,233 s — 70.5 minutes — and
+    /// stopped on this cap with 40 minutes of the match unrecorded, so the
+    /// belief was wrong by more than a factor of two. Falsified again by a
+    /// session that reaches 90.
+    static constexpr uint32_t skDefaultMaxDurationMs = 90u * 60u * 1000u;
 
     ImuCsvRecorder() = default;
 
@@ -171,6 +178,13 @@ public:
     uint32_t bytesWritten() const { return mBytesWritten; }
     /// Samples actually written as rows.
     uint32_t sampleCount() const { return mSampleCount; }
+    /// Milliseconds from the first written row to the most recent one.
+    ///
+    /// The span the file actually covers, which is what the duration cap is
+    /// read against. It stops advancing when the recorder does, so it is also
+    /// what tells a session that outlived its recording apart from one that
+    /// did not.
+    uint32_t recordedMs() const { return mLastMs - mStartMs; }
 
 private:
     /// Header row, without which a file is ambiguous about column order.
@@ -194,6 +208,7 @@ private:
     bool     mRecording    = false;
     Stop     mStop         = Stop::NONE;
     uint32_t mStartMs      = 0;
+    uint32_t mLastMs       = 0;
     uint32_t mBytesWritten = 0;
     uint32_t mSampleCount  = 0;
     size_t   mBufLen       = 0;

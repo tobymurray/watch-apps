@@ -80,6 +80,7 @@ bool ImuCsvRecorder::begin(ISink& sink, uint32_t nowMs, const Limits& limits)
     mSink         = &sink;
     mLimits       = limits;
     mStartMs      = nowMs;
+    mLastMs       = nowMs;
     mBytesWritten = 0;
     mSampleCount  = 0;
     mBufLen       = 0;
@@ -137,6 +138,7 @@ bool ImuCsvRecorder::onSample(uint32_t nowMs, const Sample& sample)
         len += formatInt(field, &row[len]);
     }
     row[len++] = '\n';
+    mLastMs = nowMs;
 
     if (!stage(row, len)) {
         finish(Stop::SINK_ERROR);
