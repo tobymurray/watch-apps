@@ -2,7 +2,7 @@
 //!
 //! Median and median absolute deviation over a rolling window, not mean and
 //! standard deviation: one two-hour session of threes, one twenty-minute
-//! knock-up, or one session where the strap fell off must not redefine normal.
+//! warm-up, or one session where the strap fell off must not redefine normal.
 //! Every comparison this produces is against the wearer's own past and nothing
 //! else.
 

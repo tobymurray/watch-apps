@@ -37,8 +37,8 @@ pub enum Label {
     Rest,
     /// Off court entirely.
     OffCourt,
-    /// The knock-up, which is neither.
-    KnockUp,
+    /// The warm-up, which is neither.
+    WarmUp,
     /// Continuous hitting with no rests.
     Drill,
     /// Worn but not playing — walking to court, talking, tying a shoe.
@@ -56,7 +56,7 @@ impl Label {
             "rally" => Label::Rally,
             "rest" => Label::Rest,
             "off_court" | "offcourt" => Label::OffCourt,
-            "knockup" | "knock_up" => Label::KnockUp,
+            "warmup" | "warm_up" => Label::WarmUp,
             "drill" => Label::Drill,
             "idle" => Label::Idle,
             _ => Label::Unknown,
@@ -69,7 +69,7 @@ impl Label {
             Label::Rally => "rally",
             Label::Rest => "rest",
             Label::OffCourt => "off_court",
-            Label::KnockUp => "knockup",
+            Label::WarmUp => "warmup",
             Label::Drill => "drill",
             Label::Idle => "idle",
             Label::Unknown => "unknown",
@@ -332,10 +332,10 @@ mod tests {
     #[test]
     fn labels_fill_the_stretches_between_markers() {
         let markers = [Marker { t_ms: 1000, seq: 1, kind: 0 }, Marker { t_ms: 2000, seq: 2, kind: 0 }];
-        let (iv, w) = parse_labels("knockup\nrally\nrest\n", &markers, 3000);
+        let (iv, w) = parse_labels("warmup\nrally\nrest\n", &markers, 3000);
         assert!(w.is_empty());
         assert_eq!(iv.len(), 3);
-        assert_eq!(iv[0], Interval { start_ms: 0, end_ms: 1000, label: Label::KnockUp });
+        assert_eq!(iv[0], Interval { start_ms: 0, end_ms: 1000, label: Label::WarmUp });
         assert_eq!(iv[2], Interval { start_ms: 2000, end_ms: 3000, label: Label::Rest });
     }
 
@@ -343,10 +343,10 @@ mod tests {
     fn alternate_fills_the_rest_of_a_match() {
         let markers: Vec<Marker> =
             (1..=4).map(|i| Marker { t_ms: i * 1000, seq: i, kind: 0 }).collect();
-        let (iv, w) = parse_labels("knockup\nalternate rally rest\n", &markers, 5000);
+        let (iv, w) = parse_labels("warmup\nalternate rally rest\n", &markers, 5000);
         assert!(w.is_empty(), "{w:?}");
         let got: Vec<Label> = iv.iter().map(|i| i.label).collect();
-        assert_eq!(got, vec![Label::KnockUp, Label::Rally, Label::Rest, Label::Rally, Label::Rest]);
+        assert_eq!(got, vec![Label::WarmUp, Label::Rally, Label::Rest, Label::Rally, Label::Rest]);
     }
 
     #[test]

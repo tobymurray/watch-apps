@@ -152,7 +152,7 @@ const fn kind_index(code: u8) -> Option<usize> {
 
 /// Shortest session that may contribute to a baseline.
 ///
-/// Ten minutes excludes a knock-up and an activity started and abandoned, both
+/// Ten minutes excludes a warm-up and an activity started and abandoned, both
 /// of which are sessions the wearer had but not sessions that say what their
 /// normal is.
 pub const MIN_ACTIVE_S_TO_VOTE: u32 = 600;

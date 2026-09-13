@@ -256,7 +256,7 @@ for recovery.
 ## Baselines that survive real sessions
 
 Median and MAD over a rolling window of 20 sessions, not mean and standard
-deviation. One two-hour session, one twenty-minute knock-up, or one session where
+deviation. One two-hour session, one twenty-minute warm-up, or one session where
 the strap fell off must not redefine what normal looks like.
 
 - **Twenty sessions** is roughly two months at one to three a week.
