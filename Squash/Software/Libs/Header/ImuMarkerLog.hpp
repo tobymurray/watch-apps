@@ -49,13 +49,15 @@
  * @c seq is 1-based and gap-free, so a truncated file is obvious and the first
  * and last markers are identifiable without scanning for the file's extent.
  *
- * @c kind is reserved. Today the watch has one marker button and emits only
- * @c Kind::MANUAL; the semantics of a given press (start bookend, void the last
- * rep, end bookend) come from the session protocol, not the device, and the
- * usual convention is that the first and last markers of a file are its
- * bookends and everything between voids the rep before it. The column exists so
- * that a future build with more than one marker gesture does not have to change
- * the format.
+ * @c kind is what the wearer said they were doing from that instant on. The
+ * watch carries a label picker, so the semantics of a press come from the
+ * device rather than from a protocol written down elsewhere, and a recording
+ * arrives already annotated: no separate labels file has to be reconstructed
+ * from memory afterwards. @c Kind::MANUAL asserts no state and is what the
+ * plain marker button writes.
+ *
+ * Reading one back: a marker holds until the next one, so N markers delimit
+ * N+1 stretches and the first runs from the start of the recording.
  */
 class ImuMarkerLog {
 public:
@@ -63,9 +65,21 @@ public:
     /// another thing that needs bytes put somewhere.
     using ISink = ImuCsvRecorder::ISink;
 
-    /// What a marker meant. Reserved for future use — see the class docs.
+    /// What a marker meant.
+    ///
+    /// FROZEN WIRE FORMAT: these are the `kind` column, and a recording is read
+    /// back by mapping the number onto `effortkit::fixture::Label`. MANUAL
+    /// stayed 0, so every recording made before on-watch labelling reads back
+    /// as unlabelled markers rather than as rallies. A wrong number here is
+    /// silent and permanent.
     enum class Kind : uint8_t {
-        MANUAL = 0, ///< A press of the watch's marker button.
+        MANUAL = 0, ///< "Note this instant", with no state asserted.
+        RALLY,
+        REST,
+        OFF_COURT,
+        WARMUP,
+        DRILL,
+        IDLE,
     };
 
     /// Why the log is no longer accepting markers.
