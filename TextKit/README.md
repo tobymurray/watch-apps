@@ -138,6 +138,7 @@ not changed:
 | `SEMIBOLD_36_CLOCK` | 12 | 1,395 |
 | `SEMIBOLD_49_CLOCK` | 12 | 2,454 |
 | `SEMIBOLD_60_CLOCK` | 12 | 3,598 |
+| `SEMIBOLD_28_STATES` (`ABCDEFILMNOPRSTUWY`) | 19 | 1,668 |
 
 Per-app before and after rows are in each app's README under Footprint.
 
@@ -156,7 +157,7 @@ Regenerating the atlases needs the pinned tools:
 python3 -m venv .venv && .venv/bin/pip install -r Tools/requirements.txt
 .venv/bin/python Tools/atlas.py            # rewrites src/faces.rs and src/compose.rs
 .venv/bin/python Tools/atlas.py --check    # what CI should run: fails if either is stale
-.venv/bin/python Tools/touchgfx_oracle.py  # refreshes tests/oracle/touchgfx.rs from Squash
+.venv/bin/python Tools/touchgfx_oracle.py  # refreshes tests/oracle/touchgfx.rs from BikeMap
 ```
 
 The toolchain image carries the same pins, and `app-build.yml` runs
