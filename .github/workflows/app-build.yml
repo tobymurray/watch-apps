@@ -391,7 +391,7 @@ jobs:
       # if a face in faces.json changed without the output following. The
       # image carries the pinned freetype-py, fonttools and numpy the tool
       # needs (toolchain/Dockerfile). The crate's own tests hold every atlas
-      # glyph to the TouchGFX-generated tables in Squash, which is the parity
+      # glyph to TouchGFX-generated tables checked into this repo, which is the parity
       # claim this repository makes about them.
       - name: TextKit atlases are current and match TouchGFX
         if: steps.app.outputs.textkit == 'yes'

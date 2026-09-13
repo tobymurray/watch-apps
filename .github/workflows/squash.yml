@@ -14,17 +14,27 @@ on:
     branches: [main]
     paths:
       - 'Squash/**'
-      # The segmenter and the recovery detector come from the shared crate; a
-      # change there is a change to this app's binary.
+      # Everything the two archives link. The epoch features the screen draws
+      # and the analyser prints come from EffortKit; the renderer's text,
+      # surface and panic handler from the other three. A change in any of them
+      # is a change to this app's binary.
       - 'EffortKit/**'
+      - 'TextKit/**'
+      - 'InscribedDisc/**'
+      - 'PanicKit/**'
       - '.github/workflows/squash.yml'
       - '.github/workflows/app-build.yml'
   pull_request:
     paths:
       - 'Squash/**'
-      # The segmenter and the recovery detector come from the shared crate; a
-      # change there is a change to this app's binary.
+      # Everything the two archives link. The epoch features the screen draws
+      # and the analyser prints come from EffortKit; the renderer's text,
+      # surface and panic handler from the other three. A change in any of them
+      # is a change to this app's binary.
       - 'EffortKit/**'
+      - 'TextKit/**'
+      - 'InscribedDisc/**'
+      - 'PanicKit/**'
       - '.github/workflows/squash.yml'
       - '.github/workflows/app-build.yml'
   workflow_dispatch:
