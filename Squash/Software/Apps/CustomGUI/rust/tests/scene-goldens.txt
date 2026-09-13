@@ -1,0 +1,27 @@
+# Byte hash of every scene in scenes.rs, FNV-1a over the 240x240 frame.
+# Regenerate with: cargo run --features std --example goldens > tests/scene-goldens.txt
+# A changed hash means a changed screen: look at it before accepting it.
+22ad300a  ready_armed
+35035748  ready_not_armed
+a362a4a5  profile_rest_quiet
+abe7128d  profile_rally_median
+516526d6  profile_rally_hard
+f261295f  profile_saturating
+31a9d586  profile_strap
+125a4399  profile_hr_untrusted
+892895ce  profile_no_hr
+ba68a64e  profile_no_label
+68cb67b1  profile_off_court
+f0a7f812  profile_idle
+c78bfb5b  profile_near_cap
+dea33ed8  profile_cap_reached
+74dbac99  profile_write_failed
+989b9a7e  profile_long
+ef31674f  paused
+36e99bde  label_rally
+ba64f44a  label_off_court
+fb66bd44  label_idle
+66cf4184  saved
+f2f37f02  saved_capped
+37225d96  saved_failed
+410b7dce  discarded

@@ -1,24 +1,13 @@
-
 #include "Service.hpp"
 
 #include <ctime>
-#include <cmath>
-#include <memory>
-#include <cstring>
 
-#include "Settings.hpp"
-#include "ActivitySummary.hpp"
-#include "Track.hpp"
-#include "SDK/Tools/FirmwareVersion.hpp"
 #include "SDK/Messages/SensorLayerMessages.hpp"
 #include "SDK/Messages/AccessoryMessages.hpp"
 #include "SDK/Messages/MessageGuard.hpp"
-#include "SDK/Utils/Utils.hpp"
 #include "SDK/Timer/Timer.hpp"
 
 #include "SDK/SensorLayer/DataParsers/SensorDataParserHeartRateEx.hpp"
-#include "SDK/SensorLayer/DataParsers/SensorDataParserBatteryLevel.hpp"
-#include "SDK/SensorLayer/DataParsers/SensorDataParserBatteryMetrics.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserWristMotion.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserFusionRaw.hpp"
 
@@ -26,76 +15,58 @@
 #define LOG_MODULE_LEVEL    LOG_LEVEL_INFO
 #include "SDK/UnaLogger/Logger.h"
 
-namespace {
-constexpr std::time_t kOneSecond = 1;
-
-} // namespace
+/// Called by the Rust crate's panic handler. Without it a panic would stop the
+/// Service silently and the recording would be lost with no reason on disk.
+extern "C" void squash_engine_host_panic(const uint8_t *msg, uint32_t len)
+{
+    LOG_ERROR("engine panic: %.*s\n", static_cast<int>(len),
+              reinterpret_cast<const char *>(msg));
+}
 
 Service::Service(SDK::Kernel &kernel)
         : mKernel(kernel)
         , mGuiStarted(false)
         , mGuiSender(kernel)
-        , mSettings{}
-        , mSettingsSerializer(mKernel, "settings.json")
-        , mSummary{}
-        , mActivitySummarySerializer(mKernel, "Activity/summary.json")
-        , mActivityWriter(mKernel, "Activity")
         , mImuSink(mKernel, "Imu")
         , mMarkerSink(mKernel, "Imu", "_events")
         , mSensorHr(SDK::Sensor::Type::HEART_RATE_EX, skSamplePeriod, skSampleLatency)
-        , mSensorBatteryLevel(SDK::Sensor::Type::BATTERY_LEVEL)
-        , mSensorBatteryMetrics(SDK::Sensor::Type::BATTERY_METRICS, skSamplePeriod, skSampleLatency)
         , mSensorWristMotion(SDK::Sensor::Type::WRIST_MOTION)
         , mSensorFusion(SDK::Sensor::Type::FUSION_RAW, 1000.0f / skFusionSampleRateHz, 100)
         , mTimeTracker(kernel.sys)
-        , mBatterySoc(kernel.sys)
-        , mBatteryVoltage(kernel.sys)
         , mWristTiltDetector()
-
 {
-    mTimeCounter.init();
-    mDistanceCounter.init();
-    mSpeedCounter.init(0.5f, 300.0f);
-    mHrCounter.init(20.0f, 300.0f);
-
     WristTiltDetector::Config config{};
     config.sampleRateHz = skFusionSampleRateHz;
     mWristTiltDetector.setConfig(config);
-
     mWristTiltDetector.setListener(this);
-    mHrThresholds.fill(0);
 }
 
 Service::~Service()
 {
-    disconnect();   // Cleanup resources
+    disconnect();
 }
 
 void Service::run()
 {
     LOG_INFO("Started\n");
 
-    // Initialize time
+    // A layout disagreement between this binary and the Rust archive would
+    // corrupt every feature silently, so it is a refusal rather than a warning.
+    const uint32_t theirs = squash_engine_abi_fingerprint();
+    const uint32_t ours   = squash_engine_abi::fingerprint();
+    if (theirs != ours) {
+        LOG_ERROR("engine ABI mismatch: crate %08lx, service %08lx\n",
+                  static_cast<unsigned long>(theirs), static_cast<unsigned long>(ours));
+        return;
+    }
+
     mTimeTracker.init();
 
-    // Get settings
-    if (!mSettingsSerializer.load(mSettings)) {
-        LOG_WARNING("Failed to load settings\n");
-    }
+    // Read once here as well as at every session start, so the pre-session
+    // screen can say whether starting will actually record.
+    loadConfig();
 
-    // Get summary
-    if (!mActivitySummarySerializer.load(mSummary)) {
-        LOG_WARNING("Failed to load activity summary\n");
-    }
-
-    // Recover any activity a previous boot left unfinished (power loss /
-    // crash mid-recording), before any new track can start.
-    if (mActivityWriter.recoverInterrupted()) {
-        LOG_INFO("Recovered an interrupted activity\n");
-        notifyNewActivity();
-    }
-
-    SDK::Timer guiInitTimeout(TIMER_SECONDS(5));
+    SDK::Timer guiInitTimeout(TIMER_SECONDS(skGuiInitTimeoutS));
     guiInitTimeout.start();
 
     std::time_t processedUtc = 0;
@@ -103,17 +74,16 @@ void Service::run()
     while (true) {
         SDK::MessageBase *msg;
         if (mKernel.comm.getMessage(msg, 500)) {
-            // Command handling
             switch (msg->getType()) {
 
-                // Kernel messages
                 case SDK::MessageType::COMMAND_APP_STOP:
                     LOG_INFO("Force exit from the application\n");
-                    disconnect();   // Cleanup resources
-                    if (mTrackState != Track::State::INACTIVE) {
-                        stopTrack(false);
+                    disconnect();
+                    if (mState != Session::State::INACTIVE) {
+                        // Not a discard: the wearer did not ask to throw this
+                        // away, the system took the app.
+                        stopSession(false);
                     }
-                    // We must release message because this is the last event.
                     mKernel.comm.releaseMessage(msg);
                     return;
 
@@ -127,85 +97,68 @@ void Service::run()
                     onStopGUI();
                     break;
 
-                // Custom messages
-                case CustomMessage::SETTINGS_SAVE:  {
-                    LOG_DEBUG("SETTINGS_SAVE\n");
-                    handleEvent(*static_cast<CustomMessage::SettingsSave*>(msg));
-                } break;
+                case CustomMessage::SESSION_START:
+                    handleEvent(*static_cast<CustomMessage::SessionStart*>(msg));
+                    break;
 
-                case CustomMessage::TRACK_START:  {
-                    LOG_DEBUG("TRACK_START\n");
-                    handleEvent(*static_cast<CustomMessage::TrackStart*>(msg));
-                } break;
+                case CustomMessage::SESSION_STOP:
+                    handleEvent(*static_cast<CustomMessage::SessionStop*>(msg));
+                    break;
 
-                case CustomMessage::TRACK_STOP:  {
-                    LOG_DEBUG("TRACK_STOP\n");
-                    handleEvent(*static_cast<CustomMessage::TrackStop*>(msg));
-                } break;
+                case CustomMessage::SESSION_PAUSE:
+                    handleEvent(*static_cast<CustomMessage::SessionPause*>(msg));
+                    break;
 
-                case CustomMessage::TRACK_PAUSE:  {
-                    LOG_DEBUG("TRACK_PAUSE\n");
-                    handleEvent(*static_cast<CustomMessage::TrackPause*>(msg));
-                } break;
+                case CustomMessage::SESSION_RESUME:
+                    handleEvent(*static_cast<CustomMessage::SessionResume*>(msg));
+                    break;
 
-                case CustomMessage::TRACK_RESUME:  {
-                    LOG_DEBUG("TRACK_RESUME\n");
-                    handleEvent(*static_cast<CustomMessage::TrackResume*>(msg));
-                } break;
+                case CustomMessage::MARK:
+                    handleEvent(*static_cast<CustomMessage::Mark*>(msg));
+                    break;
 
-                case CustomMessage::MANUAL_LAP:  {
-                    LOG_DEBUG("MANUAL_LAP\n");
-                    handleEvent(*static_cast<CustomMessage::ManualLap*>(msg));
-                } break;
+                case CustomMessage::SET_LABEL:
+                    handleEvent(*static_cast<CustomMessage::SetLabel*>(msg));
+                    break;
 
-                // Sensors messages
                 case SDK::MessageType::EVENT_SENSOR_LAYER_DATA: {
                     auto event = static_cast<SDK::Message::Sensor::EventData*>(msg);
                     SDK::Sensor::DataBatch batch(event->data, event->count, event->stride);
                     handleSensorsData(event->handle, batch);
                 } break;
 
-                // External accessory link status (WP-S4) -> forward to GUI for
-                // the pre-activity HR indicator.
                 case SDK::MessageType::EVENT_ACCESSORY_STATUS: {
                     auto* evt = static_cast<SDK::Message::Accessory::EventStatus*>(msg);
                     LOG_INFO("Accessory status: state %u\n", evt->state);
-                    mGuiSender.accessoryStatus(evt->state, evt->name);
+                    mGuiSender.accessoryStatus(evt->state);
                 } break;
 
                 default:
                     break;
             }
-            // Release message after processing
             mKernel.comm.releaseMessage(msg);
         }
 
-
-        // Periodic process
         if (mGuiStarted) {
-            // Update time every second
-            std::time_t utc = mTimeTracker.getExpectedUTC();
-
+            // Keyed on the UTC second rather than the number of loops: a tick
+            // the Service was too busy to serve is a real second that went past,
+            // and the recorded-seconds figure is the one the caps are read
+            // against.
+            const std::time_t utc = mTimeTracker.getExpectedUTC();
             if (processedUtc != utc) {
                 processedUtc = utc;
 
-                // Send to GUI real "local time" to display
-                std::tm tmNow = mTimeTracker.getLocalTime(std::time(nullptr));
-                mGuiSender.time(tmNow);
-
-                mGuiSender.battery(static_cast<uint8_t>(mBatterySoc.get()));
-
-                if (mTrackState != Track::State::INACTIVE) {
-                    mTimeCounter.add(utc);
-                    processTrack();
+                if (mState == Session::State::ACTIVE) {
+                    ++mActiveS;
+                    if (mLabel != Session::Label::NONE) {
+                        ++mLabelS;
+                    }
                 }
+                sendStatus();
             }
-        } else {
-            // Just wait some time to see if GUI starts
-            if (guiInitTimeout.expired()) {
-                LOG_INFO("No activities, exiting service\n");
-                return; // Exit app
-            }
+        } else if (guiInitTimeout.expired()) {
+            LOG_INFO("No GUI, exiting service\n");
+            return;
         }
     }
 }
@@ -214,17 +167,9 @@ void Service::connectSensors()
 {
     if (!mIsSensorsConnected) {
         LOG_DEBUG("Connect to sensors...\n");
-
-        mSensorBatteryLevel.connect();
-        mSensorBatteryMetrics.connect();
         mSensorHr.connect();
+        mSensorWristMotion.connect();
         mSensorFusion.connect();
-
-        // External HR strap is pre-acquired at the pre-activity screen via the
-        // accessoryKinds capability (WP-S4), not here — so it is already
-        // connecting before the workout starts. Its readings arrive through the
-        // normal HEART_RATE sensor (the kernel arbitrates external vs optical).
-
         mIsSensorsConnected = true;
     }
 }
@@ -232,51 +177,51 @@ void Service::connectSensors()
 void Service::disconnect()
 {
     if (mIsSensorsConnected) {
-        LOG_DEBUG("Disconnect from sensors...\n");
-
+        LOG_DEBUG("Disconnect sensors...\n");
         mSensorFusion.disconnect();
+        mSensorWristMotion.disconnect();
         mSensorHr.disconnect();
-        mSensorBatteryLevel.disconnect();
-        mSensorBatteryMetrics.disconnect();
 
-        // External HR accessory is released automatically by the kernel when the
-        // app stops (AccessoryManager::onAppStopped), so no explicit release here.
+        // The external HR accessory is released by the kernel when the app
+        // stops (AccessoryManager::onAppStopped), so nothing to do here.
 
         mIsSensorsConnected = false;
     }
 }
 
+void Service::onStartGUI()
+{
+    mGuiStarted = true;
+    setCapabilities();
+    requestAccessoryPrepare();
+    connectSensors();
+    // The pre-session screen needs the armed state before the first tick.
+    loadConfig();
+    mGuiSender.state(mState, false);
+    sendStatus();
+}
+
+void Service::onStopGUI()
+{
+    mGuiStarted = false;
+    if (mState != Session::State::INACTIVE) {
+        stopSession(false);
+    }
+    disconnect();
+}
 
 void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
 {
     if (mSensorHr.matchesDriver(handle)) {
         SDK::SensorDataParser::HeartRateEx parser(data[0]);
         if (parser.isDataValid()) {
-            mHrCounter.add(parser.getBpm());           // arbitrated (kernel's choice)
-            mTrackData.hrTrustLevel = parser.getTrustLevel();
-            mHrSource     = static_cast<uint8_t>(parser.getSource());
-            mHrOpticalBpm = static_cast<uint8_t>(parser.getOpticalBpm());
-            mHrExternalBpm= static_cast<uint8_t>(parser.getExternalBpm());
-            LOG_DEBUG("HR %.1f trust %.1f src %u (opt %u ext %u)\n",
-                      parser.getBpm(), parser.getTrustLevel(), mHrSource,
-                      mHrOpticalBpm, mHrExternalBpm);
-        }
-    } else if (mSensorBatteryLevel.matchesDriver(handle)) {
-        SDK::SensorDataParser::BatteryLevel parser(data[0]);
-        if (parser.isDataValid()) {
-            mBatterySoc.set(parser.getCharge());
-            LOG_DEBUG("Battery %.1f %%\n", mBatterySoc.get());
-        }
-    } else if (mSensorBatteryMetrics.matchesDriver(handle)) {
-        SDK::SensorDataParser::BatteryMetrics parser(data[0]);
-        if (parser.isDataValid()) {
-            mBatteryVoltage.set(parser.getVoltage());
-            LOG_DEBUG("Battery voltage %.1f V\n", mBatteryVoltage.get());
+            mHrBpm    = parser.getBpm();
+            mHrTrust  = static_cast<uint8_t>(parser.getTrustLevel());
+            mHrSource = static_cast<uint8_t>(parser.getSource());
         }
     } else if (mSensorWristMotion.matchesDriver(handle)) {
         SDK::SensorDataParser::WristMotion parser(data[0]);
         if (parser.isDataValid()) {
-            LOG_DEBUG("Wrist Motion detected\n");
             backlightOn();
         }
     } else if (mSensorFusion.matchesDriver(handle)) {
@@ -286,54 +231,24 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
 
         for (uint16_t i = 0; i < data.size(); i++) {
             SDK::SensorDataParser::FusionRaw parser(data[i]);
-            if (parser.isDataValid()) {
-                SDK::SensorDataParser::FusionRaw::Data sample{};
-                parser.getData(sample);
+            if (!parser.isDataValid()) {
+                continue;
+            }
+            SDK::SensorDataParser::FusionRaw::Data sample{};
+            parser.getData(sample);
+            const uint32_t ts = parser.getTimestamp();
 
-                // Research recording gets all six axes in raw LSB, unlike the
-                // tilt detector below which only needs ay/gx. The sensor's own
-                // timestamp is the clock: a batch carries ~10 samples, so using
-                // a loop-local "now" would collapse them onto one instant.
-                if (mImuArmed || mImuRecorder.isRecording()) {
-                    const uint32_t ts = parser.getTimestamp();
-                    if (mImuArmed) {
-                        mImuArmed = false;
-                        if (!mImuRecorder.begin(mImuSink, ts)) {
-                            LOG_ERROR("Failed to start research recording\n");
-                        }
-                        // Same tick as the sample recorder, so a marker row and
-                        // a sample row with the same t_ms are the same instant.
-                        if (mMarkerSink.isOpen() && !mMarkerLog.begin(mMarkerSink, ts)) {
-                            LOG_ERROR("Failed to start the marker log\n");
-                        }
-                    }
-                    mLastImuTs = ts;
-                    if (mImuRecorder.isRecording()) {
-                        ImuCsvRecorder::Sample raw{};
-                        raw.ax = sample.accel.x;
-                        raw.ay = sample.accel.y;
-                        raw.az = sample.accel.z;
-                        raw.gx = sample.gyro.x;
-                        raw.gy = sample.gyro.y;
-                        raw.gz = sample.gyro.z;
-                        if (!mImuRecorder.onSample(ts, raw)) {
-                            LOG_INFO("Research recording ended: reason %u, %u samples\n",
-                                     static_cast<unsigned>(mImuRecorder.stopReason()),
-                                     static_cast<unsigned>(mImuRecorder.sampleCount()));
-                        }
-                    }
-                }
+            onFusionSample(ts, sample.accel.x, sample.accel.y, sample.accel.z,
+                           sample.gyro.x, sample.gyro.y, sample.gyro.z);
 
-                batch[batchLen].ayLsb = sample.accel.y;
-                batch[batchLen].gxLsb = sample.gyro.x;
-                batch[batchLen].timestampMs = parser.getTimestamp();
-                //LOG_DEBUG("AY: %d, GX: %d\n", sample.accel.y, sample.gyro.x);
-                ++batchLen;
+            batch[batchLen].ayLsb = sample.accel.y;
+            batch[batchLen].gxLsb = sample.gyro.x;
+            batch[batchLen].timestampMs = ts;
+            ++batchLen;
 
-                if (batchLen == kBatchSize) {
-                    mWristTiltDetector.addBatch(batch, kBatchSize);
-                    batchLen = 0;
-                }
+            if (batchLen == kBatchSize) {
+                mWristTiltDetector.addBatch(batch, kBatchSize);
+                batchLen = 0;
             }
         }
 
@@ -343,84 +258,260 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
     }
 }
 
-
-void Service::onStartGUI()
+void Service::onFusionSample(uint32_t ts, int16_t ax, int16_t ay, int16_t az,
+                             int16_t gx, int16_t gy, int16_t gz)
 {
-    mGuiStarted = true;
+    if (!mImuArmed && !mImuRecorder.isRecording()) {
+        return;
+    }
 
-    setCapabilities();
-    requestAccessoryPrepare();   // pre-warm external HR while on the pre-activity screen
+    if (mImuArmed) {
+        mImuArmed = false;
+        squash_engine_reset();
+        if (!mImuRecorder.begin(mImuSink, ts, mLimits)) {
+            LOG_ERROR("Failed to start research recording\n");
+        }
+        // Same tick as the sample recorder, so a marker row and a sample row
+        // with the same t_ms are the same instant.
+        if (mMarkerSink.isOpen() && !mMarkerLog.begin(mMarkerSink, ts)) {
+            LOG_ERROR("Failed to start the marker log\n");
+        }
+        // Whatever the wearer had selected before starting is true from the
+        // first sample, so it is written rather than inferred from its absence.
+        if (mLabel != Session::Label::NONE) {
+            writeMarker(mLabel);
+        }
+    }
 
-    mSensorWristMotion.connect();
+    mLastImuTs = ts;
 
-    sendInitialInfoToGui();
-}
+    if (!mImuRecorder.isRecording()) {
+        return;
+    }
 
-void Service::onStopGUI()
-{
-    mGuiStarted = false;
+    // The screen's features and the ones `phase-a` prints off this file are the
+    // same numbers because they are the same code; see SquashEngine.hpp.
+    if (squash_engine_push(ts, ax, ay, az, gx, gy, gz)) {
+        squash_engine_last_epoch(&mEpoch);
+    }
 
-    requestAccessoryRelease();
-    mSensorWristMotion.disconnect();
-}
-
-void Service::handleEvent(const CustomMessage::TrackStart& /*event*/)
-{
-    // We can synchronize the time because we haven't started the track yet,
-    // before a new track starts.
-    mTimeTracker.init();
-
-    startTrack(mTimeTracker.getExpectedUTC());
-}
-
-void Service::handleEvent(const CustomMessage::TrackStop& event)
-{
-    stopTrack(event.discard);
-}
-
-void Service::handleEvent(const CustomMessage::SettingsSave& event)
-{
-    bool updCaps = mSettings.phoneNotifEn != event.settings.phoneNotifEn;
-    mSettings = event.settings;
-    mSettingsSerializer.save(event.settings);
-
-    if (updCaps) {
-        setCapabilities();
+    ImuCsvRecorder::Sample raw{};
+    raw.ax = ax;
+    raw.ay = ay;
+    raw.az = az;
+    raw.gx = gx;
+    raw.gy = gy;
+    raw.gz = gz;
+    if (!mImuRecorder.onSample(ts, raw)) {
+        LOG_INFO("Research recording ended: reason %u, %u samples\n",
+                 static_cast<unsigned>(mImuRecorder.stopReason()),
+                 static_cast<unsigned>(mImuRecorder.sampleCount()));
+        // A cap is not a failure, but it is the moment the recording and the
+        // session stop being the same length, so the wearer is told.
+        buzz(2);
     }
 }
 
-void Service::handleEvent(const CustomMessage::TrackPause& /*event*/)
+void Service::loadConfig()
 {
-    pauseTrack(true);
+    mConfig = std::make_unique<SDK::AppConfig>(mKernel, SquashConfig::kConfigFile,
+                                               SquashConfig::kFields,
+                                               SquashConfig::kFieldCount);
+    if (!mConfig) {
+        mRecordImu = false;
+        return;
+    }
+
+    mRecordImu = mConfig->getBool(SquashConfig::field(SquashConfig::kRecordImu));
+
+    const int32_t minutes = mConfig->getInt(SquashConfig::field(SquashConfig::kMaxMinutes));
+    const int32_t megabytes = mConfig->getInt(SquashConfig::field(SquashConfig::kMaxMegabytes));
+    mLimits.maxDurationMs = static_cast<uint32_t>(minutes) * 60u * 1000u;
+    mLimits.maxBytes      = static_cast<uint32_t>(megabytes) * 1024u * 1024u;
+
+    LOG_INFO("Config: record %u, caps %ld min / %ld MB\n",
+             static_cast<unsigned>(mRecordImu),
+             static_cast<long>(minutes), static_cast<long>(megabytes));
 }
 
-void Service::handleEvent(const CustomMessage::TrackResume& /*event*/)
+void Service::startSession(std::time_t utc)
 {
-    pauseTrack(false);
+    loadConfig();
+
+    mActiveS = 0;
+    mLabelS  = 0;
+    mEpoch   = squash_epoch{};
+    mLastImuTs = 0;
+
+    if (mRecordImu) {
+        mImuArmed = mImuSink.create(utc);
+        if (!mImuArmed) {
+            LOG_ERROR("Failed to open the research recording\n");
+        } else if (!mMarkerSink.create(utc)) {
+            // The samples are the recording; markers are labels on it. Losing
+            // the labels is worse than it was, now that they are the point, but
+            // it is still not a reason to refuse to record.
+            LOG_ERROR("Research recording started without a marker log\n");
+        }
+    }
+
+    mState = Session::State::ACTIVE;
+    mGuiSender.state(mState, false);
+    backlightOn();
+    buzz(1);
 }
 
-void Service::handleEvent(const CustomMessage::ManualLap& /*event*/)
+void Service::stopSession(bool discard)
 {
-    // R2 on the track screen. A lap and a research marker are the same gesture
-    // -- "note this instant" -- recorded at whatever layers are running, so one
-    // press does both rather than competing for a button the watch has not got.
-    saveLap();
-    mGuiSender.lapEnd(mTrackData.lapNum);
+    bool intact = true;
 
-    if (mMarkerLog.isRecording() && !mMarkerLog.mark(mLastImuTs)) {
+    if (mImuArmed || mImuRecorder.isRecording() || mImuSink.isOpen()) {
+        // Close the accumulator first so the last partial second is counted.
+        if (squash_engine_flush()) {
+            squash_engine_last_epoch(&mEpoch);
+        }
+        intact = mImuRecorder.end();
+        const uint32_t samples = mImuRecorder.sampleCount();
+        const uint32_t bytes   = mImuRecorder.bytesWritten();
+        const uint16_t markers = mMarkerLog.markerCount();
+        mImuSink.close();
+        mImuArmed = false;
+        mMarkerLog.end();
+        mMarkerSink.close();
+
+        LOG_INFO("Recording %s: intact=%u stop=%u samples=%lu bytes=%lu markers=%u\n",
+                 discard ? "kept on discard" : "saved",
+                 static_cast<unsigned>(intact),
+                 static_cast<unsigned>(mImuRecorder.stopReason()),
+                 static_cast<unsigned long>(samples),
+                 static_cast<unsigned long>(bytes),
+                 static_cast<unsigned>(markers));
+    }
+
+    mState = Session::State::INACTIVE;
+    mGuiSender.state(mState, intact);
+    sendStatus();
+    backlightOn();
+}
+
+void Service::pauseSession(bool pause)
+{
+    if (pause && mState != Session::State::ACTIVE) {
+        return;
+    }
+    if (!pause && mState != Session::State::PAUSED) {
+        return;
+    }
+
+    mState = pause ? Session::State::PAUSED : Session::State::ACTIVE;
+    mGuiSender.state(mState, false);
+    backlightOn();
+}
+
+bool Service::writeMarker(Session::Label label)
+{
+    if (!mMarkerLog.isRecording()) {
+        return false;
+    }
+    if (!mMarkerLog.mark(mLastImuTs, static_cast<ImuMarkerLog::Kind>(label))) {
         LOG_INFO("Marker log ended: reason %u, %u markers\n",
                  static_cast<unsigned>(mMarkerLog.stopReason()),
                  static_cast<unsigned>(mMarkerLog.markerCount()));
+        return false;
     }
+    return true;
+}
+
+void Service::sendStatus()
+{
+    Session::Status s{};
+    s.elapsedS  = mActiveS;
+    s.recS      = mImuRecorder.recordedMs() / 1000u;
+    s.recCapS   = mLimits.maxDurationMs / 1000u;
+    s.recKb     = mImuRecorder.bytesWritten() / 1024u;
+    s.recCapKb  = mLimits.maxBytes / 1024u;
+    s.gyroMag   = mEpoch.gyro_mag;
+    s.accelVarK = mEpoch.accel_var_k;
+    s.markers   = mMarkerLog.markerCount();
+    s.hrBpm     = (mHrBpm > 0.0f) ? static_cast<uint16_t>(mHrBpm + 0.5f) : 0u;
+    s.labelS    = (mLabelS > UINT16_MAX) ? UINT16_MAX : static_cast<uint16_t>(mLabelS);
+    s.satAccelPct = mEpoch.sat_accel_pct;
+    s.satGyroPct  = mEpoch.sat_gyro_pct;
+    s.hrTrust   = mHrTrust;
+    s.hrSource  = mHrSource;
+    s.recording = mImuRecorder.isRecording() ? 1u : 0u;
+    s.recStop   = static_cast<uint8_t>(mImuRecorder.stopReason());
+    s.armed     = mRecordImu ? 1u : 0u;
+    s.label     = static_cast<uint8_t>(mLabel);
+    mGuiSender.status(s);
+}
+
+void Service::handleEvent(const CustomMessage::SessionStart& /*event*/)
+{
+    if (mState != Session::State::INACTIVE) {
+        return;
+    }
+    startSession(std::time(nullptr));
+}
+
+void Service::handleEvent(const CustomMessage::SessionStop& event)
+{
+    if (mState == Session::State::INACTIVE) {
+        return;
+    }
+    stopSession(event.discard != 0u);
+}
+
+void Service::handleEvent(const CustomMessage::SessionPause& /*event*/)
+{
+    pauseSession(true);
+}
+
+void Service::handleEvent(const CustomMessage::SessionResume& /*event*/)
+{
+    pauseSession(false);
+}
+
+void Service::handleEvent(const CustomMessage::Mark& /*event*/)
+{
+    if (writeMarker(Session::Label::NONE)) {
+        // The press has no other feedback: the counter on the screen is a
+        // second behind, so the buzz is what says it registered.
+        buzz(1);
+    }
+}
+
+void Service::handleEvent(const CustomMessage::SetLabel& event)
+{
+    // A value this build does not know must not reach the file; the file is
+    // what a later analysis trusts.
+    if (event.label >= static_cast<uint8_t>(Session::Label::COUNT)) {
+        LOG_WARNING("Ignored an unknown label %u\n", static_cast<unsigned>(event.label));
+        return;
+    }
+
+    const auto label = static_cast<Session::Label>(event.label);
+    if (label == mLabel) {
+        return;
+    }
+
+    mLabel  = label;
+    mLabelS = 0;
+    if (writeMarker(mLabel)) {
+        buzz(1);
+    }
+    sendStatus();
 }
 
 void Service::setCapabilities()
 {
     auto *msg = mKernel.comm.allocateMessage<SDK::Message::RequestSetCapabilities>();
     if (msg) {
-        msg->enPhoneNotification = mSettings.phoneNotifEn;
+        msg->enPhoneNotification = false;
         msg->enUsbChargingScreen = false;
-        msg->enMusicControl = true;
+        // Off because enMusicControl makes the system eat HOLD_1S, and this app
+        // needs every press of its four buttons.
+        msg->enMusicControl = false;
         mKernel.comm.sendMessage(msg);
         mKernel.comm.releaseMessage(msg);
     }
@@ -428,32 +519,12 @@ void Service::setCapabilities()
 
 void Service::requestAccessoryPrepare()
 {
-    // Pre-acquire an external HR strap at the pre-activity screen. Sent at
-    // onStartGUI so the kernel starts scanning/connecting while the user gets
-    // ready. No-op kernel-side unless external HR is enabled in Settings.
+    // Pre-acquire an external HR strap while the wearer is still on the
+    // pre-session screen. A no-op kernel-side unless external HR is enabled in
+    // the watch's own settings.
     auto *msg = mKernel.comm.allocateMessage<SDK::Message::Accessory::RequestPrepare>();
     if (msg) {
         msg->kinds = SDK::Accessory::Kind::HRM;
-        mKernel.comm.sendMessage(msg);
-        mKernel.comm.releaseMessage(msg);
-    }
-}
-
-void Service::requestAccessoryRelease()
-{
-    auto *msg = mKernel.comm.allocateMessage<SDK::Message::Accessory::RequestRelease>();
-    if (msg) {
-        msg->kinds = 0;   // release everything we acquired
-        mKernel.comm.sendMessage(msg);
-        mKernel.comm.releaseMessage(msg);
-    }
-}
-
-
-void Service::notifyNewActivity()
-{
-    auto *msg = mKernel.comm.allocateMessage<SDK::Message::CommandAppNewActivity>();
-    if (msg) {
         mKernel.comm.sendMessage(msg);
         mKernel.comm.releaseMessage(msg);
     }
@@ -469,46 +540,14 @@ void Service::backlightOn(uint32_t timeoutMs)
     }
 }
 
-void Service::playBuzzerPattern(uint16_t beepMs, uint8_t count, uint16_t silenceMs)
+void Service::buzz(uint8_t count)
 {
     if (count == 0) {
         return;
     }
 
-    // A series of N beeps needs 2*N-1 notes (beeps + silences between them).
-    // Cap to what fits in skMaxNotes: max count = (skMaxNotes + 1) / 2 = 5.
-    const uint8_t maxCount = (SDK::Message::RequestBuzzerPlay::skMaxNotes + 1u) / 2u;
-    if (count > maxCount) {
-        count = maxCount;
-    }
-
-    auto* msg = mKernel.comm.allocateMessage<SDK::Message::RequestBuzzerPlay>();
-    if (msg) {
-        uint8_t n = 0;
-        for (uint8_t i = 0; i < count; ++i) {
-            msg->notes[n].volume = 100;
-            msg->notes[n].time = beepMs;
-            ++n;
-            if (i < count - 1u) {
-                msg->notes[n].volume = 0;
-                msg->notes[n].time = silenceMs;
-                ++n;
-            }
-        }
-        msg->notesCount = n;
-        mKernel.comm.sendMessage(msg);
-        mKernel.comm.releaseMessage(msg);
-    }
-}
-
-void Service::playVibroPattern(SDK::Message::RequestVibroPlay::Effect effect, uint8_t count, uint16_t silenceMs)
-{
-    if (count == 0) {
-        return;
-    }
-
-    // A series of N effects needs 2*N-1 notes (effects + silences between them).
-    // Cap to what fits in skMaxNotes: max count = (skMaxNotes + 1) / 2 = 4.
+    // A series of N effects needs 2*N-1 notes (effects and the silences between
+    // them), so what fits is (skMaxNotes + 1) / 2.
     const uint8_t maxCount = (SDK::Message::RequestVibroPlay::skMaxNotes + 1u) / 2u;
     if (count > maxCount) {
         count = maxCount;
@@ -518,12 +557,12 @@ void Service::playVibroPattern(SDK::Message::RequestVibroPlay::Effect effect, ui
     if (msg) {
         uint8_t n = 0;
         for (uint8_t i = 0; i < count; ++i) {
-            msg->notes[n].effect = static_cast<uint8_t>(effect);
-            msg->notes[n].pause = 0;
+            msg->notes[n].effect = SDK::Message::RequestVibroPlay::Effect::SHARP_CLICK_100;
+            msg->notes[n].pause  = 0;
             ++n;
             if (i < count - 1u) {
-                msg->notes[n].effect = static_cast<uint8_t>(SDK::Message::RequestVibroPlay::Effect::NO_EFFECT);
-                msg->notes[n].pause = silenceMs;
+                msg->notes[n].effect = SDK::Message::RequestVibroPlay::Effect::NO_EFFECT;
+                msg->notes[n].pause  = skBuzzGapMs;
                 ++n;
             }
         }
@@ -533,432 +572,7 @@ void Service::playVibroPattern(SDK::Message::RequestVibroPlay::Effect effect, ui
     }
 }
 
-
-ActivityWriter::RecordData Service::prepareRecordData()
+void Service::onWristTilt(uint32_t /*timestampMs*/)
 {
-    ActivityWriter::RecordData fitRecord{};
-
-    fitRecord.timestamp    = mTimeCounter.getCurrent();
-
-    bool hasHeartRate = (mHrCounter.getCurrent() > 20 && mTrackData.hrTrustLevel >= 1 && mTrackData.hrTrustLevel <= 3);
-    fitRecord.set(ActivityWriter::RecordData::Field::HEART_RATE, hasHeartRate);
-    fitRecord.heartRate    = mHrCounter.getCurrent();
-    // Tag each record with where the HR came from (none when no valid HR), and
-    // log the raw per-source readings (0 when that source has none this tick).
-    fitRecord.hrSource     = hasHeartRate ? mHrSource : 0;
-    fitRecord.hrOpticalBpm = mHrOpticalBpm;
-    fitRecord.hrExternalBpm= mHrExternalBpm;
-
-    // Both samples must be checked every call; evaluate separately to avoid short-circuit.
-    const bool socReady     = mBatterySoc.isDue();
-    const bool voltReady    = mBatteryVoltage.isDue();
-    const bool batteryReady = socReady && voltReady;
-    if (batteryReady) {
-        mBatterySoc.consume();
-        mBatteryVoltage.consume();
-    }
-    fitRecord.set(ActivityWriter::RecordData::Field::BATTERY, batteryReady);
-    fitRecord.batteryLevel   = static_cast<uint8_t>(mBatterySoc.get());
-    fitRecord.batteryVoltage = static_cast<uint16_t>(mBatteryVoltage.get() * 1000);
-
-    return fitRecord;
-}
-
-void Service::sendInitialInfoToGui()
-{
-    // Settings
-    uint8_t hrThresholds[CustomMessage::kHrThresholdsCount];
-    memcpy(hrThresholds, CustomMessage::kHrThresholdsDefault, sizeof(hrThresholds));
-
-    if (auto msg = SDK::make_msg<SDK::Message::RequestSystemSettings>(mKernel)) {
-        if (msg.send(100) && msg.ok()) {
-            mIsImperial = msg->imperialUnits;
-            mTimeFormat12h = msg->timeFormat;
-
-            if (msg->weightKg > 0.0f) {
-                mWeightKg = msg->weightKg;
-            }
-
-            if (msg->heartRateCount > CustomMessage::kHrThresholdsCount) {
-                msg->heartRateCount = CustomMessage::kHrThresholdsCount;
-            }
-
-            if (msg->heartRateCount > 0) {
-                // Copy received elements
-                uint8_t i = 0;
-                for (; i < msg->heartRateCount; ++i) {
-                    hrThresholds[i] = msg->heartRateTh[i];
-                }
-
-                // Complete the array elements to the full number
-                for (; i < CustomMessage::kHrThresholdsCount; ++i) {
-                    if (i > 0) {
-                        hrThresholds[i] = hrThresholds[i - 1] + 20;
-                    } else {
-                        hrThresholds[i] = CustomMessage::kHrThresholdsDefault[0];
-                    }
-                }
-            }
-        }
-    }
-
-    mGuiSender.settingsUpd(mSettings, mIsImperial, mTimeFormat12h, hrThresholds, CustomMessage::kHrThresholdsCount);
-    memcpy(mHrThresholds.data(), hrThresholds, sizeof(hrThresholds));
-    mHrThresholdCount = CustomMessage::kHrThresholdsCount;
-    mGuiSender.summary(&mSummary);
-    mGuiSender.battery(static_cast<uint8_t>(mBatterySoc.get()));
-}
-
-void Service::loadConfig()
-{
-    // Destroy the previous instance before building the next one: SDK::AppConfig
-    // is documented as one instance per app, and two alive at once would
-    // briefly share the same temporary file.
-    mConfig.reset();
-    mConfig.reset(new (std::nothrow) SDK::AppConfig(
-        mKernel, SquashConfig::kConfigFile,
-        SquashConfig::kFields, SquashConfig::kFieldCount));
-
-    if (!mConfig) {
-        // Out of memory, which nothing here can fix. The declared default is
-        // off, and off is the safe direction for a flag whose only effect is
-        // to start filling flash.
-        LOG_ERROR("Could not read configuration; not recording raw IMU\n");
-        mRecordImu = false;
-        return;
-    }
-
-    mRecordImu = mConfig->getBool(SquashConfig::field(SquashConfig::kRecordImu));
-
-    LOG_INFO("Config: record raw IMU %u\n", static_cast<unsigned>(mRecordImu));
-}
-
-void Service::startTrack(std::time_t utc)
-{
-    // Reset data
-    mTrackData = {};
-
-    mTimeCounter.reset();
-    mTimeCounter.add(utc);
-
-    mDistanceCounter.reset();
-    mSpeedCounter.reset();
-    mHrCounter.reset();
-    mHrSource = 0;  // don't carry a prior track's HR source/readings into the new session
-    mHrOpticalBpm = 0;
-    mHrExternalBpm = 0;
-    mBatterySoc.reset(skBatteryLogPeriodMs);
-    mBatteryVoltage.reset(skBatteryLogPeriodMs);
-    mSessionNotEmpty = false;
-    mLapNotEmpty = false;
-
-    mSummary = ActivitySummary{};
-    mSummary.laps.reserve(10);
-
-    mWristTiltDetector.reset();
-
-    connectSensors();
-
-    // Research recording: open the file now so a storage failure is known and
-    // logged at start, but leave the recorder's clock unstarted until the first
-    // sample arrives, so t=0 is a real sample and not this call.
-    //
-    // The values file is re-read here rather than once at boot, so a change
-    // made on the phone takes effect on the next session instead of the next
-    // restart. Costs one file read per session.
-    loadConfig();
-    if (mRecordImu) {
-        mImuArmed = mImuSink.create(utc);
-        if (!mImuArmed) {
-            LOG_ERROR("Research recording enabled but the file could not be opened\n");
-        } else if (!mMarkerSink.create(utc)) {
-            // The samples are the recording; markers are labels on it. Losing
-            // the sidecar costs the labels, not the session, so this does not
-            // disarm the recorder.
-            LOG_ERROR("Research recording started without a marker log\n");
-        }
-    }
-    mLastImuTs = 0;
-
-    ActivityWriter::AppInfo info{};
-    info.timestamp = utc;
-    info.appVersion = SDK::ParseVersion(BUILD_VERSION).u32;
-    info.devID = DEV_ID;
-    info.appID = APP_ID;
-    mActivityWriter.start(info);
-
-    mTrackState = Track::State::ACTIVE;
-
-    mGuiSender.trackState(mTrackState);
-}
-
-void Service::processTrack()
-{
-    LOG_DEBUG("Time: %u / %u\n", static_cast<uint32_t>(mTimeCounter.getValueActive()), static_cast<uint32_t>(mTimeCounter.getValueTotal()));
-
-    // Time, s
-    mTrackData.totalTime = mTimeCounter.getValueActive();
-    mTrackData.lapTime = mTimeCounter.getLapValueActive();
-
-    // HR
-    mTrackData.hr = mHrCounter.getCurrent();
-    mTrackData.hrSource = mHrSource;  // for the in-activity source-driven HR icon
-    mTrackData.avgHR = mHrCounter.getAverage();
-    mTrackData.maxHR = mHrCounter.getMaximum();
-    mTrackData.avgLapHR = mHrCounter.getLapAverage();
-    mTrackData.maxLapHR = mHrCounter.getLapMaximum();
-    updateHrDerivedMetrics();
-
-    // Update GUI
-    mGuiSender.trackData(mTrackData);
-
-
-    if (mTrackState == Track::State::ACTIVE) {
-        // Save record to the FIT file
-        ActivityWriter::RecordData fitRecord = prepareRecordData();
-        mActivityWriter.addRecord(fitRecord);
-
-        mSessionNotEmpty = true;    // Session has at least one record
-        mLapNotEmpty = true;        // Lap has at least one record
-    }
-
-}
-
-void Service::updateHrDerivedMetrics()
-{
-    mTrackData.hrZone = getHrZone(mTrackData.hr);
-    if (mTrackState != Track::State::ACTIVE) {
-        return;
-    }
-
-    // Basal metabolic rate accrues every active second regardless of HR.
-    // Surfaced as session "metabolic_calories" / lap "resting_calories" in the FIT file.
-    static constexpr float kRestingMet = 1.0f;
-    const float restingKcal = kRestingMet * mWeightKg * (1.0f / 3600.0f);
-    mTrackData.restingCaloriesTotal += restingKcal;
-    mTrackData.restingCaloriesLap   += restingKcal;
-
-    // Active calories: zone-MET when HR is in a zone; BMR fallback otherwise
-    // (HR below zone 1 or no valid HR sample yet).
-    const float met = (mTrackData.hrZone == 0) ? kRestingMet : getZoneMet(mTrackData.hrZone);
-    const float calories = met * mWeightKg * (1.0f / 3600.0f);
-    mTrackData.totalCalories += calories;
-    mTrackData.lapCalories   += calories;
-
-    if (mTrackData.hrZone >= 1) {
-        mTrackData.zoneTimeSec[mTrackData.hrZone - 1] += kOneSecond;
-    }
-}
-
-void Service::saveLap()
-{
-    // Accumulate lap into summary
-    mSummary.laps.push_back({
-        mTimeCounter.getLapValueActive(),
-        mHrCounter.getLapAverage(),
-        mHrCounter.getLapMaximum(),
-    });
-
-    // Save lap to the FIT file
-    ActivityWriter::LapData fitLap{};
-
-    fitLap.timestamp = mTimeCounter.getCurrent();
-    fitLap.timeStart = mTimeCounter.getCurrent() - mTimeCounter.getLapValueTotal();
-    fitLap.duration  = mTimeCounter.getLapValueActive();
-    fitLap.elapsed   = mTimeCounter.getLapValueTotal();
-
-    fitLap.hrAvg            = mHrCounter.getLapAverage();
-    fitLap.hrMax            = mHrCounter.getLapMaximum();
-    fitLap.calories         = mTrackData.lapCalories;
-    fitLap.restingCalories  = mTrackData.restingCaloriesLap;
-
-    mActivityWriter.addLap(fitLap);
-    mTrackData.lapNum++;
-
-    LOG_INFO("Lap_%u saved. UTC: %u\n", mTrackData.lapNum, static_cast<uint32_t>(mTimeCounter.getCurrent()));
-    LOG_INFO("Time: %u / %u s\n", static_cast<uint32_t>(mTimeCounter.getLapValueActive()), static_cast<uint32_t>(mTimeCounter.getLapValueTotal()));
-    LOG_INFO("Heart rate: %.0f / %.0f bpm\n", mHrCounter.getLapAverage(), mHrCounter.getLapMaximum());
-    LOG_INFO("Lap calories: %.1f kcal\n", mTrackData.lapCalories);
-
-    // Reset lap counters
-    mTimeCounter.resetLap();
-    mDistanceCounter.resetLap();
-    mSpeedCounter.resetLap();
-    mHrCounter.resetLap();
-
-    // Clear track data
-    mTrackData.lapTime = 0;
-    mTrackData.avgLapHR = 0.0f;
-    mTrackData.maxLapHR = 0.0f;
-    mTrackData.lapCalories = 0.0f;
-    mTrackData.restingCaloriesLap = 0.0f;
-
-    mLapNotEmpty = false;
-}
-
-void Service::buildPartialSummary()
-{
-    mSummary.utc       = mTimeCounter.getCurrent();
-    mSummary.time      = mTimeCounter.getValueActive();
-    mSummary.hrMax     = mHrCounter.getMaximum();
-    mSummary.hrAvg     = mHrCounter.getAverage();
-    mSummary.calories         = mTrackData.totalCalories;
-    mSummary.restingCalories  = mTrackData.restingCaloriesTotal;
-    mSummary.activeCalories   = std::fmax(0.0f,
-        mTrackData.totalCalories - mTrackData.restingCaloriesTotal);
-
-    for (size_t i = 0; i < std::size(mSummary.zoneTimeSec); ++i) {
-        mSummary.zoneTimeSec[i] = mTrackData.zoneTimeSec[i];
-    }
-}
-
-void Service::stopTrack(bool discard)
-{
-    if (mTrackState == Track::State::INACTIVE) {
-        return;
-    }
-
-    if (!discard && mSessionNotEmpty) {
-
-        if (mTrackState != Track::State::PAUSED) {
-            mActivityWriter.pause(mTimeCounter.getCurrent());
-        }
-
-        if (mLapNotEmpty) {
-            saveLap();
-        }
-
-        mBatterySoc.request();
-        mBatteryVoltage.request();
-        ActivityWriter::RecordData fitRecord = prepareRecordData();
-        mActivityWriter.addRecord(fitRecord);
-
-        buildPartialSummary();
-
-        // Save summary
-        if (!mActivitySummarySerializer.save(mSummary)) {
-            LOG_ERROR("Can't save activity summary\n");
-        }
-        mGuiSender.summary(&mSummary);
-
-        // Save FIT file
-        ActivityWriter::TrackData fitTrack{};
-
-        fitTrack.timestamp = mTimeCounter.getCurrent();
-        fitTrack.timeStart = mTimeCounter.getCurrent() - mTimeCounter.getValueTotal();
-        fitTrack.duration  = mTimeCounter.getValueActive();
-        fitTrack.elapsed   = mTimeCounter.getValueTotal();
-
-        fitTrack.hrAvg              = mHrCounter.getAverage();
-        fitTrack.hrMax              = mHrCounter.getMaximum();
-        fitTrack.calories           = mTrackData.totalCalories;
-        fitTrack.metabolicCalories  = mTrackData.restingCaloriesTotal;
-
-        if (mActivityWriter.stop(fitTrack)) {
-            notifyNewActivity();
-        } else {
-            LOG_ERROR("activity save failed\n");
-            // Do NOT notify: the .fit is left unfinished, so the crash-recovery
-            // marker (if any) stays for the next boot to finalize.
-        }
-    } else {
-        mActivityWriter.discard();
-    }
-
-    // Closed out on both paths, including discard: the CSV is research data,
-    // not part of the activity, so a discarded session's samples are still
-    // worth keeping. end() is safe when nothing was ever started.
-    if (mImuArmed || mImuRecorder.isRecording() || mImuSink.isOpen()) {
-        const bool intact = mImuRecorder.end();
-        const uint32_t samples = mImuRecorder.sampleCount();
-        const uint32_t bytes   = mImuRecorder.bytesWritten();
-        const uint16_t markers = mMarkerLog.markerCount();
-        mImuSink.close();
-        mImuArmed = false;
-        mMarkerLog.end();
-        mMarkerSink.close();
-
-        if (intact) {
-            LOG_INFO("Research recording saved: %u samples, %u bytes, %u markers\n",
-                     static_cast<unsigned>(samples), static_cast<unsigned>(bytes),
-                     static_cast<unsigned>(markers));
-        } else {
-            LOG_ERROR("Research recording is torn and should not be trusted\n");
-        }
-    }
-
-    mTrackState = Track::State::INACTIVE;
-    LOG_INFO("Track stopped. UTC: %u\n", static_cast<uint32_t>(mTimeCounter.getCurrent()));
-    LOG_INFO("Time: %u / %u s\n", static_cast<uint32_t>(mTimeCounter.getValueActive()), static_cast<uint32_t>(mTimeCounter.getValueTotal()));
-    LOG_INFO("Heart rate: %.0f / %.0f bpm\n", mHrCounter.getAverage(), mHrCounter.getMaximum());
-    LOG_INFO("Calories: %.1f kcal\n", mTrackData.totalCalories);
-
-    mGuiSender.trackState(mTrackState);
-
-    disconnect();
-}
-
-void Service::pauseTrack(bool pause)
-{
-    if (mTrackState == Track::State::INACTIVE) {
-        return;
-    }
-
-    if (pause && mTrackState == Track::State::ACTIVE) {
-        mTimeCounter.pause();
-        mDistanceCounter.pause();
-        mSpeedCounter.pause();
-        mHrCounter.pause();
-
-        mActivityWriter.pause(mTimeCounter.getCurrent());
-
-        mTrackState = Track::State::PAUSED;
-        LOG_INFO("Track paused. UTC: %u\n", static_cast<uint32_t>(mTimeCounter.getCurrent()));
-        mGuiSender.trackState(mTrackState);
-
-        buildPartialSummary();
-        mGuiSender.summary(&mSummary);
-    } else if (!pause && mTrackState == Track::State::PAUSED) {
-        mTimeCounter.resume();
-        mDistanceCounter.resume();
-        mSpeedCounter.resume();
-        mHrCounter.resume();
-
-        mActivityWriter.resume(mTimeCounter.getCurrent());
-
-        mTrackState = Track::State::ACTIVE;
-        LOG_INFO("Track resumed. UTC: %u\n", static_cast<uint32_t>(mTimeCounter.getCurrent()));
-        mGuiSender.trackState(mTrackState);
-    }
-}
-
-uint8_t Service::getHrZone(float hr) const
-{
-    if (mHrThresholdCount == 0 || hr <= 0.0f) {
-        return 0;
-    }
-
-    uint8_t zone = 0;
-    const uint8_t thresholdCount = (mHrThresholdCount > mHrThresholds.size()) ? mHrThresholds.size() : mHrThresholdCount;
-    for (uint8_t i = 0; i < thresholdCount; ++i) {
-        if (hr > mHrThresholds[i]) {
-            zone = i + 1;
-        }
-    }
-    return (zone > 5) ? 5 : zone;
-}
-
-float Service::getZoneMet(uint8_t zone) const
-{
-    static constexpr float kMetByZone[5] = {2.5f, 4.5f, 7.0f, 10.0f, 12.5f};
-    if (zone < 1 || zone > 5) {
-        return 0.0f;
-    }
-    return kMetByZone[zone - 1];
-}
-
-void Service::onWristTilt(uint32_t timestampMs)
-{
-    LOG_DEBUG("Wrist Tilt detected\n");
     backlightOn();
 }

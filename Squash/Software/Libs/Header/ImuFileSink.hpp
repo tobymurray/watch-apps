@@ -26,8 +26,9 @@
  * Recordings land in their own directory, *not* under Activity/. They are
  * research inputs, not activities: nothing should present them to the user as
  * a workout, and they must not ride along with whatever syncs the activity
- * tree. The layout mirrors ActivityWriter's (YYYYMM/ subdirectory, timestamped
- * file) so a session's CSV is easy to pair with its .fit by name.
+ * tree. Within it a recording is a YYYYMM/ subdirectory and a timestamped
+ * file, so the samples, the markers and the heart rate of one session sort
+ * together and pair by name.
  */
 class ImuFileSink final : public ImuCsvRecorder::ISink {
 public:
