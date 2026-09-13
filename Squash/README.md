@@ -23,7 +23,7 @@ recorded on the watch replays through the simulator *and* feeds host tests as a
 fixture, unchanged. That is the development loop for every later tier: record on
 court, replay at a desk, assert in a test.
 
-Two facts about the sensor that any metric built on this has to respect:
+Four facts about the sensor that any metric built on this has to respect:
 
 - **Both IMU ranges saturate during real strokes.** Accel is ±8 g (4096 LSB/g)
   and gyro ±2000 dps (16.4 LSB/dps) on the BMI270. Measured over the 1,800
@@ -34,6 +34,17 @@ Two facts about the sensor that any metric built on this has to respect:
   `cargo run --features std --bin phase-a`.
 - **The watch is on the wrist, not the racquet.** Head speed is a proxy at best.
   Anything presented as "speed" is a relative index for one player, never m/s.
+- **100 Hz means a 50 Hz Nyquist, and an impact is faster than that.** The
+  transient of ball on strings has energy above 50 Hz, so it aliases rather than
+  being resolved. Band-limited features — a gyro envelope, jerk magnitude over a
+  window — survive that; a single-sample peak is reading an alias. This one is
+  arithmetic and physics, not something a recording here measured.
+- **Nothing records which wrist the watch was on.** Per-shot features only exist
+  if it is the racquet wrist; on the off wrist the same recording is movement
+  and heart rate and nothing else. The app does not ask, so every recording in
+  `Tests/pulled` is implicitly one wearer on one wrist and carries no field
+  saying which. A corpus that ever holds more than one wearer needs this
+  answered before it is worth pooling.
 
 Values are recorded in **raw sensor LSB**, unscaled, so the recording keeps the
 saturation rather than hiding it behind a conversion.
