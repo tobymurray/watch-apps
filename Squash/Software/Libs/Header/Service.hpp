@@ -16,6 +16,7 @@
 #include "HrCsvLog.hpp"
 #include "AppConfigFields.hpp"
 #include "Freshness.hpp"
+#include "SquashLog.hpp"
 
 #include <memory>
 
@@ -53,6 +54,9 @@ private:
     SDK::Kernel&          mKernel;
     bool                  mGuiStarted;
     CustomMessage::Sender mGuiSender;
+    /// Everything about a session that a USB cable can read back, because
+    /// LOG_INFO needs a dev tool attached and nobody has one on court.
+    SquashLog             mDiag;
 
     // -- Configuration --------------------------------------------------------
 

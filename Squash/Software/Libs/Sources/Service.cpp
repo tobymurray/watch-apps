@@ -28,6 +28,7 @@ Service::Service(SDK::Kernel &kernel)
         : mKernel(kernel)
         , mGuiStarted(false)
         , mGuiSender(kernel)
+        , mDiag(kernel)
         , mImuSink(mKernel, "Imu")
         , mMarkerSink(mKernel, "Imu", "_events")
         , mHrSink(mKernel, "Imu", "_hr")
@@ -52,6 +53,10 @@ Service::~Service()
 void Service::run()
 {
     LOG_INFO("Started\n");
+    // Which build is running, on the volume. INSTALLING.md reads this line to
+    // tell a new install from an old one that kept booting, which is the
+    // failure that document exists for and which no other artefact reveals.
+    mDiag.line("launch", "version %s", BUILD_VERSION);
 
     // A layout disagreement between this binary and the Rust archive would
     // corrupt every feature silently, so it is a refusal rather than a warning.
@@ -60,8 +65,11 @@ void Service::run()
     if (theirs != ours) {
         LOG_ERROR("engine ABI mismatch: crate %08lx, service %08lx\n",
                   static_cast<unsigned long>(theirs), static_cast<unsigned long>(ours));
+        mDiag.line("abi", "mismatch crate %08lx service %08lx -- refused to start",
+                   static_cast<unsigned long>(theirs), static_cast<unsigned long>(ours));
         return;
     }
+    mDiag.line("abi", "engine %08lx ok", static_cast<unsigned long>(ours));
 
     mTimeTracker.init();
 
@@ -373,6 +381,9 @@ void Service::loadConfig()
     LOG_INFO("Config: record %u, caps %ld min / %ld MB\n",
              static_cast<unsigned>(mRecordImu),
              static_cast<long>(minutes), static_cast<long>(megabytes));
+    mDiag.line("config", "record %u caps %ld min %ld MB",
+               static_cast<unsigned>(mRecordImu),
+               static_cast<long>(minutes), static_cast<long>(megabytes));
 }
 
 void Service::startSession(std::time_t utc)
@@ -430,6 +441,14 @@ void Service::stopSession(bool discard)
         mHrLog.end();
         mHrSink.close();
 
+        mDiag.line("imu", "%s intact=%u stop=%u samples=%lu bytes=%lu markers=%u beats=%u",
+                   discard ? "discarded" : "saved",
+                   static_cast<unsigned>(intact),
+                   static_cast<unsigned>(mImuRecorder.stopReason()),
+                   static_cast<unsigned long>(samples),
+                   static_cast<unsigned long>(bytes),
+                   static_cast<unsigned>(markers),
+                   static_cast<unsigned>(beats));
         LOG_INFO("Recording %s: intact=%u stop=%u samples=%lu bytes=%lu markers=%u beats=%u\n",
                  discard ? "kept on discard" : "saved",
                  static_cast<unsigned>(intact),
