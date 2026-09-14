@@ -97,7 +97,13 @@ private:
 
     // -- Sensors --------------------------------------------------------------
 
+    /// The arbitrated bpm and its trust, which is what the screen shows and
+    /// what a row of the sidecar is. Two fields, always produced.
     SDK::Sensor::Connection mSensorHr;
+    /// Provenance only: which source won, and the raw per-source readings.
+    /// Opt-in and seven fields, so it is not what BPM is read from -- see
+    /// handleSensorsData().
+    SDK::Sensor::Connection mSensorHrEx;
     SDK::Sensor::Connection mSensorWristMotion;
     SDK::Sensor::Connection mSensorFusion;
     bool                    mIsSensorsConnected = false;

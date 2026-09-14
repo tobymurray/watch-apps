@@ -7,6 +7,7 @@
 #include "SDK/Messages/MessageGuard.hpp"
 #include "SDK/Timer/Timer.hpp"
 
+#include "SDK/SensorLayer/DataParsers/SensorDataParserHeartRate.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserHeartRateEx.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserWristMotion.hpp"
 #include "SDK/SensorLayer/DataParsers/SensorDataParserFusionRaw.hpp"
@@ -30,7 +31,8 @@ Service::Service(SDK::Kernel &kernel)
         , mImuSink(mKernel, "Imu")
         , mMarkerSink(mKernel, "Imu", "_events")
         , mHrSink(mKernel, "Imu", "_hr")
-        , mSensorHr(SDK::Sensor::Type::HEART_RATE_EX, skSamplePeriod, skSampleLatency)
+        , mSensorHr(SDK::Sensor::Type::HEART_RATE, skSamplePeriod, skSampleLatency)
+        , mSensorHrEx(SDK::Sensor::Type::HEART_RATE_EX, skSamplePeriod, skSampleLatency)
         , mSensorWristMotion(SDK::Sensor::Type::WRIST_MOTION)
         , mSensorFusion(SDK::Sensor::Type::FUSION_RAW, 1000.0f / skFusionSampleRateHz, 100)
         , mTimeTracker(kernel.sys)
@@ -169,6 +171,7 @@ void Service::connectSensors()
     if (!mIsSensorsConnected) {
         LOG_DEBUG("Connect to sensors...\n");
         mSensorHr.connect();
+        mSensorHrEx.connect();
         mSensorWristMotion.connect();
         mSensorFusion.connect();
         mIsSensorsConnected = true;
@@ -181,6 +184,7 @@ void Service::disconnect()
         LOG_DEBUG("Disconnect sensors...\n");
         mSensorFusion.disconnect();
         mSensorWristMotion.disconnect();
+        mSensorHrEx.disconnect();
         mSensorHr.disconnect();
 
         // The external HR accessory is released by the kernel when the app
@@ -214,14 +218,20 @@ void Service::onStopGUI()
 void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
 {
     if (mSensorHr.matchesDriver(handle)) {
-        SDK::SensorDataParser::HeartRateEx parser(data[0]);
+        // BPM comes from HEART_RATE, never from HEART_RATE_EX. The SDK is
+        // explicit that EX is opt-in provenance and that display must not be
+        // gated on it (Docs/ExternalSensors.md), and the two disagree about
+        // what a valid frame is: EX wants seven fields where this wants two, so
+        // reading BPM from EX shows nothing at all whenever EX is not producing.
+        SDK::SensorDataParser::HeartRate parser(data[0]);
         if (parser.isDataValid()) {
-            mHrBpm      = parser.getBpm();
-            mHrOptical  = parser.getOpticalBpm();
-            mHrExternal = parser.getExternalBpm();
-            mHrTrust    = static_cast<uint8_t>(parser.getTrustLevel());
-            mHrSource   = static_cast<uint8_t>(parser.getSource());
+            mHrBpm   = parser.getBpm();
+            mHrTrust = static_cast<uint8_t>(parser.getTrustLevel());
 
+            // One row per arbitrated reading, carrying whatever provenance EX
+            // last said. A row is written even when EX has said nothing, with
+            // the source and per-source columns zero, because a reading with
+            // unknown provenance is still a reading.
             if (mHrLog.isRecording()) {
                 HrCsvLog::Sample hr{};
                 hr.bpm         = mHrBpm;
@@ -237,6 +247,14 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
                              static_cast<unsigned>(mHrLog.sampleCount()));
                 }
             }
+        }
+    } else if (mSensorHrEx.matchesDriver(handle)) {
+        // Provenance only. Nothing here reaches the screen's bpm.
+        SDK::SensorDataParser::HeartRateEx parser(data[0]);
+        if (parser.isDataValid()) {
+            mHrOptical  = parser.getOpticalBpm();
+            mHrExternal = parser.getExternalBpm();
+            mHrSource   = static_cast<uint8_t>(parser.getSource());
         }
     } else if (mSensorWristMotion.matchesDriver(handle)) {
         SDK::SensorDataParser::WristMotion parser(data[0]);
