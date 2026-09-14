@@ -15,6 +15,7 @@
 #include "ImuMarkerLog.hpp"
 #include "HrCsvLog.hpp"
 #include "AppConfigFields.hpp"
+#include "Freshness.hpp"
 
 #include <memory>
 
@@ -117,6 +118,11 @@ private:
     Session::Label mLabel     = Session::Label::NONE;
     uint32_t       mLabelS    = 0;   ///< seconds held in mLabel
 
+    /// UTC second the last valid reading arrived; 0 = none has. The screen
+    /// ages it, the sidecar does not: a row is written when a reading arrives,
+    /// so the file records what the sensor said and when, and staleness is a
+    /// question only the display has to answer.
+    std::time_t mHrUtc  = 0;
     float   mHrBpm      = 0.0f;
     float   mHrOptical  = 0.0f;
     float   mHrExternal = 0.0f;

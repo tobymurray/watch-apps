@@ -68,6 +68,14 @@ target_include_directories(squash-hrlog-tests PRIVATE "${APP_LIBS}/Header")
 target_link_libraries(squash-hrlog-tests PRIVATE GTest::gtest_main)
 add_test(NAME squash-hrlog-tests COMMAND squash-hrlog-tests)
 
+add_executable(squash-freshness-tests
+    Freshness_test.cpp
+)
+
+target_include_directories(squash-freshness-tests PRIVATE "${APP_LIBS}/Header")
+target_link_libraries(squash-freshness-tests PRIVATE GTest::gtest_main)
+add_test(NAME squash-freshness-tests COMMAND squash-freshness-tests)
+
 set(IMU_FUSION_SOURCE
     "${UNA_SDK_ROOT}/Libs/Source/Simulator/Components/Sensors/Imu/ImuFusionSource.cpp"
 )
