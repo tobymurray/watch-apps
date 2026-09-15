@@ -4,6 +4,7 @@
 #include <ctime>   // std::time_t (mLastCalibUtc, startTrack, ...)
 
 #include "SDK/Kernel/Kernel.hpp"
+#include "HrGate.hpp"
 #include "SDK/SensorLayer/SensorConnection.hpp"
 #include "SDK/SensorLayer/SensorDataBatch.hpp"
 #include "SDK/TrackMap/TrackMapBuilder.hpp"
@@ -98,6 +99,10 @@ private:
     SDK::Metric::MonotonicCounter<float>                mDistanceCounter;
     SDK::Metric::VariableCounter                        mSpeedCounter;
     SDK::Metric::VariableCounter                        mHrCounter;
+
+    /// Bridges a second the arbiter did not stand behind, and blanks the
+    /// reading once the sensor stops producing at all. See HrGate.hpp.
+    HrGate::Hold mHrHold;
     uint8_t                                             mHrSource = 0;      ///< Latest HR source (HeartRateEx::Source) for the icon + FIT hr_source.
     uint8_t                                             mHrOpticalBpm = 0;  ///< Latest raw optical (PPG) bpm, for the FIT hr_optical series.
     uint8_t                                             mHrExternalBpm = 0; ///< Latest raw external (strap) bpm, for the FIT hr_external series.

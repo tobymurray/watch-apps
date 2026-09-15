@@ -282,7 +282,7 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
             ++mHrN;
             mHrBpm   = parser.getBpm();
             mHrTrust = static_cast<uint8_t>(parser.getTrustLevel());
-            mHrUtc   = mTimeTracker.getExpectedUTC();
+            mHrHold.onReading(mHrBpm, parser.getTrustLevel(), mKernel.sys.getTimeMs());
 
             // One row per arbitrated reading, carrying whatever provenance EX
             // last said. A row is written even when EX has said nothing, with
@@ -448,7 +448,10 @@ void Service::startSession(std::time_t utc)
     mLabelS  = 0;
     mHrN     = 0;
     mHrExN   = 0;
-    mHrUtc   = 0;
+    // The hold is deliberately not reset: this app subscribes at GUI start, so
+    // the sensor does not stop producing because a session began, and blanking
+    // a live reading for the gate's width would be a regression. A hold left
+    // over from a session that ended long ago has already expired on its own.
     mEpoch   = squash_epoch{};
     mLastImuTs = 0;
 
@@ -566,14 +569,13 @@ void Service::sendStatus()
     // Aged here rather than in the renderer, which owns no clock: past the
     // window the reading is sent as absent, which the screen already draws as
     // "-- BPM". No new screen state, and no stale number can reach the glass.
-    const bool hrCurrent = Freshness::isCurrent(mHrUtc, mTimeTracker.getExpectedUTC(),
-                                                Freshness::kHeartRateStaleAfterS);
-    s.hrBpm     = (hrCurrent && mHrBpm > 0.0f) ? static_cast<uint16_t>(mHrBpm + 0.5f) : 0u;
+    const HrGate::Hold::View hr = mHrHold.view(mKernel.sys.getTimeMs());
+    s.hrBpm     = (hr.bpm > 0.0f) ? static_cast<uint16_t>(hr.bpm + 0.5f) : 0u;
     s.labelS    = (mLabelS > UINT16_MAX) ? UINT16_MAX : static_cast<uint16_t>(mLabelS);
     s.satAccelPct = mEpoch.sat_accel_pct;
     s.satGyroPct  = mEpoch.sat_gyro_pct;
-    s.hrTrust   = hrCurrent ? mHrTrust : 0u;
-    s.hrSource  = hrCurrent ? mHrSource : 0u;
+    s.hrTrust   = (hr.bpm > 0.0f) ? mHrTrust : 0u;
+    s.hrSource  = (hr.bpm > 0.0f) ? mHrSource : 0u;
     s.recording = mImuRecorder.isRecording() ? 1u : 0u;
     s.recStop   = static_cast<uint8_t>(mImuRecorder.stopReason());
     s.armed     = mRecordImu ? 1u : 0u;

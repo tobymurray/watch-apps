@@ -27,6 +27,7 @@ endif()
 include($ENV{UNA_SDK}/cmake/una-app.cmake)
 include($ENV{UNA_SDK}/cmake/una-sdk.cmake)
 include(${LIBS_PATH}/libs.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../HrKit/hrkit.cmake)
 
 project(${APP_NAME})
 
@@ -75,6 +76,7 @@ set(SERVICE_SOURCES
 )
 set(SERVICE_INCLUDE_DIRS
     ${LIBS_INCLUDE_DIRS}
+    ${HRKIT_INCLUDE_DIRS}
     ${UNA_SDK_INCLUDE_DIRS_COMMON}
     ${UNA_SDK_INCLUDE_DIRS_SERVICE}
 )

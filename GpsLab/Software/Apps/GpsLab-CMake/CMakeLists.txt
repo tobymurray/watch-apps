@@ -37,6 +37,7 @@ include($ENV{UNA_SDK}/cmake/una-sdk.cmake)
 
 # Includes LIBS_SOURCES, LIBS_INCLUDE_DIRS
 include(${LIBS_PATH}/libs.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../HrKit/hrkit.cmake)
 
 # Includes TOUCHGFX_SOURCES, TOUCHGFX_INCLUDE_DIRS
 if(DEFINED TOUCHGFX_PATH)
@@ -56,6 +57,7 @@ set(SERVICE_SOURCES
 )
 set(SERVICE_INCLUDE_DIRS
     ${LIBS_INCLUDE_DIRS}
+    ${HRKIT_INCLUDE_DIRS}
     ${UNA_SDK_INCLUDE_DIRS_COMMON}
     ${UNA_SDK_INCLUDE_DIRS_SERVICE}
 )

@@ -34,14 +34,14 @@ enable_testing()
 
 # Plain C++ over no SDK types at all, so these build against nothing but
 # GoogleTest.
-add_executable(spin-hrhold-tests
-    HrHold_test.cpp
+# The heart-rate hold's cases are HrKit's now; what is left here is Spin's own.
+add_executable(spin-pure-tests
     ZoneLadder_test.cpp
     SecondsAccrual_test.cpp
 )
-target_include_directories(spin-hrhold-tests PRIVATE "${APP_LIBS}/Header")
-target_link_libraries(spin-hrhold-tests PRIVATE GTest::gtest_main)
-add_test(NAME spin-hrhold-tests COMMAND spin-hrhold-tests)
+target_include_directories(spin-pure-tests PRIVATE "${APP_LIBS}/Header")
+target_link_libraries(spin-pure-tests PRIVATE GTest::gtest_main)
+add_test(NAME spin-pure-tests COMMAND spin-pure-tests)
 
 add_executable(spin-activitywriter-tests
     ActivityWriter_test.cpp

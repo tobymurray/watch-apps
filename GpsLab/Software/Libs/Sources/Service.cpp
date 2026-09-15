@@ -88,7 +88,9 @@ Service::Service(SDK::Kernel &kernel)
     mTimeCounter.init();
     mDistanceCounter.init();
     mSpeedCounter.init(0.5f, 300.0f);
-    mHrCounter.init(20.0f, 300.0f);
+    // The same bounds HrGate accepts, so the counter and the gate cannot
+    // disagree about what a reading is.
+    mHrCounter.init(HrGate::kMinBpm, HrGate::kMaxBpm);
     mAltitudeCounter.init(2.0f);
 
     WristTiltDetector::Config config{};
@@ -436,6 +438,8 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
             }
             mHrCounter.add(parser.getBpm());           // arbitrated (kernel's choice)
             mTrackData.hrTrustLevel = parser.getTrustLevel();
+            mHrHold.onReading(parser.getBpm(), parser.getTrustLevel(),
+                              mKernel.sys.getTimeMs());
             mHrSource     = static_cast<uint8_t>(parser.getSource());
             mHrOpticalBpm = static_cast<uint8_t>(parser.getOpticalBpm());
             mHrExternalBpm= static_cast<uint8_t>(parser.getExternalBpm());
@@ -790,7 +794,11 @@ ActivityWriter::RecordData Service::prepareRecordData()
     }
     fitRecord.gpsState = gpsState;
 
-    bool hasHeartRate = (mHrCounter.getCurrent() > 20 && mTrackData.hrTrustLevel >= 1 && mTrackData.hrTrustLevel <= 3);
+    // measured, not a test on the stored reading: mHrCounter and hrTrustLevel
+    // are written only when a frame arrives, so a sensor that stops producing
+    // leaves both saying the last thing they said, and every remaining record
+    // would carry a heart rate nobody had.
+    const bool hasHeartRate = mHrHold.view(mKernel.sys.getTimeMs()).measured;
     fitRecord.set(ActivityWriter::RecordData::Field::HEART_RATE, hasHeartRate);
     fitRecord.heartRate    = mHrCounter.getCurrent();
     // Tag each record with where the HR came from (none when no valid HR).
@@ -876,6 +884,7 @@ void Service::startTrack(std::time_t utc)
     mDistanceCounter.reset();
     mSpeedCounter.reset();
     mHrCounter.reset();
+    mHrHold.reset();
     mHrSource = 0;  // don't carry a prior track's HR source/readings into the new session
     mHrOpticalBpm = 0;
     mHrExternalBpm = 0;

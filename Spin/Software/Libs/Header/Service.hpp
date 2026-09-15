@@ -29,7 +29,7 @@
 
 #include "ActivityWriter.hpp"
 #include "AppConfigFields.hpp"
-#include "HrHold.hpp"
+#include "HrGate.hpp"
 #include "SecondsAccrual.hpp"
 #include "ZoneLadder.hpp"
 #include "Commands.hpp"
@@ -51,16 +51,11 @@ private:
     static constexpr uint32_t skSamplePeriod     = 1000;
     static constexpr uint32_t skSampleLatency    = 1000;
 
-    /// The kernel's HR arbiter reports a 0..3 confidence. 1..3 is a reading it
-    /// stands behind; 0 means "this is not a heart rate". Only 1..3 is recorded,
-    /// so a FIT file never carries a beat the watch itself did not believe.
-    static constexpr float skHrTrustMin = 1.0f;
-    static constexpr float skHrTrustMax = 3.0f;
-
     /// VariableCounter validity window: readings outside it are ignored rather
-    /// than averaged in. Same bounds the SDK's own activity apps use.
-    static constexpr float skHrMinValid = 20.0f;
-    static constexpr float skHrMaxValid = 300.0f;
+    /// than averaged in. The same bounds HrGate accepts, so the counter and the
+    /// gate cannot disagree about what a reading is.
+    static constexpr float skHrMinValid = HrGate::kMinBpm;
+    static constexpr float skHrMaxValid = HrGate::kMaxBpm;
 
     static constexpr std::time_t skSecondsPerMinute = 60;
 
@@ -171,9 +166,9 @@ private:
     uint8_t mSystemMaxHr = 0;
 
     /// Bridges a one-second dip in the arbiter's confidence, so the screen does
-    /// not blank a reading the sensor still has. Display side only -- the FIT
-    /// record keeps the strict gate. See HrHold.hpp.
-    HrHold mHrHold;
+    /// not blank a reading the sensor still has, and blanks everything once the
+    /// sensor stops producing at all. See HrGate.hpp.
+    HrGate::Hold mHrHold;
 
     uint8_t mHrSource      = 0;  ///< Latest HeartRateEx::Source, for the icon + FIT hr_source.
     uint8_t mHrOpticalBpm  = 0;  ///< Latest raw optical (PPG) bpm, for the FIT hr_optical series.

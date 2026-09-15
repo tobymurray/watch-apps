@@ -266,6 +266,8 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
             }
             mHrCounter.add(parser.getBpm());           // arbitrated (kernel's choice)
             mTrackData.hrTrustLevel = parser.getTrustLevel();
+            mHrHold.onReading(parser.getBpm(), parser.getTrustLevel(),
+                              mKernel.sys.getTimeMs());
             mHrSource      = static_cast<uint8_t>(parser.getSource());
             mHrOpticalBpm  = static_cast<uint8_t>(parser.getOpticalBpm());
             mHrExternalBpm = static_cast<uint8_t>(parser.getExternalBpm());
@@ -575,14 +577,13 @@ void Service::processTrack()
 
     mTrackData.totalTime = mTimeCounter.getValueActive();
 
-    // What the screen should believe, which is not the same question as what
-    // was measured this second: a momentary loss of confidence holds the last
-    // reading rather than blanking it. prepareRecordData() below still applies
-    // the strict gate, so the file records the second as having no reading.
-    const bool trusted = mHrCounter.getCurrent() > skHrMinValid &&
-                         mTrackData.hrTrustLevel >= skHrTrustMin &&
-                         mTrackData.hrTrustLevel <= skHrTrustMax;
-    mTrackData.hr       = mHrHold.update(trusted, mHrCounter.getCurrent());
+    // What the screen should believe, which is not the same question as what was
+    // measured this second: a momentary loss of confidence holds the last
+    // reading rather than blanking it, while prepareRecordData() below still
+    // applies the strict gate so the file records the second as having none.
+    // The arrival gate ends both when the sensor stops producing at all.
+    const HrGate::Hold::View hr = mHrHold.view(mKernel.sys.getTimeMs());
+    mTrackData.hr       = hr.bpm;
     mTrackData.hrSource = (mTrackData.hr > 0.0f) ? mHrSource : 0;
     mTrackData.avgHR    = mHrCounter.getAverage();
     mTrackData.maxHR    = mHrCounter.getMaximum();
@@ -596,15 +597,16 @@ void Service::processTrack()
     // `trusted_s` then counts seconds that met that floor rather than seconds
     // this Service called trusted. Zero when the reading itself is out of
     // range, which is not a question about confidence.
-    const bool sane = mHrCounter.getCurrent() > skHrMinValid &&
-                      mTrackData.hrTrustLevel <= skHrTrustMax;
+    const bool sane = hr.live &&
+                      mHrCounter.getCurrent() > skHrMinValid &&
+                      mTrackData.hrTrustLevel <= HrGate::kMaxTrust;
     const uint8_t hrTrust =
         sane ? static_cast<uint8_t>(mTrackData.hrTrustLevel) : 0u;
 
     const uint8_t step = spin_engine_second(mTimeCounter.getCurrent(), mHrCounter.getCurrent(),
         hrTrust, hrTrust > 0 ? mHrSource : SPIN_HR_SOURCE_NONE,
         static_cast<uint32_t>(mTimeCounter.getValueActive()));
-    logSecond(mTimeCounter.getCurrent(), trusted);
+    logSecond(mTimeCounter.getCurrent(), hr.measured);
 
     if (step == SPIN_STEP_COMPLETED) {
         SpinRecovery measurement{};
@@ -710,9 +712,11 @@ ActivityWriter::RecordData Service::prepareRecordData() const
 
     fitRecord.timestamp = mTimeCounter.getCurrent();
 
-    const bool hasHeartRate = mHrCounter.getCurrent() > skHrMinValid &&
-                              mTrackData.hrTrustLevel >= skHrTrustMin &&
-                              mTrackData.hrTrustLevel <= skHrTrustMax;
+    // measured, not isPlausible on the stored reading: mHrCounter and
+    // hrTrustLevel are written only when a frame arrives, so a sensor that stops
+    // producing leaves both saying the last thing they said and every remaining
+    // record of the ride would carry a heart rate nobody had.
+    const bool hasHeartRate = mHrHold.view(mKernel.sys.getTimeMs()).measured;
 
     fitRecord.set(ActivityWriter::RecordData::Field::HEART_RATE, hasHeartRate);
     fitRecord.heartRate = mHrCounter.getCurrent();

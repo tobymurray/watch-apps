@@ -120,6 +120,7 @@ public:
     /// What is known about the heart rate at one instant.
     struct View {
         float bpm      = 0.0f;   ///< bpm to show; 0 = show no heart rate
+        bool  live     = false;  ///< a frame of any kind arrived inside the arrival gate
         bool  held     = false;  ///< the bpm shown was carried over, not measured now
         bool  measured = false;  ///< a plausible reading arrived inside the arrival gate
     };
@@ -159,6 +160,10 @@ public:
         if (!mHasArrived || elapsed(nowMs, mArrivedMs) >= kArrivalGateMs) {
             return v;
         }
+        // The stream is alive even when this frame carried nothing anybody
+        // believes, which is what a consumer doing its own arithmetic over the
+        // kernel's raw confidence needs to know.
+        v.live = true;
         if (!mHasGood || elapsed(nowMs, mGoodMs) >= kTrustHoldMs) {
             return v;
         }

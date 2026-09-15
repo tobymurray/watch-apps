@@ -238,3 +238,22 @@ TEST(Hold, SurvivesTheUptimeCounterWrapping)
     EXPECT_FLOAT_EQ(h.view(justBefore + Hold::kArrivalGateMs).bpm, 0.0f)
         << "the wrap made the gate stop firing";
 }
+
+TEST(Hold, ReportsALiveStreamEvenWhenNoFrameIsBelievable)
+{
+    // A consumer that does its own arithmetic over the kernel's raw 0-3
+    // confidence still has to know the difference between "this second was not
+    // believed" and "there is no sensor any more".
+    Hold h;
+    h.onReading(0.0f, 0.0f, 1000);
+    EXPECT_TRUE(h.view(1000).live);
+    EXPECT_FLOAT_EQ(h.view(1000).bpm, 0.0f);
+
+    EXPECT_FALSE(h.view(1000 + Hold::kArrivalGateMs).live);
+}
+
+TEST(Hold, IsNotLiveBeforeTheFirstFrame)
+{
+    Hold h;
+    EXPECT_FALSE(h.view(0).live);
+}
