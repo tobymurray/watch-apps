@@ -276,21 +276,28 @@ void Service::connectGps()
 
 void Service::connectSensors()
 {
-    if (!mIsSensorsConnected) {
-        LOG_DEBUG("Connect to sensors...\n");
+    // Idempotent and self-healing: connect only sensors not already connected,
+    // so a subscribe whose ack timed out is retried instead of being dropped for
+    // the whole session. SDK::Sensor::Connection::connect() leaves isConnected()
+    // false on a timed-out ack precisely so the caller can retry; an already
+    // connected sensor is skipped, so there is no churn.
+    if (!mSensorBatteryLevel.isConnected())   { mSensorBatteryLevel.connect(); }
+    if (!mSensorBatteryMetrics.isConnected()) { mSensorBatteryMetrics.connect(); }
+    if (!mSensorGpsSpeed.isConnected())       { mSensorGpsSpeed.connect(); }
+    if (!mSensorGpsDistance.isConnected())    { mSensorGpsDistance.connect(); }
+    if (!mSensorPressure.isConnected())       { mSensorPressure.connect(); }
+    if (!mSensorFusion.isConnected())         { mSensorFusion.connect(); }
+    if (!mSensorRunningCadence.isConnected()) { mSensorRunningCadence.connect(); }
+    if (!mSensorGrade.isConnected())          { mSensorGrade.connect(); }
 
-        mSensorBatteryLevel.connect();
-        mSensorBatteryMetrics.connect();
-        mSensorGpsSpeed.connect();
-        mSensorGpsDistance.connect();
-        mSensorPressure.connect();
-        mSensorHr.connect();
-        mSensorFusion.connect();
-        mSensorRunningCadence.connect();
-        mSensorGrade.connect();
-
-        mIsSensorsConnected = true;
+    // mIsSensorsConnected is still false on the first call, so this reports a
+    // genuine retry rather than the opening connect. Whether the ack race is
+    // real on this hardware is unsettled; this line is how a pulled log says so.
+    if (!mSensorHr.isConnected() && mSensorHr.connect() && mIsSensorsConnected) {
+        LOG_INFO("Heart-rate subscription recovered after a lost connect\n");
     }
+
+    mIsSensorsConnected = true;
 }
 
 void Service::disconnect()
@@ -820,6 +827,12 @@ void Service::startTrack(std::time_t utc)
 void Service::processTrack()
 {
     LOG_DEBUG("Time: %u / %u\n", static_cast<uint32_t>(mTimeCounter.getValueActive()), static_cast<uint32_t>(mTimeCounter.getValueTotal()));
+
+    // Retry any track-sensor subscription that lost its connect ack at track
+    // start. connectSensors() is idempotent, so this is a cheap no-op once
+    // everything is connected, and it runs only while a track is live so it
+    // never re-powers sensors after the track ends.
+    connectSensors();
 
     // Creating map
     SDK::TrackMapBuilder::GpsPoint newPoint{ mGps.latitude, mGps.longitude };

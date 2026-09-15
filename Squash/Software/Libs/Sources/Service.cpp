@@ -166,6 +166,11 @@ void Service::run()
                     }
                 }
                 sendStatus();
+
+                // Retry any subscription that lost its connect ack.
+                // connectSensors() is idempotent, so this is a cheap no-op once
+                // everything is connected.
+                connectSensors();
             }
         } else if (guiInitTimeout.expired()) {
             LOG_INFO("No GUI, exiting service\n");
@@ -176,14 +181,41 @@ void Service::run()
 
 void Service::connectSensors()
 {
-    if (!mIsSensorsConnected) {
-        LOG_DEBUG("Connect to sensors...\n");
-        mSensorHr.connect();
-        mSensorHrEx.connect();
-        mSensorWristMotion.connect();
-        mSensorFusion.connect();
-        mIsSensorsConnected = true;
+    // Idempotent and self-healing: connect only what is not already connected,
+    // so a subscribe whose ack timed out is retried instead of being dropped
+    // for the whole session. SDK::Sensor::Connection::connect() leaves
+    // isConnected() false on a timed-out ack precisely so the caller can retry,
+    // and an already connected sensor is skipped, so there is no churn.
+    //
+    // This app connects at GUI start rather than at session start, which is the
+    // moment a lost ack is least recoverable without a retry: nothing else ever
+    // calls connect() again.
+    if (!mSensorHrEx.isConnected())        { mSensorHrEx.connect(); }
+    if (!mSensorWristMotion.isConnected()) { mSensorWristMotion.connect(); }
+    if (!mSensorFusion.isConnected())      { mSensorFusion.connect(); }
+
+    // mIsSensorsConnected is still false on the first call, so this reports a
+    // genuine retry rather than the opening connect, in the file somebody reads
+    // when a session did not produce what they expected.
+    if (!mSensorHr.isConnected() && mSensorHr.connect() && mIsSensorsConnected) {
+        mDiag.line("sensors", "heart rate recovered after a lost connect");
     }
+
+    mIsSensorsConnected = true;
+}
+
+void Service::logSensors()
+{
+    // Upper case resolved, lower case did not, in the same single-letter form
+    // SleepLab's probe puts on its screen -- a lower-case letter means
+    // connect() was called and there was nothing to subscribe to, which is a
+    // different problem from a sensor that resolved and then said nothing.
+    const auto mark = [](SDK::Sensor::Connection &conn, char letter) {
+        return conn.isValid() ? letter : static_cast<char>(letter - 'A' + 'a');
+    };
+    mDiag.line("sensors", "%c%c%c%c (HXWF upper=resolved)",
+               mark(mSensorHr, 'H'), mark(mSensorHrEx, 'X'),
+               mark(mSensorWristMotion, 'W'), mark(mSensorFusion, 'F'));
 }
 
 void Service::disconnect()
@@ -208,6 +240,7 @@ void Service::onStartGUI()
     setCapabilities();
     requestAccessoryPrepare();
     connectSensors();
+    logSensors();
     // The pre-session screen needs the armed state before the first tick.
     loadConfig();
     mGuiSender.state(mState, false);

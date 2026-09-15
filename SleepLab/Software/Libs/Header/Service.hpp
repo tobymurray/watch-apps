@@ -130,6 +130,8 @@ private:
     /// Write the resolved-driver block to the diagnostic log, in the probe's own
     /// single-letter form. This is the one line that would have caught
     /// TOUCH_DETECT and SPO2 without spending a night on either.
+    /// Reconnect anything whose subscribe ack was lost; safe to call any time.
+    void retrySensors();
     void logSensors();
     void disconnectSensors();
     /// Drive the heart-rate duty cycle. Returns ms to the next transition, or 0.

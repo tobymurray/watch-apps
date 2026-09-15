@@ -212,14 +212,22 @@ void Service::run()
 
 void Service::connectSensors()
 {
-    if (mIsSensorsConnected) {
-        return;
-    }
-    LOG_DEBUG("Connect to sensors...\n");
-
+    // Idempotent and self-healing: a subscribe whose ack timed out is retried
+    // instead of being dropped for the whole ride.
+    // SDK::Sensor::Connection::connect() leaves isConnected() false on a
+    // timed-out ack precisely so the caller can retry, and an already connected
+    // sensor is skipped, so there is no churn.
+    //
     // One sensor: a stationary bike moves the watch nowhere. An external strap
     // arrives through this same connection, arbitrated by the kernel.
-    mSensorHr.connect();
+    //
+    // mIsSensorsConnected is still false on the first call, so the line below
+    // reports a genuine retry rather than the opening connect. Whether the ack
+    // race is real on this hardware is unsettled; this is how a pulled log
+    // would say so.
+    if (!mSensorHr.isConnected() && mSensorHr.connect() && mIsSensorsConnected) {
+        LOG_INFO("Heart-rate subscription recovered after a lost connect\n");
+    }
 
     mIsSensorsConnected = true;
 }
@@ -547,6 +555,12 @@ void Service::startTrack(std::time_t utc)
 
 void Service::processTrack()
 {
+    // Retry a heart-rate subscription that lost its connect ack at track start.
+    // connectSensors() is idempotent, so this is a cheap no-op once connected,
+    // and it runs only while a track is live so it never re-powers the sensor
+    // after the ride ends.
+    connectSensors();
+
     mTrackData.totalTime = mTimeCounter.getValueActive();
 
     // What the screen should believe, which is not the same question as what

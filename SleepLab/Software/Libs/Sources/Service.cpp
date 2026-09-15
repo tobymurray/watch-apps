@@ -200,6 +200,34 @@ void Service::connectSensors()
     }
 }
 
+void Service::retrySensors()
+{
+    // A subscribe whose ack timed out is retried rather than dropped for the
+    // whole night. SDK::Sensor::Connection::connect() leaves isConnected()
+    // false on a timed-out ack precisely so the caller can retry, and an
+    // already connected sensor is skipped, so there is no churn.
+    //
+    // Heart rate is retried only while the duty cycle has it on, so a retry can
+    // never re-power a sensor pumpHrDuty() has just turned off.
+    if (!mAccel.isConnected())      { mAccel.connect(); }
+    if (!mTouch.isConnected())      { mTouch.connect(); }
+    if (!mMotion.isConnected())     { mMotion.connect(); }
+    if (!mActivity.isConnected())   { mActivity.connect(); }
+    if (!mSteps.isConnected())      { mSteps.connect(); }
+    if (!mBattLevel.isConnected())  { mBattLevel.connect(); }
+    if (!mBattCharge.isConnected()) { mBattCharge.connect(); }
+
+    if (!mHrDutyOn) {
+        return;
+    }
+    if (!mHrEx.isConnected()) {
+        mHrEx.connect();
+    }
+    if (!mHr.isConnected() && mHr.connect()) {
+        mDiag.line("sensors", "heart rate recovered after a lost connect");
+    }
+}
+
 void Service::logSensors()
 {
     // Upper case resolved, lower case did not. The same encoding the probe puts on
@@ -1501,6 +1529,9 @@ void Service::run()
         if (toEpoch <= 0) {
             closeRecordingEpoch(now, now - mEpochOpenedAt);
             mEpochOpenedAt = now;
+            // Once an epoch is a retry cadence a night can afford, and it is the
+            // only thing that ever calls connect() again after the opening one.
+            retrySensors();
             // Advance the grid by whole epochs rather than re-basing on `now`,
             // so a late epoch does not push every subsequent one late with it.
             // If the loop overslept by more than a whole epoch the catch-up

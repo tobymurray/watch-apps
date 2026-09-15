@@ -140,6 +140,8 @@ private:
     // -- Lifecycle ------------------------------------------------------------
 
     void connectSensors();
+    /// Write the resolved-driver block to the diagnostic log.
+    void logSensors();
     void disconnect();
     void onStartGUI();
     void onStopGUI();
