@@ -1114,18 +1114,24 @@ void Service::notifyStepChange(uint8_t was, uint8_t now)
     backlightOn();
     // A boundary with no effort on either side of it has no direction to
     // report, so it gets the ordinary lap.
-    if (was == 0 || now == 0 || was == now) {
-        playAlert(Alerts::kLap);
-        return;
-    }
-    // The @n as written, not anything the screen derives from it: the ordering
-    // the wearer typed is what this alert exists for.
-    playAlert(now > was ? Alerts::kStepHarder : Alerts::kStepEasier);
+    const Alerts::Alert &alert = (was == 0 || now == 0 || was == now)
+        ? Alerts::kLap
+        // The @n as written, not anything the screen derives from it: the
+        // ordering the wearer typed is what this alert exists for.
+        : (now > was ? Alerts::kStepHarder : Alerts::kStepEasier);
+    mEventLog.line("%u step %u/%u %us@%u alert=%s",
+                   static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                   static_cast<unsigned>(mStepRep), static_cast<unsigned>(mStepReps),
+                   static_cast<unsigned>(mStepSeconds), static_cast<unsigned>(now),
+                   alert.name);
+    playAlert(alert);
 }
 
 void Service::notifySessionEnd()
 {
     backlightOn();
+    mEventLog.line("%u %s", static_cast<uint32_t>(mTimeCounter.getCurrent()),
+                   Alerts::kSessionEnd.name);
     playAlert(Alerts::kSessionEnd);
 }
 
