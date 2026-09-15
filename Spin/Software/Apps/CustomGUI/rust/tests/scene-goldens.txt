@@ -25,6 +25,17 @@ bdfeb6c1  lap_split
 f5960eb7  lap_split_short
 8f74b9cd  lap_split_widest
 7de5a011  lap_split_over_target
+fab9dab7  step_all_out
+1ee318c8  step_easy_mid_set
+717fdef9  step_no_repetition
+e0c38214  step_widest
+a537c086  step_word_1_of_5
+4211ec8e  step_word_2_of_5
+5966b6e0  step_word_3_of_5
+4f7892bd  step_word_4_of_5
+c51060f1  step_word_5_of_5
+886ff679  step_word_top_of_2
+f76df14e  step_word_6_of_8
 8fb60d11  riding_target_half
 736a6872  riding_one_hour
 9652cefc  riding_long
