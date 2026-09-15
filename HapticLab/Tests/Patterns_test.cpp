@@ -4,6 +4,7 @@
 #include <set>
 #include <string>
 
+#include "EffectTable.hpp"
 #include "Patterns.hpp"
 #include "Protocol.hpp"
 
@@ -207,4 +208,76 @@ TEST(Timing, TheNominalCeilingIsTheLongerOfTheTwoSelfTimedEffects)
 {
     EXPECT_EQ(kNominalEffectMs, kSelfTimedDurations[1]);
     EXPECT_GE(kNominalEffectMs, kSelfTimedDurations[0]);
+}
+
+/// The wire format takes 1 to 127 and the sweep found five of those unusable,
+/// so being in range is not enough to be in a pattern.
+TEST(Effects, AnIndexTheSweepDisqualifiedIsNotAUsableEffect)
+{
+    EXPECT_TRUE(isUsableEffect(1));
+    EXPECT_TRUE(isUsableEffect(117));
+    EXPECT_TRUE(isUsableEffect(123));
+    EXPECT_FALSE(isUsableEffect(0)) << "0 is a pause, never an effect";
+    EXPECT_FALSE(isUsableEffect(118)) << "the buzz with no reachable stop";
+    for (uint8_t effect = 124; effect <= 127; effect++) {
+        EXPECT_FALSE(isUsableEffect(effect)) << int(effect) << " plays nothing";
+    }
+}
+
+TEST(Patterns, APatternCannotBeBuiltOnADisqualifiedEffect)
+{
+    Pattern p {};
+    p.noteCount       = 1;
+    p.notes[0].effect = 123;
+    EXPECT_TRUE(isWellFormed(p));
+
+    for (uint8_t effect : { 118, 124, 125, 126, 127 }) {
+        p.notes[0].effect = effect;
+        EXPECT_FALSE(isWellFormed(p)) << "a pattern was allowed to use effect " << int(effect);
+    }
+}
+
+/// Every candidate set has to be buildable out of effects that work, which is
+/// the check that would have caught a set reaching for one that does not.
+TEST(Patterns, EverySetUsesOnlyUsableEffects)
+{
+    for (uint8_t s = 0; s < static_cast<uint8_t>(SetId::Count); s++) {
+        Pattern patterns[kMaxPatterns] {};
+        const uint8_t count = buildSet(static_cast<SetId>(s), patterns);
+        for (uint8_t i = 0; i < count; i++) {
+            EXPECT_TRUE(isWellFormed(patterns[i]))
+                << setName(static_cast<SetId>(s)) << " pattern " << patterns[i].id;
+        }
+    }
+}
+
+/// The measured table is what every timing now derives from, so the two effects
+/// that name their own duration are the check that it was generated from a real
+/// sweep rather than left at the ceiling.
+TEST(EffectTable, TheMeasuredTableAgreesWithTheEffectsThatNameTheirDuration)
+{
+    const EffectDurations measured = measuredDurations();
+    EXPECT_TRUE(measured.measured);
+    EXPECT_NEAR(measured.of(15), 750, 40);
+    EXPECT_NEAR(measured.of(16), 1000, 50);
+    // And it is not the nominal table wearing a flag.
+    EXPECT_LT(measured.of(1), kNominalEffectMs / 2);
+    EXPECT_LT(measured.of(24), kNominalEffectMs / 2);
+}
+
+/// The whole point of measuring: the window was sized off a ceiling of a second
+/// per effect, which made it nearly four seconds for patterns that finish in a
+/// fraction of that.
+TEST(EffectTable, TheMeasuredTableShrinksThePresentationWindow)
+{
+    Pattern patterns[kMaxPatterns] {};
+    const uint8_t count = buildSet(SetId::RhythmAndFamily, patterns);
+
+    const Timing guessed  = timingFor(patterns, count, EffectDurations::nominal());
+    const Timing measured = timingFor(patterns, count, measuredDurations());
+
+    EXPECT_LT(measured.presentationMs, guessed.presentationMs / 2);
+    // Still covers the longest pattern in the set, which is what it is for.
+    EXPECT_GT(measured.presentationMs, longestModelledMs(patterns, count, measuredDurations()));
+    EXPECT_TRUE(measured.usable());
 }

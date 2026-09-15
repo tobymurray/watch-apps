@@ -6,6 +6,7 @@
 #include "SDK/Kernel/Kernel.hpp"
 #include "SDK/Messages/CommandMessages.hpp"
 
+#include "EffectTable.hpp"
 #include "FrameBuilder.hpp"
 #include "Patterns.hpp"
 #include "Probe.hpp"
@@ -83,7 +84,7 @@ private:
     uint8_t               mPatternCount                   = 0;
     Haptic::Plan          mPlan {};
     Haptic::Timing        mTiming {};
-    Haptic::EffectDurations mDurations = Haptic::EffectDurations::nominal();
+    Haptic::EffectDurations mDurations = Haptic::measuredDurations();
     Haptic::RunHeader     mRun {};
     Haptic::SessionMeta   mMeta {};
     Haptic::Recorder      mRecorder;

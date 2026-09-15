@@ -15,6 +15,29 @@ namespace Haptic {
 constexpr uint8_t kMinEffect = 1;
 constexpr uint8_t kMaxEffect = 127;
 
+/// Indices the wire format accepts and the sweep found unusable, so no pattern
+/// may contain one. 124 upward produce no burst in any repeat on either sweep,
+/// which the wrist agreed with on probe `V2-effect-127`. 118 is worse than
+/// silent: it drives the actuator continuously for seconds past the ask, with
+/// no reachable way to stop it, so one note of it poisons everything that
+/// follows. Docs/LEDGER.md rows S6 and S12.
+constexpr uint8_t kUnusableEffects[] = { 118, 124, 125, 126, 127 };
+
+/// Whether `effect` is an index a pattern may use. Being inside the wire
+/// format's range is not enough.
+inline bool isUsableEffect(uint8_t effect)
+{
+    if (effect < kMinEffect || effect > kMaxEffect) {
+        return false;
+    }
+    for (size_t i = 0; i < sizeof(kUnusableEffects) / sizeof(kUnusableEffects[0]); i++) {
+        if (kUnusableEffects[i] == effect) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /// WIRE FORMAT: `IVibro::Note::pause` is documented as 1-1270 ms in steps of
 /// 10 ms; the message's own copy of the struct omits the range and the step.
 constexpr uint16_t kMinPauseMs  = 10;

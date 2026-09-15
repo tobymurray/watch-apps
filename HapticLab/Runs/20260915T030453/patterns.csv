@@ -1,0 +1,13 @@
+schema,run_id,set,set_hash,index,pattern_id,name,family,pulses,rhythm,amplitude,length,note_count,modelled_duration_ms,needs_amplitude_axis,notes
+3,20260915T030453,rhythm-and-family,2A096388,0,P01,TAP,click,1,single,full,brief,1,1000,0,e1
+3,20260915T030453,rhythm-and-family,2A096388,1,P02,TICK,tick,1,single,full,brief,1,1000,0,e24
+3,20260915T030453,rhythm-and-family,2A096388,2,P03,BUMP,bump,1,single,full,brief,1,1000,0,e7
+3,20260915T030453,rhythm-and-family,2A096388,3,P04,BUZZ,buzz,1,single,full,brief,1,1000,0,e14
+3,20260915T030453,rhythm-and-family,2A096388,4,P05,PULSE,pulsing,1,single,full,brief,1,1000,0,e52
+3,20260915T030453,rhythm-and-family,2A096388,5,P06,ALERT,alert,1,single,full,brief,1,1000,0,e15
+3,20260915T030453,rhythm-and-family,2A096388,6,P07,LONG,alert,1,single,full,sustained,1,1000,0,e16
+3,20260915T030453,rhythm-and-family,2A096388,7,P08,DOUBLE,click,2,even,full,brief,3,2080,0,e1;p80;e1
+3,20260915T030453,rhythm-and-family,2A096388,8,P09,TRIPLE,click,3,even,full,brief,5,3160,0,e1;p80;e1;p80;e1
+3,20260915T030453,rhythm-and-family,2A096388,9,P10,SKIP,click,3,short-long,full,brief,5,3400,0,e1;p80;e1;p320;e1
+3,20260915T030453,rhythm-and-family,2A096388,10,P11,LIMP,click,3,long-short,full,brief,5,3400,0,e1;p320;e1;p80;e1
+3,20260915T030453,rhythm-and-family,2A096388,11,P12,TWOTICK,tick,2,even,full,brief,3,2080,0,e24;p80;e24

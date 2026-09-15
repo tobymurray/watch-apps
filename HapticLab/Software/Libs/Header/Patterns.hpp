@@ -354,7 +354,7 @@ inline bool isWellFormed(const Pattern &pattern)
                         note.pauseMs % kPauseStepMs != 0)) {
             return false;
         }
-        if (!isPause && (note.effect < kMinEffect || note.effect > kMaxEffect)) {
+        if (!isPause && !isUsableEffect(note.effect)) {
             return false;
         }
     }
