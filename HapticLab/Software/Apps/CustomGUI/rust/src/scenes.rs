@@ -114,10 +114,15 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
         ("calibration_none", calibration(0b0000, crate::NO_BUTTON)),
         ("calibration_two", calibration(0b0101, 2)),
         ("calibration_all", calibration(0b1111, 1)),
-        ("learn_first", learn("TAP", 0, 12, 1000)),
-        // The longest name and the widest duration the model can produce.
+        // Measured durations, which is what the watch now shows: TAP is 70 ms
+        // and not the second the table used to assume for every effect.
+        ("learn_first", learn("TAP", 0, 12, 70)),
+        // The longest name against the widest duration the model can still
+        // produce. Four digits are no longer typical, but an effect with no
+        // measurement falls back to the nominal ceiling, so the slot has to
+        // hold them.
         ("learn_longest_name", learn("MMMMMMMM", 11, 12, 3400)),
-        ("learn_twotick", learn("TWOTICK", 5, 16, 2080)),
+        ("learn_twotick", learn("TWOTICK", 5, 16, 170)),
         ("wait", Frame { screen: SCREEN_WAIT, ..Frame::default() }),
         ("playing", Frame { screen: SCREEN_PLAYING, ..Frame::default() }),
         ("answer_short", answer("TAP", "TICK", "BUZZ")),
