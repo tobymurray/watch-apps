@@ -208,6 +208,7 @@ void Gui::buildTheSession()
     mMeta.sweepLastEffect  = mConfig.sweepLastEffect;
 
     mSession.setDurations(mDurations);
+    mSession.setTiming(mTiming);
     mProbeCount = Haptic::buildProbes(mProbes);
     mSweepTotal = mConfig.sweepLastEffect;
 

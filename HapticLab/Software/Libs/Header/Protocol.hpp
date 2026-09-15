@@ -50,6 +50,19 @@ struct Timing {
     uint32_t interTrialMs;
     uint32_t feedbackMs;
     uint32_t responseTimeoutMs;
+
+    /// Whether these are timings at all. A default-constructed `Timing` is all
+    /// zeros, and a session run on one does not fail: every stage elapses on
+    /// the next tick, so each trial plays and is dismissed inside a single
+    /// frame and records a response of `none`. Run `20260915T025630` did
+    /// exactly that, stepping through trials at a metronomic 398 ms, which is
+    /// four stages at the GUI's 10 fps, until the wearer abandoned it. A
+    /// session that cannot be timed must refuse to start rather than produce a
+    /// full set of rows that look like a wearer who felt nothing.
+    bool usable() const
+    {
+        return presentationMs > 0 && interTrialMs > 0 && feedbackMs > 0 && responseTimeoutMs > 0;
+    }
 };
 
 /// Margin on top of the longest modelled pattern, so a pattern that runs a
@@ -157,6 +170,11 @@ public:
         if (mStage != Stage::Idle) {
             return step;
         }
+        if (!mTiming.usable()) {
+            mStage      = Stage::Aborted;
+            step.redraw = true;
+            return step;
+        }
         mStage      = Stage::Calibration;
         mStageStart = nowMs;
         step.redraw = true;
@@ -194,6 +212,14 @@ public:
     }
 
     void setDurations(const EffectDurations &durations) { mDurations = durations; }
+
+    /// The timing has to be set after construction, because it is derived from
+    /// the pattern set and the measured durations and neither is known when the
+    /// GUI's members are built. Taking a copy at construction is what put a
+    /// whole session on zeros; `begin` is what stops that being silent.
+    void setTiming(const Timing &timing) { mTiming = timing; }
+
+    const Timing &timing() const { return mTiming; }
 
     Step onTick(uint32_t nowMs)
     {

@@ -409,3 +409,66 @@ TEST(Session, ARunAcrossTheUptimeWrapBehavesLikeATwinAwayFromIt)
 
     EXPECT_EQ(runFrom(0xFFFFF000u), runFrom(1000u));
 }
+
+/// Run `20260915T025630` stepped through two dozen trials at a metronomic
+/// 398 ms, which is four stages at the GUI's 10 fps, and recorded a response of
+/// `none` for every one. The `Session` had been constructed in the GUI's
+/// initialiser list, taking a copy of a `Timing` that was still all zeros, and
+/// the assignment that filled it in afterwards went to the GUI's copy. Nothing
+/// failed: every stage elapsed on the next tick.
+TEST(Session, ASessionThatCannotBeTimedRefusesToStart)
+{
+    Plan    plan {};
+    Pattern patterns[kMaxPatterns] {};
+    const uint8_t count = buildSet(SetId::RhythmAndFamily, patterns);
+    buildPlan(SetId::RhythmAndFamily, /*testPasses=*/4, /*seed=*/1, plan);
+
+    Session session(plan, patterns, Timing {});
+    session.setDurations(EffectDurations::nominal());
+    // No setTiming, which is the defect exactly.
+
+    session.begin(0);
+    EXPECT_EQ(session.stage(), Stage::Aborted)
+        << "a session with no timing started anyway and would have run on zeros";
+
+    // Ticking it must not produce trials either.
+    for (uint32_t t = 0; t < 5000; t += 100) {
+        session.onTick(t);
+    }
+    EXPECT_EQ(session.stage(), Stage::Aborted);
+}
+
+TEST(Session, AZeroInAnyTimingIsNotATiming)
+{
+    Timing good = timingFor(nullptr, 0, EffectDurations::nominal());
+    good.presentationMs = 1;
+    EXPECT_TRUE(good.usable());
+
+    for (uint32_t Timing::*field : { &Timing::presentationMs, &Timing::interTrialMs,
+                                     &Timing::feedbackMs, &Timing::responseTimeoutMs }) {
+        Timing bad = good;
+        bad.*field = 0;
+        EXPECT_FALSE(bad.usable()) << "a zero stage timeout was accepted as a timing";
+    }
+}
+
+/// And the timing a session is given is the timing it uses, which is what the
+/// GUI's construct-then-assign order broke.
+TEST(Session, TheTimingSetAfterConstructionIsTheOneTheSessionRunsOn)
+{
+    Plan    plan {};
+    Pattern patterns[kMaxPatterns] {};
+    const uint8_t count = buildSet(SetId::RhythmAndFamily, patterns);
+    buildPlan(SetId::RhythmAndFamily, /*testPasses=*/4, /*seed=*/1, plan);
+
+    Session session(plan, patterns, Timing {});
+    session.setDurations(EffectDurations::nominal());
+    const Timing wanted = timingFor(patterns, count, EffectDurations::nominal());
+    session.setTiming(wanted);
+
+    EXPECT_EQ(session.timing().presentationMs, wanted.presentationMs);
+    EXPECT_GT(session.timing().presentationMs, kPresentationMarginMs)
+        << "the presentation window is the margin alone, so no pattern fits inside it";
+    session.begin(0);
+    EXPECT_NE(session.stage(), Stage::Aborted);
+}
