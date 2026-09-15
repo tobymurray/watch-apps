@@ -10,7 +10,9 @@
 //   * hundredths of a bpm survive, because whole-bpm rounding would discard
 //     exactly the sub-bpm steps that are the evidence of kernel smoothing;
 //   * both per-source readings are kept beside the arbitrated one, so optical
-//     against strap is answerable from one recording rather than two.
+//     against strap is answerable from one recording rather than two;
+//   * the sensor's own clock is kept alongside the recording's, because t_ms
+//     times the delivery and only sensor_ms times the measurement.
 
 #include <gtest/gtest.h>
 
@@ -93,7 +95,8 @@ TEST(HrCsvLog, WritesAHeaderNamingEveryColumn)
 
     ASSERT_TRUE(log.begin(sink, 1000));
 
-    EXPECT_EQ(rows(sink.data())[0], "t_ms,bpm_x100,trust,source,optical_x100,external_x100");
+    EXPECT_EQ(rows(sink.data())[0],
+              "t_ms,bpm_x100,trust,source,optical_x100,external_x100,sensor_ms");
 }
 
 TEST(HrCsvLog, TimestampsAreRelativeToTheTickTheLogWasBegunWith)
@@ -134,9 +137,9 @@ TEST(HrCsvLog, SubBpmStepsSurviveTheRoundTrip)
     ASSERT_TRUE(log.onSample(2000, reading(142.68f, 0.0f, 142.68f)));
 
     const auto r = rows(sink.data());
-    EXPECT_EQ(r[1], "0,14200,2,2,0,14200");
-    EXPECT_EQ(r[2], "1000,14250,2,2,0,14250");
-    EXPECT_EQ(r[3], "2000,14268,2,2,0,14268");
+    EXPECT_EQ(r[1], "0,14200,2,2,0,14200,0");
+    EXPECT_EQ(r[2], "1000,14250,2,2,0,14250,0");
+    EXPECT_EQ(r[3], "2000,14268,2,2,0,14268,0");
 }
 
 TEST(HrCsvLog, KeepsBothSourcesBesideTheArbitratedReading)
@@ -149,7 +152,7 @@ TEST(HrCsvLog, KeepsBothSourcesBesideTheArbitratedReading)
     s.source           = HrCsvLog::Source::EXTERNAL;
     ASSERT_TRUE(log.onSample(0, s));
 
-    EXPECT_EQ(rows(sink.data())[1], "0,15000,2,2,13125,15000");
+    EXPECT_EQ(rows(sink.data())[1], "0,15000,2,2,13125,15000,0");
 }
 
 TEST(HrCsvLog, AnUntrustedReadingIsRecordedRatherThanDropped)
@@ -165,7 +168,7 @@ TEST(HrCsvLog, AnUntrustedReadingIsRecordedRatherThanDropped)
 
     // The file records the gap honestly; deciding what an untrusted reading is
     // worth belongs to whatever reads it.
-    EXPECT_EQ(rows(sink.data())[1], "0,0,0,0,0,0");
+    EXPECT_EQ(rows(sink.data())[1], "0,0,0,0,0,0,0");
 }
 
 TEST(HrCsvLog, EveryReadingReachesStorageWhenItIsMade)
@@ -238,6 +241,7 @@ TEST(HrCsvLog, NoRowCanExceedTheBudgetItsBufferIsSizedFor)
     HrCsvLog::Sample s = reading(1e9f, -1e9f, 1e9f);
     s.trust            = 255;
     s.source           = static_cast<HrCsvLog::Source>(255);
+    s.sensorMs         = 0xFFFFFFFFu;
     ASSERT_TRUE(log.onSample(0xFFFFFFFFu, s));
 
     // The header is written straight through and is not bounded by the row
@@ -246,4 +250,28 @@ TEST(HrCsvLog, NoRowCanExceedTheBudgetItsBufferIsSizedFor)
     for (size_t i = 1; i < r.size(); ++i) {
         EXPECT_LE(r[i].size() + 1, HrCsvLog::skMaxRowBytes) << r[i];
     }
+}
+
+TEST(HrCsvLog, CarriesTheSensorsOwnClockBesideTheRecordings)
+{
+    // t_ms says when the batch reached the app; sensor_ms says when the heart
+    // was measured. Two deliveries inside one recorder tick share a t_ms and
+    // are told apart only by this column -- which is the shape 11 of the 6,101
+    // gaps in Tests/pulled actually have.
+    MemorySink sink;
+    HrCsvLog   log;
+    ASSERT_TRUE(log.begin(sink, 0));
+
+    HrCsvLog::Sample a = reading(140.0f, 0.0f, 140.0f);
+    a.sensorMs         = 4294967295u;   // the widest the field can be
+    ASSERT_TRUE(log.onSample(0, a));
+
+    HrCsvLog::Sample b = reading(141.0f, 0.0f, 141.0f);
+    b.sensorMs         = 1005;
+    ASSERT_TRUE(log.onSample(0, b));
+
+    const auto r = rows(sink.data());
+    EXPECT_EQ(r[1], "0,14000,2,2,0,14000,4294967295");
+    EXPECT_EQ(r[2], "0,14100,2,2,0,14100,1005")
+        << "two deliveries in one tick became indistinguishable";
 }

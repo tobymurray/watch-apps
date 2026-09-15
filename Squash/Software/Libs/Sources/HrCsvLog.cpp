@@ -10,9 +10,9 @@
 namespace {
 
 /// Worst case the formatter can emit, from the field widths rather than
-/// guessed: "4294967295" (10) + three of "-99999" (6) + "255" (3) + "255" (3)
-/// + 5 commas + '\n'.
-constexpr size_t kWorstRowBytes = 10 + (6 * 3) + 3 + 3 + 5 + 1;
+/// guessed: two of "4294967295" (10) + three of "-99999" (6) + "255" (3) +
+/// "255" (3) + 6 commas + '\n'.
+constexpr size_t kWorstRowBytes = (10 * 2) + (6 * 3) + 3 + 3 + 6 + 1;
 
 /// Widest fixed-point reading the row budget allows, which is 999.99 bpm — an
 /// order above any heart rate and two below the field's own limit.
@@ -119,6 +119,8 @@ bool HrCsvLog::onSample(uint32_t nowMs, const Sample& sample)
     len += formatInt(hundredths(sample.opticalBpm), &row[len]);
     row[len++] = ',';
     len += formatInt(hundredths(sample.externalBpm), &row[len]);
+    row[len++] = ',';
+    len += formatInt(static_cast<int64_t>(sample.sensorMs), &row[len]);
     row[len++] = '\n';
 
     if (!mSink->write(row, len)) {

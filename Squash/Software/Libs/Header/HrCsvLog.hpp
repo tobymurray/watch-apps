@@ -34,10 +34,15 @@
  *
  * Format, alongside `imu_<stamp>.csv` as `imu_<stamp>_hr.csv`:
  * @code
- * t_ms,bpm_x100,trust,source,optical_x100,external_x100
- * 1000,14250,2,2,14100,14250
- * 2000,14232,2,2,14075,14232
+ * t_ms,bpm_x100,trust,source,optical_x100,external_x100,sensor_ms
+ * 1000,14250,2,2,14100,14250,98304
+ * 2000,14232,2,2,14075,14232,99309
  * @endcode
+ *
+ * `t_ms` times the delivery and `sensor_ms` times the measurement, and they are
+ * not the same question: `t_ms` is the recorder's tick when the batch arrived,
+ * so two readings handed over together share one and the stream's own cadence
+ * cannot be recovered from it.
  *
  * Hundredths of a bpm rather than a decimal, because there is no float
  * formatter here and a fixed-point integer is exact where a hand-rolled one
@@ -68,11 +73,12 @@ public:
 
     /// One arbitrated reading and the per-source readings behind it.
     struct Sample {
-        float   bpm         = 0.0f;
-        float   opticalBpm  = 0.0f;
-        float   externalBpm = 0.0f;
-        uint8_t trust       = 0;
-        Source  source      = Source::UNKNOWN;
+        float    bpm         = 0.0f;
+        float    opticalBpm  = 0.0f;
+        float    externalBpm = 0.0f;
+        uint32_t sensorMs    = 0;   ///< ms; the sensor's own clock, 0 = it gave none
+        uint8_t  trust       = 0;
+        Source   source      = Source::UNKNOWN;
     };
 
     /// Why the log is no longer accepting readings.
@@ -90,10 +96,10 @@ public:
     /// the recording stops first. It is a runaway guard, not a budget.
     static constexpr uint16_t skMaxSamples = 8192;
 
-    /// Longest row: 10 digits of uint32 ms + three 6-digit fixed-point fields +
-    /// 3 of trust + 3 of source + 5 commas + newline = 41, rounded up
+    /// Longest row: two 10-digit uint32 ms fields + three 6-digit fixed-point
+    /// fields + 3 of trust + 3 of source + 6 commas + newline = 52, rounded up
     /// (static_assert'd in the .cpp).
-    static constexpr size_t skMaxRowBytes = 48;
+    static constexpr size_t skMaxRowBytes = 56;
 
     HrCsvLog() = default;
 
@@ -130,8 +136,11 @@ public:
     uint32_t bytesWritten() const { return mBytesWritten; }
 
 private:
+    /// `sensor_ms` is appended rather than inserted, so a reader written
+    /// against the six-column files still works: `EffortKit`'s `parse_hr` takes
+    /// the first four positionally and `Tools/hr_analyse.py` reads by name.
     static constexpr const char* skHeader =
-        "t_ms,bpm_x100,trust,source,optical_x100,external_x100\n";
+        "t_ms,bpm_x100,trust,source,optical_x100,external_x100,sensor_ms\n";
 
     /// Append @p value in decimal to @p out; returns the number of chars written.
     static size_t formatInt(int64_t value, char* out);

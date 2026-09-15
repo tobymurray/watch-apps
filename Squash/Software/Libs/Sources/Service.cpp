@@ -264,8 +264,22 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
         // gated on it (Docs/ExternalSensors.md), and the two disagree about
         // what a valid frame is: EX wants seven fields where this wants two, so
         // reading BPM from EX shows nothing at all whenever EX is not producing.
-        SDK::SensorDataParser::HeartRate parser(data[0]);
-        if (parser.isDataValid()) {
+        //
+        // Every sample, not just the newest. This connection asks for a sample
+        // latency, and RustGuiPoc/Docs/FINDINGS.md measured on this hardware
+        // that latency does make the driver batch -- keeping only the newest
+        // entry discarded nine samples in ten as soon as one was configured. At
+        // 1 Hz the batch should hold one, and the line below is how this app's
+        // own log would say it ever held more.
+        if (data.size() > 1) {
+            mDiag.line("hr", "batch carried %u samples", static_cast<unsigned>(data.size()));
+        }
+        for (uint16_t i = 0; i < data.size(); i++) {
+            SDK::SensorDataParser::HeartRate parser(data[i]);
+            if (!parser.isDataValid()) {
+                continue;
+            }
+            ++mHrN;
             mHrBpm   = parser.getBpm();
             mHrTrust = static_cast<uint8_t>(parser.getTrustLevel());
             mHrUtc   = mTimeTracker.getExpectedUTC();
@@ -281,6 +295,9 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
                 hr.externalBpm = mHrExternal;
                 hr.trust       = mHrTrust;
                 hr.source      = static_cast<HrCsvLog::Source>(mHrSource);
+                // The sensor's own clock, so a row says when the heart was
+                // measured and not merely when the batch carrying it arrived.
+                hr.sensorMs    = parser.getTimestamp();
                 // The IMU tick, so the three files share one origin and a
                 // labelled transition lines up with the readings around it.
                 if (!mHrLog.onSample(mLastImuTs, hr)) {
@@ -292,8 +309,12 @@ void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
         }
     } else if (mSensorHrEx.matchesDriver(handle)) {
         // Provenance only. Nothing here reaches the screen's bpm.
-        SDK::SensorDataParser::HeartRateEx parser(data[0]);
-        if (parser.isDataValid()) {
+        for (uint16_t i = 0; i < data.size(); i++) {
+            SDK::SensorDataParser::HeartRateEx parser(data[i]);
+            if (!parser.isDataValid()) {
+                continue;
+            }
+            ++mHrExN;
             mHrOptical  = parser.getOpticalBpm();
             mHrExternal = parser.getExternalBpm();
             mHrSource   = static_cast<uint8_t>(parser.getSource());
@@ -425,6 +446,8 @@ void Service::startSession(std::time_t utc)
 
     mActiveS = 0;
     mLabelS  = 0;
+    mHrN     = 0;
+    mHrExN   = 0;
     mHrUtc   = 0;
     mEpoch   = squash_epoch{};
     mLastImuTs = 0;
@@ -482,6 +505,9 @@ void Service::stopSession(bool discard)
                    static_cast<unsigned long>(bytes),
                    static_cast<unsigned>(markers),
                    static_cast<unsigned>(beats));
+        mDiag.line("hr", "frames %lu hrex %lu",
+                   static_cast<unsigned long>(mHrN),
+                   static_cast<unsigned long>(mHrExN));
         LOG_INFO("Recording %s: intact=%u stop=%u samples=%lu bytes=%lu markers=%u beats=%u\n",
                  discard ? "kept on discard" : "saved",
                  static_cast<unsigned>(intact),

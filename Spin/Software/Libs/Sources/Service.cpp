@@ -250,8 +250,20 @@ void Service::disconnect()
 void Service::handleSensorsData(uint16_t handle, SDK::Sensor::DataBatch& data)
 {
     if (mSensorHr.matchesDriver(handle)) {
-        SDK::SensorDataParser::HeartRateEx parser(data[0]);
-        if (parser.isDataValid()) {
+        // Every sample, not just the newest. This connection asks for a sample
+        // latency, and RustGuiPoc/Docs/FINDINGS.md measured on this hardware that
+        // latency does make the driver batch -- keeping only the newest entry
+        // discarded nine samples in ten as soon as one was configured. At 1 Hz the
+        // batch should hold one, and the line below is how a pulled log would say
+        // it ever held more.
+        if (data.size() > 1) {
+            LOG_INFO("HR batch carried %u samples\n", static_cast<unsigned>(data.size()));
+        }
+        for (uint16_t i = 0; i < data.size(); i++) {
+            SDK::SensorDataParser::HeartRateEx parser(data[i]);
+            if (!parser.isDataValid()) {
+                continue;
+            }
             mHrCounter.add(parser.getBpm());           // arbitrated (kernel's choice)
             mTrackData.hrTrustLevel = parser.getTrustLevel();
             mHrSource      = static_cast<uint8_t>(parser.getSource());

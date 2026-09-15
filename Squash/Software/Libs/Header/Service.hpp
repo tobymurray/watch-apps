@@ -133,6 +133,17 @@ private:
     uint8_t mHrTrust    = 0;
     uint8_t mHrSource   = 0;
 
+    /// Frames taken from each subscription this session, written to the
+    /// diagnostic log when it ends.
+    ///
+    /// The two are counted separately because nothing has ever established
+    /// whether HEART_RATE_EX delivers here: SleepLab's probe proved only that it
+    /// resolves a driver, and its own hrex_n column has never been read
+    /// (SleepLab/Docs/FEASIBILITY-LEDGER.md, row S8). A session with mHrN high
+    /// and mHrExN zero is that answer.
+    uint32_t mHrN   = 0;
+    uint32_t mHrExN = 0;
+
     // -- Wrist tilt -----------------------------------------------------------
 
     WristTiltDetector mWristTiltDetector;
