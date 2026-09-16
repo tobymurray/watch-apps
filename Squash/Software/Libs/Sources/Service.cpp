@@ -368,6 +368,14 @@ void Service::onFusionSample(uint32_t ts, int16_t ax, int16_t ay, int16_t az,
         return;
     }
 
+    // Before anything that stamps a marker. writeMarker() reads mLastImuTs, and
+    // the opening marker below runs inside this same block: setting the clock
+    // afterwards left that marker stamped 0, and ImuMarkerLog's unsigned
+    // `nowMs - mStartMs` turned it into ~2^32. It cost the labels on three
+    // sessions of the 2026-09-16 recordings, which is why the order is now
+    // load-bearing rather than incidental.
+    mLastImuTs = ts;
+
     if (mImuArmed) {
         mImuArmed = false;
         squash_engine_reset();
@@ -388,8 +396,6 @@ void Service::onFusionSample(uint32_t ts, int16_t ax, int16_t ay, int16_t az,
             writeMarker(mLabel);
         }
     }
-
-    mLastImuTs = ts;
 
     if (!mImuRecorder.isRecording()) {
         return;
