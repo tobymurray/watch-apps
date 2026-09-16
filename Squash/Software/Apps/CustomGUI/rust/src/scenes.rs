@@ -129,14 +129,52 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
         ));
     }
 
+    // A session shaped like the 2026-09-13 match: 70 minutes, and a work:rest
+    // ratio in the range squash is actually played at.
     v.push((
         "saved",
         Frame {
             screen: SCREEN_SAVED,
             saved_ok: 1,
+            elapsed_s: 4_233,
             rec_s: 4_233,
             rec_kb: 18_200,
             markers: 87,
+            rally_s: 1_520,
+            rest_s: 2_180,
+            off_court_s: 410,
+            rec_stop: REC_NONE,
+            ..Frame::default()
+        },
+    ));
+    // Threes: whole rallies sat out, so rest dwarfs play.
+    v.push((
+        "saved_threes",
+        Frame {
+            screen: SCREEN_SAVED,
+            saved_ok: 1,
+            elapsed_s: 3_600,
+            rec_s: 3_600,
+            rec_kb: 15_500,
+            markers: 140,
+            rally_s: 900,
+            rest_s: 2_450,
+            off_court_s: 180,
+            rec_stop: REC_NONE,
+            ..Frame::default()
+        },
+    ));
+    // Nothing was ever labelled: the tally is honest about it rather than
+    // implying a session of pure rest.
+    v.push((
+        "saved_unlabelled",
+        Frame {
+            screen: SCREEN_SAVED,
+            saved_ok: 1,
+            elapsed_s: 1_800,
+            rec_s: 1_800,
+            rec_kb: 7_700,
+            markers: 0,
             rec_stop: REC_NONE,
             ..Frame::default()
         },
@@ -149,6 +187,9 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
             rec_s: CAP_S,
             rec_kb: CAP_KB,
             markers: 87,
+            rally_s: 2_100,
+            rest_s: 3_000,
+            off_court_s: 300,
             rec_stop: REC_DURATION_LIMIT,
             ..Frame::default()
         },

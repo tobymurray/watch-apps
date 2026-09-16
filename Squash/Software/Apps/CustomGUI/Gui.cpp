@@ -169,6 +169,9 @@ void Gui::buildFrame(squash_gui_frame &out) const
     out.rec_cap_kb    = mStatus.recCapKb;
     out.gyro_mag      = mStatus.gyroMag;
     out.accel_var_k   = mStatus.accelVarK;
+    out.rally_s       = mStatus.rallyS;
+    out.rest_s        = mStatus.restS;
+    out.off_court_s   = mStatus.offCourtS;
     out.markers       = mStatus.markers;
     out.hr_bpm        = mStatus.hrBpm;
     out.label_s       = mStatus.labelS;

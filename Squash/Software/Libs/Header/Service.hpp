@@ -121,6 +121,11 @@ private:
     uint32_t       mActiveS   = 0;   ///< seconds the session has been running
     Session::Label mLabel     = Session::Label::NONE;
     uint32_t       mLabelS    = 0;   ///< seconds held in mLabel
+    /// Seconds accumulated in each label across the session. Indexed by
+    /// Session::Label, so NONE at 0 is the time before the wearer said
+    /// anything -- which is a real quantity and deliberately not folded in
+    /// anywhere else.
+    uint32_t       mLabelSeconds[static_cast<size_t>(Session::Label::COUNT)] = {};
 
     /// Ages the reading for the screen, and bridges a second the arbiter did not
     /// stand behind. The sidecar is not aged: a row is written when a reading

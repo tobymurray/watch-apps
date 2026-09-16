@@ -53,6 +53,14 @@ struct Status {
     uint32_t recCapKb    = 0;  ///< size cap in force
     uint32_t gyroMag     = 0;  ///< last epoch's mean gyro magnitude, raw LSB
     uint32_t accelVarK   = 0;  ///< last epoch's accel magnitude variance, LSB^2/1000
+    /// Seconds the wearer spent in each of the three states that describe a
+    /// squash session. These are what the wearer pressed, not what anything
+    /// inferred -- no segmenter runs on this watch -- so they are ground truth
+    /// rather than a measurement, and worth more than one for exactly that
+    /// reason until a calibration exists to check against them.
+    uint32_t rallyS      = 0;
+    uint32_t restS       = 0;
+    uint32_t offCourtS   = 0;
     uint16_t markers     = 0;  ///< markers written, label changes included
     uint16_t hrBpm       = 0;  ///< bpm; 0 = nothing believable right now
     uint16_t labelS      = 0;  ///< seconds held in the current label

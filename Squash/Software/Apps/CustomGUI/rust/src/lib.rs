@@ -137,6 +137,12 @@ pub struct Frame {
     pub gyro_mag: u32,
     /// Variance of accelerometer magnitude over the last epoch, LSB^2 / 1000.
     pub accel_var_k: u32,
+    /// Seconds the wearer said they were in a rally. Pressed, not inferred.
+    pub rally_s: u32,
+    /// Seconds resting on court, which in threes includes sitting a rally out.
+    pub rest_s: u32,
+    /// Seconds off court entirely.
+    pub off_court_s: u32,
     /// Markers written to the sidecar, label changes included.
     pub markers: u16,
     /// Current bpm; 0 = nothing believable right now.
@@ -185,6 +191,9 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(Frame, rec_cap_kb));
     let h = fnv1a(h, core::mem::offset_of!(Frame, gyro_mag));
     let h = fnv1a(h, core::mem::offset_of!(Frame, accel_var_k));
+    let h = fnv1a(h, core::mem::offset_of!(Frame, rally_s));
+    let h = fnv1a(h, core::mem::offset_of!(Frame, rest_s));
+    let h = fnv1a(h, core::mem::offset_of!(Frame, off_court_s));
     let h = fnv1a(h, core::mem::offset_of!(Frame, markers));
     let h = fnv1a(h, core::mem::offset_of!(Frame, hr_bpm));
     let h = fnv1a(h, core::mem::offset_of!(Frame, label_s));
@@ -206,7 +215,7 @@ pub extern "C" fn squash_gui_abi_fingerprint() -> u32 {
     abi_fingerprint()
 }
 
-const _: () = assert!(core::mem::size_of::<Frame>() == 48);
+const _: () = assert!(core::mem::size_of::<Frame>() == 60);
 const _: () = assert!(core::mem::align_of::<Frame>() == 4);
 const _: () = assert!(core::mem::offset_of!(Frame, elapsed_s) == 0);
 const _: () = assert!(core::mem::offset_of!(Frame, rec_s) == 4);
@@ -215,20 +224,23 @@ const _: () = assert!(core::mem::offset_of!(Frame, rec_kb) == 12);
 const _: () = assert!(core::mem::offset_of!(Frame, rec_cap_kb) == 16);
 const _: () = assert!(core::mem::offset_of!(Frame, gyro_mag) == 20);
 const _: () = assert!(core::mem::offset_of!(Frame, accel_var_k) == 24);
-const _: () = assert!(core::mem::offset_of!(Frame, markers) == 28);
-const _: () = assert!(core::mem::offset_of!(Frame, hr_bpm) == 30);
-const _: () = assert!(core::mem::offset_of!(Frame, label_s) == 32);
-const _: () = assert!(core::mem::offset_of!(Frame, sat_accel_pct) == 34);
-const _: () = assert!(core::mem::offset_of!(Frame, sat_gyro_pct) == 35);
-const _: () = assert!(core::mem::offset_of!(Frame, screen) == 36);
-const _: () = assert!(core::mem::offset_of!(Frame, label) == 37);
-const _: () = assert!(core::mem::offset_of!(Frame, label_pick) == 38);
-const _: () = assert!(core::mem::offset_of!(Frame, hr_trust) == 39);
-const _: () = assert!(core::mem::offset_of!(Frame, hr_source) == 40);
-const _: () = assert!(core::mem::offset_of!(Frame, recording) == 41);
-const _: () = assert!(core::mem::offset_of!(Frame, rec_stop) == 42);
-const _: () = assert!(core::mem::offset_of!(Frame, armed) == 43);
-const _: () = assert!(core::mem::offset_of!(Frame, saved_ok) == 44);
+const _: () = assert!(core::mem::offset_of!(Frame, rally_s) == 28);
+const _: () = assert!(core::mem::offset_of!(Frame, rest_s) == 32);
+const _: () = assert!(core::mem::offset_of!(Frame, off_court_s) == 36);
+const _: () = assert!(core::mem::offset_of!(Frame, markers) == 40);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_bpm) == 42);
+const _: () = assert!(core::mem::offset_of!(Frame, label_s) == 44);
+const _: () = assert!(core::mem::offset_of!(Frame, sat_accel_pct) == 46);
+const _: () = assert!(core::mem::offset_of!(Frame, sat_gyro_pct) == 47);
+const _: () = assert!(core::mem::offset_of!(Frame, screen) == 48);
+const _: () = assert!(core::mem::offset_of!(Frame, label) == 49);
+const _: () = assert!(core::mem::offset_of!(Frame, label_pick) == 50);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_trust) == 51);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_source) == 52);
+const _: () = assert!(core::mem::offset_of!(Frame, recording) == 53);
+const _: () = assert!(core::mem::offset_of!(Frame, rec_stop) == 54);
+const _: () = assert!(core::mem::offset_of!(Frame, armed) == 55);
+const _: () = assert!(core::mem::offset_of!(Frame, saved_ok) == 56);
 
 // -- Framebuffer -------------------------------------------------------------
 
@@ -557,31 +569,75 @@ fn draw_paused(fb: &mut FrameBuf, frame: &Frame) {
     draw_text(fb, SMALL, "L2 DISCARD", 120, 200, Align::Left, AMBER);
 }
 
-fn draw_saved(fb: &mut FrameBuf, frame: &Frame) {
-    draw_centered(fb, BIG, if frame.saved_ok == 1 { "SAVED" } else { "NOT SAVED" }, 40,
-                  if frame.saved_ok == 1 { WHITE } else { AMBER });
+/// One `LABEL   m:ss` row of the session breakdown.
+fn draw_tally(fb: &mut FrameBuf, name: &str, seconds: u32, y: i32, color: Abgr2222) {
+    let mut b = [0u8; 12];
+    draw_text(fb, LABEL_F, name, 52, y, Align::Left, color);
+    draw_text(fb, LABEL_F, format_duration(seconds, &mut b), 188, y, Align::Right, WHITE);
+}
 
-    let mut rb = [0u8; 12];
-    draw_centered(fb, HEADING, format_duration(frame.rec_s, &mut rb), 80, WHITE);
-    draw_centered(fb, SMALL, "RECORDED", 104, DIM);
-
-    let mut mk = [0u8; 10];
-    let mut mb = [0u8; 12];
-    let mut line = [0u8; 32];
+/// Rest against play as `1 : N.N`, or nothing when either side is empty.
+///
+/// The ratio squash is usually discussed in, and the direction chosen so the
+/// number grows as the session gets easier: a wearer reads "how much rest did I
+/// get per unit of play", which is the question, rather than its reciprocal.
+fn draw_work_rest(fb: &mut FrameBuf, rally_s: u32, rest_s: u32, y: i32) {
+    if rally_s == 0 || rest_s == 0 {
+        return;
+    }
+    // Integer tenths: there is no float formatter here and the ratio is read to
+    // one decimal at most.
+    let tenths = (rest_s as u64 * 10 / rally_s as u64).min(999) as u32;
+    let mut whole = [0u8; 10];
+    let mut line = [0u8; 24];
     let n = join(
         &mut line,
-        &[fmt_u32(frame.markers as u32, &mut mk), " MARKERS   ", format_mb(frame.rec_kb, &mut mb), " MB"],
+        &["1 : ", fmt_u32(tenths / 10, &mut whole), ".", DIGITS[(tenths % 10) as usize]],
     );
-    draw_centered(fb, SMALL, core::str::from_utf8(&line[..n]).unwrap_or(""), 128, DIM);
+    draw_centered(fb, SMALL, core::str::from_utf8(&line[..n]).unwrap_or(""), y, DIM);
+    draw_centered(fb, SMALL, "PLAY : REST", y + 14, DIM);
+}
+
+const DIGITS: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+
+fn draw_saved(fb: &mut FrameBuf, frame: &Frame) {
+    draw_centered(fb, BIG, if frame.saved_ok == 1 { "SAVED" } else { "NOT SAVED" }, 12,
+                  if frame.saved_ok == 1 { WHITE } else { AMBER });
+
+    // What the wearer said they were doing, which is the only account of this
+    // session that exists: no segmenter runs on this watch.
+    draw_tally(fb, "PLAY", frame.rally_s, 44, GREEN);
+    draw_tally(fb, "REST", frame.rest_s, 66, AMBER);
+    draw_tally(fb, "OFF", frame.off_court_s, 88, BLUE);
+
+    draw_work_rest(fb, frame.rally_s, frame.rest_s, 114);
+
+    // The recorder's own account, smaller, because it is checked once.
+    let mut rb = [0u8; 12];
+    let mut mk = [0u8; 10];
+    let mut mb = [0u8; 12];
+    let mut line = [0u8; 40];
+    let n = join(
+        &mut line,
+        &[
+            format_duration(frame.rec_s, &mut rb),
+            " REC   ",
+            fmt_u32(frame.markers as u32, &mut mk),
+            " M   ",
+            format_mb(frame.rec_kb, &mut mb),
+            " MB",
+        ],
+    );
+    draw_centered(fb, SMALL, core::str::from_utf8(&line[..n]).unwrap_or(""), 150, DIM);
 
     // A session stopped by a cap is saved and incomplete, which is exactly the
     // state that went unnoticed for a 70-minute recording.
     let (text, color) = stop_text(frame.rec_stop);
     if !text.is_empty() {
-        draw_centered(fb, SMALL, text, 152, color);
+        draw_centered(fb, SMALL, text, 168, color);
     }
 
-    draw_centered(fb, LABEL_F, "R1  DONE", 186, WHITE);
+    draw_centered(fb, LABEL_F, "R1  DONE", 190, WHITE);
 }
 
 fn draw_discarded(fb: &mut FrameBuf, frame: &Frame) {

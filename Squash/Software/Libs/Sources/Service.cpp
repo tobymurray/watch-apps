@@ -164,6 +164,9 @@ void Service::run()
                     if (mLabel != Session::Label::NONE) {
                         ++mLabelS;
                     }
+                    // Every second lands somewhere, including the ones before
+                    // the wearer has said anything.
+                    ++mLabelSeconds[static_cast<size_t>(mLabel)];
                 }
                 sendStatus();
 
@@ -500,6 +503,12 @@ void Service::stopSession(bool discard)
         mHrLog.end();
         mHrSink.close();
 
+        mDiag.line("tally", "active=%lu play=%lu rest=%lu offcourt=%lu unlabelled=%lu",
+                   static_cast<unsigned long>(mActiveS),
+                   static_cast<unsigned long>(mLabelSeconds[static_cast<size_t>(Session::Label::RALLY)]),
+                   static_cast<unsigned long>(mLabelSeconds[static_cast<size_t>(Session::Label::REST)]),
+                   static_cast<unsigned long>(mLabelSeconds[static_cast<size_t>(Session::Label::OFF_COURT)]),
+                   static_cast<unsigned long>(mLabelSeconds[static_cast<size_t>(Session::Label::NONE)]));
         mDiag.line("imu", "%s intact=%u stop=%u samples=%lu bytes=%lu markers=%u beats=%u",
                    discard ? "discarded" : "saved",
                    static_cast<unsigned>(intact),
@@ -565,6 +574,9 @@ void Service::sendStatus()
     s.recCapKb  = mLimits.maxBytes / 1024u;
     s.gyroMag   = mEpoch.gyro_mag;
     s.accelVarK = mEpoch.accel_var_k;
+    s.rallyS    = mLabelSeconds[static_cast<size_t>(Session::Label::RALLY)];
+    s.restS     = mLabelSeconds[static_cast<size_t>(Session::Label::REST)];
+    s.offCourtS = mLabelSeconds[static_cast<size_t>(Session::Label::OFF_COURT)];
     s.markers   = mMarkerLog.markerCount();
     // Aged here rather than in the renderer, which owns no clock: past the
     // window the reading is sent as absent, which the screen already draws as
