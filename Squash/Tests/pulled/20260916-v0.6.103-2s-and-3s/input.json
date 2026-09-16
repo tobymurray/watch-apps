@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "values": {
+    "recordImu": true,
+    "maxMinutes": 120,
+    "maxMegabytes": 48
+  }
+}
