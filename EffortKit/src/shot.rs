@@ -239,7 +239,7 @@ mod tests {
         assert_eq!(d.count(), 1);
         // 400 ms after the peak is outside it.
         d.push(410, &spin(30_000));
-        assert_eq!(d.push(420, &spin(100)).is_some(), true);
+        assert!(d.push(420, &spin(100)).is_some());
         assert_eq!(d.count(), 2);
     }
 
