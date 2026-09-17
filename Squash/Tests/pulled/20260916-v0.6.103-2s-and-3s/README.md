@@ -38,3 +38,33 @@ as recorded.
 | `imu_20260916T164614_events.csv` | 4292276864 | 0 |
 | `imu_20260916T170710_events.csv` | 4291020818 | 0 |
 | `imu_20260916T173747_events.csv` | 4289183143 | 0 |
+
+## A correction to this data's commit message
+
+The commit that landed these files says "No gyroscope saturation in any epoch of
+the five, against 3.9% of epochs in the 2026-09-13 match. Saturation is not a
+constant of the sport." **That is wrong**, and the reasoning behind it was
+wrong in a way worth naming.
+
+It was read off A2's percentile table, where `gyro_sat` shows 0.0 from `min`
+through `p95` for every state. But a quantity present in ~3% of epochs has a
+p95 of exactly 0 by construction; the table was never evidence of absence.
+Counting epochs directly gives the opposite answer:
+
+| session | epochs | accel sat > 0 | gyro sat > 0 |
+|---|---:|---:|---:|
+| `20260913T122111` | 1800 | 13.8% | 3.9% |
+| `20260916T164614` | 1252 | 14.0% | 3.4% |
+| `20260916T170710` | 1815 | 10.5% | 2.6% |
+| `20260916T173747` | 1986 | 10.2% | 2.9% |
+
+So saturation **is** close to a constant of real squash on this watch — 10-14%
+of epochs with an accelerometer axis railed and 2.6-3.9% with a gyroscope axis,
+across four sessions on two days. The three 2026-09-03 wear tests have
+essentially none, which is what makes it a signature of play rather than of
+wearing the watch.
+
+That matters for what gets built next: an impact hard enough to rail the sensor
+in a tenth of all seconds is a strong, reproducible, discrete event, and
+counting discrete events is a different and easier problem than segmenting
+continuous states.
