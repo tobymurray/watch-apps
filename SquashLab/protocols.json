@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "_comment": "Drill protocols, read from Apps/SquashLab/protocols.json on the watch. Edit this file to change a protocol; nothing here is compiled in. A step's `kind` is written into the recording's marker sidecar and is a frozen wire format: 0-15 belong to RecorderKit's session states (2 is REST, shared with a match recording because a rest is a rest), and 16+ are shots. The shot scheme is 16 + side*8 + type, side 0 forehand and 1 backhand, type 0 drive, 1 drop, 2 lob, 3 boast, 4 serve. 32+ is unassigned and is where a volley or direction plane would go. `target` is how many shots the drill asks for; 0 means it is timed rather than counted, and `seconds` then says how long.",
+  "protocols": [
+    {
+      "name": "DRIVE DROP",
+      "_comment": "Protocol A. Forehand against backhand drive is the easiest discrimination in squash on this sensor -- opposite rotation sign about the forearm axis -- so it anchors the rep count at 30. Drops get 45, not because telling a drop from a drive is harder but because a drop may not be DETECTED at all: it is the soft shot the gyro threshold is most likely to miss, and more reps buys more chances to find out. The rests are negative controls: whatever the detector counts during one is false by construction.",
+      "steps": [
+        { "line1": "FOREHAND", "line2": "DRIVE", "kind": 16, "target": 30 },
+        { "line1": "REST", "line2": "", "kind": 2, "target": 0, "seconds": 60 },
+        { "line1": "BACKHAND", "line2": "DRIVE", "kind": 24, "target": 30 },
+        { "line1": "REST", "line2": "", "kind": 2, "target": 0, "seconds": 60 },
+        { "line1": "FOREHAND", "line2": "DROP", "kind": 17, "target": 45 },
+        { "line1": "REST", "line2": "", "kind": 2, "target": 0, "seconds": 60 },
+        { "line1": "BACKHAND", "line2": "DROP", "kind": 25, "target": 45 }
+      ]
+    },
+    {
+      "name": "LOB BOAST",
+      "_comment": "Protocol B. The two shots Protocol A leaves out, at the same anchor. Both need a feed.",
+      "steps": [
+        { "line1": "FOREHAND", "line2": "LOB", "kind": 18, "target": 30 },
+        { "line1": "REST", "line2": "", "kind": 2, "target": 0, "seconds": 60 },
+        { "line1": "BACKHAND", "line2": "LOB", "kind": 26, "target": 30 },
+        { "line1": "REST", "line2": "", "kind": 2, "target": 0, "seconds": 60 },
+        { "line1": "FOREHAND", "line2": "BOAST", "kind": 19, "target": 30 },
+        { "line1": "REST", "line2": "", "kind": 2, "target": 0, "seconds": 60 },
+        { "line1": "BACKHAND", "line2": "BOAST", "kind": 27, "target": 30 }
+      ]
+    },
+    {
+      "name": "CALIBRATE",
+      "_comment": "Five minutes to check the detector against a counted number before spending a session on a protocol. Count these yourself and compare with the screen; if the two disagree badly the threshold in input.json is wrong and the rest of the session would be built on it.",
+      "steps": [
+        { "line1": "FOREHAND", "line2": "DRIVE", "kind": 16, "target": 20 },
+        { "line1": "REST", "line2": "", "kind": 2, "target": 0, "seconds": 30 },
+        { "line1": "FOREHAND", "line2": "DROP", "kind": 17, "target": 20 }
+      ]
+    }
+  ]
+}
