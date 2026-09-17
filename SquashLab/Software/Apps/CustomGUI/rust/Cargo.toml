@@ -1,0 +1,36 @@
+[package]
+name = "squashlab_gui"
+version = "0.1.0"
+edition = "2021"
+description = "no_std Rust rendering core for the UNA Watch SquashLab app's CustomGUI: draws a drill protocol -- which drill, how many shots it wants, how many the watch thinks it saw -- into an 8bpp ABGR2222 framebuffer over a C ABI, with host previews that run the same render()."
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["staticlib", "lib"]
+
+[[bin]]
+name = "preview"
+required-features = ["preview"]
+
+[features]
+std = ["inscribed-disc/std"]
+device = ["panickit/panic-handler", "panickit/panic-message"]
+preview = ["std", "inscribed-disc/preview"]
+
+[dependencies]
+embedded-graphics = "0.8"
+# A dependency, never a second staticlib: two archives each carrying a
+# #[panic_handler] collide at link time.
+textkit = { path = "../../../../../TextKit" }
+panickit = { path = "../../../../../PanicKit", default-features = false }
+inscribed-disc = { path = "../../../../../InscribedDisc", default-features = false, features = [
+    "embedded-graphics",
+    "abgr2222",
+] }
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false

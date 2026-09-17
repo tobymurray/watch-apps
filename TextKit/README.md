@@ -138,7 +138,8 @@ not changed:
 | `SEMIBOLD_36_CLOCK` | 12 | 1,395 |
 | `SEMIBOLD_49_CLOCK` | 12 | 2,454 |
 | `SEMIBOLD_60_CLOCK` | 12 | 3,598 |
-| `SEMIBOLD_28_STATES` (`ABCDEFILMNOPRSTUWY`) | 19 | 1,668 |
+| `SEMIBOLD_28_STATES` (`ABCDEFGILMNOPRSTUWY`) | 20 | 1,780 |
+| `SEMIBOLD_28_ASCII` | 95 | 7,562 |
 
 Per-app before and after rows are in each app's README under Footprint.
 

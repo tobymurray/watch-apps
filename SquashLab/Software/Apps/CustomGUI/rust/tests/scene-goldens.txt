@@ -1,0 +1,15 @@
+# Byte hash of every scene in scenes.rs, FNV-1a over the 240x240 frame.
+# Regenerate with: cargo run --features std --example goldens > tests/scene-goldens.txt
+# A changed hash means a changed screen: look at it before accepting it.
+97cdfe79  pick_drive_drop
+da34087a  pick_straight_cross
+929e5cf9  drill_fh_drive
+66b78932  drill_fh_drop
+4783a370  drill_bh_drive
+17f93c63  drill_bh_drop_over
+d43a69c3  drill_rest
+f3da5f71  drill_untargeted
+852b08a6  drill_unknown_name
+f58e8f04  between
+4f206166  done
+43f29149  drill_not_recording

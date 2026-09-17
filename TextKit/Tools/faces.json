@@ -78,6 +78,12 @@
       "font": "Poppins-SemiBold.ttf",
       "px": 28,
       "charset": "ABCDEFGILMNOPRSTUWY"
+    },
+    {
+      "name": "SEMIBOLD_28_ASCII",
+      "font": "Poppins-SemiBold.ttf",
+      "px": 28,
+      "charset": "ascii"
     }
   ]
 }
