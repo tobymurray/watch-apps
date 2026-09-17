@@ -1,285 +1,341 @@
-# SquashSensor — a racket-embedded IMU for pre-divergence shot-disguise kinematics
+# SquashSensor — a racket-frame IMU recorder, and the corpus it exists to produce
 
-A hardware complement to `Squash` and `SquashLab`, not a replacement for either.
-Those record and label from the wrist; this exists because the wrist is the
-wrong place to answer one specific question: **how similar is a drive's and a
-drop shot's approach before they diverge** — the kinematic signature of shot
-disguise. That signal lives closer to the hand and racket than to the wrist,
-and it clips on the wrist sensor before it can be measured anyway.
+A hardware complement to [`Squash`](../Squash) and `SquashLab`, not a replacement
+for either. Those record and label from the wrist; this records from the racket,
+because the wrist clips during real play and because head speed on a wrist sensor
+is a proxy at best.
+
+**It is an instrument, not a metric.** It writes raw samples in a documented
+format and computes nothing. That is the same call `Squash/README.md` makes for
+the watch — "the app is the instrument that collects the data a squash metric
+would be built from" — and it is made here for the same reason: there is no public
+corpus of racket-frame IMU data from a squash court, and nothing downstream can be
+tuned without one.
+
+It is a **training tool, not competition equipment**. Conformity to the World
+Squash racket specification is not a design driver; see [Rules](#rules) for what
+would have to change if it ever were.
+
+Every number below is derived in [`Docs/ADVERSARIAL-REVIEW.md`](Docs/ADVERSARIAL-REVIEW.md),
+which owns the reasoning. This file owns the decisions.
 
 ## Why not the wrist
 
-`Squash/README.md` already measured the limitation this project exists to fix.
-Over 1,800 epochs of real match play on the BMI270 (±8g accel, ±2000dps gyro,
-100Hz), **13.8% of epochs had an accelerometer axis railed and 3.9% a
-gyroscope axis**, one epoch at 22% of samples railed. And structurally: "the
-watch is on the wrist, not the racquet — head speed is a proxy at best."
-Disguise detection needs exactly the kinematics that recording can't give:
-un-clipped, racket-frame, high enough rate to catch a wrist-snap burst.
+Measured over 7,084 epochs of labelled play on the BMI270 (±8 g, ±2000 dps,
+100 Hz), pooled across six sessions: **12.2% of epochs had an accelerometer axis
+railed and 3.4% a gyroscope axis**; on the 70-minute match alone, 13.8% and 3.9%,
+with one epoch at 22% of its samples. Re-derive with
+`cargo run --features std --bin phase-a -- <csv> --epochs ep.csv` and count the
+non-zero `accel_sat` and `gyro_sat` columns.
 
-## Goal
+The rails hide more than they show. Reconstructing each clipped run as a locally
+quadratic excursion puts the true single-axis wrist peak at a median of 2,293 dps
+and a maximum of **4,408 dps** against a 2,000 dps rail, and the accelerometer at
+~11 g median and 18 g maximum against an 8 g rail.
 
-- **Primary**: raw racket-frame swing kinematics for ML, specifically
-  quantifying how similar a drive's and drop shot's approach are before they
-  diverge.
-- **Secondary**: shot-type classification, usage-ratio logging over a season.
-- **Explicit limitation, not a defect**: a single IMU fixed to the racket
-  measures the racket's net motion only. It cannot separate "the wrist did
-  something different" from "the forearm or shoulder did" — both produce the
-  same racket-frame signal. Isolating wrist contribution specifically would
-  need a body-worn reference IMU, out of scope here.
+Two structural limits sit behind the clipping and are not fixed by a better wrist
+sensor: the watch measures the forearm, not the racket, so it misses the wrist
+joint's own contribution entirely; and 100 Hz is a 50 Hz Nyquist, below the
+transient of ball on strings.
 
-## Mechanical architecture
+## What it is for
 
-**This is an internal cartridge that slides into the hollow carbon handle
-through the open butt end. It is not, and was never meant to be, a wrap
-mounted around the grip exterior** — an early pass at this design assumed the
-latter and got the mechanical, RF, and grip-feel analysis wrong as a result.
-If a rebuild of this section starts from "wraps around the outside," that
-assumption is wrong; every finding below depends on the cartridge sliding
-inside the bore.
+- **Primary**: an open corpus of raw, un-clipped, racket-frame swing kinematics,
+  in a published format, that anyone can read without an account or an app.
+- **Secondary**: shot-type classification and season-long usage logging.
+- **Explicit limits, not defects.** A single rigid-mounted IMU measures the
+  racket's net motion. It cannot separate a wrist contribution from a forearm or
+  shoulder one — both produce the same racket-frame signal — and no arrangement of
+  accelerometers on the racket recovers the swing pivot, because that is defined
+  by the velocity field and accelerometers see the acceleration field. The
+  body-worn reference for that is the watch, which is why the two clocks have to
+  meet (see [The data contract](#the-data-contract)).
+- **The ceiling, stated plainly.** Ball speed, shot length, accuracy, court
+  position, T-recovery, the opponent, and whether it was the right shot are all
+  outside what a racket-mounted sensor can measure. It records how you swung,
+  never what happened.
 
-- **Envelope**: ~25×32mm interior cross-section, carbon fiber, hollow the
-  full handle length, accessible only from the butt. Assumed zero-taper for
-  at least 100mm — some racquets taper before that, deliberately not chased;
-  those are out-of-compatibility exceptions, not a design driver.
-- **Fit**: a custom 3D-printed liner per racquet takes up bore tolerance
-  (foam/TPU standoffs), not a bespoke rigid shell. The rigid cartridge needs
-  defined attachment points (bosses, ribs) for the liner to key into.
-- **Orientation repeatability**: a keying rib (blocks rotational ambiguity)
-  and a positive depth stop (fixes axial position) on the cartridge. Needed
-  because reinsertion is part of normal operation once charging doesn't
-  require full cartridge removal (below) — without both, the accelerometer's
-  effective lever-arm from the swing pivot drifts between sessions, which
-  quietly corrupts the cross-session comparability this whole device exists
-  to produce.
-- **Per-unit axis calibration is still required on top of the mechanical
-  key** — 3D-printed and hand-assembly tolerance is not precise enough on its
-  own for an ML application sensitive to subtle wrist-angle differences.
-  Calibrate each build against a known reference plane before use.
-- **Charging**: flat, low-profile contact **pads** on the outward face of the
-  (rarely-removed) butt cap — not spring pins on the racket. Spring pins live
-  on the charging cradle instead, where they don't take impact. The butt of a
-  racket gets tapped on the floor and takes hits on dives; a spring pin
-  proud of that surface is a bent contact waiting to happen. Recess the pads
-  in a non-conductive channel and gold-flash them — exposed always-live
-  contacts a few mm apart are a short hazard in a gym bag (keys, coins), and
-  sweat runoff collects at the butt end.
-- **Inductive charging: considered, rejected.** A receive coil sized usefully
-  for this bore sits within a few mm of the conductive tube wall around its
-  *entire* circumference, not just along the tube's length — unlike the
-  antenna, there's no "move it to the mouth" escape from this, because the
-  opening is the same conductive-walled bore. That risks eddy-current heating
-  in the load-bearing composite itself, repeated every charge cycle, and
-  commercial Qi transmitters will likely false-trigger foreign-object
-  detection on the tube. The contact-pad design above already solves the
-  actual goal (no cartridge removal to charge) with well-understood physics;
-  inductive would trade that for an unverified thermal risk in the racket's
-  own structure. Revisit only if a real thermal measurement on an actual
-  tube section says otherwise.
-- **No potting; conformal coating + foam cushioning instead.** Because
-  charging doesn't require removing the cartridge, it stays genuinely
-  serviceable (battery replacement over the product's life is realistic)
-  rather than sealed shut — a better outcome for "sealed cell inside a struck
-  object" than potting would have forced.
-- **Mass estimate: ~15–25g added**, dominated by the battery (~6–8g) and the
-  printed liner (~6–10g) — a rough volumetric estimate, not measured. Against
-  a ~110–140g competitive frame that's roughly 10–20% of total mass. Placement
-  near the butt/pivot keeps the swingweight (moment of inertia) impact small,
-  but it does shift the balance point toward the handle (more head-light) —
-  a real, felt effect that needs a physical mockup to confirm is acceptable,
-  not just a paper calculation.
-- **Butt-end placement is a scientific fit, not just where the void happens
-  to be**: the signal that predicts disguise (subtle hand/wrist cues before
-  the head diverges) originates closer to the hand than to the racket head, so
-  the mechanically-forced location happens to be well-suited to the actual
-  research question.
+## Mechanical — one module, two carriers
 
-## RF — the largest open technical risk
+The electronics are one board that fits two enclosures. Neither is a wrap around
+the grip exterior, and neither is a full-length cartridge.
 
-Modeling the bore as a rectangular waveguide (broad dimension a = 32mm):
-cutoff **fc = c/(2a) ≈ 4.69GHz**. Operating at 2.4GHz is below that cutoff,
-giving on the order of **70+ dB of theoretical attenuation over the 100mm
-length** if the tube were an ideal conductor. Real carbon composite is
-lossier and leakier than ideal, so the true number is lower — but the
-direction is unambiguous: an antenna buried deep in this tube will not have a
-usable link, independent of module or antenna tuning.
+**Carrier A — a puck at the butt.** A mount anchored by tape tucked under the grip
+wrap, with the sensor clipping onto it at the butt end. This is the shape the one
+shipping squash product uses. It has no waveguide problem, needs no bore
+measurement, adapts to any handle, unclips with its cell for charging, and is the
+one a stranger can reproduce. Its two-accelerometer separation is its own depth,
+about 20 mm.
 
-- **Mitigation**: orient the BLE module so its own vendor-tested antenna edge
-  faces the cap/mouth, and place that end of the board closest to the
-  opening. Do **not** relocate the antenna onto a separate flex/coax
-  sub-board — a pre-certified module's modular grant is conditioned on the
-  antenna configuration it was tested with, and a custom remote antenna
-  generally voids that, pushing you back into full intentional-radiator
-  certification regardless of module choice. Confirm the specific module
-  vendor's grant conditions before assuming this is settled.
-- **This must be bench-validated before any board commitment** — see Phase 0
-  below. The ideal-waveguide number is a bound, not a prediction of the real
-  material's behavior.
-- **Flash fallback is mandatory, not optional**, given the residual link
-  uncertainty — but it must be sized for at least one full worst-case
-  session (~110–140MB/hour at the combined dual-IMU rate), not treated as a
-  small dropout ring buffer. A generic small SPI NOR flash chip is
-  undersized for this; pick capacity deliberately.
-- **Full-board EMI context**: the whole assembly sits a few mm from a lossy
-  conductive tube on all sides, not just near the antenna — treat it as an
-  unintended shielded cavity generally (grounding, decoupling), not only an
-  antenna-keepout problem.
+**Carrier B — an insertable plug.** Remove the butt cap, insert the module on a
+printed sled, fit a replacement butt cap. Net-lighter than the puck because it
+removes the cap it replaces, flush, and it reaches a real accelerometer baseline.
+It needs the bore measured, and **the radio must live in the replacement cap** —
+the sled carries the cell and the outboard accelerometer inward, never the module.
+
+|  | A — butt puck | B — insertable plug |
+|---|---|---|
+| Mass | 6–10 g added (4.1–6.9% of a 145 g frame) | **5.8–8.6 g net** (4.0–5.9%), cap removed |
+| Balance shift | −19.9 mm | **−15.0 mm** |
+| RF | **none — outside the tube** | antenna in the bore; cap-mouth only |
+| Bore dependency | **none** | sled is per racket model |
+| Accelerometer separation | ~20 mm → 1.02 g of α at 500 rad/s² | **~90 mm → 4.59 g** |
+| Charging | **unclips with the cell** | contacts through the cap |
+| Reversible | **yes** | modifies the racket |
+| Reproducible by a stranger | **yes** | needs a measured bore |
+
+**Build A first.** It is the one that needs no bore measurement and no RF bench
+test, and it is the reproduction path the open-hardware requirement depends on.
+
+Sled length in carrier B is a trade and a cheap one: 40 mm to 100 mm costs
+1.8–2.4 g of printed sled and buys 3× the α signal, plus the cell volume with it.
+
+For scale, the electronics are **1.24 cm³** — 0.43 cm³ of silicon (the module is
+82% of it) plus 0.81 cm³ for a 100 mAh cell. A butt cap envelope is ~3 cm³. The
+binding dimension is thickness, not volume: module (2.2 mm), PCB (0.8) and cell
+(~4) do not stack inside a 3–5 mm cap, so they sit side by side in plan and the
+assembly runs ~4.8 mm, which works where it may extend a few millimetres into the
+mouth of the bore.
+
+## Mount orientation — the part that is easy to get wrong
+
+**Mount the IMU on its body diagonal, not square to the handle.** Clipping is
+per-axis, so the representable set is a cube of side 2R: a vector along a sensor
+axis clips at 1.00 R, along a face diagonal at 1.41 R, along the body diagonal at
+**1.73 R**. The dominant load has a fixed direction in the racket frame —
+centripetal acceleration points from the sensor toward the instantaneous centre,
+near the hand, on every shot — so putting that direction on the diagonal buys √3
+of range for free.
+
+It costs nothing: magnitude error is rotation-invariant, `dM = (a·da)/|a|`, so
+there is no noise or dynamic-range penalty, and `EffortKit`'s `gyro_magnitude` is
+the vector norm and does not change. It also makes a railed axis *more*
+informative, because two unrailed axes still carry direction.
+
+What it needs: the board tilted on a moulded wedge (a rotated footprint gives only
+one degree of freedom), and **the rotation matrix published with the recording**.
+
+`[1,1,1]` is optimal for one dominant direction. The real distribution has several,
+so pick the angle by recording a session, taking the distribution of vector
+directions in the racket frame, and maximising the minimum margin across it.
+
+## Ranges, and what clips
+
+Peak centripetal acceleration at the sensor is `a = ω·v`, which for a published
+squash forehand head speed of 30.8 m/s maxes at **50.4 g**. Axis-aligned, ±32 g is
+exceeded for every sensor speed between 6.1 and 24.7 m/s — the whole plausible
+range. On the body diagonal it becomes 55.4 g effective and clears the worst case,
+though it clips again above a 32.3 m/s head speed.
+
+| Channel | Part | Range | Diagonal-effective |
+|---|---|---|---|
+| 6-axis | ICM-45686 | ±32 g, ±4000 dps | 55.4 g, 6,928 dps |
+| High-g | ADXL375 | ±200 g | — |
+
+The gyro is comfortable: 6,928 dps against a racket estimate of 2,900–3,300 dps at
+impact with a tail past 4,000. The accelerometer is adequate with the diagonal
+mount and marginal without it. **Zero clipping is not claimed** — the recording is
+written in raw LSB so a railed axis stays visible, as `Squash` already does.
+
+## RF
+
+For carrier A there is nothing to do: the antenna is outside the tube.
+
+For carrier B, a 25 mm bore is 997 dB/m below cutoff at 2.4 GHz, and the link
+budget at 3 m leaves **+17.3 dB flush at the mouth, +7.3 dB at 10 mm, and −2.6 dB
+at 20 mm**. So the radio sits in the replacement cap and the specification is a
+depth limit, not an attenuation measurement. Use the module's own vendor-tested
+antenna edge outward; do not relocate the antenna onto a flex or coax sub-board,
+which voids a pre-certified module's modular grant.
+
+Treat the whole assembly as sitting in an unintended shielded cavity for grounding
+and decoupling, not only as an antenna-keepout problem.
 
 ## Electronics
 
-| Function | Part | Why |
+| Function | Part | Notes |
 |---|---|---|
-| Primary IMU | ICM-45686 (TDK InvenSense) | ±2–32g accel, ±4000°/s gyro, ODR to 6.4kHz, 2.5×3.0×0.76mm LGA. Run accel at ±32g — no ±24g step exists on this part, and the zero-clipping requirement argues for exceeding rather than settling for ±16g. Verify per-range noise density against the full datasheet table before finalizing. |
-| High-g accel | ADXL375 (Analog Devices) | ±200g, dedicated bus/CS so impact transients don't cost swing-phase resolution. Exact current draw/package height unverified this session — confirm from the datasheet directly. |
-| MCU/Radio | nRF52832, as a pre-certified module (e.g. Raytac MDBT42Q) for rev 1 | See platform-choice rationale below. Three SPIM/DMA instances available — put each IMU on its own bus. |
-| Flash | SPI NOR, sized for one full session | Mandatory BLE-dropout fallback, not a nice-to-have — see RF section. |
-| Charger | MCP73831 (SOT-23-5) | Small linear Li-Po charger, programmable current via Rprog — set only once a final cell capacity is known. |
-| Protection | BQ29700 (WSON-6) + companion dual N-FET + PTC fuse | Overcharge/overdischarge/overcurrent/short-circuit — MCP73831 alone doesn't provide this. Source the cell with integrated PCM as an additional independent layer if available. |
-| Battery | Small pouch cell, sized against final cartridge length split | Interior volume (25×32×100mm) makes this easy compared to an exterior-wrap design; get a real capacity quote once electronics length is fixed. |
+| Regulator | **required** | Every part below is 3.6 V maximum; the nRF52832 and ADXL375 have a 3.9 V *absolute* maximum and a full cell is 4.2 V. Pick a nano-quiescent LDO. |
+| 6-axis IMU | ICM-45686 | 1.71–3.6 V, LGA-14 2.5 × 3.0 × 0.81 mm, 8 KB FIFO, 0.42 mA low-noise. Full register map public in AN-000478. |
+| High-g accel | ADXL375 | 2.0–3.6 V, 3.00 × 5.00 × 0.80 mm 14-LGA, 145 µA at any ODR ≥ 100 Hz, survives 10,000 g. **Run it at 800 Hz**: sensitivity is specified only for ODR ≤ 800 Hz, and at 1600/3200 Hz the output LSB is always zero. Its ODR ladder is 400/800/1600/3200 — there is no 1 kHz step. SPI 5 MHz maximum. |
+| MCU / radio | pre-certified module — see [Open decisions](#open-decisions) | The modular grant is the reason to keep a module even at a power cost: files, a kit and a sold unit are three different regulatory objects, and only the last needs it. |
+| 32.768 kHz crystal | **a board part** | Raytac supplies a footprint and a recommended spec, not a fitted crystal. |
+| Flash | SPI NOR, sized from the rate decision | 512 Mbit covers an hour at 1 kHz + 800 Hz. Avoid NAND and the bad-block, ECC and wear-levelling firmware it brings. |
+| Charger | MCP73831 + **cell temperature** | 7 V absolute maximum, so it sits upstream of the regulator. Its thermal regulation watches its own die and it has no THERM pin, so the cell is unmonitored unless an NTC and an MCU-gated charge enable are added. In a sealed object that gets struck, add them. |
+| Protection | BQ29700 + companion dual N-FET + PTC | **The FETs' RDS(on) *is* the overcurrent threshold** — detection is a fixed voltage across them. Pick the FETs backwards from the desired trip current, not from a compatibility table. |
+| Battery | 100–150 mAh pouch, 2.1–3.2 g | ~11 mA active gives 9–14 sessions between charges, which is ample for a device that docks after every session. |
 
-### Platform: Nordic over ESP32
+Three parts are reflow-only: the ICM-45686 and ADXL375 are both LGA and the
+BQ29700 is WSON. Budget paid assembly and publish placement files.
 
-Chosen despite the author having far more ESP32 experience, on the strength
-of the standby power gap specifically: nRF52832/840 achieve sub-1µA System
-OFF sleep current versus ~7–10µA for classic ESP32 and ~5µA datasheet (often
-higher in practice) for ESP32-C3 — a 5–10x gap that dominates a device
-spending days in standby between short active sessions. Active BLE
-advertising current favors Nordic by a wider margin still (Nordic: tens of
-µA typical; ESP32-C3: ~0.8mA average). ESP32's dual-core architecture would
-solve the BLE-stack timing-jitter risk noted below, but only the
-power-hungry dual-core variants have two cores — the power-competitive
-single-core variants (C3/C6) share nRF52832's single-core contention risk
-without Nordic's power advantage. If jitter isolation proves necessary after
-bench testing, Nordic's own dual-core nRF5340 is the better answer, not a
-family switch. Real cost accepted: nRF Connect SDK (Zephyr-based) is a
-steeper on-ramp than ESP-IDF/Arduino.
+## Open decisions
+
+Two, both cheap, both to be made before a board is ordered because both change the
+BOM.
+
+**1. Sample rate.** 1 kHz was originally justified by a shot-disguise metric that
+is not part of this design; published racket-sport classification reaches 97–98% at
+ordinary rates. The rate is therefore no longer forced — but nor is it expensive,
+because the ADXL375's 3,200 Hz mode, not the 6-axis rate, was what broke the flash
+budget.
+
+| 6-axis rate | per hour | NOR for one hour | BLE sustained |
+|---|---|---|---|
+| 400 Hz | 17 MB | 256 Mbit | 38 kbit/s |
+| 800 Hz | 35 MB | 512 Mbit | 77 kbit/s |
+| 1 kHz | 43 MB | 512 Mbit | 96 kbit/s |
+
+Add 17 MB/hour for the ADXL375 at 800 Hz. Record more than you think you need —
+undersampling is unrecoverable and the recording is the product — but decide it
+rather than inherit it.
+
+**2. nRF52832 or nRF52840.** The '840 has a USB peripheral and the '832 does not,
+and that is the whole of it. **USB mass storage needs no software anybody has to
+write, on every operating system, for ever**; a custom BLE GATT service needs a
+tool somebody maintains, which is exactly what stranded the users of every product
+in the review's comparison table. The carriers already expose a face for contacts.
+The cost is a larger, more expensive module. Lower sample rates weaken the
+throughput argument for USB but not the openness one, which is the argument that
+matters.
 
 ## Firmware-adjacent hardware requirements
 
-- **Timestamps must derive from each IMU's own ODR/FIFO clock**, not from
-  MCU interrupts serviced under the BLE SoftDevice — a single-core
-  nRF52832's radio ISR can preempt application code by tens to hundreds of
-  µs around connection events, and this is a timing-sensitive measurement by
-  definition (the whole point is *when* drive and drop diverge).
-- **Wake-on-motion**: the IMU's motion interrupt must be wired to a
-  wake-capable GPIO. Season-long usage-ratio logging can't depend on the
-  player remembering to start/stop recording manually.
-- **External 32.768kHz crystal for the RTC** — needed for usage-log
-  timestamps to stay meaningful across weeks between phone syncs; the
-  internal RC oscillator drifts too much for that timescale.
-- **Battery voltage sense (ADC divider) and the IMU's built-in die
-  temperature sensor** — both cheap to wire in now, both needed later for
-  data-quality flags (brown-out artifacts, gyro bias temperature drift) that
-  can't be reconstructed after the fact if not logged at capture time.
-- **Firmware low-battery threshold above the protection IC's hard cutoff**
-  (e.g. graceful session-end/flash-flush around 3.4V) — without this, a
-  session that runs the battery down risks a corrupted trailing record right
-  as the hard cutoff hits.
+- **The ICM-45686 timestamps itself; the ADXL375 does not.** TDK FIFO packets carry
+  a 2-byte timestamp with the sensor data. The ADXL375's FIFO is 32 levels of x, y
+  and z with no timestamp and no sample counter, and 32 samples at 800 Hz is 40 ms
+  of slack. **The high-g channel is the hard real-time deadline in this design**,
+  and its alignment is a firmware construction that must be recorded in the file
+  with its uncertainty rather than assumed. Check whether the ICM's AUX I²C master
+  can place external-sensor data into its own FIFO — if it can, the high-g channel
+  inherits hardware timestamps and the problem goes away.
+- **Wake-on-motion** wired to a wake-capable GPIO. Season-long usage logging cannot
+  depend on remembering to start a recording. Note that the IMU's own wake-on-motion
+  current, tens of µA, dominates the standby budget — the MCU's System OFF current
+  does not decide anything.
+- **Battery voltage sense and IMU die temperature**, both logged as data-quality
+  channels. Neither is reconstructible after the fact.
+- **A firmware low-battery threshold above the protection IC's cutoff**, around
+  3.4 V, so a session ends and flushes rather than being truncated by a hard cutoff.
 
-## Requirement compliance
+## The data contract
 
-| Requirement | Status |
+The device writes raw per-sensor LSB, unscaled, on each sensor's own clock. It does
+not fuse, filter or scale a sample before writing it — the recording keeps the
+saturation rather than hiding it behind a conversion.
+
+A recording carries, in its own header, everything needed to interpret it without
+asking anyone:
+
+- per-unit calibration coefficients for both accelerometers, which are mandatory
+  rather than optional: the ADXL375's scale factor is specified only to ±10%
+  (44–54 mg/LSB), its 0 g offset to ±400 mg typical, and its on-chip offset
+  registers trim in 1.56 g steps and clear on every power cycle;
+- **the mount rotation matrix**, because the diagonal mount means raw LSB no longer
+  corresponds to anything anatomical;
+- **which carrier it was in, and the accelerometer separation**, both of which are
+  per-installation;
+- the session configuration, die temperature and battery voltage.
+
+The on-device format is documented binary — at these rates a text encoder is CPU
+and flash the cartridge does not have — and ships with a converter to
+[`RecorderKit`](../RecorderKit)'s three-file CSV, so a racket recording is readable
+by everything that already exists. Marker vocabulary is RecorderKit's, extended
+above the values it defines, never redefined. The specification lives in
+`Docs/FORMAT.md` and is versioned independently of the firmware.
+
+**Time sync with the watch is part of the contract**, not an afterthought: a racket
+sample and a wrist sample are useless together unless they can be placed on one
+timeline, and the mechanism is recorded in the file rather than assumed.
+
+**No hostages.** No account, no cloud, no server-side calibration table, no pairing
+key held by one app, nothing that stops working when a repository goes quiet.
+
+## Open hardware
+
+Published: schematic, editable KiCad layout, BOM with orderable part numbers,
+mechanical CAD for both carriers in an editable format, firmware source, assembly
+placement files, and the per-unit calibration procedure with its jig. The sled is
+parameterised by measured bore dimensions rather than shipped as one racket's STL.
+
+**Licences**: CERN-OHL-P 2.0 for the hardware, MIT for firmware and tooling, CC BY
+4.0 for documentation. MIT stays for code because the repository is MIT and the
+apps derive from the UNA SDK's MIT examples; the hardware wants a licence that
+names design files as the thing being licensed, and the permissive CERN variant
+keeps the repository's existing spirit.
+
+**No part in the BOM has an NDA problem** — the ICM-45686's full register map is
+public in AN-000478, and every other datasheet is a free download.
+
+The companion app is a consumer of the format, co-developed with it, under MIT.
+Anything it computes, it computes from files anyone else can also read.
+
+## Mass and cost
+
+| | |
 |---|---|
-| Accel ≥16g, ideally 24g | Exceeded (±32g) — no ±24g step exists on the chosen part |
-| Gyro ≥2000dps, ideally 4000dps | Met |
-| Separate high-g impact channel | Met |
-| 800Hz–1kHz+ sustained | Met with hardware margin; timing architecture (above) still needs firmware validation |
-| LiPo charge + full protection | Met, pending final cell/PCM sourcing |
-| Physical envelope | Met — generous interior volume, zero grip-feel impact |
-| BLE data path | **At risk** — antenna-at-mouth mitigation proposed, unverified until bench-measured; flash fallback is the actual safety net |
-| Mounting survives impact/vibration, connector fretting | Met — no in-racket connectors, conformal coating + foam cushioning |
-| Orientation/placement consistency | Addressed by keying rib + depth stop + per-unit calibration — none of the three is optional |
+| Added mass | 6–10 g (carrier A), 5.8–8.6 g net (carrier B) |
+| As a fraction of a 145 g frame | 4.0–6.9% |
+| Balance shift | −15 to −20 mm |
+| Swingweight | negligible — under 1 kg·cm² on a ~130 base |
+| BOM, low quantity | ~$25–40/unit |
+| Prototype run, 5–10 units | ~$70–120/unit, dominated by assembly setup |
 
-## Cost and weight (estimates, not quotes)
+For context, shipped implement sensors in tennis, golf and baseball carry
+1.5–3.0% of implement mass and shift balance 6–9 mm. This sits just above that
+band, and a squash frame is half a tennis racket's mass so it moves further per
+gram — balance shift, not mass ratio, is the number that transfers between sports.
 
-- **Added mass**: ~15–25g, dominated by battery and liner.
-- **BOM, low quantity**: ~$25–40/unit in components.
-- **All-in, prototype run (5–10 units)**: ~$70–120/unit, dominated by
-  assembly setup fees (the ICM-45686's LGA package cannot be hand-soldered —
-  budget for paid reflow assembly, not an iron).
-- **All-in, 50–100 unit run**: ~$35–55/unit as setup costs amortize.
+## Rules
 
-## Open, unresolved — named so they can be checked, not assumed away
+Not a design driver, recorded so it is not rediscovered. World Squash permits
+player analysis technology in playing equipment, and coaching only between games —
+so a device that records and displays nothing during play is the compliant shape.
+The racket must still meet the racket specification: **255 g maximum weight**,
+which is not binding, and **686 mm maximum length** against production frames built
+at 685 mm, which means carrier A would not be legal in sanctioned play and carrier
+B would.
 
-- **Real RF attenuation through the actual carbon layup** — the waveguide
-  number is a bound; only a bench measurement on real material resolves it.
-- **Whether the chosen module vendor's modular grant permits the final
-  antenna configuration** — check before assuming certification is solved by
-  module choice alone.
-- **ADXL375 exact current draw and package height** — unverified this
-  session, confirm from the datasheet.
-- **Achievable battery capacity in the final cartridge geometry** — get a
-  real quote once electronics length is fixed.
-- **ICM-45686 FIFO/timestamp register-level behavior** — needed to confirm
-  the jitter-free timestamping architecture above is actually achievable as
-  described.
-- **Whether the ~15–25g mass addition and head-light balance shift are
-  acceptable to a competitive player** — no amount of analysis substitutes
-  for a physical mockup here.
+## Plan, ordered by cost to kill
 
-## Execution plan
+**Now, free.**
 
-### Phase 0 — RF proxy test and confident-subsystem bring-up (now, in parallel)
+- Run `SquashLab`'s `DRIVE DROP` protocol, train a classifier on wrist epochs, and
+  report held-out drive-versus-drop accuracy. **This is the gate.** If the wrist
+  already separates them at 90%+, this device's case rests on the measured clipping
+  and on the corpus rather than on classification — still a case, but a smaller one.
+- Tape ~8 g to your butt cap and play a session. The prior art largely covers this
+  mass, so it is a confirmation rather than a study; if something is obviously
+  wrong, `Docs/ADVERSARIAL-REVIEW.md` §8 has a powered protocol.
+- Make the two open decisions above.
+- Read AN-000478 for the FIFO packet table, the timestamp resolution, and whether
+  the AUX I²C master reaches the FIFO.
 
-De-risk the one large unknown (RF) and the well-understood subsystems
-(sensors, charging) at the same time, using off-the-shelf hardware — no
-custom PCB yet.
+**Then, at a desk.** KiCad, starting with the power tree — it is the subsystem the
+original BOM got wrong and the one no open decision touches. IMU and charge
+circuits are mostly datasheet transcription; cross-check third-party footprints
+against each datasheet's own land pattern.
 
-**RF proxy test:**
-1. Sacrificial racket — a cracked/damaged frame from a local squash club or
-   marketplace listing; condition of the frame/strings doesn't matter, only
-   the handle's carbon construction does.
-2. 3D-print a crude positioning jig (not the final liner) that places a
-   module eval board's antenna at several depths: flush at the mouth, ~20mm,
-   ~50mm, fully buried near 90–100mm.
-3. Measure RSSI/packet loss at a fixed distance via a BLE scanner app, with
-   cap on/off and hand gripped/ungripped, to isolate whether the tube, the
-   cap, or the hand dominates the loss.
-4. Treat exact dB numbers as approximate (the eval board's antenna is tuned
-   for the vendor's reference ground plane, not the final board) — the
-   directional trend (depth matters this much, hand vs. tube contribution)
-   is what this test is for.
+**Then, one board.** Carrier A at a comfortable size before the tight one. No RF
+bench test is needed for it.
 
-**Shopping list (Digi-Key Canada — confirmed in stock at time of writing):**
+**Only for carrier B.** A sacrificial racket, handle intact: measure the bore at 0,
+20, 50 and 100 mm from the butt, the wall thickness, whether there is foam or a
+pallet, and weigh the butt cap. Then the depth-cliff RF test, which is looking for
+where the link falls over rather than for an attenuation figure.
 
-| Item | Part | Qty | Purpose |
-|---|---|---|---|
-| BLE module eval board | Raytac MDBT42Q-DB-32 | 1 | RF proxy test — exact module + antenna under consideration |
-| BLE dev kit | Nordic NRF52-DK | 1 | Second RF reference point; onboard J-Link also programs the Raytac board via debug-out (check exact pinout in the DK user guide first) |
-| Primary IMU eval board | TDK EV-ICM-45686 | 1 | Sensor bring-up — no custom breakout needed for this stage |
-| High-g accel eval board | Analog Devices EVAL-ADXL375Z | 1 | Sensor bring-up |
-| Charger IC | MCP73831T-2ACI/OT | 5–10 | Cheap, hand-solderable (real leads) — expect losses during first SMD attempts |
-| Protection IC | BQ29700DSER | 5–10 | Cheap but WSON (reflow-only) — buy ahead of the batched breakout order |
-| Companion dual N-FET | *confirm exact part against BQ29700 datasheet's companion table before ordering* | 5–10 | Switches charge/discharge path on a protection fault |
-| PTC fuse, Rprog resistor, passives | *pick after sizing final charge current* | 5–10 each | Don't lock in values before a final cell capacity is known |
-| Bench-test battery | any small 3.7V LiPo, JST-PH | 1 | Not the final cell — any source is fine for this stage |
+## Not settled
 
-Software: free — nRF Connect for Mobile for RSSI/packet-loss logging.
-
-### Phase 1 — KiCad schematic capture, confident subsystems only
-
-IMU and charge/protection reference schematics — mostly transcribing each
-datasheet's application circuit. Pull verified footprints (SnapEDA has a
-listing for the ICM-45686) and cross-check against the datasheet's own land
-pattern before trusting a third-party symbol, especially for the fine-pitch
-LGA/WSON parts. Nothing RF-dependent gets designed in this phase.
-
-### Phase 2 — Resolve RF placement and certification path
-
-Complete the proxy test; confirm module orientation and whether the chosen
-vendor's modular grant permits the final antenna configuration as tested.
-Nothing in Phase 3 or 4 should start before this phase has an answer.
-
-### Phase 3 — Loose-form-factor bring-up board
-
-One integrated board, same schematic as the final design, laid out at a
-comfortable size rather than the tight 25×32mm cartridge cross-section —
-catches footprint/schematic mistakes cheaply before committing to the final
-tight layout.
-
-### Phase 4 — Final cartridge-form-factor board, liner, and cap
-
-Tight layout respecting the antenna-at-mouth orientation from Phase 2;
-per-racquet 3D-printed liner with keying rib and depth stop; removable cap
-with charging contact pads (not spring pins) on its outward face.
+- Whether racket-frame kinematics beat the wrist at anything. The gate above.
+- The bore, for carrier B. Nothing about it has been measured.
+- Whether the ICM's AUX I²C master can carry the high-g channel into its FIFO.
+- Whether a microphone hears ball-on-strings through a carrier — a MEMS mic would
+  give an impact timestamp that does not depend on a gyro threshold, which is the
+  soft-drop detection problem `EffortKit`'s `shot` module records as unsolved. The
+  acoustic path is the unknown, not the microphone, and a mic in a device carried
+  into a club is a privacy question an open design has to answer in the open.
+- Whether a magnetometer is usable near a cell and a switching load; racket face
+  angle in the world frame is unrecoverable without one. `MagProbe` is the
+  instrument for that question and has never been run.
+- Per-unit calibration repeatability across a reinsertion, and therefore how much
+  mechanical keying is worth.
+- What Racketware's data model is, and whether it exposes raw samples.
