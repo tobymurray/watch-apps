@@ -35,6 +35,7 @@ pub mod profile;
 pub mod record;
 pub mod segment;
 pub mod session;
+pub mod shot;
 pub mod window;
 
 #[cfg(feature = "std")]
