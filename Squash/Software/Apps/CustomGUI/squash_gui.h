@@ -29,7 +29,8 @@ extern "C" {
 #define SQUASH_GUI_LABEL_WARMUP    4u
 #define SQUASH_GUI_LABEL_DRILL     5u
 #define SQUASH_GUI_LABEL_IDLE      6u
-#define SQUASH_GUI_LABEL_COUNT     7u
+#define SQUASH_GUI_LABEL_GAME      7u
+#define SQUASH_GUI_LABEL_COUNT     8u
 
 /* ImuCsvRecorder::Stop, carried through unchanged. */
 #define SQUASH_GUI_REC_NONE           0u
@@ -56,6 +57,7 @@ typedef struct {
     uint32_t gyro_mag;    /* mean gyroscope vector magnitude last epoch, raw LSB */
     uint32_t accel_var_k; /* accelerometer magnitude variance last epoch, LSB^2/1000 */
     uint32_t rally_s;     /* seconds the wearer said they were in a rally */
+    uint32_t game_s;      /* seconds inside a game; what this app's button marks */
     uint32_t rest_s;      /* seconds resting on court; in threes, sitting a rally out */
     uint32_t off_court_s; /* seconds off court entirely */
     uint16_t markers;     /* markers written, label changes included */
@@ -117,6 +119,7 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(squash_gui_frame, gyro_mag));
     h = fnv1a(h, offsetof(squash_gui_frame, accel_var_k));
     h = fnv1a(h, offsetof(squash_gui_frame, rally_s));
+    h = fnv1a(h, offsetof(squash_gui_frame, game_s));
     h = fnv1a(h, offsetof(squash_gui_frame, rest_s));
     h = fnv1a(h, offsetof(squash_gui_frame, off_court_s));
     h = fnv1a(h, offsetof(squash_gui_frame, markers));

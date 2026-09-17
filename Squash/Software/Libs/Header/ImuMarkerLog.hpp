@@ -80,6 +80,7 @@ public:
         WARMUP,
         DRILL,
         IDLE,
+        GAME,   ///< A whole game: rallies and the gaps between them.
     };
 
     /// Why the log is no longer accepting markers.
@@ -120,7 +121,7 @@ public:
     /**
      * @brief Record one marker.
      * @param nowMs Monotonic tick of the press, on the recording's clock.
-     * @param kind  Reserved; pass Kind::MANUAL.
+     * @param kind  What the wearer was doing from this instant on.
      * @return true if the marker was written and flushed.
      *
      * Flushed immediately rather than buffered. Markers are tiny, rare, and

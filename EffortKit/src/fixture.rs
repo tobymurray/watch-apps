@@ -45,6 +45,11 @@ pub enum Label {
     Drill,
     /// Worn but not playing — walking to court, talking, tying a shoe.
     Idle,
+    /// A whole game: rallies and the gaps between them, as one stretch.
+    ///
+    /// What a wearer can actually mark in real time. A mixture whose rest
+    /// fraction is unknown, so it is never interchangeable with `Rally`.
+    Game,
     /// Named in a labels file but not one this build knows.
     Unknown,
     /// Nothing named this stretch. Not a state — the absence of one.
@@ -61,6 +66,7 @@ impl Label {
             "warmup" | "warm_up" => Label::WarmUp,
             "drill" => Label::Drill,
             "idle" => Label::Idle,
+            "game" => Label::Game,
             _ => Label::Unknown,
         }
     }
@@ -74,6 +80,7 @@ impl Label {
             Label::WarmUp => "warmup",
             Label::Drill => "drill",
             Label::Idle => "idle",
+            Label::Game => "game",
             Label::Unknown => "unknown",
             Label::Unlabelled => "unlabelled",
         }
@@ -222,6 +229,7 @@ fn label_from_kind(kind: u8) -> Option<Label> {
         4 => Some(Label::WarmUp),
         5 => Some(Label::Drill),
         6 => Some(Label::Idle),
+        7 => Some(Label::Game),
         _ => None,
     }
 }

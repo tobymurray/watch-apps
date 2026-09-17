@@ -170,6 +170,7 @@ void Gui::buildFrame(squash_gui_frame &out) const
     out.gyro_mag      = mStatus.gyroMag;
     out.accel_var_k   = mStatus.accelVarK;
     out.rally_s       = mStatus.rallyS;
+    out.game_s        = mStatus.gameS;
     out.rest_s        = mStatus.restS;
     out.off_court_s   = mStatus.offCourtS;
     out.markers       = mStatus.markers;
@@ -274,7 +275,7 @@ void Gui::handleButton(SDK::Message::EventButton::Id id,
                     // Opens on whatever is being written, so the common case is
                     // confirming rather than hunting.
                     mLabelPick = (mStatus.label == SQUASH_GUI_LABEL_NONE)
-                                     ? SQUASH_GUI_LABEL_RALLY
+                                     ? SQUASH_GUI_LABEL_GAME
                                      : mStatus.label;
                     mPicking = true;
                     break;

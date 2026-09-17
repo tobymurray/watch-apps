@@ -38,6 +38,13 @@ enum class Label : uint8_t {
     WARMUP,
     DRILL,
     IDLE,
+    /// A whole game, rallies and the gaps between them together.
+    ///
+    /// What the user-facing app marks, because a press per rally is 15-25
+    /// presses a game and nobody does that. Deliberately not RALLY: a game is a
+    /// mixture whose rest fraction is unknown, and labelling one as the other
+    /// would calibrate a rally-level segmenter against a mixture.
+    GAME,
     COUNT
 };
 
@@ -59,6 +66,7 @@ struct Status {
     /// rather than a measurement, and worth more than one for exactly that
     /// reason until a calibration exists to check against them.
     uint32_t rallyS      = 0;
+    uint32_t gameS       = 0;
     uint32_t restS       = 0;
     uint32_t offCourtS   = 0;
     uint16_t markers     = 0;  ///< markers written, label changes included

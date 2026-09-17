@@ -509,9 +509,9 @@ void Service::stopSession(bool discard)
         mHrLog.end();
         mHrSink.close();
 
-        mDiag.line("tally", "active=%lu play=%lu rest=%lu offcourt=%lu unlabelled=%lu",
+        mDiag.line("tally", "active=%lu game=%lu rest=%lu offcourt=%lu unlabelled=%lu",
                    static_cast<unsigned long>(mActiveS),
-                   static_cast<unsigned long>(mLabelSeconds[static_cast<size_t>(Session::Label::RALLY)]),
+                   static_cast<unsigned long>(mLabelSeconds[static_cast<size_t>(Session::Label::GAME)]),
                    static_cast<unsigned long>(mLabelSeconds[static_cast<size_t>(Session::Label::REST)]),
                    static_cast<unsigned long>(mLabelSeconds[static_cast<size_t>(Session::Label::OFF_COURT)]),
                    static_cast<unsigned long>(mLabelSeconds[static_cast<size_t>(Session::Label::NONE)]));
@@ -581,6 +581,7 @@ void Service::sendStatus()
     s.gyroMag   = mEpoch.gyro_mag;
     s.accelVarK = mEpoch.accel_var_k;
     s.rallyS    = mLabelSeconds[static_cast<size_t>(Session::Label::RALLY)];
+    s.gameS     = mLabelSeconds[static_cast<size_t>(Session::Label::GAME)];
     s.restS     = mLabelSeconds[static_cast<size_t>(Session::Label::REST)];
     s.offCourtS = mLabelSeconds[static_cast<size_t>(Session::Label::OFF_COURT)];
     s.markers   = mMarkerLog.markerCount();

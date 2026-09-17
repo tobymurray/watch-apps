@@ -63,7 +63,9 @@ pub const LABEL_OFF_COURT: u8 = 3;
 pub const LABEL_WARMUP: u8 = 4;
 pub const LABEL_DRILL: u8 = 5;
 pub const LABEL_IDLE: u8 = 6;
-pub const LABEL_COUNT: u8 = 7;
+/// A whole game. What this app marks: a press per rally is 15-25 a game.
+pub const LABEL_GAME: u8 = 7;
+pub const LABEL_COUNT: u8 = 8;
 
 /// The name written on the screen, and the name `Label::parse` reads back.
 pub fn label_name(label: u8) -> &'static str {
@@ -74,18 +76,20 @@ pub fn label_name(label: u8) -> &'static str {
         LABEL_WARMUP => "WARMUP",
         LABEL_DRILL => "DRILL",
         LABEL_IDLE => "IDLE",
+        LABEL_GAME => "GAME",
         _ => "NO LABEL",
     }
 }
 
 fn label_color(label: u8) -> Abgr2222 {
     match label {
-        LABEL_RALLY => GREEN,
+        LABEL_RALLY => CYAN,
         LABEL_REST => AMBER,
         LABEL_OFF_COURT => BLUE,
         LABEL_WARMUP => CYAN,
         LABEL_DRILL => YELLOW,
         LABEL_IDLE => DIM,
+        LABEL_GAME => GREEN,
         _ => DIM,
     }
 }
@@ -139,6 +143,8 @@ pub struct Frame {
     pub accel_var_k: u32,
     /// Seconds the wearer said they were in a rally. Pressed, not inferred.
     pub rally_s: u32,
+    /// Seconds inside a game, which is what this app's one button marks.
+    pub game_s: u32,
     /// Seconds resting on court, which in threes includes sitting a rally out.
     pub rest_s: u32,
     /// Seconds off court entirely.
@@ -192,6 +198,7 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(Frame, gyro_mag));
     let h = fnv1a(h, core::mem::offset_of!(Frame, accel_var_k));
     let h = fnv1a(h, core::mem::offset_of!(Frame, rally_s));
+    let h = fnv1a(h, core::mem::offset_of!(Frame, game_s));
     let h = fnv1a(h, core::mem::offset_of!(Frame, rest_s));
     let h = fnv1a(h, core::mem::offset_of!(Frame, off_court_s));
     let h = fnv1a(h, core::mem::offset_of!(Frame, markers));
@@ -215,7 +222,7 @@ pub extern "C" fn squash_gui_abi_fingerprint() -> u32 {
     abi_fingerprint()
 }
 
-const _: () = assert!(core::mem::size_of::<Frame>() == 60);
+const _: () = assert!(core::mem::size_of::<Frame>() == 64);
 const _: () = assert!(core::mem::align_of::<Frame>() == 4);
 const _: () = assert!(core::mem::offset_of!(Frame, elapsed_s) == 0);
 const _: () = assert!(core::mem::offset_of!(Frame, rec_s) == 4);
@@ -225,22 +232,23 @@ const _: () = assert!(core::mem::offset_of!(Frame, rec_cap_kb) == 16);
 const _: () = assert!(core::mem::offset_of!(Frame, gyro_mag) == 20);
 const _: () = assert!(core::mem::offset_of!(Frame, accel_var_k) == 24);
 const _: () = assert!(core::mem::offset_of!(Frame, rally_s) == 28);
-const _: () = assert!(core::mem::offset_of!(Frame, rest_s) == 32);
-const _: () = assert!(core::mem::offset_of!(Frame, off_court_s) == 36);
-const _: () = assert!(core::mem::offset_of!(Frame, markers) == 40);
-const _: () = assert!(core::mem::offset_of!(Frame, hr_bpm) == 42);
-const _: () = assert!(core::mem::offset_of!(Frame, label_s) == 44);
-const _: () = assert!(core::mem::offset_of!(Frame, sat_accel_pct) == 46);
-const _: () = assert!(core::mem::offset_of!(Frame, sat_gyro_pct) == 47);
-const _: () = assert!(core::mem::offset_of!(Frame, screen) == 48);
-const _: () = assert!(core::mem::offset_of!(Frame, label) == 49);
-const _: () = assert!(core::mem::offset_of!(Frame, label_pick) == 50);
-const _: () = assert!(core::mem::offset_of!(Frame, hr_trust) == 51);
-const _: () = assert!(core::mem::offset_of!(Frame, hr_source) == 52);
-const _: () = assert!(core::mem::offset_of!(Frame, recording) == 53);
-const _: () = assert!(core::mem::offset_of!(Frame, rec_stop) == 54);
-const _: () = assert!(core::mem::offset_of!(Frame, armed) == 55);
-const _: () = assert!(core::mem::offset_of!(Frame, saved_ok) == 56);
+const _: () = assert!(core::mem::offset_of!(Frame, game_s) == 32);
+const _: () = assert!(core::mem::offset_of!(Frame, rest_s) == 36);
+const _: () = assert!(core::mem::offset_of!(Frame, off_court_s) == 40);
+const _: () = assert!(core::mem::offset_of!(Frame, markers) == 44);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_bpm) == 46);
+const _: () = assert!(core::mem::offset_of!(Frame, label_s) == 48);
+const _: () = assert!(core::mem::offset_of!(Frame, sat_accel_pct) == 50);
+const _: () = assert!(core::mem::offset_of!(Frame, sat_gyro_pct) == 51);
+const _: () = assert!(core::mem::offset_of!(Frame, screen) == 52);
+const _: () = assert!(core::mem::offset_of!(Frame, label) == 53);
+const _: () = assert!(core::mem::offset_of!(Frame, label_pick) == 54);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_trust) == 55);
+const _: () = assert!(core::mem::offset_of!(Frame, hr_source) == 56);
+const _: () = assert!(core::mem::offset_of!(Frame, recording) == 57);
+const _: () = assert!(core::mem::offset_of!(Frame, rec_stop) == 58);
+const _: () = assert!(core::mem::offset_of!(Frame, armed) == 59);
+const _: () = assert!(core::mem::offset_of!(Frame, saved_ok) == 60);
 
 // -- Framebuffer -------------------------------------------------------------
 
@@ -595,7 +603,7 @@ fn draw_work_rest(fb: &mut FrameBuf, rally_s: u32, rest_s: u32, y: i32) {
         &["1 : ", fmt_u32(tenths / 10, &mut whole), ".", DIGITS[(tenths % 10) as usize]],
     );
     draw_centered(fb, SMALL, core::str::from_utf8(&line[..n]).unwrap_or(""), y, DIM);
-    draw_centered(fb, SMALL, "PLAY : REST", y + 14, DIM);
+    draw_centered(fb, SMALL, "GAME : REST", y + 14, DIM);
 }
 
 const DIGITS: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
@@ -606,11 +614,11 @@ fn draw_saved(fb: &mut FrameBuf, frame: &Frame) {
 
     // What the wearer said they were doing, which is the only account of this
     // session that exists: no segmenter runs on this watch.
-    draw_tally(fb, "PLAY", frame.rally_s, 44, GREEN);
+    draw_tally(fb, "GAME", frame.game_s, 44, GREEN);
     draw_tally(fb, "REST", frame.rest_s, 66, AMBER);
     draw_tally(fb, "OFF", frame.off_court_s, 88, BLUE);
 
-    draw_work_rest(fb, frame.rally_s, frame.rest_s, 114);
+    draw_work_rest(fb, frame.game_s, frame.rest_s, 114);
 
     // The recorder's own account, smaller, because it is checked once.
     let mut rb = [0u8; 12];
@@ -714,14 +722,17 @@ pub extern "C" fn squash_gui_label_next(pick: u8) -> u8 {
     }
 }
 
-/// The hot path: rally and rest are the pair a match alternates between, so one
-/// button toggles them and the picker is only needed for the other four.
+/// Where the picker opens when nothing has been chosen yet.
+pub const LABEL_DEFAULT: u8 = LABEL_GAME;
+
+/// The hot path: a session alternates between playing a game and not, so one
+/// button toggles that pair and the picker is needed for everything else.
 #[no_mangle]
 pub extern "C" fn squash_gui_label_toggle(label: u8) -> u8 {
-    if label == LABEL_RALLY {
+    if label == LABEL_GAME {
         LABEL_REST
     } else {
-        LABEL_RALLY
+        LABEL_GAME
     }
 }
 
@@ -796,11 +807,11 @@ mod tests {
     }
 
     #[test]
-    fn toggle_returns_to_rally_from_anything_that_is_not_rally() {
-        assert_eq!(squash_gui_label_toggle(LABEL_RALLY), LABEL_REST);
-        assert_eq!(squash_gui_label_toggle(LABEL_REST), LABEL_RALLY);
-        assert_eq!(squash_gui_label_toggle(LABEL_DRILL), LABEL_RALLY);
-        assert_eq!(squash_gui_label_toggle(LABEL_NONE), LABEL_RALLY);
+    fn toggle_returns_to_game_from_anything_that_is_not_game() {
+        assert_eq!(squash_gui_label_toggle(LABEL_GAME), LABEL_REST);
+        assert_eq!(squash_gui_label_toggle(LABEL_REST), LABEL_GAME);
+        assert_eq!(squash_gui_label_toggle(LABEL_DRILL), LABEL_GAME);
+        assert_eq!(squash_gui_label_toggle(LABEL_NONE), LABEL_GAME);
     }
 
     #[test]

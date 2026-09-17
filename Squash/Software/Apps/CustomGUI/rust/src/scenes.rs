@@ -7,7 +7,7 @@
 
 use crate::{
     Frame, HR_EXTERNAL, HR_NONE, HR_OPTICAL, LABEL_DRILL, LABEL_IDLE, LABEL_NONE,
-    LABEL_OFF_COURT, LABEL_RALLY, LABEL_REST, LABEL_WARMUP, REC_DURATION_LIMIT, REC_NONE, REC_SINK_ERROR,
+    LABEL_GAME, LABEL_OFF_COURT, LABEL_REST, LABEL_WARMUP, REC_DURATION_LIMIT, REC_NONE, REC_SINK_ERROR,
     SCREEN_DISCARDED, SCREEN_LABEL, SCREEN_PAUSED, SCREEN_PROFILE, SCREEN_READY, SCREEN_SAVED,
 };
 
@@ -57,14 +57,14 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
 
     // The quartiles of the match recording: p25, median, p75, p95.
     v.push(("profile_rest_quiet", profiling(LABEL_REST, 240, 1_385, 431)));
-    v.push(("profile_rally_median", profiling(LABEL_RALLY, 903, 2_398, 2_001)));
-    v.push(("profile_rally_hard", profiling(LABEL_RALLY, 1_500, 8_452, 157_907)));
+    v.push(("profile_rally_median", profiling(LABEL_GAME, 903, 2_398, 2_001)));
+    v.push(("profile_rally_hard", profiling(LABEL_GAME, 1_500, 8_452, 157_907)));
 
     // Saturation is signal on this hardware, and 13.8% of the match's epochs
     // had some, so a scene has to carry it.
     v.push((
         "profile_saturating",
-        Frame { sat_accel_pct: 22, sat_gyro_pct: 6, ..profiling(LABEL_RALLY, 1_802, 12_183, 249_351) },
+        Frame { sat_accel_pct: 22, sat_gyro_pct: 6, ..profiling(LABEL_GAME, 1_802, 12_183, 249_351) },
     ));
 
     v.push((
@@ -73,7 +73,7 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
     ));
     v.push((
         "profile_hr_untrusted",
-        Frame { hr_trust: 0, ..profiling(LABEL_RALLY, 600, 3_657, 5_000) },
+        Frame { hr_trust: 0, ..profiling(LABEL_GAME, 600, 3_657, 5_000) },
     ));
     v.push((
         "profile_no_hr",
@@ -87,7 +87,7 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
     // the session ran on, and nothing said so.
     v.push((
         "profile_near_cap",
-        Frame { rec_s: CAP_S - 200, ..profiling(LABEL_RALLY, CAP_S - 200, 4_000, 9_000) },
+        Frame { rec_s: CAP_S - 200, ..profiling(LABEL_GAME, CAP_S - 200, 4_000, 9_000) },
     ));
     v.push((
         "profile_cap_reached",
@@ -96,17 +96,17 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
             rec_stop: REC_DURATION_LIMIT,
             rec_s: CAP_S,
             elapsed_s: CAP_S + 1_800,
-            ..profiling(LABEL_RALLY, CAP_S, 4_000, 9_000)
+            ..profiling(LABEL_GAME, CAP_S, 4_000, 9_000)
         },
     ));
     v.push((
         "profile_write_failed",
-        Frame { recording: 0, rec_stop: REC_SINK_ERROR, ..profiling(LABEL_RALLY, 400, 0, 0) },
+        Frame { recording: 0, rec_stop: REC_SINK_ERROR, ..profiling(LABEL_GAME, 400, 0, 0) },
     ));
 
     // An hour and a half is the cap, so the clock has to survive three digits
     // of minutes and an hours field.
-    v.push(("profile_long", profiling(LABEL_RALLY, 4_233, 2_398, 2_001)));
+    v.push(("profile_long", profiling(LABEL_GAME, 4_233, 2_398, 2_001)));
 
     v.push((
         "paused",
@@ -114,7 +114,7 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
     ));
 
     for (name, pick) in [
-        ("label_rally", LABEL_RALLY),
+        ("label_game", LABEL_GAME),
         ("label_off_court", LABEL_OFF_COURT),
         ("label_idle", LABEL_IDLE),
     ] {
@@ -122,7 +122,7 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
             name,
             Frame {
                 screen: SCREEN_LABEL,
-                label: LABEL_RALLY,
+                label: LABEL_GAME,
                 label_pick: pick,
                 ..Frame::default()
             },
@@ -140,7 +140,7 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
             rec_s: 4_233,
             rec_kb: 18_200,
             markers: 87,
-            rally_s: 1_520,
+            game_s: 1_520,
             rest_s: 2_180,
             off_court_s: 410,
             rec_stop: REC_NONE,
@@ -157,7 +157,7 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
             rec_s: 3_600,
             rec_kb: 15_500,
             markers: 140,
-            rally_s: 900,
+            game_s: 900,
             rest_s: 2_450,
             off_court_s: 180,
             rec_stop: REC_NONE,
@@ -187,7 +187,7 @@ pub fn scenes() -> Vec<(&'static str, Frame)> {
             rec_s: CAP_S,
             rec_kb: CAP_KB,
             markers: 87,
-            rally_s: 2_100,
+            game_s: 2_100,
             rest_s: 3_000,
             off_court_s: 300,
             rec_stop: REC_DURATION_LIMIT,
