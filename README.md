@@ -97,7 +97,7 @@ kira build-app --app GpsLab --sdk /path/to/una-sdk --version 1.0.0 --out GpsLab.
 ```
 
 `Squash` also carries host tests for its recorder path under
-[`Squash/Tests`](Squash/Tests) — see [its README](Squash/README.md#tests) —
+[`RecorderKit/Tests`](RecorderKit/Tests) — see [its README](RecorderKit/README.md) —
 `Chrono` carries tests for its stopwatch core under [`Chrono/Tests`](Chrono/Tests),
 `MapManager` carries tests for its verifier core under
 [`MapManager/Tests`](MapManager/Tests), `SleepLab` carries its sleep engine and

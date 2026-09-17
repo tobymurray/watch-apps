@@ -1,6 +1,6 @@
-# Host tests for the Squash recorder path, built out of tree like the app.
+# Host tests for RecorderKit, built out of tree like the apps that link it.
 #
-# Split into three executables because they need very different things:
+# Split into four executables because they need very different things:
 #
 #   * ImuCsvRecorder, ImuMarkerLog and HrCsvLog are plain C++ over a caller-supplied sink
 #     — no SDK headers at all — so their tests build against nothing but
@@ -14,7 +14,7 @@
 #     message when the source is absent.
 
 cmake_minimum_required(VERSION 3.21)
-project(squash-host-tests CXX C)
+project(recorderkit-host-tests CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,7 +25,7 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-set(APP_LIBS "${CMAKE_CURRENT_LIST_DIR}/../Software/Libs")
+set(KIT "${CMAKE_CURRENT_LIST_DIR}/..")
 
 if("$ENV{UNA_SDK}" STREQUAL "")
     message(FATAL_ERROR
@@ -41,32 +41,32 @@ include("${UNA_SDK_ROOT}/Tests/Host/cmake/FetchGoogleTest.cmake")
 
 enable_testing()
 
-add_executable(squash-recorder-tests
+add_executable(recorderkit-recorder-tests
     ImuCsvRecorder_test.cpp
-    "${APP_LIBS}/Sources/ImuCsvRecorder.cpp"
+    "${KIT}/Sources/ImuCsvRecorder.cpp"
 )
 
-target_include_directories(squash-recorder-tests PRIVATE "${APP_LIBS}/Header")
-target_link_libraries(squash-recorder-tests PRIVATE GTest::gtest_main)
-add_test(NAME squash-recorder-tests COMMAND squash-recorder-tests)
+target_include_directories(recorderkit-recorder-tests PRIVATE "${KIT}/Header")
+target_link_libraries(recorderkit-recorder-tests PRIVATE GTest::gtest_main)
+add_test(NAME recorderkit-recorder-tests COMMAND recorderkit-recorder-tests)
 
-add_executable(squash-marker-tests
+add_executable(recorderkit-marker-tests
     ImuMarkerLog_test.cpp
-    "${APP_LIBS}/Sources/ImuMarkerLog.cpp"
+    "${KIT}/Sources/ImuMarkerLog.cpp"
 )
 
-target_include_directories(squash-marker-tests PRIVATE "${APP_LIBS}/Header")
-target_link_libraries(squash-marker-tests PRIVATE GTest::gtest_main)
-add_test(NAME squash-marker-tests COMMAND squash-marker-tests)
+target_include_directories(recorderkit-marker-tests PRIVATE "${KIT}/Header")
+target_link_libraries(recorderkit-marker-tests PRIVATE GTest::gtest_main)
+add_test(NAME recorderkit-marker-tests COMMAND recorderkit-marker-tests)
 
-add_executable(squash-hrlog-tests
+add_executable(recorderkit-hrlog-tests
     HrCsvLog_test.cpp
-    "${APP_LIBS}/Sources/HrCsvLog.cpp"
+    "${KIT}/Sources/HrCsvLog.cpp"
 )
 
-target_include_directories(squash-hrlog-tests PRIVATE "${APP_LIBS}/Header")
-target_link_libraries(squash-hrlog-tests PRIVATE GTest::gtest_main)
-add_test(NAME squash-hrlog-tests COMMAND squash-hrlog-tests)
+target_include_directories(recorderkit-hrlog-tests PRIVATE "${KIT}/Header")
+target_link_libraries(recorderkit-hrlog-tests PRIVATE GTest::gtest_main)
+add_test(NAME recorderkit-hrlog-tests COMMAND recorderkit-hrlog-tests)
 
 # The freshness rule is HrKit's now, and so are its tests.
 
@@ -75,27 +75,27 @@ set(IMU_FUSION_SOURCE
 )
 
 if(EXISTS "${IMU_FUSION_SOURCE}")
-    add_executable(squash-filesink-tests
+    add_executable(recorderkit-filesink-tests
         ImuFileSink_test.cpp
-        "${APP_LIBS}/Sources/ImuCsvRecorder.cpp"
-        "${APP_LIBS}/Sources/ImuFileSink.cpp"
+        "${KIT}/Sources/ImuCsvRecorder.cpp"
+        "${KIT}/Sources/ImuFileSink.cpp"
         "${UNA_SDK_ROOT}/Tests/Host/support/KernelTestDoubles.cpp"
         "${UNA_SDK_ROOT}/Libs/Source/UnaLogger/Logger.cpp"
         "${UNA_SDK_ROOT}/Libs/Source/Wrappers/StdLibWrappers.c"
         "${IMU_FUSION_SOURCE}"
     )
 
-    target_include_directories(squash-filesink-tests PRIVATE
-        "${APP_LIBS}/Header"
+    target_include_directories(recorderkit-filesink-tests PRIVATE
+        "${KIT}/Header"
         "${UNA_SDK_ROOT}/Libs/Header"
         "${UNA_SDK_ROOT}/Tests/Host/support"
     )
 
-    target_link_libraries(squash-filesink-tests PRIVATE GTest::gtest_main)
-    add_test(NAME squash-filesink-tests COMMAND squash-filesink-tests)
+    target_link_libraries(recorderkit-filesink-tests PRIVATE GTest::gtest_main)
+    add_test(NAME recorderkit-filesink-tests COMMAND recorderkit-filesink-tests)
 else()
     message(STATUS
-        "Squash: skipping squash-filesink-tests — no IMU fusion sensor source at "
+        "RecorderKit: skipping recorderkit-filesink-tests — no IMU fusion sensor source at "
         "${IMU_FUSION_SOURCE}. Point UNA_SDK at an SDK checkout that carries it."
     )
 endif()

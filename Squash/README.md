@@ -2,7 +2,7 @@
 
 A research recorder for the UNA Watch. It streams the wrist sensor's raw 100 Hz
 IMU and your heart rate to files, shows you what the sensor is seeing while you
-play, and lets you say what you are doing — rally, rest, off court, warm-up,
+play, and lets you say what you are doing — game, rest, off court, warm-up,
 drill, idle — with a button, so a recording arrives already annotated.
 
 **It writes no activity file and exports nothing.** Not an oversight: the app is
@@ -87,13 +87,15 @@ CLICK only, on every screen. Nothing depends on a long press arriving.
 | Screen | L1 | L2 | R1 | R2 |
 |---|---|---|---|---|
 | Ready | | | **START** | **EXIT** |
-| Profile | rally ⇄ rest | label picker | pause | **MARK** |
+| Profile | game ⇄ rest | label picker | pause | **MARK** |
 | Label picker | | next | **SET** | cancel |
 | Paused | **SAVE** | **DISCARD** | resume | |
 | Saved / discarded | | | **DONE** | |
 
-L1 toggles rally and rest because that is the pair a match alternates between,
-so the common change is one press. The other four states are behind L2.
+L1 toggles **game** and rest, because a press per rally is 15-25 presses a game
+and nobody does that. A game is a mixture of play and the gaps inside it, which
+is why it is its own label and not `RALLY`: conflating them would calibrate a
+rally-level segmenter against a mixture. The other states are behind L2.
 
 ## Labelling, and why there is no labels file
 
@@ -104,9 +106,9 @@ exactly this.
 
 ```
 t_ms,seq,kind
-0,1,1          <- rally, from the first sample
-18420,2,2      <- rest
-41200,3,1      <- rally again
+0,1,7          <- game, from the first sample
+18420,2,2      <- rest between games
+41200,3,7      <- next game
 ```
 
 A label holds until the next marker that changes it, so N markers delimit the
@@ -235,22 +237,10 @@ and catch nothing.
 
 ## Tests
 
-```sh
-export UNA_SDK=/path/to/una-sdk
-cmake -S Tests -B Tests/build -DCMAKE_BUILD_TYPE=Debug
-cmake --build Tests/build -j"$(nproc)"
-cd Tests/build && ctest --output-on-failure
-```
-
-`squash-recorder-tests` covers `ImuCsvRecorder`'s byte format, its caps, and the
-span it reports; `squash-marker-tests` covers the sidecar. Both need nothing but
-GoogleTest.
-
-`squash-filesink-tests` asserts the round trip — recorder to storage through
-`SDK::Kernel`, then back out through the simulator's `ImuFusionSource` playback
-parser — so it needs an SDK checkout carrying the IMU fusion sensor source. That
-is not in the SDK mainline yet; on a mainline SDK the suite is skipped at
-configure time with a message rather than failing the build.
+The recorder and its three sidecars are [`RecorderKit`](../RecorderKit) and are
+tested there, since a second app now writes the same files. `Tests/` here holds
+only [`pulled`](Tests/pulled) — the recordings themselves, which are fixtures
+for `phase-a` and a design record in their own right.
 
 There is no suite here for reading the config file. That is `SDK::AppConfig`,
 which the SDK tests in `Tests/Host/appconfig/`; a copy of those assertions in

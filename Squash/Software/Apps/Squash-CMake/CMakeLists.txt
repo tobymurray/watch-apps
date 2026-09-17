@@ -28,6 +28,7 @@ include($ENV{UNA_SDK}/cmake/una-app.cmake)
 include($ENV{UNA_SDK}/cmake/una-sdk.cmake)
 include(${LIBS_PATH}/libs.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../HrKit/hrkit.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../RecorderKit/recorderkit.cmake)
 
 project(${APP_NAME})
 
@@ -68,6 +69,7 @@ add_custom_target(squash_engine_rust ALL
 # app writes no FIT, so it needs neither the FIT encoder nor a map.
 set(SERVICE_SOURCES
     ${LIBS_SOURCES}
+    ${RECORDERKIT_SOURCES}
     ${UNA_SDK_SOURCES_COMMON}
     ${UNA_SDK_SOURCES_APPSYSTEM}
     ${UNA_SDK_SOURCES_JSON}
@@ -77,6 +79,7 @@ set(SERVICE_SOURCES
 set(SERVICE_INCLUDE_DIRS
     ${LIBS_INCLUDE_DIRS}
     ${HRKIT_INCLUDE_DIRS}
+    ${RECORDERKIT_INCLUDE_DIRS}
     ${UNA_SDK_INCLUDE_DIRS_COMMON}
     ${UNA_SDK_INCLUDE_DIRS_SERVICE}
 )
