@@ -168,6 +168,45 @@ and decoupling, not only as an antenna-keepout problem.
 Three parts are reflow-only: the ICM-45686 and ADXL375 are both LGA and the
 BQ29700 is WSON. Budget paid assembly and publish placement files.
 
+### Six axes, not nine
+
+This is a decision, not an omission, and it is not really a choice between two
+parts: no 9-axis device offers this range. The 9-axis parts are ±16 g and
+±2000 dps, which is the range that clips on the *wrist* — adopting one would
+undo the reason the device exists. Nine axes therefore means a discrete
+magnetometer beside the ICM-45686, and that is the thing being declined.
+
+**Gravity already pins two of the three orientation degrees of freedom.** A
+6-axis IMU gives absolute roll and pitch; only heading about the vertical is
+relative. A magnetometer adds absolute heading, and absolute heading is the least
+useful of the three here, because it is only meaningful together with court
+position and facing, which a handle sensor cannot measure.
+
+**The drift it would correct is on the wrong timescale.** With a residual gyro
+bias of 0.05–0.5 °/s after calibration, heading error is 0.0–0.1° over a 0.3 s
+swing, 1.5–15° over a rally, and 135–1350° over a session. The racket face angle
+worth coaching on lives inside the swing, where the gyro alone is sub-degree. The
+magnetometer fixes the session-length error, which nothing downstream can use.
+
+**And it could not resolve the swing anyway.** MEMS magnetometers run at 100 Hz,
+400 Hz at best. At 3,000 dps the racket turns 30° between 100 Hz samples.
+
+Against that: a few mm from a cell and a switching load, inside or on conductive
+carbon, in a steel-framed court; no in-house experience — `MagProbe` is this
+repository's instrument for the question and has never been run; and the shipped
+precedent is 6-axis, including the one product that carried two gyroscopes.
+
+There is one real argument the other way, and it is the corpus argument: a channel
+that is not recorded cannot be added later. So **footprint it and do not populate
+it.** The pads and the I²C routing cost nothing in layout, and running `MagProbe`
+settles whether a magnetometer is usable at all before a season of recordings
+depends on one.
+
+Note that the ICM's AUX I²C master — the tidy way to land an external sensor in
+the timestamped FIFO — can carry one part. The high-g channel and a magnetometer
+compete for it, and the high-g channel wins: it solves a problem this design
+actually has.
+
 ## Open decisions
 
 Two, both cheap, both to be made before a board is ordered because both change the
