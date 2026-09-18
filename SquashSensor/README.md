@@ -294,6 +294,57 @@ matters.
 - **A firmware low-battery threshold above the protection IC's cutoff**, around
   3.4 V, so a session ends and flushes rather than being truncated by a hard cutoff.
 
+## The switch and the light
+
+**A hard off switch, breaking the load path — not a firmware enable.** Wake-on-motion
+is required for usage logging and it cannot tell a racket being played with from
+one in a bag on a bus, in a car boot, or being handed to someone. A switch is the
+cheapest correct answer, and it is also the safe state for a Li-Po in a struck
+sealed object left in a hot car, the way a bricked unit is recovered without
+disassembly, the reason it survives a season in a cupboard, and — if a microphone
+is ever fitted — the only honest answer to "is it off", because a switch you can
+see beats firmware that says so.
+
+Recessed in a non-conductive channel on the cap face, in the same treatment the
+charging pads get and for the same reason: a squash butt is tapped on the floor
+and lands on dives, so nothing may stand proud of it. **Its position is also the
+armed/disarmed indicator**, which is the most reliable one in the design because it
+is mechanical and needs no power. Carrier A can be unclipped as well, but
+unclipping is not the off switch; the switch is.
+
+**One low-brightness LED, and it earns its place by saying when recording
+stopped.** `Squash` learned this on the watch: a cap stopped the samples while the
+session ran on, nothing said so, and 40 minutes of a match went unrecorded. A
+device with no screen has the same failure and no way to notice it.
+
+The power argument says the light can be almost free:
+
+| pattern | average | 
+|---|---|
+| solid, 2 mA | 2 mA — **18% of the whole active budget** |
+| 10 ms every 1 s, 2 mA | 20 µA |
+| 5 ms every 5 s, dimmed | **0.5 µA** |
+
+At 5 ms every 5 s it costs less than the MCU standby delta the platform was
+originally chosen on. So brightness and duty are set by not distracting anybody,
+not by the battery.
+
+- **Recording**: one short dim blink every 5 s. Confirms alive, not just powered.
+- **Stopped when a session was expected** — cap hit, flash full, low battery: a
+  distinguishable pattern, and brighter, because this is the state worth
+  interrupting for.
+- **Charging and charged**: in the cradle, where brightness does not matter.
+
+**Everything else belongs on the cradle, not the racket.** Dock it and it can
+report at leisure; on court the only questions are "is it recording" and "did it
+stop".
+
+Two things to check rather than assume, both free during the session that tests
+mass: whether the butt cap is occluded enough by the heel of the hand that a dim
+blink is invisible to an opponent, and whether it is visible enough to *you*
+between rallies to be worth having. A light your opponent can see during a rally
+is a distraction in a shared box and is not worth any amount of diagnostics.
+
 ## The data contract
 
 The device writes raw per-sensor LSB, unscaled, on each sensor's own clock. It does
