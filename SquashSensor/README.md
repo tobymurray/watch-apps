@@ -228,7 +228,45 @@ Add 17 MB/hour for the ADXL375 at 800 Hz. Record more than you think you need �
 undersampling is unrecoverable and the recording is the product — but decide it
 rather than inherit it.
 
-**2. nRF52832 or nRF52840.** The '840 has a USB peripheral and the '832 does not,
+**2a. Nordic, and why — because the obvious argument is the wrong one.** The
+tempting case is standby current: Nordic reaches sub-1 µA System OFF against
+~5 µA for an ESP32-C3. That gap is **9 µA, which is 1.51 mAh over a week against
+11 mAh for a single hour of recording** — 14% of a weekly budget with one session,
+and it would need 51 days of standby to equal one hour of play. It is not even the
+dominant standby term: the IMU's own wake-on-motion current is ~70 µA and BLE
+advertising ~25 µA. Standby decides nothing here.
+
+**Active current decides it, and by a lot**, because this device logs continuously
+for an hour rather than waking briefly:
+
+| MCU | MCU current | system total | hours on a 100 mAh cell |
+|---|---|---|---|
+| nRF52832 @ 64 MHz from flash, DC/DC | 3.7–4 mA | ~11 mA | 9.1 |
+| ESP32-C3 @ 160 MHz | ~22 mA | ~29 mA | 3.5 |
+| ESP32-S3 @ 160 MHz | ~35 mA | ~42 mA | 2.4 |
+
+Matching a Nordic hour on a C3 needs 264 mAh instead of 100, which is **+3.5 g of
+cell on a 6–10 g product**. That is the finding the platform choice actually rests
+on, and it is a hundred times the effect the standby argument describes. *Sourcing
+note: the nRF52832 figure is `IDDFLASHCACHEDCDC` from its product specification;
+the Espressif figures are typical rather than pinned to a datasheet line here, and
+a C3 clocked down would do better. The direction is not in doubt, the ratio is
+worth an afternoon on an eval board.*
+
+**Footprint agrees.** MDBT42Q is 160 mm² in plan against ESP32-C3-MINI-1's 219 and
+ESP32-S3-MINI-1's 316, in a butt cap with ~750 mm² of plan area of which the cell
+wants ~240.
+
+**Openness does not favour Espressif either**, which is the counter-intuitive part.
+Nordic's SoftDevice is a binary blob, but Zephyr ships an open-source Bluetooth
+controller for nRF5x that avoids it; Espressif's PHY layer is a blob regardless of
+using NimBLE. Nordic with Zephyr is the cleaner of the two.
+
+**The real cost is the on-ramp**, and it is not nothing: nRF Connect SDK is a
+steeper climb than ESP-IDF, and this project's author has far more ESP32
+experience. That is a genuine engineering cost, paid once.
+
+**2b. nRF52832 or nRF52840.** The '840 has a USB peripheral and the '832 does not,
 and that is the whole of it. **USB mass storage needs no software anybody has to
 write, on every operating system, for ever**; a custom BLE GATT service needs a
 tool somebody maintains, which is exactly what stranded the users of every product
