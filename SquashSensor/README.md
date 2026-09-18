@@ -161,12 +161,54 @@ and decoupling, not only as an antenna-keepout problem.
 | MCU / radio | pre-certified module — see [Open decisions](#open-decisions) | The modular grant is the reason to keep a module even at a power cost: files, a kit and a sold unit are three different regulatory objects, and only the last needs it. |
 | 32.768 kHz crystal | **a board part** | Raytac supplies a footprint and a recommended spec, not a fitted crystal. |
 | Flash | SPI NOR, sized from the rate decision | 512 Mbit covers an hour at 1 kHz + 800 Hz. Avoid NAND and the bad-block, ECC and wear-levelling firmware it brings. |
-| Charger | MCP73831 + **cell temperature** | 7 V absolute maximum, so it sits upstream of the regulator. Its thermal regulation watches its own die and it has no THERM pin, so the cell is unmonitored unless an NTC and an MCU-gated charge enable are added. In a sealed object that gets struck, add them. |
+| Charger | an **LFP** charger, 3.6 V constant-voltage, + **cell temperature** | The MCP73831 is 4.2 V fixed and is the wrong part for this chemistry. Whichever is chosen, check it for a battery-temperature input: the MCP73831's thermal regulation watches its own die and it has no THERM pin, which protects the IC and not the cell. In a sealed object that gets struck, add an NTC and an MCU-gated charge enable. |
 | Protection | BQ29700 + companion dual N-FET + PTC | **The FETs' RDS(on) *is* the overcurrent threshold** — detection is a fixed voltage across them. Pick the FETs backwards from the desired trip current, not from a compatibility table. |
-| Battery | 100–150 mAh pouch, 2.1–3.2 g | ~11 mA active gives 9–14 sessions between charges, which is ample for a device that docks after every session. |
+| Battery | **LiFePO4**, 100–150 mAh, 3.0–4.6 g | See below. ~11 mA active gives 9–14 sessions between charges, ample for a device that docks after every session. |
 
 Three parts are reflow-only: the ICM-45686 and ADXL375 are both LGA and the
 BQ29700 is WSON. Budget paid assembly and publish placement files.
+
+### LiFePO4, not LiPo
+
+A sealed cell in a struck object that spends summers in a car boot is the one part
+of this design where a wrong choice hurts somebody. Bound it first: 100–150 mAh at
+3.2–3.7 V is **0.37–0.56 Wh**, about an AirPod cell, against 15 Wh for a phone. A
+failure vents and may flame briefly; it is not a house fire. But it is sealed in
+carbon with no vent path, and other people will build from these files.
+
+**LiFePO4 costs about a gram and buys a different failure mode.** Thermal runaway
+onset is ~270 °C against ~150–200 °C for the cobalt chemistries, and the cathode
+does not release oxygen, so a runaway does not feed itself.
+
+| | LiPo | LiFePO4 |
+|---|---|---|
+| energy density | 175 Wh/kg | 105 Wh/kg |
+| 100 mAh | 2.1 g | 3.0 g |
+| 150 mAh | 3.2 g | 4.6 g |
+| full-charge voltage | 4.2 V | **3.6 V** |
+
+**The second benefit is larger than the first.** A full LFP cell sits at 3.6 V,
+which is exactly the recommended maximum for the nRF52832, ICM-45686 and ADXL375 —
+not 0.6 V above it and 0.3 V above two absolute maximums. The regulator stays, for
+brownout behaviour and headroom, but it stops being the component that prevents
+damage when something else fails.
+
+Two costs to carry knowingly: the charger changes, because 4.2 V parts are wrong
+for this chemistry; and LFP's flat discharge curve makes state-of-charge from the
+ADC divider harder to read than a LiPo's slope. Sourcing small LFP pouches at
+100–150 mAh is the open item — they exist, but the catalogue is thinner than for
+LiPo.
+
+**A primary cell was the other candidate and does not survive the duty cycle.**
+Garmin's CT10 runs four years on a user-replaceable CR2032, which is the most
+attractive answer in the comparison table — but a CT10 *detects shots*, it does not
+log continuously. A CR2032 is rated near 0.2 mA; at this device's 6–11 mA it
+derates to roughly 68 mAh usable, six to ten hours of recording, and sags further
+as it ages, which is exactly the brown-out the low-battery threshold exists to
+prevent. A CR2450 reaches 17–29 hours but at 6.8 g nearly doubles the product.
+And the saving is smaller than it looks: **the cradle exists for data offload, not
+only for charging**, so a primary cell removes the charger and protection ICs and
+not the dock.
 
 ### Six axes, not nine
 
