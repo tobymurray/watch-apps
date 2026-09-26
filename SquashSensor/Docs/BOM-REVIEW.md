@@ -62,9 +62,14 @@ bigger part was running the ADXL375 at 800 Hz and B2.8 closed it. That is the on
 good news cost something: **512 Mbit → 1 Gbit, with the high-g channel triggered rather than
 continuous** (B7.1, B7.2).
 
-**Two decisions still block a schematic: the cell (B1) and the flash (B7.1).** The cell is a
-sourcing problem nothing measured here touches; the flash is an architecture choice with a
-validation step attached.
+**The module resolves to the nRF52840** (B8.5), on a footprint comparison both documents had
+wrong: the '840 module is 1.9% larger in plan at the same thickness, not "a larger module",
+so the only thing on the '832's side was a few dollars — which this review's own scope rules
+out as a deciding input.
+
+**One decision still blocks a schematic: the cell (B1).** It is a sourcing problem, and
+nothing measured here touches it. The flash (B7.1) is decided in architecture and needs one
+validation to settle 1 versus 2 Gbit.
 
 Seven findings follow, ordered by how much they change. Three "settled" items in §2 of the
 prompt are challenged in §4, one of them successfully.
@@ -86,7 +91,7 @@ prompt are challenged in §4, one of them successfully.
 | **6-axis IMU** | primary kinematics | ICM-45686 | LSM6DSV320X; ICM-45605; ICM-42688-P; BMI3xx; ISM330/LSM6DSV16X | **holds** — measured, B2.8, B3 |
 | **High-g accel** | unclipped peak, α baseline | ADXL375 **at 3200 Hz, host bus** | ICM AUX path; LSM6DSV320X high-g; ADXL372; H3LIS331DL | **holds** — measured, B2.7, B2.8 |
 | **Magnetometer footprint** | future channel | footprint, unpopulated | populate on ES1 | **holds**, and the argument against it loses a leg — B2.3 |
-| **MCU / radio module** | compute, BLE, cert | pre-certified module, '832 vs '840 open | bare SoC; nRF5340 | **holds** — B8.5 |
+| **MCU / radio module** | compute, BLE, cert | pre-certified module, '832 vs '840 open | bare SoC; nRF5340 | **change** — resolves to **nRF52840** — B8.5 |
 | **32.768 kHz crystal** | timekeeping | "a board part" | delete, resync in cradle | **holds — for a different reason** — B5 |
 | **Flash** | 90–180 min of samples | SPI NOR 512 Mbit | **SPI NOR 1–2 Gbit**; SPI NAND; microSD; eMMC | **change** — technology holds, capacity does not — B7.1 |
 | **Recording architecture** | fitting a session | continuous, both channels | ICM continuous + high-g triggered | **change** — B7.1, B7.2 |
@@ -1006,13 +1011,53 @@ an unregulated LFP rail only a red LED (Vf 1.8–2.0 V) works down to the 3.0 V 
 or blue one at Vf 2.8–3.2 V dims and stops exactly when the battery is low — the moment the
 light is most needed, and a failure that looks like the device having died.
 
-**B8.5 — the module holds.** A bare SoC is smaller and cheaper and forfeits the modular
-grant, which F10 establishes is the reason the module is there. The nRF5340's second core
-addresses an ISR-jitter concern that §4.1 #6 already notes "largely evaporates" once bulk
-transfer moves to the cradle — an imagined problem here, at the cost of a larger module.
-**The '832-versus-'840 decision is the README's and stands as open**; B3 would relieve the
-pin-and-peripheral pressure on the '832 by one SPIM, which weakens one supporting argument
-for the '840 without touching the USB one, and the USB one is the argument that matters.
+**B8.5 — the module holds, and the '832-versus-'840 decision resolves to the '840 on a
+number both documents had wrong.** A bare SoC is smaller and cheaper and forfeits the
+modular grant, which F10 establishes is the reason the module is there. The nRF5340's second
+core addresses an ISR-jitter concern that §4.1 #6 already notes "largely evaporates" once
+bulk transfer moves to the cradle — an imagined problem here.
+
+**The '840's stated cost is "a larger, more expensive module". The "larger" half is false:**
+
+| Module | Device | Size | Plan area |
+|---|---|---|---|
+| **MDBT42Q** | nRF52832 | 10 × 16 × 2.2 mm | **160 mm²** |
+| **MDBT50Q** | nRF52840 | 10.5 × 15.5 × 2.0–2.2 mm | **163 mm²** |
+
+**Three square millimetres — 1.9% — at the same thickness.** Raytac keeps both in
+essentially one package. The README says it and this review repeated it in an earlier
+draft; neither survives the two datasheets. Against a butt cap with ~750 mm² of plan area
+of which the cell wants ~240, neither module is remotely binding.
+
+What remains on the '832's side is price, a few dollars — and the scope this review was
+written to says *"price, except where it changes what a third party can reproduce."* A few
+dollars does not. **By the document's own rules it is not a deciding input, so there is
+nothing left on that side at all.**
+
+**What the '840 buys, with B7.1's flash now in the design:**
+
+- **USB.** 128 MB offloads in **2.7 minutes against 34** on a realistic BLE link — F5's
+  table, which was computed for 112–141 MB and now applies almost exactly. A 34-minute
+  offload after every session is not a product, and the '832 has no USB peripheral at all;
+  that is absent silicon, not a pin budget to design around.
+- **The openness argument**, which §4.1 #5 calls "the single decision with the largest
+  effect on the openness requirement": mass storage "needs no software anybody has to
+  write, on every operating system, for ever", against a GATT service and a tool somebody
+  maintains — the failure that stranded five of the six products in §5.
+- **256 kB RAM against 64 kB.** New since B7.2: triggered capture needs a pre-trigger ring
+  buffer. 200 ms is only ~4 kB, but the headroom matters if the drop validation forces a
+  longer window.
+- **Spare SPIM.** §7 item 12 notes the '832's three are *exactly* consumed by ICM, ADXL375
+  and flash, leaving nothing for the footprinted microphone.
+
+**Verdict: nRF52840.** §7 item 12's instruction stands — the pin and peripheral budget
+should be **redone** on the '840 rather than patched across from the '832.
+
+**One firmware consequence the choice creates**, in scope because a part choice moves work
+into firmware: exposing 128 MB as USB mass storage means a filesystem, and a filesystem
+written continuously at 48 kB/s can be corrupted by power loss mid-write. The common answer
+is to write raw to flash and synthesise a filesystem view only when the host connects.
+**That is cheaper to decide now than after `Docs/FORMAT.md` is frozen.**
 
 **B8.6 — the contacts hold, and one alternative is disqualified by a dimension.** Recessed
 gold-flashed pads with the spring pins on the cradle is right, for a reason worth recording:
@@ -1179,7 +1224,7 @@ benefit is real and the instruction to pick the angle from a recorded distributi
 than from symmetry is the right method — but it stops being load-bearing, and a finding that
 stops being load-bearing should be re-costed rather than inherited.
 
-**Three corrections to the documents themselves, none in §2.**
+**Four corrections to the documents themselves, none in §2.**
 
 - **F13 — "the high-g channel is the hard real-time deadline in this design" — is closed,
   and the README should say so.** The deadline was measured at 57% utilisation with a
@@ -1193,6 +1238,12 @@ stops being load-bearing should be re-costed rather than inherited.
 - **"8 KB FIFO"** — the default is 2 KB, and 8 KB requires all APEX features disabled,
   including the wake-on-motion the README lists as a hardware requirement. F13's "400 ms"
   of ICM slack is 128 ms as configured, or 64 ms with an external sensor batched. See B2.6.
+
+**A fourth, found late and shared by both documents.** The README describes the '840's cost
+as "a larger, more expensive module", and an earlier draft of this review repeated it. The
+MDBT50Q is **163 mm² against the MDBT42Q's 160**, at the same thickness — 1.9%, not a size
+penalty. **"Larger" should be struck from both**; only "more expensive" survives, and at a
+few dollars it does not decide anything. See B8.5.
 
 **And one requirement the documents do not yet have.** The ADXL375's ODR wanders ~500 ppm
 *within* a session and trends about +1 Hz/min, so assuming a single fitted rate costs up to
@@ -1226,6 +1277,7 @@ this review, which is the test.
 | **LiFePO4 at 100–150 mAh from a supplier with a datasheet.** B1's search covered DigiKey and Mouser; it did not cover Asian distributors or a direct approach to a cell maker. | A quotation request naming UN 38.3 and IEC 62133 documentation as a requirement. If nobody will supply that paperwork at this size, B1 is settled for good. |
 | **Varta CoinPower availability in ones and twos.** CP 1654 is Avnet-distributed rather than DigiKey-stocked, so a hobbyist's ability to buy one is not established — which matters only because reproducibility is a requirement. | A distributor check at quantity 1. |
 | **The actual shock the cell sees.** §3.1 derives 200–5,000 g from plausible drop heights and *assumed* stopping distances, and the answer is most sensitive to the assumed term. | **The instrument now exists.** The rig captured a 130 g flick unclipped with visible ringing (**M9**), so twenty drops onto a court floor is a session's work, not a project. Do it in the same trip as the ball test. |
+| **Whether the recording format survives being a filesystem.** B8.5 picks the '840 for USB mass storage, which means exposing 128 MB as a block device — and a filesystem written continuously at 48 kB/s can be corrupted by power loss mid-write. The common answer is to write raw and synthesise a filesystem view on connect. | A `Docs/FORMAT.md` decision, not a measurement. It is cheaper now than after the format is frozen, and it is the clearest case in the BOM of a part choice moving work into firmware. |
 | **Per-unit calibration at 50 g.** TDK's AN-000265 is explicit that full calibration needs a **2-DOF rate table**, and temperature calibration needs that table **inside a temperature chamber** for a ~7-hour soak sequence per unit. Neither is available to somebody reproducing this design. The affordable procedure is **6-side flip** (no machine — and the puck's own six faces are the fixture), which yields offset and sensitivity **at 1 g**. | Nothing cheap. The honest response is to publish the 6-side-flip jig, record the temperature the calibration was done at, and **state in the file that the scale factor is a 1 g figure extrapolated to a 50 g operating range** — rather than let a reader assume it was calibrated where it is used. Note this matters far more for the high-g channel (ADXL375 ±10% scale factor) than for the primary IMU (ICM-45686 ±0.2%). |
 
 ---
