@@ -30,7 +30,8 @@ would settle B1 was run as a live search of what somebody in Canada can buy in o
 twos ([`CELL-SOURCING.md`](CELL-SOURCING.md)). It found no LiFePO4 cell at this size from
 any maker that documents one, and it found that DigiKey.ca and Mouser.ca sell no lithium
 cell into Canada at all. B1 closes on a lithium-cobalt pouch (B1.6), three of its
-sub-findings reverse with it, §3.5 gets a number, and B4's regulator returns.
+sub-findings reverse with it, §3.5 gets a number, and B4's regulator returns as a fixed
+3.0 V TPS7A0230 (B4.5).
 
 ---
 
@@ -77,9 +78,11 @@ out as a deciding input.
 **The cell (B1) is decided — Li-ion, not LiFePO4 — and deciding it re-opens the regulator
 (B4).** The 2026-09-26 sourcing search found no LiFePO4 cell anyone will sell at this size
 with a datasheet, and found that DigiKey.ca and Mouser.ca sell no lithium cell into Canada
-at all (B1.6). A 4.2 V cell brings the regulator back, and that is the one decision left
-before a schematic. The flash (B7.1) is decided in architecture and needs one validation to
-settle 1 versus 2 Gbit.
+at all (B1.6). A 4.2 V cell brings the regulator back, and B4.5 names it: a fixed 3.0 V
+TPS7A0230 fed from the charger's power path. **No open decision now blocks a schematic.**
+The flash (B7.1) is decided in architecture and needs one validation to settle 1 versus
+2 Gbit, and one measurement could still move a part: whether full-power shots clip the
+ADXL375 (§5).
 
 Seven findings follow, ordered by how much they change. Three "settled" items in §2 of the
 prompt are challenged in §4, one of them successfully.
@@ -97,7 +100,7 @@ prompt are challenged in §4, one of them successfully.
 | **Protection IC** | cell fault cutoff | BQ29700 + dual N-FET | BQ29701/2/3; cell-vendor PCM | **holds** — B1.2 reverses with B1.6 |
 | **Protection FETs** | trip current | "pick backwards from trip current" | — | **holds**, with a number it lacked — B8.2 |
 | **PTC** | redundant overcurrent | unspecified | delete | **holds** |
-| **Regulator** | rail | "required, nano-quiescent LDO" | none; buck | **change** — B4 |
+| **Regulator** | rail | "required, nano-quiescent LDO" | none; buck | **holds → TPS7A0230, 3.0 V** — B4.5 |
 | **6-axis IMU** | primary kinematics | ICM-45686 | LSM6DSV320X; ICM-45605; ICM-42688-P; BMI3xx; ISM330/LSM6DSV16X | **holds** — measured, B2.8, B3 |
 | **High-g accel** | unclipped peak, α baseline | ADXL375 **at 3200 Hz, host bus** | ICM AUX path; LSM6DSV320X high-g; ADXL372; H3LIS331DL | **holds** — measured, B2.7, B2.8 |
 | **Magnetometer footprint** | future channel | footprint, unpopulated | populate on ES1 | **holds**, and the argument against it loses a leg — B2.3 |
@@ -106,9 +109,9 @@ prompt are challenged in §4, one of them successfully.
 | **Flash** | 90–180 min of samples | SPI NOR 512 Mbit | **SPI NOR 1–2 Gbit**; SPI NAND; microSD; eMMC | **change** — technology holds, capacity does not — B7.1 |
 | **Recording architecture** | fitting a session | continuous, both channels | ICM continuous + high-g triggered | **change** — B7.1, B7.2 |
 | **Off switch** | break load path | slide, recessed | reed; hall + latch; charger ship-mode | **holds** — B8.3 |
-| **LED** | recording / stopped | one, low-brightness | two; RGB | **holds, with a colour constraint** — B8.4 |
+| **LED** | recording / stopped | one, low-brightness | two; RGB | **holds; red or amber on the 3.0 V rail** — B8.4 |
 | **Charge/data contacts** | dock | recessed gold pads + cradle pogo pins | magnetic; USB-C in cap; edge | **holds** — B8.6 |
-| **ADC divider** | battery sense | resistor divider | nRF52 SAADC VDD channel; charger ADC | **change** — B4.3 |
+| **ADC divider** | battery sense | resistor divider | nRF52 SAADC VDD channel; charger ADC | **change → BQ25155 ADC** — B4.5 |
 | **ESD protection** | user-touchable pads | not listed | TVS array | **change** — B8.7, a gap not a swap |
 | **Printed sled / puck** | carrier | "printed" | material unspecified | **change** — B8.8 |
 | **Conformal coating, foam, tapes** | seal, preload | listed, unspecified | — | **open** — §3, B8.7 |
@@ -711,6 +714,50 @@ the cell chemistry and the high-g accelerometer one decision, not three** — th
 structural observation in this review, and why B1, B3, B4 and B6 have to be settled
 together.
 
+**The condition failed on 2026-09-26** (B1.6): the cell is 4.2 V, so the regulator stays.
+
+**B4.5 — resolved, 2026-09-26: the regulator returns as a fixed 3.0 V TPS7A0230.**
+
+**3.0 V is set by the parts, not by taste.** The ADXL375 needs 2.0 V, the ICM-45686 1.71 V,
+the nRF52840 1.7 V, and a 1 Gbit NOR from the usual 3 V families 2.7 V; everything tops out
+at 3.6 V. A 3.3 V output would drop out within ~50 mV of the README's 3.4 V cutoff at
+flash-write peaks. 3.0 V keeps ~340 mV, and its 1.5% tolerance leaves the NOR no lower than
+2.955 V. **The flash, when it is chosen, must be a 2.7–3.6 V or wide-range part**, not a
+1.8 V one.
+
+**TPS7A0230PDBVR** (TI SBVS277C, September 2022): **25 nA** quiescent typical, 46 nA maximum
+at 25 °C, and still 25 nA in dropout — against ~95 µA of standby, nothing. Dropout **≤310 mV
+at 200 mA** for outputs from 2.5 to 3.3 V, so ~60 mV at a 40 mA peak. **100 mV undershoot
+and <10 µs settling on a 1 → 50 mA step**, which is the shape of a flash program burst or a
+radio event. Stable with 1 µF, and its smart-enable pull-down lets EN tie to the input.
+**SOT-23-5**, so it does not become a fifth reflow-only part. DigiKey.ca, 2026-09-26: 3,366
+in stock, $0.84 CAD at one.
+
+**It is fed from the BQ25155's PMID, not from the cell.** Docked, the rail runs from the
+cradle; on the cell it runs through the charger's battery FET; and in ship mode (10 nA)
+PMID is off, so ship mode is a true hard off. The BQ25155 also enters ship mode by itself
+when a cell is connected with no input present (SLUSDO1B §9.4.1), so an assembled kit sits
+at 10 nA until its first dock.
+
+**The BQ25155's own LDO was the obvious candidate, and it is the wrong one for the MCU's
+rail.** It is enabled at reset, draws 0.9 µA and would add no part. But `LDOCTRL` resets to
+0xB0 — **1.8 V**, below the ADXL375's 2.0 V and a 3 V NOR's 2.7 V until firmware rewrites
+it; the 50 s I²C watchdog resets "all charger parameters registers" to default without
+saying whether that includes `LDOCTRL`; and LDO mode requires **VINLS ≥ VLDO + 500 mV**, so
+a 3.0 V output is guaranteed only above a 3.5 V cell (SLUSDO1B §8.5, §9.3.2.2, Table 9-29).
+It would make the MCU's supply depend on firmware being right about the charger, which B8.1
+already names as this part's cost. Unused, its pin table says to short `LS/LDO` to `VINLS`.
+
+**A buck was not worth its inductor.** An LDO from a 3.7 V average cell to 3.0 V is ~81%
+efficient, so the most any buck could return is ~19% of battery current, and a real one at
+~10 mA perhaps half of that — an estimate — against an inductor and another reflow-only
+package, on a cell §3.5 already sizes with margin. Revisit only if the measured active
+current comes in well above 11 mA or the cell shrinks to ~70 mAh.
+
+**B4.3's divider-free battery sense moves to the charger.** Behind a regulator, the nRF's
+VDD channel reads the rail rather than the cell. The BQ25155's 16-bit ADC reads the cell
+over I²C with no divider and no leakage.
+
 ---
 
 ### B5 — The crystal is load-bearing, and not for the reason the README gives. It belongs to the IMU. **Fifth. The "right for the wrong reason" line.**
@@ -1004,15 +1051,21 @@ come from somewhere, which is the argument for sizing at 2 Gbit rather than 1.
 **B8.1 — the charger, resolved.** The right class is a programmable-voltage charger with a
 real thermistor input, not a fixed-chemistry linear part. **BQ25155** (or BQ25150) gives I²C
 `VBATREG` from 3.6 V to 4.6 V in 10 mV steps at 0.5% accuracy, a **TS pin with a 16-bit
-ADC**, an `ADCIN` channel, 10 nA ship mode, and a 2.5 × 2.5 mm package. One part answers
+ADC**, an `ADCIN` channel, 10 nA ship mode, and a **2.0 × 1.6 mm DSBGA-20** package
+(SLUSDO1B; an earlier draft here said 2.5 × 2.5 mm). One part answers
 F11's safety finding, covers both candidate chemistries in B1.5, and its ADC is a second
 route to the battery-voltage channel. Costs, named: **WCSP at 0.4 mm pitch is a harder
 assembly than DFN-10** and makes a fourth reflow-only part, pushing against §4.5's
 reproducibility list; and I²C configuration is firmware you must be right about, on the part
 that charges a lithium cell. *On the prompt's question of whether the MCU could do CC/CV
 itself through a load switch and delete the IC: no. It moves the last analogue safety
-interlock into firmware in a design others will build from, and the IC it deletes is 2.5 mm
-square.*
+interlock into firmware in a design others will build from, and the IC it deletes is
+2.0 × 1.6 mm.*
+
+**Checked against SLUSDO1B on 2026-09-26, for B1.6's Li-ion cell.** Charge current is
+1.25–500 mA. **Out of reset it charges at 4.2 V (`VBAT_CTRL` = 0x3C) and 10 mA** — a safe
+charge for this cell with no firmware at all, and what the 50 s I²C watchdog falls back to
+if firmware stops talking. Its LDO was weighed as the system rail and rejected in B4.5.
 
 **B8.2 — the protection FETs get the number the README asks for.** From the BQ2970
 datasheet the thresholds are fixed voltages across the external FETs: **OCD = 0.100 V,
@@ -1049,6 +1102,11 @@ distinguished by pattern *and* brightness rather than colour. **The constraint i
 an unregulated LFP rail only a red LED (Vf 1.8–2.0 V) works down to the 3.0 V end.** A green
 or blue one at Vf 2.8–3.2 V dims and stops exactly when the battery is low — the moment the
 light is most needed, and a failure that looks like the device having died.
+
+**With B4.5's 3.0 V rail the constraint keeps its colour and changes its cause.** A green or
+blue LED on the rail leaves 0.2 V or less for its resistor all the time, not only at the end
+of discharge. Red or amber on the rail, or drive it from the charger's PMID if a colour
+matters. The README now says so.
 
 **B8.5 — the module holds, and the '832-versus-'840 decision resolves to the '840 on a
 number both documents had wrong.** A bare SoC is smaller and cheaper and forfeits the
@@ -1289,7 +1347,8 @@ is met. **The 2026-09-26 search made it final** (B1.6).
 **Overturned, conditionally: "a regulator is mandatory."** See B4. Every rail spans the whole
 LFP range, the LDO costs plateau capacity rather than being neutral, and deleting it deletes
 the ADC divider. The condition — a ≤3.6 V chemistry and not the ADXL372 — is the coupling in
-B4.4, and if B1 lands on a 4.2 V coin cell the regulator returns.
+B4.4, and if B1 lands on a 4.2 V coin cell the regulator returns. **B1 landed on a 4.2 V
+cell (B1.6), so the regulator is mandatory after all** — B4.5.
 
 **Not overturned, but weakened: "the IMU mounts on its body diagonal, buying √3."** The
 geometry in F15 is exact and nothing here touches it. What changes is what it is *for*. It
@@ -1394,8 +1453,17 @@ Read in full or in the named sections, all 2026-09-17.
   Clock* and the `TIMING` register, FIFO section, and **Silicon Anomaly `er001`/`er002`**.
 - **TI BQ2970/BQ29700, SLUSBU9I** — Device Comparison Table (OVP 4.275 V, UVP 2.800 V,
   OCD 0.100 V, SCD 0.5 V).
-- **TI BQ25155** — I²C `VBATREG` 3.6–4.6 V in 10 mV steps at 0.5%, 16-bit ADC with TS and
-  ADCIN, 10 nA ship mode, 2.5 × 2.5 mm.
+- **TI BQ25155, SLUSDO1B (August 2023)** — I²C `VBATREG` 3.6–4.6 V in 10 mV steps at 0.5%,
+  charge current 1.25–500 mA, 16-bit ADC with TS and ADCIN, 10 nA ship mode, **2.0 × 1.6 mm
+  DSBGA-20**. Read 2026-09-26 for B4.5 and B8.1: §6 key default settings (10 mA charge,
+  1.8 V LDO), §8.3 (LDO output 100 mA recommended), §8.5 (**VINLS ≥ VLDO + 500 mV** in LDO
+  mode; 0.9 µA LDO quiescent current), §9.3.2.2 (50 s I²C watchdog resets the charger
+  parameter registers), §9.3.5, Tables 9-21 and 9-29 (`VBAT_CTRL` reset 0x3C = 4.2 V;
+  `LDOCTRL` reset 0xB0 = enabled at 1.8 V), §9.4.1 (ship mode on battery insertion).
+- **TI TPS7A02, SBVS277C (September 2022)** — §6.5 (ground current 25 nA typical and 46 nA
+  maximum at 25 °C; dropout by output range, 310 mV maximum at 200 mA for 2.5–3.3 V;
+  current limit; enable thresholds), the 1 → 50 mA transient on its front page, §9.1.1
+  nomenclature and the package addendum (TPS7A0230PDBVR, SOT-23-5, active).
 - **Microchip MCP73123/223, DS22191E** — features (3.6 V ±0.5%, 130–1100 mA, integrated
   reverse-discharge protection), Table 3-1 pin function table (**no thermistor pin**), §5.9
   thermal regulation on die temperature.

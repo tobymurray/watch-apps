@@ -157,7 +157,7 @@ and decoupling, not only as an antenna-keepout problem.
 
 | Function | Part | Notes |
 |---|---|---|
-| Regulator | **required** | Every part below is 3.6 V maximum; the nRF52832 and ADXL375 have a 3.9 V *absolute* maximum and a full cell is 4.2 V. Pick a nano-quiescent LDO. |
+| Regulator | **TPS7A0230**, 3.0 V fixed, fed from the charger's PMID | Every part below is 3.6 V maximum; the nRF52 and ADXL375 have a 3.9 V *absolute* maximum and a full cell is 4.2 V. 3.0 V because the ADXL375 needs 2.0 V and a 3 V NOR 2.7 V, and 3.3 V would drop out near the 3.4 V cutoff. 25 nA quiescent against ~95 µA of standby, ≤310 mV dropout at 200 mA, SOT-23-5 so it hand-solders. The charger's ADC reads the battery, because behind a regulator the nRF's own supply channel reads the rail. See [BOM-REVIEW B4.5](Docs/BOM-REVIEW.md). |
 | 6-axis IMU | ICM-45686 | 1.71–3.6 V, LGA-14 2.5 × 3.0 × 0.81 mm, 8 KB FIFO, 0.42 mA low-noise. Full register map public in AN-000478. |
 | High-g accel | ADXL375 | 2.0–3.6 V, 3.00 × 5.00 × 0.80 mm 14-LGA, 145 µA at any ODR ≥ 100 Hz, survives 10,000 g. **Run it at 800 Hz**: sensitivity is specified only for ODR ≤ 800 Hz, and at 1600/3200 Hz the output LSB is always zero. Its ODR ladder is 400/800/1600/3200 — there is no 1 kHz step. SPI 5 MHz maximum. |
 | MCU / radio | pre-certified module — see [Open decisions](#open-decisions) | The modular grant is the reason to keep a module even at a power cost: files, a kit and a sold unit are three different regulatory objects, and only the last needs it. |
@@ -387,6 +387,9 @@ The power argument says the light can be almost free:
 At 5 ms every 5 s it costs less than the MCU standby delta the platform was
 originally chosen on. So brightness and duty are set by not distracting anybody,
 not by the battery.
+
+**Red or amber.** On the 3.0 V rail a green or blue LED, at Vf 2.8–3.2 V, leaves
+0.2 V or less for its resistor; drive it from the charger's PMID if a colour matters.
 
 - **Recording**: one short dim blink every 5 s. Confirms alive, not just powered.
 - **Stopped when a session was expected** — cap hit, flash full, low battery: a
