@@ -1,4 +1,4 @@
-# BOM review — SquashSensor, 2026-09-17, revised 2026-09-25 with bench measurements
+# BOM review — SquashSensor, 2026-09-17, revised 2026-09-25 with bench measurements and 2026-09-26 with a sourced cell
 
 A line-by-line review of the bill of materials in [`SquashSensor/README.md`](../README.md),
 against the derivations in [`ADVERSARIAL-REVIEW.md`](ADVERSARIAL-REVIEW.md). The question
@@ -24,6 +24,13 @@ eval rig — Adafruit Feather nRF52840 Express, an ADXL375 breakout on the host 
 result, one of them decisively: **F13 is closed**, and not by the hardware route this
 review proposed. Every figure carried over from the desk review is now marked as datasheet
 or measured, and where the two disagree the measurement wins and says so.
+
+**Revision of 2026-09-26: the cell is sourced, and it is not LiFePO4.** The §5 item that
+would settle B1 was run as a live search of what somebody in Canada can buy in ones and
+twos ([`CELL-SOURCING.md`](CELL-SOURCING.md)). It found no LiFePO4 cell at this size from
+any maker that documents one, and it found that DigiKey.ca and Mouser.ca sell no lithium
+cell into Canada at all. B1 closes on a lithium-cobalt pouch (B1.6), three of its
+sub-findings reverse with it, §3.5 gets a number, and B4's regulator returns.
 
 ---
 
@@ -67,9 +74,12 @@ wrong: the '840 module is 1.9% larger in plan at the same thickness, not "a larg
 so the only thing on the '832's side was a few dollars — which this review's own scope rules
 out as a deciding input.
 
-**One decision still blocks a schematic: the cell (B1).** It is a sourcing problem, and
-nothing measured here touches it. The flash (B7.1) is decided in architecture and needs one
-validation to settle 1 versus 2 Gbit.
+**The cell (B1) is decided — Li-ion, not LiFePO4 — and deciding it re-opens the regulator
+(B4).** The 2026-09-26 sourcing search found no LiFePO4 cell anyone will sell at this size
+with a datasheet, and found that DigiKey.ca and Mouser.ca sell no lithium cell into Canada
+at all (B1.6). A 4.2 V cell brings the regulator back, and that is the one decision left
+before a schematic. The flash (B7.1) is decided in architecture and needs one validation to
+settle 1 versus 2 Gbit.
 
 Seven findings follow, ordered by how much they change. Three "settled" items in §2 of the
 prompt are challenged in §4, one of them successfully.
@@ -80,11 +90,11 @@ prompt are challenged in §4, one of them successfully.
 
 | Line | Function | Current choice | Alternatives considered | Verdict |
 |---|---|---|---|---|
-| **Cell — chemistry** | energy | LiFePO4 100–150 mAh | LiPo pouch; Li-ion hard coin (Varta CoinPower); primary CR2032/2450 | **change** — B1 |
-| **Cell — format** | retention, thickness | pouch (implied) | hard coin; small cylindrical | **open** — carrier-dependent, §3 |
-| **Cell — capacity** | session reserve | 100–150 mAh | 70 mAh | **open** — §3.5 |
-| **Charger** | CC/CV | "an LFP charger, 3.6 V, + cell temperature" | MCP73123; CN3058E; BQ25155; MCU-driven | **change** — B1.3, B8.1 |
-| **Protection IC** | cell fault cutoff | BQ29700 + dual N-FET | BQ29701/2/3; cell-vendor PCM | **change** — B1.2 |
+| **Cell — chemistry** | energy | LiFePO4 100–150 mAh | LiPo pouch; Li-ion hard coin (Varta CoinPower); primary CR2032/2450 | **change → Li-ion pouch** — B1, B1.6 |
+| **Cell — format** | retention, thickness | pouch (implied) | hard coin; small cylindrical | **pouch for carrier A; hard coin for carrier B's 4 mm** — B1.6 |
+| **Cell — capacity** | session reserve | 100–150 mAh | 70 mAh | **~100 mAh** — §3.5 |
+| **Charger** | CC/CV | "an LFP charger, 3.6 V, + cell temperature" | MCP73123; CN3058E; BQ25155; MCU-driven | **change → BQ25155 at 4.2 V** — B8.1, B1.6 |
+| **Protection IC** | cell fault cutoff | BQ29700 + dual N-FET | BQ29701/2/3; cell-vendor PCM | **holds** — B1.2 reverses with B1.6 |
 | **Protection FETs** | trip current | "pick backwards from trip current" | — | **holds**, with a number it lacked — B8.2 |
 | **PTC** | redundant overcurrent | unspecified | delete | **holds** |
 | **Regulator** | rail | "required, nano-quiescent LDO" | none; buck | **change** — B4 |
@@ -242,7 +252,7 @@ read is the reason it needs stating carefully rather than inheriting.
 | full-charge voltage | 4.2 V | 3.6 V | 4.20 ± 0.05 V |
 | runaway onset | 150–200 °C | ~270 °C | 150–200 °C |
 | case | soft, tabbed | soft, tabbed | **hard steel can** |
-| orderable, with datasheet | partly | **no, at this size** | **yes** (Avnet Abacus; UL MH13654) |
+| orderable, with datasheet | **yes** — PKCELL LP402025 (B1.6) | **no, at this size** — confirmed (B1.6) | ~~yes~~ **no longer** — tabbed versions end-of-life (B1.6) |
 | thickness | ~4 mm | ~4 mm | **5.4 mm** |
 | discharge / pulse | — | — | 2 C / 3 C @ 2 s — 18× the 11 mA load |
 | documented abuse testing | — | — | **overcharge at 12 V/3 C/12 h passed** |
@@ -264,6 +274,35 @@ needed at all if the cell ships with an integrated PCM?* Varta's own answer, in 
 datasheet: **"Cell must not be used without external safety electronics (PCM — Protection
 Circuit Module)!"** The cell does not ship with one. The protection IC is required by the
 cell vendor, not by taste.
+
+**B1.6 — resolved, 2026-09-26: Li-ion, because the search came back empty.** The open item
+in §5 was run as a live search of what somebody in Canada can buy in ones and twos
+([`CELL-SOURCING.md`](CELL-SOURCING.md)). **No LiFePO4 cell at 70–150 mAh exists from a
+maker that documents one**: the smallest either distributor lists is a 400 mAh cylinder
+(DigiKey Marketplace) or a 1.1 Ah 18650 (Mouser), and neither will sell it into Canada. The
+ZEUS part B1.1 cited no longer returns a result. The search also found that the failure it
+was set up to catch is systemic: **DigiKey.ca and Mouser.ca sell no lithium cell of any kind
+into Canada.** The same filter shows 296 lithium rechargeables on digikey.com and 93 on
+digikey.ca, all Marketplace or outside the window, and Mouser marks every one "does not
+presently sell this product in your region".
+
+**The cell is a lithium-cobalt pouch with its own protection circuit.** The best-documented
+one a Canadian can order is **PKCELL LP402025**, sold as Adafruit 1317 — 150 mAh,
+4.0 ± 0.3 × 20 × 25 mm, 4.65 g, a maker's datasheet and a published UN 38.3 report, in stock
+at PiShop.ca for $7.95. It fits carrier A and the bring-up board. For carrier B's ~4 mm the
+answer is the hard coin this finding already favoured, from another maker: **Cornell Dubilier
+Knowles RJD2430C1ST1** — 110 mAh, Ø24.5 × 3.55 mm with its tabs, 4.5 g, UL 1642 file
+MH28281 — which DigiKey.ca and Mouser.ca both refuse, so it needs a US address.
+
+**Three of this finding's own sub-findings reverse with it.** B1.2: the BQ29700's 4.275 V
+overcharge threshold is the right number for a 4.2 V cell. B1.3: the MCP73123 drops out,
+and B8.1's BQ25155 is set to 4.2 V instead. B1.4: the README's 3.4 V low-battery threshold
+is a lithium-cobalt number again, and correct. **And B4's regulator returns**, as B4.4 said
+it would.
+
+**B1.5's case for the Varta coin rested partly on availability, which no longer holds.** The
+tabbed CoinPower assemblies went end-of-life — last delivery 31 January 2025 — and no
+distributor selling into Canada lists CoinPower at all.
 
 ---
 
@@ -1190,7 +1229,7 @@ cell's pocket must be reachable without destroying anything** (hence screws, not
 no adhesive on the cell), and **the cell must be a part they can buy** — which is B1, and is
 why B1 is the largest finding here.
 
-### 3.5 Is 100–150 mAh right?
+### 3.5 Is 100–150 mAh right? **About 100 mAh, and the flash sets it.**
 
 At ~11 mA, **70 mAh is 6.4 h — six sessions**, against the README's target of nine to
 fourteen. Halving the cell buys about **1.2 g**, which by the README's own 2.34 mm/g scaling
@@ -1199,8 +1238,45 @@ between about 2.3× and 1.8× JND. For a device that docks after every session, 
 of reserve is already more than the charging model needs, and F14's argument that the cell
 was sized for a model the design replaced applies again one size down.
 
-**Verdict: open, and it is a playing judgement rather than a calculation.** It should be
-decided inside Phase −1 item A, which already varies mass on court, rather than at a desk.
+**Revised 2026-09-26: sessions of reserve is the wrong frame, and one flash is the right
+one.** B7.1 puts 1 Gbit at 160 minutes of recording, after which the unit has to dock to
+offload whatever the battery says. So the cell has to outlast one full flash, plus the
+standby before it is docked, at end of life on a cool court.
+
+| | 1 Gbit | 2 Gbit |
+|---|---|---|
+| recording until the flash is full, at ~11 mA | 160 min → 29 mAh | 320 min → 59 mAh |
+| a week off the cradle, at ~95 µA | 16 mAh | 16 mAh |
+| needed at the terminals | 45 mAh | 75 mAh |
+| ÷ derating of 0.61 | **≈ 75 mAh** | **≈ 120 mAh** |
+
+The 11 mA and the 95 µA (wake-on-motion ~70, BLE advertising ~25) are the README's desk
+figures, and F14's own scaling puts active draw nearer 10 mA at B7.1's 48 MB/h, so 11 is if
+anything conservative; **neither is measured, and both should be.** The derating is 0.75 for
+end of life (the Knowles RJD catalogue gives 66% after 500 full cycles; shallow cycles help
+and summers in a car hurt), 0.95 for minimum against typical capacity, ~0.95 for the 3.4 V
+cutoff at ~0.1 C, and 0.9 for a cool court (Knowles: >80% at −10 °C) — all four are
+estimates, stated so they can be replaced.
+
+**~100 mAh covers the 1 Gbit design with ~1.35× margin at end of life after a week
+undocked**, and the 2 Gbit design while the cell is new. The 50 mA pulses are 0.5 C, inside
+every candidate's rating.
+
+**Standby is the term that can dominate.** ~2.3 mAh a day off the cradle is 68 mAh in a
+month — more than a whole flash of recording. Either firmware sends the BQ25155 to its 10 nA
+ship mode after days without motion, or the cell is sized for the longest gap anybody leaves
+it on a racket.
+
+**Real cells are heavier and larger than the README's arithmetic, and not smoothly.** The
+PKCELL LP401230 is 105 mAh at 3.0 g, the LP402025 150 mAh at 4.65 g, and the RJD2430C1ST1
+110 mAh at 4.5 g — the steel can costs ~1.5 g, ~0.7 JND, over a pouch of the same capacity.
+The 105 mAh pouch is ~1.44 cm³ and 360 mm² in plan against the 0.81 cm³ and ~240 mm² the
+README budgeted, and the 150 mAh one is 500 mm², on a butt cap of ~750. **That is a second
+reason to hold at ~100 mAh**, independent of mass.
+
+**Verdict: ~100 mAh**, with ~75 mAh as the floor for 1 Gbit and ~120 mAh if the flash goes
+to 2 Gbit. Whether the mass is acceptable is still a playing judgement, and still belongs in
+Phase −1 item A.
 
 ---
 
@@ -1208,7 +1284,7 @@ decided inside Phase −1 item A, which already varies mass on court, rather tha
 
 **Overturned: "LiFePO4 over lithium-cobalt."** See B1. The physics argument is sound and the
 sourcing argument was never made. The prompt named the overturning condition exactly and it
-is met.
+is met. **The 2026-09-26 search made it final** (B1.6).
 
 **Overturned, conditionally: "a regulator is mandatory."** See B4. Every rail spans the whole
 LFP range, the LDO costs plateau capacity rather than being neutral, and deleting it deletes
@@ -1274,8 +1350,8 @@ this review, which is the test.
 | **Gyro g-sensitivity at 50 g.** TDK's AN-000265 names sensitivity to linear acceleration as a deterministic IMU error. **Neither DS-000577 nor DS14623 specifies it** — both give sensitivity tolerance and cross-axis sensitivity and stop. This device runs its gyro at a *sustained* 50 g, which is where the term stops being a footnote. | A rate table with a centrifuge arm, which nobody here has — or a direct question to TDK and ST. Worth asking, because it is a systematic error proportional to the dominant load. |
 | **Whether HAODR rescales the high-g ODR ladder.** B3 point 5 infers that it does, from §6.1.4's statement that HAODR applies to the high-g accelerometer. If it does, the 800 Hz family gives the ADXL375's ladder exactly and part of B2.4's rate argument changes shape. DS14623 prints the HAODR table for `ODR_XL`/`ODR_G` only. | One bring-up: set HAODR_SEL = 10, enable the high-g channel, and time the data-ready interrupt. Or ask ST. |
 | **How much HAODR actually buys on ODR variation.** Both DS14623 and AN6119 say "typically reduces" and give no figure, so B5's ±650 ppm stands as the only quantified number for the ST part. | An ST characterisation report, or measuring a handful of parts against a reference clock. |
-| **LiFePO4 at 100–150 mAh from a supplier with a datasheet.** B1's search covered DigiKey and Mouser; it did not cover Asian distributors or a direct approach to a cell maker. | A quotation request naming UN 38.3 and IEC 62133 documentation as a requirement. If nobody will supply that paperwork at this size, B1 is settled for good. |
-| **Varta CoinPower availability in ones and twos.** CP 1654 is Avnet-distributed rather than DigiKey-stocked, so a hobbyist's ability to buy one is not established — which matters only because reproducibility is a requirement. | A distributor check at quantity 1. |
+| ~~LiFePO4 at 100–150 mAh from a supplier with a datasheet.~~ | **Closed 2026-09-26 — none exists.** The search covered Canadian distribution and makers worldwide; the closest documented LFP cell is 200 mAh and 5 mm, sold by quotation. No quotation was sent, because no maker lists one with a datasheet. B1 is settled — B1.6, [`CELL-SOURCING.md`](CELL-SOURCING.md). |
+| ~~Varta CoinPower availability in ones and twos.~~ | **Closed 2026-09-26.** The tabbed assemblies are end-of-life (last delivery 31 January 2025), and no distributor selling into Canada lists CoinPower. |
 | **The actual shock the cell sees.** §3.1 derives 200–5,000 g from plausible drop heights and *assumed* stopping distances, and the answer is most sensitive to the assumed term. | **The instrument now exists.** The rig captured a 130 g flick unclipped with visible ringing (**M9**), so twenty drops onto a court floor is a session's work, not a project. Do it in the same trip as the ball test. |
 | **Whether the recording format survives being a filesystem.** B8.5 picks the '840 for USB mass storage, which means exposing 128 MB as a block device — and a filesystem written continuously at 48 kB/s can be corrupted by power loss mid-write. The common answer is to write raw and synthesise a filesystem view on connect. | A `Docs/FORMAT.md` decision, not a measurement. It is cheaper now than after the format is frozen, and it is the clearest case in the BOM of a part choice moving work into firmware. |
 | **Per-unit calibration at 50 g.** TDK's AN-000265 is explicit that full calibration needs a **2-DOF rate table**, and temperature calibration needs that table **inside a temperature chamber** for a ~7-hour soak sequence per unit. Neither is available to somebody reproducing this design. The affordable procedure is **6-side flip** (no machine — and the puck's own six faces are the fixture), which yields offset and sensitivity **at 1 g**. | Nothing cheap. The honest response is to publish the 6-side-flip jig, record the temperature the calibration was done at, and **state in the file that the scale factor is a 1 g figure extrapolated to a 50 g operating range** — rather than let a reader assume it was calibrated where it is used. Note this matters far more for the high-g channel (ADXL375 ±10% scale factor) than for the primary IMU (ICM-45686 ±0.2%). |
@@ -1349,3 +1425,13 @@ Secondary, and flagged as such in the text: distributor catalogue searches for L
 (DigiKey/ZEUS, Mouser); microSD connector retention figures (connector-vendor and
 industrial-integrator publications, not a single datasheet); car-cabin temperature
 measurements; 3D-printing filament Tg and HDT ranges; LiFePO4 discharge-curve shape.
+
+**Sourcing search, 2026-09-26** — live product pages on DigiKey.ca and .com, Mouser.ca,
+Newark Canada, PiShop.ca, Abra, Canada Robotix, BC Robotics and Amazon.ca, and every cell
+document it read, are listed in [`CELL-SOURCING.md`](CELL-SOURCING.md); it supersedes the
+LiFePO4 catalogue search above. Read in full for B1.6 and §3.5: **PKCELL LP402025,
+specification QA.S.0228** (capacity, 4.0 ± 0.3 × 20 × 25 mm, charge and discharge rates,
+temperature and storage ranges, the S-8261 protection circuit) and its **UN 38.3 report
+NCT18052772B1-1**; and the **Cornell Dubilier Knowles RJD catalogue (February 2025)** —
+the standard and leaded tables, discharge by temperature, capacity after 500 cycles,
+storage retention at 60 °C, the safety tests, and UL 1642 file MH28281.

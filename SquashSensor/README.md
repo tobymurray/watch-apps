@@ -90,12 +90,14 @@ test, and it is the reproduction path the open-hardware requirement depends on.
 Sled length in carrier B is a trade and a cheap one: 40 mm to 100 mm costs
 1.8–2.4 g of printed sled and buys 3× the α signal, plus the cell volume with it.
 
-For scale, the electronics are **1.24 cm³** — 0.43 cm³ of silicon (the module is
-82% of it) plus 0.81 cm³ for a 100 mAh cell. A butt cap envelope is ~3 cm³. The
-binding dimension is thickness, not volume: module (2.2 mm), PCB (0.8) and cell
-(~4) do not stack inside a 3–5 mm cap, so they sit side by side in plan and the
-assembly runs ~4.8 mm, which works where it may extend a few millimetres into the
-mouth of the bore.
+For scale, the electronics are **~1.9 cm³** — 0.43 cm³ of silicon (the module is
+82% of it) plus ~1.44 cm³ for a real 100 mAh cell, PKCELL's LP401230 at
+4.0 × 12 × 30 mm. The 0.81 cm³ first budgeted came from an energy density no
+documented cell this small reaches ([`Docs/CELL-SOURCING.md`](Docs/CELL-SOURCING.md)).
+A butt cap envelope is ~3 cm³. The binding dimension is thickness, not volume:
+module (2.2 mm), PCB (0.8) and cell (~4) do not stack inside a 3–5 mm cap, so they
+sit side by side in plan and the assembly runs ~4.8 mm, which works where it may
+extend a few millimetres into the mouth of the bore.
 
 ## Mount orientation — the part that is easy to get wrong
 
@@ -161,43 +163,58 @@ and decoupling, not only as an antenna-keepout problem.
 | MCU / radio | pre-certified module — see [Open decisions](#open-decisions) | The modular grant is the reason to keep a module even at a power cost: files, a kit and a sold unit are three different regulatory objects, and only the last needs it. |
 | 32.768 kHz crystal | **a board part** | Raytac supplies a footprint and a recommended spec, not a fitted crystal. |
 | Flash | SPI NOR, sized from the rate decision | 512 Mbit covers an hour at 1 kHz + 800 Hz. Avoid NAND and the bad-block, ECC and wear-levelling firmware it brings. |
-| Charger | an **LFP** charger, 3.6 V constant-voltage, + **cell temperature** | The MCP73831 is 4.2 V fixed and is the wrong part for this chemistry. Whichever is chosen, check it for a battery-temperature input: the MCP73831's thermal regulation watches its own die and it has no THERM pin, which protects the IC and not the cell. In a sealed object that gets struck, add an NTC and an MCU-gated charge enable. |
+| Charger | **BQ25155**, charge voltage 4.2 V, + **cell temperature** | I²C-set charge voltage 3.6–4.6 V and charge current 1.25–500 mA; it resets to 10 mA, which is safe on any cell here. A thermistor input with JEITA, a 16-bit ADC and a 10 nA ship mode. The thermistor input is the point: the MCP73831's thermal regulation watches its own die and it has no THERM pin, which protects the IC and not the cell. In a sealed object that gets struck, put the NTC on the cell and gate charging from the MCU. |
 | Protection | BQ29700 + companion dual N-FET + PTC | **The FETs' RDS(on) *is* the overcurrent threshold** — detection is a fixed voltage across them. Pick the FETs backwards from the desired trip current, not from a compatibility table. |
-| Battery | **LiFePO4**, 100–150 mAh, 3.0–4.6 g | See below. ~11 mA active gives 9–14 sessions between charges, ample for a device that docks after every session. |
+| Battery | **Li-ion pouch** with its own protection circuit, **~100 mAh**, ≤4.3 mm, 3.0–4.65 g | See below. Bring-up uses a PKCELL LP402025 (150 mAh). The flash, not the cell, bounds a session, and ~100 mAh covers a full flash at end of life with a week off the cradle ([BOM-REVIEW §3.5](Docs/BOM-REVIEW.md)). |
 
-Three parts are reflow-only: the ICM-45686 and ADXL375 are both LGA and the
-BQ29700 is WSON. Budget paid assembly and publish placement files.
+Four parts are reflow-only: the ICM-45686 and ADXL375 are both LGA, the BQ29700
+is WSON and the BQ25155 is a 2.0 × 1.6 mm DSBGA. Budget paid assembly and publish
+placement files.
 
-### LiFePO4, not LiPo
+### Li-ion, because no LiFePO4 cell can be bought
 
 A sealed cell in a struck object that spends summers in a car boot is the one part
 of this design where a wrong choice hurts somebody. Bound it first: 100–150 mAh at
-3.2–3.7 V is **0.37–0.56 Wh**, about an AirPod cell, against 15 Wh for a phone. A
+3.7 V is **0.37–0.56 Wh**, about an AirPod cell, against 15 Wh for a phone. A
 failure vents and may flame briefly; it is not a house fire. But it is sealed in
 carbon with no vent path, and other people will build from these files.
 
-**LiFePO4 costs about a gram and buys a different failure mode.** Thermal runaway
-onset is ~270 °C against ~150–200 °C for the cobalt chemistries, and the cathode
-does not release oxygen, so a runaway does not feed itself.
+**LiFePO4 was the better chemistry, and it lost on sourcing.** Its thermal runaway
+onset is ~270 °C against ~150–200 °C for the cobalt chemistries, its cathode does
+not release oxygen, and a full cell sits at 3.6 V — the recommended maximum of every
+part on the rail. But no LiFePO4 cell at 70–150 mAh exists from a maker that
+publishes a datasheet: the smallest any distributor lists is a 400 mAh cylinder,
+and neither DigiKey nor Mouser will sell even that into Canada
+([`Docs/CELL-SOURCING.md`](Docs/CELL-SOURCING.md)). The case for LFP was a safety
+argument made on behalf of strangers building from these files, and telling them to
+buy an undocumented cell gives back more than it buys.
 
-| | LiPo | LiFePO4 |
-|---|---|---|
-| energy density | 175 Wh/kg | 105 Wh/kg |
-| 100 mAh | 2.1 g | 3.0 g |
-| 150 mAh | 3.2 g | 4.6 g |
-| full-charge voltage | 4.2 V | **3.6 V** |
+**So the cell is a lithium-cobalt pouch with its own protection circuit.**
 
-**The second benefit is larger than the first.** A full LFP cell sits at 3.6 V,
-which is exactly the recommended maximum for the nRF52832, ICM-45686 and ADXL375 —
-not 0.6 V above it and 0.3 V above two absolute maximums. The regulator stays, for
-brownout behaviour and headroom, but it stops being the component that prevents
-damage when something else fails.
+| | PKCELL LP401230 (Adafruit 1570) | **PKCELL LP402025 (Adafruit 1317)** | Knowles RJD2430C1ST1 |
+|---|---|---|---|
+| capacity | 105 mAh | 150 mAh | 110 mAh |
+| size | 4.0 ± 0.3 × 12 × 30 mm | 4.0 ± 0.3 × 20 × 25 mm | Ø24.5 × 3.55 mm, steel can |
+| mass | 3.0 g | 4.65 g | 4.5 g |
+| termination | leads, JST-PH, protection circuit | leads, JST-PH, protection circuit | tabs, no protection circuit |
+| paperwork | datasheet, UN 38.3 report | datasheet, UN 38.3 report | catalogue, UL 1642 file MH28281 |
+| in Canada | no stock; Newark quotes 20 weeks | **PiShop.ca, Abra, Newark** | not sold here |
 
-Two costs to carry knowingly: the charger changes, because 4.2 V parts are wrong
-for this chemistry; and LFP's flat discharge curve makes state-of-charge from the
-ADC divider harder to read than a LiPo's slope. Sourcing small LFP pouches at
-100–150 mAh is the open item — they exist, but the catalogue is thinner than for
-LiPo.
+The LP402025 is the bring-up cell because it is the one a Canadian can order today,
+and it fits carrier A. **Carrier B's ~4 mm is met only by the coin cell**: a
+pouch's +0.3 mm tolerance, and its swelling with age and heat, overrun it.
+
+Three costs to carry knowingly:
+
+- **A full cell is 4.2 V again, so the regulator is back** to being the component
+  that keeps 4.2 V off 3.6 V parts.
+- **It gives back LFP's runaway margin**: 150–200 °C onset instead of ~270 °C, and a
+  cathode that does release oxygen.
+- **Heat is a handling limit for every small lithium cell, LFP included.** The best
+  datasheets found allow a month at 60 °C; PKCELL's allows −5 to 35 °C for a month,
+  and Knowles' catalogue says in as many words not to leave its cell in a hot car.
+  The off switch and a charge ceiling below 4.2 V are the mitigations, not the
+  chemistry.
 
 **A primary cell was the other candidate and does not survive the duty cycle.**
 Garmin's CT10 runs four years on a user-replaceable CR2032, which is the most
@@ -296,8 +313,8 @@ a C3 clocked down would do better. The direction is not in doubt, the ratio is
 worth an afternoon on an eval board.*
 
 **Footprint agrees.** MDBT42Q is 160 mm² in plan against ESP32-C3-MINI-1's 219 and
-ESP32-S3-MINI-1's 316, in a butt cap with ~750 mm² of plan area of which the cell
-wants ~240.
+ESP32-S3-MINI-1's 316, in a butt cap with ~750 mm² of plan area of which a real
+100 mAh cell wants ~360 (LP401230) and a 150 mAh one 500 (LP402025).
 
 **Openness does not favour Espressif either**, which is the counter-intuitive part.
 Nordic's SoftDevice is a binary blob, but Zephyr ships an open-source Bluetooth
