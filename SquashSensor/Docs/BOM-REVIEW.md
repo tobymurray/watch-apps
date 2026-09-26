@@ -54,10 +54,17 @@ choice — whether a ball impact needs more than 200 Hz of bandwidth — **is an
 contacts run 1.6–5.8 ms, so 400 Hz under-reads a peak by up to 57% and 3200 Hz reads it to
 1%.** The ICM-45686 and the ADXL375 stay, on separate buses, at 3200 Hz.
 
-**So a review that began by proposing two part swaps ends by recommending neither.** The
-parts were right; three of the *numbers around them* were wrong, and one line still cannot
-be ordered at all. **B1 — the cell — is now the only thing blocking a schematic**, and
-nothing measured here touches it.
+**So a review that began by proposing two part swaps ends by recommending neither** on the
+sensing chain. The parts were right; three of the *numbers around them* were wrong.
+
+**But settling the rate at 3200 Hz broke the flash budget**, because F4's escape from a
+bigger part was running the ADXL375 at 800 Hz and B2.8 closed it. That is the one place the
+good news cost something: **512 Mbit → 1 Gbit, with the high-g channel triggered rather than
+continuous** (B7.1, B7.2).
+
+**Two decisions still block a schematic: the cell (B1) and the flash (B7.1).** The cell is a
+sourcing problem nothing measured here touches; the flash is an architecture choice with a
+validation step attached.
 
 Seven findings follow, ordered by how much they change. Three "settled" items in §2 of the
 prompt are challenged in §4, one of them successfully.
@@ -81,7 +88,8 @@ prompt are challenged in §4, one of them successfully.
 | **Magnetometer footprint** | future channel | footprint, unpopulated | populate on ES1 | **holds**, and the argument against it loses a leg — B2.3 |
 | **MCU / radio module** | compute, BLE, cert | pre-certified module, '832 vs '840 open | bare SoC; nRF5340 | **holds** — B8.5 |
 | **32.768 kHz crystal** | timekeeping | "a board part" | delete, resync in cradle | **holds — for a different reason** — B5 |
-| **Flash** | one hour of samples | SPI NOR 512 Mbit | SPI NAND; microSD; eMMC; MCU-internal | **holds** — B7 |
+| **Flash** | 90–180 min of samples | SPI NOR 512 Mbit | **SPI NOR 1–2 Gbit**; SPI NAND; microSD; eMMC | **change** — technology holds, capacity does not — B7.1 |
+| **Recording architecture** | fitting a session | continuous, both channels | ICM continuous + high-g triggered | **change** — B7.1, B7.2 |
 | **Off switch** | break load path | slide, recessed | reed; hall + latch; charger ship-mode | **holds** — B8.3 |
 | **LED** | recording / stopped | one, low-brightness | two; RGB | **holds, with a colour constraint** — B8.4 |
 | **Charge/data contacts** | dock | recessed gold pads + cradle pogo pins | magnetic; USB-C in cap; edge | **holds** — B8.6 |
@@ -859,10 +867,91 @@ Add a card slot as an ingress path into a sealed cavity in a sweaty bag; card fi
 wear levelling and garbage collection produce write latencies nobody controls, against a
 fixed sample rate; and contact fretting in a saline environment.
 
-**Verdict: SPI NOR holds.** SPI NAND remains the fallback if the payload grows — and B2.5
-and B3 both grow it, so F4's analysis is now more likely to be needed than it was. eMMC is
-a BGA that buys nothing here. The openness argument microSD would have won is better won by
-USB mass storage over the cradle, which the design already reaches for.
+**Verdict: SPI NOR holds as a technology.** eMMC is a BGA that buys nothing here. The
+openness argument microSD would have won is better won by USB mass storage over the cradle,
+which the design already reaches for. **The capacity is a different question and B7.1
+reopens it.**
+
+### B7.1 — B2.8 broke the flash budget, and the fix is an architecture rather than a bigger part. **512 Mbit → 1 Gbit, and the high-g channel becomes triggered.**
+
+F4's escape from a larger flash was *"run the ADXL375 at 800 Hz"*. **B2.8 closed that
+escape**: ball contacts are 1.6–5.8 ms, so 800 Hz costs 15% of peak against 3200 Hz's 1%.
+The rate is no longer negotiable, and the budget has to move instead.
+
+**First, a correction to the README's own table.** It lists 1 kHz as **43 MB/h**, which is
+12 bytes per sample — accel and gyro only. DS-000577 §6.1's actual frame is **16 bytes**:
+header, accel, gyro, temperature and the timestamp B5.4 shows is mandatory. **The real
+figure is 58 MB/h, and every capacity in that table is short by about a third.**
+
+**The requirement, stated as coverage rather than as a number:** 90 minutes covers ~75% of
+sessions, 120 minutes ~95%, 180 minutes ~100%.
+
+| ICM rate | High-g | MB/h | 512 Mbit | **1 Gbit** | **2 Gbit** |
+|---|---|---|---|---|---|
+| 1 kHz | continuous | 125 | 31 min | 61 min | 123 min |
+| 800 Hz | continuous | 113 | 34 min | 68 min | 136 min |
+| 400 Hz | continuous | 90 | 43 min | 85 min | 171 min |
+| 1 kHz | **triggered** | 60 | 64 min | 128 min | 256 min |
+| **800 Hz** | **triggered** | **48** | 80 min | **160 min** | **320 min** |
+| 400 Hz | triggered | 25 | 154 min | 307 min | 614 min |
+
+**Capturing everything continuously for 180 minutes needs more than 256 MB** — a 4 Gbit
+part, firmly in NAND territory with the bad-block, ECC and wear-levelling firmware F4
+warned about and nobody has budgeted.
+
+**The decision: 1 Gbit NOR, ICM at 800 Hz continuous, ADXL375 triggered.** 160 minutes,
+covering ~99% of sessions, on one NOR part with no NAND firmware. **2 Gbit if 180 minutes
+becomes a floor**, which is also the right hedge if the trigger has to be loosened (below).
+
+**Two things support the 800 Hz, and one of them is new from the court.** The README's own
+open decision says 1 kHz "is no longer forced" once the disguise metric went, and §5 found
+classification at 97–98% at ordinary rates. Against that, **M14's 145 Hz frame mode sets a
+floor**: bending rotates the local frame, so the gyro sees it too, and 400 Hz gives only
+2.75 samples per cycle where 800 Hz gives 5.5. **The court measurement set a lower bound on
+the 6-axis rate that the desk analysis had no way to find**, and it lands below 1 kHz.
+
+**F4's erase objection is partly rebutted, and this review repeated it uncritically.** F4
+says pre-erasing 128 MB is "25 minutes typical, 218 worst case — there is no point in a
+squash session where that fits". True, and beside the point: **the device docks after every
+session, so erase is a cradle operation on a desk, not a court one.** F4 also costed 4 KB
+sector erases where a wipe would use 64 KB block or chip erase, roughly an order of
+magnitude faster per byte.
+
+**What a larger NOR does cost, and it is not nothing:** above 128 Mbit the family needs
+**4-byte addressing**, and 1–2 Gbit parts are stacked dies. Neither blocks anything, but
+both are firmware nobody has scoped, and they erode the "NOR avoids NAND's firmware"
+argument F4 rested on.
+
+### B7.2 — Triggering the high-g channel is compatible with the data contract, on one condition, and it has one untested failure mode.
+
+**It is not a violation of "records raw, computes nothing".** A trigger decides *when* to
+record, not *what* to store; the samples written are still raw LSB. The design already
+accepts a person pressing a button, and this is that decision automated. What it changes is
+that the two channels now serve the two goals the README states separately — the ICM
+records continuously for the **corpus**, and the gated high-g channel serves
+**classification and season-long usage logging**.
+
+**The condition: the file must record the trigger parameters and the gaps explicitly** —
+threshold, trigger instants, and "nothing recorded between t1 and t2". Without that a reader
+cannot distinguish a discarded quiet period from a dropout, which is the same silent failure
+§4.1 exists to prevent. This is a `Docs/FORMAT.md` requirement, not an implementation note.
+
+**Trigger on jerk *or* ICM saturation, not jerk alone.** M17 measured the jerk separation at
+~100× — 0.06 g/sample for a hard swing against 6.8 for an impact — which is ample. But F2
+says the ICM may rail during an ordinary swing, and if that happens while the high-g channel
+is idle, the design has lost the peak the second sensor exists to catch. Saturation is a
+free trigger: the rail is already visible in the sample.
+
+**The untested failure mode is the one the project cares most about.** A trigger is a
+detector, and `SquashLab`'s own protocol comment says the drop **"may not be DETECTED at
+all: it is the soft shot the gyro threshold is most likely to miss"**. M17's separation was
+measured between *hard* swings and impacts; a soft drop's contact is the case nobody has
+recorded. **Triggered mode must be validated against drops before it is trusted, and the
+validation requires a continuous recording containing drops** — so "capture everything"
+certifies "capture shots", and both modes need to exist regardless.
+
+If that validation forces a lower threshold and more false positives, the extra data has to
+come from somewhere, which is the argument for sizing at 2 Gbit rather than 1.
 
 ---
 
@@ -1125,6 +1214,7 @@ this review, which is the test.
 | Open | What would settle it |
 |---|---|
 | ~~Whether a real ball impact needs more than 200 Hz of bandwidth~~ | **Closed by measurement — B2.8.** Contacts are 1.6–5.8 ms; 400 Hz under-reads a peak by up to 57%, 3200 Hz by 1%. The sensing BOM holds unchanged. |
+| **Whether a jerk trigger catches a drop shot.** B7.2 makes the high-g channel triggered, and `SquashLab`'s own protocol comment says the drop is "the soft shot the gyro threshold is most likely to miss". M17's ~100× separation was measured between *hard* swings and impacts; a soft drop's contact has never been recorded. If the threshold has to come down, the false-positive rate rises and the flash sizing moves with it. | A continuous recording containing drops, then replay the trigger against it offline. **"Capture everything" is what certifies "capture shots"** — which is why both modes exist regardless of storage. |
 | **Whether full-power shots approach the ADXL375's ±200 g.** Light knock-up hits reached 21–37 g clean and 74.5 g on a suspected frame hit (**M12**, **M13**), with the highest single axis at 53 g. Full-power shots are "several times stronger" and nobody knows by how much. If they clip, the design's own justification — not clipping — fails at the one place it cannot afford to. | Same rig, full-power drives and kills. Note F15 applies here too: the vector peak was 74.5 g against 53 g on the worst axis, so a diagonal mount takes ±200 g per axis to **346 g effective**. |
 | **F2 checked at the butt rather than the throat.** M15's 23–27.6 g on hard ghost swings is at the throat, ~350 mm from the instantaneous centre; the sensor goes at ~50 mm. F2's 50.4 g prediction has still never been compared against a measurement at the position it describes. | The same ghost-swing protocol with the sensor taped at the butt cap. One session, no new hardware, and it is the first real test of the arithmetic the whole range requirement rests on. |
 | **Whether M7's noise figure is the part or the breadboard.** 7–10 mg/√Hz against a datasheet 5. It revises §6's α-SNR from 10× to 5–7× and narrows B6's margin over the ADXL372, so it is load-bearing for two findings. | Two cheap tests: compare the floor with QSPI writes active against idle (isolates supply coupling), and run the six-orientation calibration (isolates a scale error). Then re-take it on soldered wiring with local decoupling. |
