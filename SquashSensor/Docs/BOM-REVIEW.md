@@ -46,13 +46,18 @@ facts have to be weighed against each other rather than celebrated separately.
 **1.9 µs RMS**, which closes F13 outright and removes the AUX path's reason to exist —
 leaving its 400 Hz cap as a pure cost with nothing bought. See §1.5 and B2.7.
 
-**Net effect of the bench on this review: the case for changing the sensing BOM got
-weaker, not stronger.** F13 was the finding that put the high-g line in play; it is closed,
-on the parts already chosen, with a stated uncertainty. B3's structural argument for the
-LSM6DSV320X is withdrawn and only a signal-quality argument remains. **One question still
-decides a part: whether a real ball impact needs more than 200 Hz of bandwidth.** Nothing
-else in the sensing chain is waiting on anything. B1 — the cell — still blocks a schematic
-and is untouched by any of this.
+**Net effect of the bench and the court on this review: the sensing BOM is settled, and it
+is settled as "no change".** F13 was the finding that put the high-g line in play; it is
+closed on the parts already chosen, with a stated uncertainty of 1.9 µs. B3's structural
+argument for the LSM6DSV320X is withdrawn. And the question that was gating the part
+choice — whether a ball impact needs more than 200 Hz of bandwidth — **is answered: ball
+contacts run 1.6–5.8 ms, so 400 Hz under-reads a peak by up to 57% and 3200 Hz reads it to
+1%.** The ICM-45686 and the ADXL375 stay, on separate buses, at 3200 Hz.
+
+**So a review that began by proposing two part swaps ends by recommending neither.** The
+parts were right; three of the *numbers around them* were wrong, and one line still cannot
+be ordered at all. **B1 — the cell — is now the only thing blocking a schematic**, and
+nothing measured here touches it.
 
 Seven findings follow, ordered by how much they change. Three "settled" items in §2 of the
 prompt are challenged in §4, one of them successfully.
@@ -71,8 +76,8 @@ prompt are challenged in §4, one of them successfully.
 | **Protection FETs** | trip current | "pick backwards from trip current" | — | **holds**, with a number it lacked — B8.2 |
 | **PTC** | redundant overcurrent | unspecified | delete | **holds** |
 | **Regulator** | rail | "required, nano-quiescent LDO" | none; buck | **change** — B4 |
-| **6-axis IMU** | primary kinematics | ICM-45686 | LSM6DSV320X; ICM-45605; ICM-42688-P; BMI3xx; ISM330/LSM6DSV16X | **holds unless the ball test says otherwise** — B3, B2.7 |
-| **High-g accel** | unclipped peak, α baseline | ADXL375 | ICM AUX path; LSM6DSV320X high-g; ADXL372; H3LIS331DL | **holds unless the ball test says otherwise** — B2.7, B3, B6 |
+| **6-axis IMU** | primary kinematics | ICM-45686 | LSM6DSV320X; ICM-45605; ICM-42688-P; BMI3xx; ISM330/LSM6DSV16X | **holds** — measured, B2.8, B3 |
+| **High-g accel** | unclipped peak, α baseline | ADXL375 **at 3200 Hz, host bus** | ICM AUX path; LSM6DSV320X high-g; ADXL372; H3LIS331DL | **holds** — measured, B2.7, B2.8 |
 | **Magnetometer footprint** | future channel | footprint, unpopulated | populate on ES1 | **holds**, and the argument against it loses a leg — B2.3 |
 | **MCU / radio module** | compute, BLE, cert | pre-certified module, '832 vs '840 open | bare SoC; nRF5340 | **holds** — B8.5 |
 | **32.768 kHz crystal** | timekeeping | "a board part" | delete, resync in cradle | **holds — for a different reason** — B5 |
@@ -112,6 +117,19 @@ the noise results are not.**
 | **M8** | ADXL375 RMS noise, full bandwidth | **~0.3 g/axis** | ~0.2 g predicted | **YES — heavily** | Provisional; see below |
 | **M9** | Peak captured, no clipping | **130 g** on a finger flick, with ringing | ±200 g range | Partly — magnitude rides on an uncalibrated scale factor | Range adequate |
 | **M10** | Flick transient duration | **under one sample at 3110 Hz (<321 µs)** | — | **No** | Bears on the 400 Hz cap — B2.7 |
+
+**Court session, light ball hits and ghost swings, sensor taped at the racket throat:**
+
+| # | Measured | Value | Where it lands |
+|---|---|---|---|
+| **M11** | **Ball contact duration**, above half-peak, 5 hits | **1.6, 3.5, 3.5, 5.2, 5.8 ms** | **Settles the rate question** — B2.8 |
+| **M12** | Clean string-hit peak, light hits | **21–37 g**, vector; highest single axis 53 g | Headroom open — §5 |
+| **M13** | Suspected frame / off-centre hit | **74.5 g**, contact **1.6 ms**, loads all three axes | Sharpest event seen — B2.8 |
+| **M14** | **Racket frame ringing** | **145 Hz on 3 of 5 hits**, settling in 26–69 ms | **New physical finding** — B2.9 |
+| **M15** | Ghost swing peaks, low-passed <20 Hz, **at the throat** | soft **4.0–6.2 g**, medium **11.5–13.6 g**, hard **23.0–27.6 g** | First check on F2 — B2.10 |
+| **M16** | Ghost swing duration above half-peak | 330 ms soft → **135 ms hard** (harder is shorter) | Relative head speeds 1 : 1.6 : 2.2 |
+| **M17** | Swing-versus-impact separation, by jerk | swing **0.06 g/sample**, impact **6.8 g/sample** — **~100×** | Sets a trigger threshold empirically |
+| **M18** | Impact axis | string hits load mainly **Z**, so Z ⊥ strings | Orientation for F15's matrix |
 
 **M7 and M8 should not yet be treated as properties of the part.** A breadboard is a poor
 place to measure a 5 mg/√Hz analogue MEMS sensor: lead inductance, contact resistance,
@@ -364,6 +382,82 @@ to detect an event, not enough to characterise its shape, and the peak would be 
 by luck. A flick is a far sharper event than a ball on strings, so this is suggestive rather
 than conclusive. The ball test remains the decider.
 
+### B2.8 — The ball test is in, and it settles the rate on arithmetic rather than judgement. **400 Hz is out. 3200 Hz is adequate.**
+
+Five light hits, contact durations above half-peak of **1.6, 3.5, 3.5, 5.2 and 5.8 ms**
+(**M11**, **M13**).
+
+A contact is approximately a half-sine, `a(t) = A·sin(πt/T)`. Sampled `N` times across `T`,
+the sampling phase is arbitrary, so the peak can be missed by up to half a sample period and
+the worst-case under-read is `cos(π/2N)`:
+
+| Rate | Samples across a 3.5 ms contact | Worst-case peak error | Across M13's 1.6 ms hit |
+|---|---|---|---|
+| **3110 Hz** (measured rig) | 10.9 | **1%** | 5.0 samples, 5% |
+| 800 Hz | 2.8 | 15% | 1.3 samples, 65% |
+| **400 Hz** (the AUX cap) | 1.4 | **57%** | 0.64 samples — **missed entirely** |
+
+**At 400 Hz the peak can be under-read by more than half.** For a device whose stated
+contract is raw LSB "so the recording keeps the saturation rather than hiding it behind a
+conversion", silently halving a peak is the same defect in a different place.
+
+**So `EXT_ODR`'s 400 Hz ceiling is now a reason not to use the AUX path, not a cost to be
+weighed against it.** Combined with B2.7, the path is disqualified twice: it cannot carry
+the bandwidth, and the timestamps it would have bought are available for free on the host
+bus.
+
+**And 3200 Hz is enough**, which is the more useful half of the result. 1% peak error on
+clean string hits, and the frame ringing at 145 Hz sits at 4% of Nyquist. The only event
+3200 Hz resolves poorly is M13's 1.6 ms outlier at five samples — and that is a suspected
+frame or off-centre hit, where detection and classification are what is wanted, not
+waveform fidelity. **Nothing in the data asks for a faster part.**
+
+*Sample size, stated plainly: five hits, one session, one mounting, light knock-up pace.
+The conclusion is robust because it turns on contact duration, and the durations are
+consistent across all five — but it is five.*
+
+### B2.9 — 145 Hz is the racket's own bending mode, and it is a finding rather than noise.
+
+Three of five hits rang at **exactly 145 Hz**, settling in 26–69 ms (**M14**), and the
+ringing became consistent only once the mount was stiffened. The 436 Hz outlier on the first
+hit is very likely the earlier, looser mounting rather than the racket.
+
+Three consequences worth recording:
+
+- **It is a structural signature present in every recording**, not an artefact to filter
+  out. It is the frame responding, and it is well inside the band at any rate above ~400 Hz.
+- **It is a hard requirement on the sensor mount.** §3.3's foam preload is for the *cell*;
+  the sensor itself must be rigidly coupled to the frame, because a compliant mount
+  substitutes its own resonance for the racket's. The rig demonstrated both behaviours.
+- **It may be a channel rather than a nuisance.** Frame bending frequency is a function of
+  the frame, and it comes for free with an impact. Whether it carries anything about string
+  tension or frame condition is unexplored and outside this review.
+
+### B2.10 — First measured check on F2, and the geometry has to be stated with it.
+
+F2 predicts peak centripetal acceleration at the sensor of up to **50.4 g**. Ghost swings
+measured **23.0–27.6 g on hard swings** (**M15**) — but **at the racket throat**, not at the
+butt, and with no ball.
+
+**These are not yet comparable, and the difference is not a detail.** Centripetal goes as
+`ω²r` from the instantaneous centre near the hand: the throat is roughly 350 mm out, a butt
+puck roughly 50 mm. Different radii give different numbers from the same swing. A ghost
+swing is also a floor rather than a ceiling — no ball, and "hard" is one player's hard.
+
+What the data does support:
+
+- **The warning is right.** 28 g at the throat against the ICM-45686's ±32 g is thin, and
+  further toward the head it clips. Any future instrumentation of the throat or shaft needs
+  the high-g part, not the 6-axis one.
+- **√a gives an independent handle on relative head speed** — 1 : 1.6 : 2.2 across soft,
+  medium and hard (**M16**) — which is a free check on F2's `a_C = ω·v_C` model that the
+  desk analysis had no way to make.
+- **Harder swings are shorter** (330 → 135 ms above half-peak), which is what the model
+  predicts and worth noting as consistency rather than as a finding.
+
+**The measurement that would make F2 checkable is the same swings recorded at the butt.**
+That is where the sensor actually goes, and F2 has never been compared against anything.
+
 ---
 
 ### B3 — One part replaces two, and after B2 its case is narrower than it first looked. **Third.**
@@ -471,10 +565,21 @@ credit for them. What survives:
    this year. One further flag: the gyro's ±0.3% sensitivity tolerance carries the
    footnote "**preliminary sensitivity tolerance … on first eng. samples**".
 
-**Verdict: open, and the shape of the decision changed at the bench.** It was *"400 Hz
-high-g with a disciplined clock, or 960 Hz+ with a characterised one"*. B2.7 removed the
-first option's reason to exist: the ADXL375 runs at 3200 Hz on the host bus with 1.9 µs
-timestamps, so nobody has to accept 400 Hz to get good timing.
+**Verdict: closed — no change — unless the noise question reopens it.** The decision was
+*"400 Hz high-g with a disciplined clock, or 960 Hz+ with a characterised one"*. Both halves
+have now been answered by measurement rather than argument. B2.7 removed the first option's
+reason to exist (1.9 µs timestamps on the host bus). **B2.8 removed the second's: ball
+contacts are 1.6–5.8 ms, 3200 Hz reads their peaks to 1%, and nothing in the data asks for
+a faster part.** The LSM6DSV320X's 7680 Hz ceiling has no job.
+
+What could still reopen it is **M7** — if the ADXL375's noise really is 7–10 mg/√Hz rather
+than a breadboard artefact, the ST part is 7–10× quieter and that matters for §6's α
+baseline, though not for impact capture where the signal is 21–74 g against 0.3 g of noise.
+That is a two-test question (§5) and it is the only thread left.
+
+*The rest of this finding stands as written, and is worth keeping: the ST part remains the
+better silicon on resolution, noise and scale tolerance. It is simply no longer solving a
+problem this design has.*
 
 **What remains is a straight signal-quality trade, and the current BOM is the incumbent:**
 
@@ -1019,7 +1124,9 @@ this review, which is the test.
 
 | Open | What would settle it |
 |---|---|
-| **Whether a real ball impact needs more than 200 Hz of bandwidth.** **The only question that still decides a part choice.** B2.7 removed the AUX path's reason to exist, so this now asks something narrower: does the ADXL375 at 3200 Hz with 49 mg/LSB and ~0.3 g of noise capture a ball impact adequately? If yes, the current BOM stands and B3 closes as "no change". | One recording of ball-on-strings at 3200 Hz, then decimate to 800 and 400 Hz. **Write the acceptance threshold down first.** The rig exists and is proven; this needs a cell and a court. |
+| ~~Whether a real ball impact needs more than 200 Hz of bandwidth~~ | **Closed by measurement — B2.8.** Contacts are 1.6–5.8 ms; 400 Hz under-reads a peak by up to 57%, 3200 Hz by 1%. The sensing BOM holds unchanged. |
+| **Whether full-power shots approach the ADXL375's ±200 g.** Light knock-up hits reached 21–37 g clean and 74.5 g on a suspected frame hit (**M12**, **M13**), with the highest single axis at 53 g. Full-power shots are "several times stronger" and nobody knows by how much. If they clip, the design's own justification — not clipping — fails at the one place it cannot afford to. | Same rig, full-power drives and kills. Note F15 applies here too: the vector peak was 74.5 g against 53 g on the worst axis, so a diagonal mount takes ±200 g per axis to **346 g effective**. |
+| **F2 checked at the butt rather than the throat.** M15's 23–27.6 g on hard ghost swings is at the throat, ~350 mm from the instantaneous centre; the sensor goes at ~50 mm. F2's 50.4 g prediction has still never been compared against a measurement at the position it describes. | The same ghost-swing protocol with the sensor taped at the butt cap. One session, no new hardware, and it is the first real test of the arithmetic the whole range requirement rests on. |
 | **Whether M7's noise figure is the part or the breadboard.** 7–10 mg/√Hz against a datasheet 5. It revises §6's α-SNR from 10× to 5–7× and narrows B6's margin over the ADXL372, so it is load-bearing for two findings. | Two cheap tests: compare the floor with QSPI writes active against idle (isolates supply coupling), and run the six-orientation calibration (isolates a scale error). Then re-take it on soldered wiring with local decoupling. |
 | **Whether external-sensor-to-FIFO counts as an "APEX feature"** for the 8 KB FIFO rule. Now only matters if the ball test resurrects the AUX path. AN-000478 describes the eDMP reformatting the data; the 8 KB rule is phrased in terms of APEX features. | One bring-up: set `FIFO_ES0_EN`, request the 8 KB depth, and read back whether it took. Needs 4.7 kΩ pull-ups first — the EVB has none fitted. |
 | **Whether WOM alone costs the 8 KB FIFO**, independent of external sensors. This one matters regardless of the AUX question, because the README requires wake-on-motion and the datasheet says 8 KB needs all APEX disabled. | A ten-minute register read-back with the current wiring: request `011111` with WOM on, then with APEX off, and compare. |
@@ -1090,6 +1197,11 @@ analyser and raw captures at `~/git/squash-logger/` — `SquashLogger.ino`, `ana
 against a synthetic log with planted faults before any of these numbers were taken from it.
 **M7 and M8 are provisional pending re-measurement on better wiring; every other M-number
 is insensitive to the rig.**
+
+**Court session** — M11 to M18. Sensor taped rigidly at the **racket throat**, light
+knock-up pace: fifteen ghost swings in three intensity groups, then five ball hits. The
+throat position matters for M15 and is why B2.10 does not treat it as an F2 comparison. **No
+full-power shots were hit**, which is the largest gap in the data and the next measurement.
 
 Secondary, and flagged as such in the text: distributor catalogue searches for LiFePO4 stock
 (DigiKey/ZEUS, Mouser); microSD connector retention figures (connector-vendor and
