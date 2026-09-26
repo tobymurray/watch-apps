@@ -1,4 +1,4 @@
-# BOM review — SquashSensor, 2026-09-17
+# BOM review — SquashSensor, 2026-09-17, revised 2026-09-25 with bench measurements
 
 A line-by-line review of the bill of materials in [`SquashSensor/README.md`](../README.md),
 against the derivations in [`ADVERSARIAL-REVIEW.md`](ADVERSARIAL-REVIEW.md). The question
@@ -10,14 +10,20 @@ Rev 1.0) and its user guide (AN-000478 Rev 1.0), the LSM6DSV320X (ST DS14623 Rev
 application note (AN6119 Rev 1), the ADXL372 (ADI Rev. C), BQ2970/BQ29700 (TI SLUSBU9I),
 MCP73123/223 (Microchip DS22191E), Varta CoinPower CP 1254 A4 and CP 1654, and TDK
 AN-000265. Distributor catalogues were checked for lifecycle and stock where a sourcing
-claim is made. **No board was built, no part was bought, and nothing here was measured on
-hardware.** Where a number is a datasheet figure it says so; where it is arithmetic over
+claim is made. Where a number is a datasheet figure it says so; where it is arithmetic over
 datasheet figures it says so; where it is an assertion it says so and names what would
 settle it.
 
 **Two of the design's own open questions are settled here from primary sources**, and the
 answers are in B2. Reading DS-000577 and AN-000478 also corrected two numbers that this
 review had wrong on a first pass, and one that the README and the adversarial review share.
+
+**Revision of 2026-09-25: the first numbers in this document that came off hardware.** An
+eval rig — Adafruit Feather nRF52840 Express, an ADXL375 breakout on the host SPI, and an
+`EV_ICM-45686` — was built and run. §1.5 lists what it measured. Four findings moved as a
+result, one of them decisively: **F13 is closed**, and not by the hardware route this
+review proposed. Every figure carried over from the desk review is now marked as datasheet
+or measured, and where the two disagree the measurement wins and says so.
 
 ---
 
@@ -36,6 +42,18 @@ I²C master carries two external sensors into the timestamped FIFO, at a maximum
 400 Hz.** That resolves F13 without a part change and halves the high-g rate, and those two
 facts have to be weighed against each other rather than celebrated separately.
 
+**The bench has since overtaken that finding.** Host-bus timestamping was measured at
+**1.9 µs RMS**, which closes F13 outright and removes the AUX path's reason to exist —
+leaving its 400 Hz cap as a pure cost with nothing bought. See §1.5 and B2.7.
+
+**Net effect of the bench on this review: the case for changing the sensing BOM got
+weaker, not stronger.** F13 was the finding that put the high-g line in play; it is closed,
+on the parts already chosen, with a stated uncertainty. B3's structural argument for the
+LSM6DSV320X is withdrawn and only a signal-quality argument remains. **One question still
+decides a part: whether a real ball impact needs more than 200 Hz of bandwidth.** Nothing
+else in the sensing chain is waiting on anything. B1 — the cell — still blocks a schematic
+and is untouched by any of this.
+
 Seven findings follow, ordered by how much they change. Three "settled" items in §2 of the
 prompt are challenged in §4, one of them successfully.
 
@@ -53,8 +71,8 @@ prompt are challenged in §4, one of them successfully.
 | **Protection FETs** | trip current | "pick backwards from trip current" | — | **holds**, with a number it lacked — B8.2 |
 | **PTC** | redundant overcurrent | unspecified | delete | **holds** |
 | **Regulator** | rail | "required, nano-quiescent LDO" | none; buck | **change** — B4 |
-| **6-axis IMU** | primary kinematics | ICM-45686 | LSM6DSV320X; ICM-45605; ICM-42688-P; BMI3xx; ISM330/LSM6DSV16X | **open** — B3 |
-| **High-g accel** | unclipped peak, α baseline | ADXL375 | ICM AUX path; LSM6DSV320X high-g; ADXL372; H3LIS331DL | **open** — B2, B3, B6 |
+| **6-axis IMU** | primary kinematics | ICM-45686 | LSM6DSV320X; ICM-45605; ICM-42688-P; BMI3xx; ISM330/LSM6DSV16X | **holds unless the ball test says otherwise** — B3, B2.7 |
+| **High-g accel** | unclipped peak, α baseline | ADXL375 | ICM AUX path; LSM6DSV320X high-g; ADXL372; H3LIS331DL | **holds unless the ball test says otherwise** — B2.7, B3, B6 |
 | **Magnetometer footprint** | future channel | footprint, unpopulated | populate on ES1 | **holds**, and the argument against it loses a leg — B2.3 |
 | **MCU / radio module** | compute, BLE, cert | pre-certified module, '832 vs '840 open | bare SoC; nRF5340 | **holds** — B8.5 |
 | **32.768 kHz crystal** | timekeeping | "a board part" | delete, resync in cradle | **holds — for a different reason** — B5 |
@@ -66,6 +84,68 @@ prompt are challenged in §4, one of them successfully.
 | **ESD protection** | user-touchable pads | not listed | TVS array | **change** — B8.7, a gap not a swap |
 | **Printed sled / puck** | carrier | "printed" | material unspecified | **change** — B8.8 |
 | **Conformal coating, foam, tapes** | seal, preload | listed, unspecified | — | **open** — §3, B8.7 |
+
+---
+
+## 1.5 What was measured on hardware
+
+Rig: Adafruit Feather nRF52840 Express (2 MB QSPI flash, logging active throughout), an
+ADXL375 breakout on the host SPI bus, an `EV_ICM-45686` powered but unused. Logger and
+analysis at `~/git/squash-logger/`. Sessions of 5 s, 10 s and 69 s; the 69 s run fills the
+flash at full rate.
+
+**The rig is jumper wires on a breadboard, and that is not neutral.** Long unshielded
+leads, breadboard contact resistance, no local decoupling worth the name, and a QSPI flash
+switching a few centimetres away. The table below marks each result for how exposed it is
+to that, because the exposure is not uniform: **timing results are essentially immune and
+the noise results are not.**
+
+| # | Measured | Value | Datasheet / prior claim | Rig-exposed? | Where it lands |
+|---|---|---|---|---|---|
+| **M1** | Host-bus timestamp noise, watermark interrupt + hardware timer | **1.9 µs RMS** | F13 assumed this was unquantifiable | **No** — MCU-side timing off the crystal | **Closes F13** — B2.7 |
+| **M2** | Worst-case gap between FIFO reads, flash writing | **5.9 ms** against 10.3 ms of FIFO | F13's "10 ms of slack … survivable" | **No** | Confirmed, 57% utilisation — B2.7 |
+| **M3** | Sample loss | **zero** overruns, sequence skips or shortfalls, across every run | — | **No** — and it is itself evidence the SPI links were sound | Confirmed |
+| **M4** | Real ADXL375 ODR at 3200 Hz nominal | **3096–3112 Hz, ~3% slow** | no CLKIN on this part | **No** — the sensor's own oscillator against the Feather's crystal | Supports B5 |
+| **M5** | ODR wander *within* a session | **~500 ppm**, trending **+1 Hz/min** (thermal) | assumed stable | **No** | **New requirement** — B5.4 |
+| **M6** | Error from assuming a constant rate | **up to 4.9 ms per minute** | — | **No** | Forces per-batch timestamps — B5.4 |
+| **M7** | ADXL375 noise density | **7–8 mg/√Hz X/Y, 10 on Z**; white 0.05–1500 Hz | **5 mg/√Hz** | **YES — heavily** | Provisional; see below |
+| **M8** | ADXL375 RMS noise, full bandwidth | **~0.3 g/axis** | ~0.2 g predicted | **YES — heavily** | Provisional; see below |
+| **M9** | Peak captured, no clipping | **130 g** on a finger flick, with ringing | ±200 g range | Partly — magnitude rides on an uncalibrated scale factor | Range adequate |
+| **M10** | Flick transient duration | **under one sample at 3110 Hz (<321 µs)** | — | **No** | Bears on the 400 Hz cap — B2.7 |
+
+**M7 and M8 should not yet be treated as properties of the part.** A breadboard is a poor
+place to measure a 5 mg/√Hz analogue MEMS sensor: lead inductance, contact resistance,
+absent local decoupling and a QSPI flash switching nearby all couple straight into a part
+whose supply rejection is on the order of −20 dB. 1.5–2× the datasheet figure is exactly
+the size of error that wiring produces.
+
+Two things argue the other way and are worth keeping: the spectrum is **flat and white
+from 0.05 Hz to 1500 Hz**, where supply coupling usually carries the structure of whatever
+is switching; and post-hoc low-pass filtering reduces it as **√bandwidth**, out to 16 s of
+averaging with no drift floor, which is thermal-noise behaviour. So it may well be real.
+
+**The candidate explanations, now in the right order:** rig wiring first, then a scale
+(sensitivity) error, then differing datasheet test conditions, then part-to-part variation.
+Two cheap tests separate them — compare the noise floor with QSPI writes active against
+idle, which isolates coupling; and run the six-orientation calibration, which isolates a
+scale error by pinning sensitivity against gravity. Neither has been done.
+
+**Two artefacts found and eliminated**, both worth recording so they are not rediscovered:
+
+- **`micros()` on the Adafruit nRF52 core advances in 976 µs steps.** That is 1/1024 s —
+  the core derives it from RTC1 at 32768 Hz with a /32 prescaler. It was the entire source
+  of an apparent 280 µs of "timestamp jitter" that this review briefly read as a property
+  of the sensor. The fix is a 1 MHz hardware timer off the crystal. **Any sub-millisecond
+  timing on that core needs the same treatment.**
+- **`EV_ICM-45686` CN1 pin 20 has a 10 kΩ pull-down**, which drags an I²C bus low if it is
+  mistaken for pin 18. The board also has **no I²C pull-ups fitted**, and the ones in the
+  rig belonged to the ADXL375 breakout — 4.7 kΩ to VDDIO are required before the ICM's bus
+  will work. TDK's library also defaults to 400 kHz and retries forever on a failed read;
+  100 kHz is reliable on breadboard wiring.
+
+**Not yet measured, and it is the decisive one: a real ball impact.** Everything above is
+bench work. The question that decides B2 versus B3 — whether the impact transient needs
+more than 200 Hz of bandwidth — is untouched.
 
 ---
 
@@ -247,6 +327,43 @@ data before moving it to the FIFO, and the 8 KB rule is phrased in terms of APEX
 rather than the eDMP. If it does count, the bottom two rows of that table are unavailable
 and the slack with an external sensor is 64 ms.*
 
+### B2.7 — The bench closed F13 the other way, and the AUX path lost its reason to exist. **Supersedes B2.1–B2.6 as the reason to care.**
+
+Everything above treats the AUX path as worth its 400 Hz cap because it buys hardware
+timestamps. **It no longer has to buy them.**
+
+F13's complaint was never that firmware timestamping is impossible — it is that MCU-derived
+timing is subject to preemption, and that the resulting alignment "is a firmware
+construction that must be recorded in the file with its uncertainty rather than assumed".
+The rig built that construction and measured the uncertainty:
+
+| | |
+|---|---|
+| Timestamp noise, watermark interrupt + 1 MHz hardware timer (**M1**) | **1.9 µs RMS** |
+| As a fraction of a 3–5 ms ball impact | **0.04–0.06%** |
+| Worst-case read gap with flash writing (**M2**) | 5.9 ms against 10.3 ms of FIFO |
+| Sample loss across every run (**M3**) | **zero** |
+
+**So F13 is closed, on the host bus, with a stated uncertainty — which is exactly what the
+finding asked for.** The deadline half is confirmed at 57% utilisation with a competing
+flash writer; the timestamp half is 1.9 µs.
+
+Two consequences, and the second is the larger:
+
+1. **The AUX path's 400 Hz cap is now a pure cost.** It was a price paid for hardware
+   timestamps. The timestamps are available for free at 1.9 µs, so the cap buys nothing
+   and the doubled frame size (B2.5) buys nothing either. **Unless the ball test shows
+   400 Hz is ample bandwidth, there is no longer a case for routing the high-g channel
+   through the AUX at all.**
+2. **B3's case shrinks to one line.** See B3.
+
+**Indirect evidence that 400 Hz is not ample**, though it is not the ball test: a finger
+flick fell **entirely within one sample at 3110 Hz** (**M10**), so it is under 321 µs. At
+400 Hz a sample period is 2.5 ms, so a 3–5 ms ball impact spans **1.2–2 samples** — enough
+to detect an event, not enough to characterise its shape, and the peak would be caught only
+by luck. A flick is a far sharper event than a ball on strings, so this is suggestive rather
+than conclusive. The ball test remains the decider.
+
 ---
 
 ### B3 — One part replaces two, and after B2 its case is narrower than it first looked. **Third.**
@@ -278,13 +395,18 @@ part with dissolving F13, retiring the AUX open question, and freeing the magnet
 slot contention. **All three were already true of the ICM-45686** and the ST part gets no
 credit for them. What survives:
 
-1. **It is the only way to run the high-g channel above 400 Hz in a hardware-timestamped
-   stream.** That is now the whole of the structural case, and it is a real one: it is
-   exactly the job B2.4 says the AUX path cannot do.
-2. **The high-g channel is 25× finer and 5× quieter** — 1.95 mg/LSB at ±64 g against
-   49 mg/LSB, and 1 mg/√Hz against 5 — with a **±0.3% sensitivity tolerance against the
-   ADXL375's ±10% scale factor**, which is the single worst-specified number in the current
-   BOM and the reason §4.1 makes per-unit calibration mandatory.
+1. ~~**It is the only way to run the high-g channel above 400 Hz in a hardware-timestamped
+   stream.**~~ **Withdrawn by measurement (B2.7).** Host-bus timestamping is 1.9 µs RMS, so
+   the high-g channel runs at 3200 Hz on the host bus with better-than-adequate timing and
+   no AUX involvement. This was the structural case and it is gone.
+2. **The high-g channel is far finer and quieter, and the gap is wider than the datasheets
+   suggested.** 1.95 mg/LSB at ±64 g against the ADXL375's 49 mg/LSB, and 1 mg/√Hz against
+   a **measured** 7–10 mg/√Hz (**M7**) rather than the datasheet's 5 — so **7–10× quieter,
+   not 5×**, if M7 survives being re-taken on decent wiring. And **±0.3% sensitivity
+   tolerance against the ADXL375's ±10% scale factor**, the single worst-specified number
+   in the current BOM and the reason §4.1 makes per-unit calibration mandatory. **This is
+   now the whole of the case**, and it is a signal-quality argument rather than a
+   structural one.
 3. **F2 is cleared axis-aligned.** ±64 g covers the 50.4 g peak without the wedge, so F15's
    moulded tilt stops being load-bearing for the accelerometer and buys gyro headroom only.
 4. **One part, one bus, one placement, one calibration**, and an SPIM instance freed against
@@ -349,10 +471,28 @@ credit for them. What survives:
    this year. One further flag: the gyro's ±0.3% sensitivity tolerance carries the
    footnote "**preliminary sensitivity tolerance … on first eng. samples**".
 
-**Verdict: open.** The decision has a clean shape now: **400 Hz high-g with a disciplined
-clock (ICM-45686 + ADXL375 on AUX), or 960 Hz+ high-g with a characterised one
-(LSM6DSV320X).** Which is right turns on whether the impact transient needs more than
-200 Hz of bandwidth — which is one recording, and which the README already has on its list.
+**Verdict: open, and the shape of the decision changed at the bench.** It was *"400 Hz
+high-g with a disciplined clock, or 960 Hz+ with a characterised one"*. B2.7 removed the
+first option's reason to exist: the ADXL375 runs at 3200 Hz on the host bus with 1.9 µs
+timestamps, so nobody has to accept 400 Hz to get good timing.
+
+**What remains is a straight signal-quality trade, and the current BOM is the incumbent:**
+
+| | ICM-45686 + ADXL375, host bus | LSM6DSV320X |
+|---|---|---|
+| High-g rate | **3200 Hz**, proven, zero loss (M3) | 480–7680 Hz |
+| High-g timing | **1.9 µs RMS**, firmware (M1) | hardware, 21.7 µs resolution |
+| High-g resolution | 49 mg/LSB | **1.95 mg/LSB at ±64 g** |
+| High-g noise | **measured 7–10 mg/√Hz** (M7, provisional) | 1 mg/√Hz |
+| High-g scale tolerance | **±10%** | **±0.3%** |
+| Clock discipline | **CLKIN to the crystal** | `INTERNAL_FREQ_FINE`, ±650 ppm |
+| Maturity | ADXL375 Rev. B, 2014 | DS14623 Rev 3, driver still churning (B3 point 6) |
+
+The ST part is better on resolution, noise and scale tolerance; the incumbent is better on
+clock discipline and maturity, and it is now *proven to work*. **That is a weaker case for
+changing than this review made a week ago**, and the ball test is what decides whether the
+signal-quality gap matters at all — if 49 mg/LSB and 0.3 g of noise capture a ball impact
+adequately, nothing on the ST side is worth a part change.
 
 **The rest of the 6-axis field, checked and not pursued.** No other current part reaches
 ±32 g with ±4000 dps: ICM-42688-P and ICM-42670-P are ±16 g / ±2000 dps, Bosch's BMI3xx is
@@ -477,6 +617,37 @@ Three consequences:
 temperature, and specifies no post-CLKIN ODR tolerance at all — the inference that it
 becomes the input clock's accuracy is standard but is not stated in the datasheet.*
 
+### B5.4 — Measured, and worse than the argument assumed: the ODR drifts *while you record*.
+
+Everything above is about part-to-part and session-to-session accuracy. The rig measured
+something the desk analysis missed entirely.
+
+| | |
+|---|---|
+| ADXL375 ODR, 3200 Hz nominal (**M4**) | **3096–3112 Hz — about 3% slow** |
+| Spread across sessions | 0.5% |
+| **Wander within a single session** (**M5**) | **~500 ppm**, trending **+1 Hz/min**, apparently thermal |
+| Error from assuming one fitted rate (**M6**) | **up to 4.9 ms per minute** |
+
+Three things follow, and the third is a requirement the design does not have.
+
+1. **The 3% figure is measured on the part that cannot be corrected in hardware.** The
+   ADXL375 has no external clock input — the ADXL372 has `EXT_CLK`/`EXT_SYNC`, this part
+   does not. So B5's case for the crystal is confirmed and understated: the ICM's ±1.25%
+   spec was the *better* of the two clocks in the BOM.
+2. **A per-unit factory calibration of the ODR is insufficient**, because the rate moves
+   0.5% between sessions.
+3. **A per-session fitted rate is also insufficient**, because it wanders 500 ppm *within*
+   a session and trends with temperature. This is the new one. **Timestamping per batch —
+   roughly every 5 ms — is the mechanism that keeps the wander from accumulating, and it is
+   a requirement rather than an implementation detail.** `Docs/FORMAT.md` should say so
+   outright: *never reconstruct sample times for a whole session from one fitted rate*, and
+   cite the 4.9 ms/minute as the reason.
+
+   It also gives the die-temperature channel a second job. The README logs it as a
+   data-quality channel; if the +1 Hz/min trend correlates with it, it is also the
+   covariate that explains the clock.
+
 ---
 
 ### B6 — There is a deep-FIFO high-g part, and its own errata is what disqualifies it. **Sixth.**
@@ -515,14 +686,37 @@ headline advantage into a trade, and the rest does not rescue it:
 | supply / abs max | 2.0–3.6 V / **3.9 V** | 1.6–3.5 V / **3.6 V** |
 | external sync | none | **EXT_SYNC, EXT_CLK** |
 
-**The noise decides it.** §6 sizes the α baseline against the ADXL375's ~100 mg RMS: a butt
-puck's ~20 mm separation gives 1.02 g at 500 rad/s², a 10× SNR, "measurable, but thin". At
-350 mg that becomes **2.9×**, on the carrier the plan says to build first.
+**The noise was going to decide it, and the measurement has muddied that.** §6 sizes the
+α baseline against the ADXL375's *datasheet* ~100 mg RMS at 800 Hz: a butt puck's ~20 mm
+separation gives 1.02 g at 500 rad/s², a 10× SNR, "measurable, but thin". Against the
+ADXL372's 350 mg that falls to 2.9×, which is what disqualified it.
 
-**Verdict: the line changes, but not to this part** — to the ICM AUX path (B2) or the ST
-high-g channel (B3). The ADXL372 is a genuine near-miss and the reason it misses is worth
-recording so it is not rediscovered. ST's **H3LIS331DL** was checked and is not a candidate:
-1 kHz maximum ODR, no deep FIFO, so it solves neither problem better than what is there.
+**But the ADXL375 measured 7–10 mg/√Hz, not 5** (**M7**), which at 800 Hz is **150–200 mg
+rather than 100**. So:
+
+| | α SNR on a butt puck, 500 rad/s² |
+|---|---|
+| ADXL375, datasheet 5 mg/√Hz | 10× |
+| **ADXL375, measured (M7, provisional)** | **5.1–6.8×** |
+| ADXL372, datasheet 350 mg RMS | 2.9× |
+
+**The gap narrows from 3.4× to about 2×, and §6's headline number needs revising down
+regardless of which part is chosen.** I am not going to push this further, for two reasons:
+M7 is the measurement most exposed to breadboard wiring and may not survive being re-taken;
+and ADI specifies the ADXL372's noise as an RMS figure with no stated bandwidth, so the two
+parts cannot be put on one axis honestly until someone measures the ADXL372 too.
+
+**Verdict: unchanged — not this part.** `er002` is the disqualifier and it is a documented
+silicon anomaly, not a noise argument. The noise comparison was supporting evidence and it
+has weakened; the errata has not.
+
+ST's **H3LIS331DL** was checked and is not a candidate: 1 kHz maximum ODR, no deep FIFO, so
+it solves neither problem better than what is there.
+
+*Note on the other line this touches: §6's 10× figure is now the desk number and 5.1–6.8×
+is the bench one. That is the difference between "measurable, but thin" and "thin", and it
+raises the value of the insertable plug's longer separation — a 70 mm sled's 3.06 g gives
+15–20× even on the measured noise, where the puck gives 5–7×.*
 
 ---
 
@@ -791,14 +985,25 @@ benefit is real and the instruction to pick the angle from a recorded distributi
 than from symmetry is the right method — but it stops being load-bearing, and a finding that
 stops being load-bearing should be re-costed rather than inherited.
 
-**Two corrections to the documents themselves, neither in §2.**
+**Three corrections to the documents themselves, none in §2.**
 
+- **F13 — "the high-g channel is the hard real-time deadline in this design" — is closed,
+  and the README should say so.** The deadline was measured at 57% utilisation with a
+  competing flash writer and zero sample loss; the alignment it called "a firmware
+  construction" was built and its uncertainty measured at **1.9 µs RMS**. The finding was
+  right that it had to be constructed and its uncertainty stated. It was wrong to imply
+  that made it fragile. See B2.7 and §1.5.
 - **"The ICM's AUX I²C master … can carry one part"** — it carries two, ES0 and ES1
   (AN-000478 §2.1, and DS-000577's 32-byte frame). The slot-contention argument in *Six
   axes, not nine* should be withdrawn. See B2.2.
 - **"8 KB FIFO"** — the default is 2 KB, and 8 KB requires all APEX features disabled,
   including the wake-on-motion the README lists as a hardware requirement. F13's "400 ms"
   of ICM slack is 128 ms as configured, or 64 ms with an external sensor batched. See B2.6.
+
+**And one requirement the documents do not yet have.** The ADXL375's ODR wanders ~500 ppm
+*within* a session and trends about +1 Hz/min, so assuming a single fitted rate costs up to
+4.9 ms per minute (**M5**, **M6**). **`Docs/FORMAT.md` must require per-batch timestamps
+and forbid reconstructing a session from one rate.** See B5.4.
 
 **Everything else in §2 stands.** The ±32 g / ±4000 dps requirement (F2), the two-carrier
 architecture, Nordic on active current, raw-LSB recording and the licence choice were all
@@ -814,14 +1019,16 @@ this review, which is the test.
 
 | Open | What would settle it |
 |---|---|
-| **Whether external-sensor-to-FIFO counts as an "APEX feature"** for the 8 KB FIFO rule. If it does, B2.6's 256 ms becomes 64 ms and the AUX path gets materially less attractive. AN-000478 describes the eDMP reformatting the data; the 8 KB rule is phrased in terms of APEX features. | One bring-up: set `FIFO_ES0_EN`, request the 8 KB depth, and read back whether it took. |
-| **Whether 400 Hz is enough for the impact transient.** B2.4 turns the AUX-versus-ST decision on this, and the README already calls it answerable from one recording. | One recording of ball-on-strings at 3,200 Hz, then decimate and see what is lost. This is now the cheapest decisive experiment in the BOM. |
+| **Whether a real ball impact needs more than 200 Hz of bandwidth.** **The only question that still decides a part choice.** B2.7 removed the AUX path's reason to exist, so this now asks something narrower: does the ADXL375 at 3200 Hz with 49 mg/LSB and ~0.3 g of noise capture a ball impact adequately? If yes, the current BOM stands and B3 closes as "no change". | One recording of ball-on-strings at 3200 Hz, then decimate to 800 and 400 Hz. **Write the acceptance threshold down first.** The rig exists and is proven; this needs a cell and a court. |
+| **Whether M7's noise figure is the part or the breadboard.** 7–10 mg/√Hz against a datasheet 5. It revises §6's α-SNR from 10× to 5–7× and narrows B6's margin over the ADXL372, so it is load-bearing for two findings. | Two cheap tests: compare the floor with QSPI writes active against idle (isolates supply coupling), and run the six-orientation calibration (isolates a scale error). Then re-take it on soldered wiring with local decoupling. |
+| **Whether external-sensor-to-FIFO counts as an "APEX feature"** for the 8 KB FIFO rule. Now only matters if the ball test resurrects the AUX path. AN-000478 describes the eDMP reformatting the data; the 8 KB rule is phrased in terms of APEX features. | One bring-up: set `FIFO_ES0_EN`, request the 8 KB depth, and read back whether it took. Needs 4.7 kΩ pull-ups first — the EVB has none fitted. |
+| **Whether WOM alone costs the 8 KB FIFO**, independent of external sensors. This one matters regardless of the AUX question, because the README requires wake-on-motion and the datasheet says 8 KB needs all APEX disabled. | A ten-minute register read-back with the current wiring: request `011111` with WOM on, then with APEX off, and compare. |
 | **Gyro g-sensitivity at 50 g.** TDK's AN-000265 names sensitivity to linear acceleration as a deterministic IMU error. **Neither DS-000577 nor DS14623 specifies it** — both give sensitivity tolerance and cross-axis sensitivity and stop. This device runs its gyro at a *sustained* 50 g, which is where the term stops being a footnote. | A rate table with a centrifuge arm, which nobody here has — or a direct question to TDK and ST. Worth asking, because it is a systematic error proportional to the dominant load. |
 | **Whether HAODR rescales the high-g ODR ladder.** B3 point 5 infers that it does, from §6.1.4's statement that HAODR applies to the high-g accelerometer. If it does, the 800 Hz family gives the ADXL375's ladder exactly and part of B2.4's rate argument changes shape. DS14623 prints the HAODR table for `ODR_XL`/`ODR_G` only. | One bring-up: set HAODR_SEL = 10, enable the high-g channel, and time the data-ready interrupt. Or ask ST. |
 | **How much HAODR actually buys on ODR variation.** Both DS14623 and AN6119 say "typically reduces" and give no figure, so B5's ±650 ppm stands as the only quantified number for the ST part. | An ST characterisation report, or measuring a handful of parts against a reference clock. |
 | **LiFePO4 at 100–150 mAh from a supplier with a datasheet.** B1's search covered DigiKey and Mouser; it did not cover Asian distributors or a direct approach to a cell maker. | A quotation request naming UN 38.3 and IEC 62133 documentation as a requirement. If nobody will supply that paperwork at this size, B1 is settled for good. |
 | **Varta CoinPower availability in ones and twos.** CP 1654 is Avnet-distributed rather than DigiKey-stocked, so a hobbyist's ability to buy one is not established — which matters only because reproducibility is a requirement. | A distributor check at quantity 1. |
-| **The actual shock the cell sees.** §3.1 derives 200–5,000 g from plausible drop heights and *assumed* stopping distances, and the answer is most sensitive to the assumed term. | An accelerometer in the puck and twenty drops onto a court floor. The high-g channel is the instrument, so this is free once one board exists. |
+| **The actual shock the cell sees.** §3.1 derives 200–5,000 g from plausible drop heights and *assumed* stopping distances, and the answer is most sensitive to the assumed term. | **The instrument now exists.** The rig captured a 130 g flick unclipped with visible ringing (**M9**), so twenty drops onto a court floor is a session's work, not a project. Do it in the same trip as the ball test. |
 | **Per-unit calibration at 50 g.** TDK's AN-000265 is explicit that full calibration needs a **2-DOF rate table**, and temperature calibration needs that table **inside a temperature chamber** for a ~7-hour soak sequence per unit. Neither is available to somebody reproducing this design. The affordable procedure is **6-side flip** (no machine — and the puck's own six faces are the fixture), which yields offset and sensitivity **at 1 g**. | Nothing cheap. The honest response is to publish the 6-side-flip jig, record the temperature the calibration was done at, and **state in the file that the scale factor is a 1 g figure extrapolated to a 50 g operating range** — rather than let a reader assume it was calibrated where it is used. Note this matters far more for the high-g channel (ADXL375 ±10% scale factor) than for the primary IMU (ICM-45686 ±0.2%). |
 
 ---
@@ -874,6 +1081,15 @@ Read in full or in the named sections, all 2026-09-17.
 - **TDK AN-000265 Rev 1.1** — deterministic error list including g-sensitivity, the 2-DOF
   equipment requirement, the soak and ramp temperature procedures, and the 6-side-flip and
   sphere-fit fallbacks.
+
+**Measured on hardware, 2026-09-25** — the M-numbers in §1.5. Rig: Adafruit Feather
+nRF52840 Express with its 2 MB QSPI flash, an ADXL375 breakout on the host SPI, and an
+`EV_ICM-45686` powered but unused, **wired with jumper leads on a breadboard**. Logger,
+analyser and raw captures at `~/git/squash-logger/` — `SquashLogger.ino`, `analyze.py`,
+`full.bin`, `full_report.txt`. Sessions of 5 s, 10 s and 69 s. The analyser was validated
+against a synthetic log with planted faults before any of these numbers were taken from it.
+**M7 and M8 are provisional pending re-measurement on better wiring; every other M-number
+is insensitive to the rig.**
 
 Secondary, and flagged as such in the text: distributor catalogue searches for LiFePO4 stock
 (DigiKey/ZEUS, Mouser); microSD connector retention figures (connector-vendor and
