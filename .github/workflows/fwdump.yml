@@ -1,0 +1,37 @@
+name: FwDump
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'FwDump/**'
+      - '.github/workflows/fwdump.yml'
+      - '.github/workflows/app-build.yml'
+  pull_request:
+    paths:
+      - 'FwDump/**'
+      - '.github/workflows/fwdump.yml'
+      - '.github/workflows/app-build.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to stamp, overriding the manifest'
+        required: false
+        type: string
+
+concurrency:
+  group: fwdump-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    uses: ./.github/workflows/app-build.yml
+    with:
+      app: FwDump
+      version: ${{ inputs.version || '' }}
+      # apps-v1.3.0, kernel interface 2: a firmware 1.3 kernel refuses an
+      # interface-3 app (see FwDump/README.md, "Building").
+      sdk_ref: 7a556a3e8538c0b1b495d45fe21a53b00a60a594
+    permissions:
+      contents: write
+      packages: read

@@ -78,20 +78,6 @@ FieldResult readHexField(const SDK::JsonStreamReader& reader, const char* key, u
 namespace DumpConfig
 {
 
-const char* describe(Status status)
-{
-    switch (status) {
-        case Status::Default:     return "default region";
-        case Status::Ok:          return "config applied";
-        case Status::TooLarge:    return "config too large";
-        case Status::NotJson:     return "config not JSON";
-        case Status::WrongSchema: return "config schema unknown";
-        case Status::BadField:    return "config field invalid";
-        case Status::BadGeometry: return "config geometry invalid";
-    }
-    return "config unknown";
-}
-
 Result load(const SDK::Kernel& kernel)
 {
     Result result; // Default-constructed: the flash region, Status::Default.
@@ -137,11 +123,19 @@ Result load(const SDK::Kernel& kernel)
     // incoherent must leave the default entirely intact rather than contribute
     // whichever of its fields happened to parse.
     DumpRegion candidate;
-    const char* const keys[] = {"base", "size", "chunk", "subwrite"};
+    const char* const flatKeys[]     = {"base", "size", "chunk", "subwrite"};
+    const char* const envelopeKeys[] = {"values.base", "values.size", "values.chunk",
+                                        "values.subwrite"};
     uint32_t* const   fields[] = {&candidate.base, &candidate.size, &candidate.chunk,
                                   &candidate.subwrite};
 
-    for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
+    // The companion's envelope, or the flat file 1.0.0 documented.
+    const char* valuesText = nullptr;
+    size_t      valuesLen  = 0;
+    const bool  envelope   = reader.get("values", valuesText, valuesLen);
+    const char* const* keys = envelope ? envelopeKeys : flatKeys;
+
+    for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); ++i) {
         if (readHexField(reader, keys[i], *fields[i]) == FieldResult::Malformed) {
             result.status = Status::BadField;
             return result;
@@ -153,8 +147,15 @@ Result load(const SDK::Kernel& kernel)
         return result;
     }
 
+    // An address that does not decode faults rather than returning an error,
+    // so a range is dumped only once it is known to read.
+    if (!candidate.knownReadable()) {
+        result.status = Status::Unproven;
+        return result;
+    }
+
     result.region = candidate;
-    result.status = Status::Ok;
+    result.status = candidate == DumpRegion{} ? Status::Default : Status::Ok;
     return result;
 }
 

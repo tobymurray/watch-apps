@@ -5,24 +5,23 @@
  ******************************************************************************
  *
  * The default region -- 4 MB of internal flash -- needs no configuration, and
- * the app ships working without this file. What it buys is the ability to point
- * the same app at a different window (SRAM, a peripheral block) without
- * rebuilding it, which is the difference between a firmware dumper and a
- * general memory reader.
+ * the app ships working without this file. What it buys is a smaller window of
+ * flash, or a different chunk size, without rebuilding. A window outside flash
+ * is refused: see DumpRegion::knownReadable().
  *
  * The file is `fwdump.json`, a bare relative name, so it resolves into the
  * app's own sandbox folder -- the same directory the USB-MSC volume exposes,
- * which is what makes it writable from a desktop at all. This follows Barcode's
- * InputConfig, which is the established pattern here for "a value only the user
- * can supply, typed on a host and read on the watch".
+ * which is what makes it writable from a desktop at all. It is the envelope of
+ * the SDK's Docs/app-config-fields.md, which a companion app writes from the
+ * fields app-manifest.json declares:
  *
  *     {
  *       "schema": 1,
- *       "base": "08000000",
- *       "size": "00400000",
- *       "chunk": "00020000",
- *       "subwrite": "00001000"
+ *       "values": { "base": "08060000", "size": "00100000" }
  *     }
+ *
+ * Not read through SDK::AppConfig, which apps-v1.3.0 does not have. A file with
+ * no "values" object is read flat, the form 1.0.0 documented.
  *
  * Addresses are hex strings without `0x`, matching the manifest's own notation
  * and sidestepping the fact that JSON has no hex literal -- writing 0x08000000
@@ -35,9 +34,7 @@
  *
  * **The override does not make the app write anything.** A configured region is
  * read exactly as flash is -- see FlashDumper's class comment, and the
- * read-only guarantee in the README. What it does change is the risk that an
- * address does not decode, which faults rather than returning an error; that is
- * why the default is a region already known to be readable.
+ * read-only guarantee in the README.
  *
  ******************************************************************************
  */
@@ -75,13 +72,14 @@ constexpr char kPath[] = "fwdump.json";
 /// wrote is wrong", which need different things done about them and neither of
 /// which is discoverable from a watch.
 enum class Status : uint8_t {
-    Default,       ///< No file present. The built-in flash region is in use.
-    Ok,            ///< File read and applied.
+    Default,       ///< No file, or one that asks for the built-in flash region.
+    Ok,            ///< File read and applied, and it differs from the default.
     TooLarge,      ///< Larger than kMaxFileBytes; not read.
     NotJson,       ///< Present but not parseable as JSON.
     WrongSchema,   ///< Parsed, but its "schema" is not kSchemaSupported.
     BadField,      ///< A field was present but not a valid hex number.
     BadGeometry,   ///< Parsed and read, but the region fails DumpRegion::valid().
+    Unproven,      ///< Coherent, but outside DumpRegion::knownReadable().
 };
 
 /**
@@ -105,8 +103,21 @@ struct Result {
  */
 Result load(const SDK::Kernel& kernel);
 
-/// Short, screen-sized description of a status, for the error line.
-const char* describe(Status status);
+/// Short, screen-sized description of a status.
+inline const char* describe(Status status)
+{
+    switch (status) {
+        case Status::Default:     return "default region";
+        case Status::Ok:          return "config applied";
+        case Status::TooLarge:    return "config too large";
+        case Status::NotJson:     return "config not JSON";
+        case Status::WrongSchema: return "config schema wrong";
+        case Status::BadField:    return "config field invalid";
+        case Status::BadGeometry: return "config does not tile";
+        case Status::Unproven:    return "config not in flash";
+    }
+    return "config unknown";
+}
 
 } // namespace DumpConfig
 

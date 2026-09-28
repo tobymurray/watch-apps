@@ -130,6 +130,7 @@ bool Model::customMessageHandler(SDK::MessageBase* msg)
     mStatus.errorChunk     = status->errorChunk;
     mStatus.state          = static_cast<CustomMessage::DumpState>(status->state);
     mStatus.error          = static_cast<CustomMessage::DumpError>(status->error);
+    mStatus.refusal        = static_cast<CustomMessage::DumpRefusal>(status->refusal);
     mStatus.configStatus   = status->configStatus;
     mStatus.scanComplete   = status->scanComplete;
     mStatus.everReceived   = true;

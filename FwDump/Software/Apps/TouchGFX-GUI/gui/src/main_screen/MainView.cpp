@@ -6,6 +6,8 @@
 
 #include "SDK/GUI/Button.hpp"
 
+#include "DumpConfig.hpp"
+
 #include <cstdarg>
 #include <cstdio>
 
@@ -40,6 +42,18 @@ const char* describeError(CustomMessage::DumpError error)
         case CustomMessage::DumpError::ManifestOverflow: return "manifest too long";
     }
     return "unknown error";
+}
+
+/// Which isolation stopped the read, in the detail line's width.
+const char* describeRefusal(CustomMessage::DumpRefusal refusal)
+{
+    switch (refusal) {
+        case CustomMessage::DumpRefusal::None:         return "isolation is on";
+        case CustomMessage::DumpRefusal::Unprivileged: return "app is unprivileged";
+        case CustomMessage::DumpRefusal::MpuEnabled:   return "the MPU is on";
+        case CustomMessage::DumpRefusal::TrustZone:    return "TrustZone is on";
+    }
+    return "isolation is on";
 }
 
 } // namespace
@@ -230,10 +244,13 @@ void MainView::refresh()
             } else {
                 setLine(mHeadline, mHeadlineBuf, "READY");
                 setLine(mDetail, mDetailBuf, "%u.%u MB, %u chunks", mbWhole, mbTenths, total);
-                setLine(mDetail2, mDetail2Buf, "a few minutes");
+                const auto config = static_cast<DumpConfig::Status>(status.configStatus);
+                setLine(mDetail2, mDetail2Buf, "%s",
+                        config == DumpConfig::Status::Default ? "under a minute"
+                                                              : DumpConfig::describe(config));
             }
             setBar(false, 0, 0);
-            setLine(mHint, mHintBuf, "Unplug USB, then play");
+            setLine(mHint, mHintBuf, "USB out, then play");
             setLine(mHint2, mHint2Buf, "no USB until DONE");
             break;
         }
@@ -301,7 +318,8 @@ void MainView::refresh()
                     static_cast<unsigned>(status.chunksDone), total);
             setLine(mDetail2, mDetail2Buf, "CRC32 %08lX",
                     static_cast<unsigned long>(status.wholeCrc));
-            setLine(mHint, mHintBuf, "plug in USB, copy");
+            // Phone sync first; why is the README's "USB-MSC warnings".
+            setLine(mHint, mHintBuf, "phone sync off, copy");
             setLine(mHint2, mHint2Buf, "Apps/FwDump/");
             break;
 
@@ -317,6 +335,17 @@ void MainView::refresh()
             setLine(mHint, mHintBuf, "%u chunks kept",
                     static_cast<unsigned>(status.chunksDone));
             setLine(mHint2, mHint2Buf, "play to retry");
+            break;
+
+        case CustomMessage::DumpState::Refused:
+            // Terminal for this firmware: no press can change a register the
+            // app will not write, so nothing here offers one.
+            setLine(mHeadline, mHeadlineBuf, "BLOCKED");
+            setBar(false, 0, 0);
+            setLine(mDetail, mDetailBuf, "%s", describeRefusal(status.refusal));
+            setLine(mDetail2, mDetail2Buf, "a read would crash");
+            setLine(mHint, mHintBuf, "nothing read; see");
+            setLine(mHint2, mHint2Buf, "dump_context.txt");
             break;
     }
 }

@@ -6,10 +6,7 @@
 #include <touchgfx/hal/Types.hpp>
 #include <touchgfx/Bitmap.hpp>
 
-const uint16_t BITMAP_ICON_LAP_ID = 0;
-const uint16_t BITMAP_ICON_PAUSE_ID = 1;
-const uint16_t BITMAP_ICON_PLAY_ID = 2;
-const uint16_t BITMAP_ICON_RESET_ID = 3;
+const uint16_t BITMAP_ICON_PLAY_ID = 0;
 
 namespace BitmapDatabase
 {

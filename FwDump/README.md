@@ -19,11 +19,18 @@ decryption key: the release firmware is AES-encrypted in transit but sits in
 plaintext in flash at rest, and a UNA app runs with no memory isolation, so an
 app can simply read it.
 
+It is built to be installed from a store by someone who has never seen this
+repository. The folder it writes explains itself (a `README.txt` beside the
+dump), a copy can be checked with stock Python, and a firmware that isolates
+apps gets a refusal instead of a crash. Which firmware versions it has been
+shown to work on is in [Firmware support](#firmware-support).
+
 ## Why this is possible
 
 A `.uapp` is an ordinary binary the kernel loads into RAM and runs, and on this
-hardware it runs unrestricted. Three registers say so, and all three were
-confirmed 0 across several independent sessions on this unit:
+hardware it runs unrestricted. Three registers say so. All three read 0 across
+several independent sessions of the 2026-07-29 investigation, on firmware
+1.3.0:
 
 | Register | Value | Meaning |
 | --- | --- | --- |
@@ -35,14 +42,75 @@ So a running app can read kernel flash, the ARM System Control Space and
 peripheral registers without faulting. The MCU is an **STM32U5A5** (Cortex-M33
 r0p4, `DBGMCU_IDCODE 0x30036481`) with 4 MB of internal flash at `0x08000000`.
 
-The app re-reads those three registers at every start, logs them decoded, and
-writes them to `dump_context.txt` (`DeviceContext.hpp`). That costs three loads
-and is what makes a successful dump mean something: if a future firmware turned
-the MPU on, the reads this app makes would fault, and you would want to know that
-rather than wonder. It is a sanity check and not a guard — it cannot prevent a
-fault, only put the evidence on the record. On a simulator build it honestly
-reports `measured=N` rather than presenting its zero-initialised fields as
-findings, since zero is the permissive value for every one of them.
+### The gate: refuse instead of crashing
+
+A read here is a pointer dereference, and one the hardware refuses raises a
+fault this app has no handler for. So if a future firmware turned the MPU on,
+1.0.0 would have died on its first flash read, and the only evidence would have
+been a manifest that stops early. To a store user, that looks like a broken app.
+
+The app now answers the question before the first read of memory. The three
+registers are read in an order where each read happens only if the one before
+it says the read cannot fault (`ReadGate.hpp`):
+
+1. **`CONTROL`**, by `MRS`, which cannot fault. If `nPRIV` is 1 the thread is
+   unprivileged, and any access to the System Control Space would fault, so
+   nothing further is read.
+2. **The System Control Space**, which the MPU never governs. If
+   `MPU_CTRL.ENABLE` is 1, which regions the MPU allows is in its region table,
+   and reading that table needs a write to `MPU_RNR`. So the app stops here, and
+   the UID, the option bytes and the register sweep go unread.
+3. **The `FLASH` peripheral**, safe once the MPU is known to be off. If
+   `FLASH_OPTR.TZEN` is 1, secure flash would fault a non-secure read.
+
+If any of the three is set, the screen says **BLOCKED** and names the register.
+`dump_context.txt` records the verdict (`CTX gate verdict=refused
+blocked_by=MPU_CTRL.ENABLE`) and says which fields it read and which it skipped.
+No dump is offered.
+
+The rule depends only on those three bits and never on a firmware version, so a
+firmware that changes `SPSEL`, `PRIVDEFENA` or an option bit this app does not
+depend on is not refused over it. It prevents only the one fault that matters,
+isolation, not every fault. [The read-only guarantee](#the-read-only-guarantee)
+covers the rest. On a simulator build the file says `measured=N`. It does not
+present zero-initialised fields as findings, because zero is the permissive
+value for every one of them.
+
+## Firmware support
+
+"Supported" here means **run on a watch with that firmware**, not inferred from
+a header.
+
+| Firmware | Shown on hardware | `nPRIV` / `MPU_CTRL.ENABLE` / `TZEN` | Firmware as the bundle reports it | Dump time | Whole-image CRC-32 |
+| --- | --- | --- | --- | --- | --- |
+| 1.3.0 | **Yes**, by FwDump's first build (`cbcb869`, built against `apps-v1.3.0`, 2026-08-17): 32/32 chunks clean, device and host agree. It is the 1.3.0 half of the two dumps `555bca3` compares | 0 / 0 / 0. `CONTROL=0x00000006`, `MPU_CTRL=0x00000000`, from the 2026-07-29 investigation's sweep #3 on this unit | Not recorded: that build did not ask | Not recorded | `658D9BB2` |
+| 1.4.0 | **Yes**, by FwDump on 2026-08-18: all 32 chunks match the manifest. The image is kept on `una-sdk@research` under `firmware-dumps/1.4.0/` | Not kept. Its `dump_context.txt` was not preserved. The whole of flash read without a fault, which is consistent with all three being 0 but does not show it | `REQUEST_SYSTEM_INFO` is answered `FAIL` by kernel 1.4.0 (see [NotifyToggle](../NotifyToggle/README.md)), so it said `unavailable`. The image scan this build adds reads `1.4.0` from that same image | Not recorded | `14009D03` |
+| 1.5.0 | **Yes**, by this build (1.1.0, AppID `78C1174ADA9C5EBD`) on 2026-09-28: gate `allowed`, 32/32 chunks clean by both the `README.txt` check and `reassemble_dump.py`, all three spot lines match | 0 / 0 / 0. `CONTROL=0x00000006`, `MPU_CTRL=0x00000000`, `FLASH_OPTR=0x1FEFF8AA` | Kernel still gives no answer to `REQUEST_SYSTEM_INFO` (`unavailable`). `CTX kernel interface=3`. The image scan reads `1.5.0` at `0817AB87`, and so does a host scan of the reassembled image | Under 10 s, play to DONE, timed by eye by the wearer: over 400 KB/s | `CC925D97` |
+
+Two things this table does **not** show:
+
+- **This build has run on 1.5.0 only.** Its 1.3.0 and 1.4.0 rows are from
+  1.0.0, whose dump engine (`FlashDumper`, `DumpManifest`, `Crc32`) this build
+  reuses unchanged, built against the same `apps-v1.3.0`. The gate, the image
+  scan, the settings envelope and `README.txt` have run on a watch only on
+  1.5.0.
+- **The image scan has held across two versions, not every version.** In 1.4.0
+  and 1.5.0 the kernel string sits between the same neighbours (`%06lu` before,
+  `virtual bool Driver::Uart::transmit…` after), and the bootloader's `0.1.4`
+  is at `08019194` in both. The scan took 333 ms of startup on 1.5.0
+  (`scan_ms`).
+
+**What would add or complete a row:** open the app once on that firmware (with
+USB out), let a dump finish, and keep `dump_context.txt`, the DONE screen's CRC
+and how long the dump took. The gate line, the `CTX isolation` lines and the
+`CTX image … firmware=` line fill in every column but the time. The manifest
+format is fixed, so the time has to be noted by hand, or read off a UART
+capture.
+
+`minKernelVersion` in `app-manifest.json` is `1.3.0`: the oldest firmware
+this app has run on, not the interface-2 floor of `1.0.0`. It is a floor with no
+ceiling, so it cannot say which later versions are unproven. This table has to
+say that.
 
 ## The two-phase workflow
 
@@ -57,9 +125,10 @@ charge/mass-storage mode and the kernel stops every running app. So:
    the service keeps going with the display blanked.
 3. **Wait for `DONE`.** The screen shows `DONE 32/32` and the
    `whole_image_crc32`. That value is what you eyeball against the host's.
-4. **Now plug in USB** and copy `Apps/FwDump/` to the host.
-5. **Verify on the host** with `reassemble_dump.py` — see
-   [verifying a dump](#verifying-a-dump).
+4. **Turn phone sync off, then plug in USB** and copy `Apps/FwDump/` to the
+   host. See the [USB-MSC warnings](#usb-msc-warnings-both-learned-the-hard-way).
+5. **Verify on the host** with the check `README.txt` gives, or with
+   `reassemble_dump.py`. See [verifying a dump](#verifying-a-dump).
 
 Do not connect USB before it says `DONE`. If you do, the dump stops where it is;
 nothing is corrupted and nothing is lost, but you will need to relaunch and let
@@ -87,17 +156,25 @@ except the chunk files themselves.
 
 ## The screen
 
-Five states, each visibly distinct, none of which should be mistakable for a
+Six states, each visibly distinct, none of which should be mistakable for a
 crash — because the one confusion that matters here is "finished" versus
 "stalled at 31/32", where one means plug in and the other does not.
 
 | State | What it says |
 | --- | --- |
-| **Idle** | `READY` (or `RESUME` with `12 of 32 already done`), the region size, and *"Unplug USB, press play. Do not reconnect until DONE."* |
+| **Idle** | `READY` (or `RESUME` with `12 of 32 already done`), the region size, a config status if `fwdump.json` was applied or ignored, and *"USB out, then play / no USB until DONE"* |
 | **Checking** | `CHECKING`, with `N of 32 found`, so the resume scan cannot look like a stall |
 | **Dumping** | `07/32`, a progress bar, `1.2 / 4.0 MB 320 KB/s`, `ETA 2m10s` |
-| **Done** | `DONE 32/32`, the `whole_image_crc32`, and *"Plug in USB and copy Apps/FwDump/"* |
+| **Done** | `DONE 32/32`, the `whole_image_crc32`, and *"phone sync off, copy / Apps/FwDump/"* |
 | **Error** | what failed, which chunk, and how many chunks were kept — pressing play retries from them |
+| **Blocked** | `BLOCKED`, which isolation register refused the read, and *"nothing read; see dump_context.txt"*. No play button |
+
+Every line was measured in Poppins Medium 16 against its box rather than
+eyeballed. 1.0.0's *"Unplug USB, then play"* was 176 px in a 172 px box and
+rendered clipped. Simulator screenshots of READY, DONE, BLOCKED, a refused SRAM
+config and an applied flash window show every line whole. The watch clips the
+square simulator frame to a circle, and the boxes are sized to that circle's
+chord at each row.
 
 Buttons: **R1** starts, **R2** leaves. A second press while a dump runs is a
 no-op, not a restart.
@@ -116,13 +193,19 @@ and gives a record when the screen is off.
 
 ## What the bundle contains, and why `dump_context.txt` exists
 
-Three kinds of file end up in `Apps/FwDump/`:
+Four kinds of file end up in `Apps/FwDump/`:
 
 | File | What it is |
 | --- | --- |
 | `dump_000000.bin` … `dump_3E0000.bin` | The region, in 32 chunks of 128 KB. |
 | `dump_manifest.txt` | Per-chunk CRC-32s, the whole-image CRC-32, and spot reads. Makes the chunks verifiable. |
 | `dump_context.txt` | Everything the flash image **cannot say about itself**. |
+| `README.txt` | For whoever opens the folder: what each file is, which line identifies the watch, the USB warnings, and a stock-Python check. Rewritten on every launch. |
+
+`dump_context.txt` contains the watch's **96-bit UID**, the one thing in the
+bundle that identifies the unit, on the line starting `CTX uid=`. `README.txt`
+tells the user to delete that line before sharing the file. The image itself is
+the vendor's firmware. The README says so and gives no legal advice about it.
 
 That last one earns its place. A flash image is remarkably self-describing —
 `strings` on it recovers the kernel and bootloader version numbers, the build
@@ -140,11 +223,22 @@ rather than in `0x08000000`–`0x08400000`:
   inferred from the image's structure.
 - **The option bytes** — RDP level, TrustZone, dual-bank, boot addresses. Option
   bytes are a *separate flash area* and are not inside the dumped region.
-- **The kernel's own version string**, asked for over the message queue
-  (`REQUEST_SYSTEM_INFO`) rather than read from a register — the one statement of
-  what firmware this is that does not need `strings` run over the image
-  afterwards. Bounded by a 250 ms timeout, so a kernel that does not answer
-  records `firmware=unavailable` instead of stalling startup.
+- **Which firmware it is**, three ways, because no single one works everywhere:
+  - `CTX kernel firmware=`: the kernel's own answer to `REQUEST_SYSTEM_INFO`,
+    bounded by a 250 ms timeout. Kernel 1.4.0 answers `FAIL`, so on 1.4 this
+    says `unavailable`.
+  - `CTX kernel interface=`: `gIKernel->version`, the interface version the
+    running kernel reports. Every firmware answers it, but it only tells ABIs
+    apart, not versions.
+  - `CTX image … firmware=`: every whole `N.N.N` string between NUL bytes in
+    flash, each with its address, and the one above the kernel's vector table
+    (`VTOR`) named as the firmware. In the 1.4.0 image there are exactly two:
+    `0.1.4` at `08019194` in the bootloader and `1.4.0` at `08168255` in the
+    kernel. The scanner reports `1.4.0` when run over that real image. On a
+    1.5.0 watch it reported `1.5.0` at `0817AB87`, with the same two
+    neighbours, in `scan_ms=333`. A version whose layout differs would show
+    it rather than be summarised wrongly, because every match is listed.
+    (`FirmwareStrings.hpp`)
 - **A raw sweep** of `SCB`, `NVIC_ISER`, `NVIC_IPR`, `RCC`, `GPIOA`–`GPIOH`,
   `I2C1`–`I2C6`, `SPI1`/`SPI3`, `USART3` and `LPUART1` — which clocks and
   peripherals are enabled, the pin-mux, which interrupts are on, and the bus
@@ -181,14 +275,36 @@ To capture a version, in full:
 3. Copy `Apps/FwDump/` off, plus `Apps/app_list.json` for the app inventory.
 
 Then, after updating, do the same and `diff` the two `dump_context.txt` files.
-The line that would matter most is `CTX isolation … mpu_enable=`: if a future
-firmware turns the MPU on, this app stops working and the reason will be right
-there.
+The line that would matter most is `CTX gate verdict=`: if a future firmware
+turns the MPU on, it says `refused blocked_by=MPU_CTRL.ENABLE`, and the app
+reads nothing more.
+
+The `CTX` lines changed shape after 1.0.0. Isolation is now two lines, not one,
+and the UID line carries `flash_kb`. So a 1.0.0 file and a later one differ on
+those lines even when the registers do not. The `SWP` sweep lines are
+unchanged.
 
 ## Verifying a dump
 
-The host side already exists and is **not** vendored here. It lives on the
-`una-sdk` repo, `research` branch:
+There are two ways, and they agree.
+
+**With stock Python, from the `README.txt` in the folder.** This is the one for
+someone who installed the app from a store. It needs Python 3 and nothing else.
+It checks every chunk's length and CRC-32 against the manifest, chains them
+into the whole-image CRC, and compares that with the manifest's:
+
+```
+ok 32/32 whole_image_crc32 FA842BEC matches
+```
+
+That CRC is the number the DONE screen shows. The command is tested as written:
+a host test (`check_readme_verifier.py`) takes it out of the `README.txt` the
+synthetic exporter writes and runs it. It must print `ok 32/32 … matches` on the
+intact bundle and `ok 31/32 … DIFFERS` with one byte flipped.
+
+**With `reassemble_dump.py`**, which also rebuilds the single image and checks
+the spot bytes. It is **not** vendored here, so there stays one copy of it to
+keep correct. It lives on the `una-sdk` repo, `research` branch:
 
 ```
 Docs/Investigations/2026-07-29-hardware-config-recovery/
@@ -279,63 +395,75 @@ untouched rather than deliberately opened. That means the chip stays fully
 recoverable over SWD. **This app does not rely on that**, because it never writes
 anything.
 
-Also: no network, no BLE, no external side effects. `IsolationCheck` reads six
-registers and writes none — note that the prior investigation's sweeps *did*
-write `MPU_RNR` to walk the MPU region table, and this app deliberately does not.
+Also: no network, no BLE, no external side effects. The isolation gate reads
+registers and writes none. The prior investigation's sweeps *did* write
+`MPU_RNR` to walk the MPU region table, and this app deliberately does not.
 
 One honest limit: **a read that faults is not recoverable in-app.** Internal
 flash is memory-mapped, so a "read" here is a pointer dereference — there is no
 read call that can fail or come up short, which is why there is no
 faulted-read error state. An address that does not decode raises a BusFault
 which, with no handler of ours, escalates to a HardFault and takes the app down.
-The symptom is the app dying mid-dump, and the manifest's last complete line is
-what tells you where. For the default flash region this is moot; it is the reason
-to be careful with a non-default region.
+Two things keep the app away from that: [the gate](#the-gate-refuse-instead-of-crashing)
+refuses when isolation is on, and a configured region must lie inside internal
+flash, the one range already read whole without a fault.
 
-## Dumping something else (optional)
+## Dumping part of flash (optional)
 
-Drop a `fwdump.json` into the app's folder over USB to point it at a different
-window. It is optional in the strongest sense: every failure — absent, oversized,
-unparseable, unknown schema, bad field, incoherent geometry — falls back to the
-built-in flash region rather than refusing to run, and the screen reports which.
+`app-manifest.json` declares four optional settings: `base`, `size`, `chunk` and
+`subwrite`. Kira and the phone offer them as a form and write the answers to
+`Apps/FwDump/fwdump.json` in the envelope the SDK's `Docs/app-config-fields.md`
+specifies:
 
 ```json
 {
   "schema": 1,
-  "base": "20000000",
-  "size": "00040000",
-  "chunk": "00010000",
-  "subwrite": "00001000"
+  "values": { "base": "08060000", "size": "00100000" }
 }
 ```
 
+`fwdump.json` is read by the app's own `DumpConfig`, not by `SDK::AppConfig`.
+AppConfig first appears in `sdk-v1.4.0`, and using it would cost firmware 1.3.
+A file with no `values` object is read with the same keys at the top level,
+which is the form 1.0.0 documented, so a hand-written 1.0.0 file still works.
+
+It is optional in the strongest sense. Every failure falls back to the built-in
+flash region rather than refusing to run, and the Idle screen says which: a
+missing, oversized or unparseable file, an unknown schema, a bad field, geometry
+that does not tile, or a region outside flash. A file that asks for exactly the
+default reports as the default, not as `config applied`. A companion writes the
+envelope even when every answer was left alone.
+
 Addresses are bare hex strings without `0x`, matching the manifest's own
 notation — JSON has no hex literal, and writing `0x08000000` as a decimal number
-is how you end up dumping the wrong region. Omitted fields keep their defaults.
-Geometry must tile exactly: `size` a whole number of chunks, `chunk` a whole
-number of sub-writes, `subwrite` no larger than 16 KB.
+is how you end up dumping the wrong region. The form's `pattern` rejects a
+malformed value before it reaches the watch, and the app rejects it again if it
+does. Geometry must tile exactly: `size` a whole number of chunks, `chunk` a
+whole number of sub-writes, `subwrite` no larger than 16 KB.
 
-**A configured region is read exactly as flash is — read-only.** What changes is
-the chance that an address does not decode, which faults rather than returning an
-error. The default is a region already known to be readable.
+**A configured region must lie inside internal flash**, `08000000` to
+`083FFFFF` (`DumpRegion::knownReadable`). Outside it, the region falls back to the
+default with the status `config not in flash`. The rule follows what has actually
+been read without a fault. That is the whole of flash, on two firmware versions,
+and nothing else on record. SRAM was dumped once at `0x20000000` (the commit that
+added region directories says so), but its size was never recorded, so it is
+not evidence for any range. A range joins the list when a clean manifest of it
+from a watch does.
 
 ### Where a non-default region writes
 
 The default flash region writes flat into `Apps/FwDump/`, with exactly the names
 the host reassembler expects. **Any other region gets its own
 `region_<base>/` subdirectory** holding the same names —
-`Apps/FwDump/region_20000000/dump_000000.bin` and so on.
+`Apps/FwDump/region_08060000/dump_000000.bin` and so on.
 
 That is not tidiness. Chunk filenames are derived from the offset *within* the
-region and the manifest name is fixed, so without the split an SRAM dump at
-`0x20000000` would write the very same `dump_000000.bin` as a flash dump and
-destroy it — and resume would then re-verify the survivors against the wrong
-memory. Keeping the names identical inside the subdirectory means
-`reassemble_dump.py` needs no changes: it takes a directory, so point it at the
-subdirectory instead.
-
-So SRAM, the ST ROM bootloader at `0x0BF90000` and the system-information area
-are all dumpable today with no code change — only a config file.
+region and the manifest name is fixed, so without the split a dump of the kernel
+at `0x08060000` would write the very same `dump_000000.bin` as a whole-flash
+dump and destroy it — and resume would then re-verify the survivors against the
+wrong memory. Keeping the names identical inside the subdirectory means
+`reassemble_dump.py` and the `README.txt` check need no changes: run either in
+the subdirectory instead.
 
 ## Tests
 
@@ -343,8 +471,11 @@ are all dumpable today with no code change — only a config file.
 export UNA_SDK=/path/to/una-sdk-apps-v1.3.0
 cd FwDump/Tests
 cmake -B build -G "Unix Makefiles" . && cmake --build build
-./build/fwdump-dumper-tests
+ctest --test-dir build --output-on-failure
 ```
+
+CI runs the same thing on every change under `FwDump/`, against `apps-v1.3.0`
+(`.github/workflows/fwdump.yml`).
 
 `FlashDumper` reads its region through a window pointer rather than a hardcoded
 address, which is what makes any of this testable: in the tests a `std::vector`
@@ -365,7 +496,19 @@ Covered:
   chunks were rewritten; a short write reported rather than claimed as success;
   every handle closed and every chunk flushed.
 - **`DumpConfig_test.cpp`** — every way a config file can be wrong, and that each
-  falls back to the flash default without half-applying.
+  falls back to the flash default without half-applying. Also the companion's
+  `values` envelope, a region outside flash, and a file that restates the
+  default.
+- **`ReadGate_test.cpp`** — each isolation bit refusing on its own, the first one
+  in read order being the one named, 1.3.0's measured registers being allowed,
+  and bits that do not decide whether a read faults being ignored.
+- **`FirmwareStrings_test.cpp`** — the two version strings at the addresses and
+  with the neighbouring bytes the 1.4.0 image has, the kernel's being the one
+  above `VTOR`, no answer when that is ambiguous or matches were dropped, and
+  near-misses (`1.4`, `v1.4.0`, `1.4.0.2`) ignored.
+- **`check_readme_verifier.py`** (a CTest, not a gtest) — the `README.txt`
+  check, run exactly as written, accepting an intact synthetic bundle and
+  rejecting one with a flipped byte.
 
 Unlike MapManager's suite, none of this needs the SDK's `InMemoryDirectory`: the
 resume scan probes the 32 chunk filenames it already knows rather than
@@ -399,18 +542,44 @@ cd FwDump/Software/Apps/FwDump-CMake
 cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=1.0.0 . && cmake --build build
 ```
 
-**`$UNA_SDK` must point at an `apps-v1.3.0` checkout, not at mainline.** The
-kernel interface version is baked into the app: `apps-v1.3.0` is
-`KERNEL_INTERFACE_VERSION 2`, mainline is `3`, and the watch runs the 1.3 line. An
-app built against `3` exits instantly to an `App PID` error screen on a v2
-kernel, and nothing catches the mistake at build time. This is the same pinning
-[Chrono](../Chrono/README.md#why-13-matters) and
-[Map Manager](../MapManager/README.md#why-its-pinned-to-sdk-13) describe.
+**`$UNA_SDK` must point at an `apps-v1.3.0` checkout**, which is upstream
+commit `7a556a3`. The kernel interface version is baked into the app:
+`apps-v1.3.0` is `KERNEL_INTERFACE_VERSION 2`, while `apps-v1.4.0`, `apps-v1.5.0`
+and mainline are `3`. The launch check refuses only a kernel older than the app,
+so an interface-2 build is the one that can start on firmware 1.3 as well as
+the later lines. An app built against `3` exits instantly to an `App PID` error
+screen on a 1.3 kernel, and nothing catches the mistake at build time.
 
-`AppID` is `5D041A7EB1D16CAA` =
-`sha256("https://github.com/tobymurray/watch-apps#firmwaredump")[0:8]`, following
-the repo convention. Note the anchor is `firmwaredump`, the app's purpose, not
-`fwdump`, its folder — recompute it before changing either.
+CI builds it that way. `fwdump.yml` passes `sdk_ref: 7a556a3…` to
+`app-build.yml`, which builds and tests against that checkout. It still runs
+`validate_app_config.py` and `min_kernel_version.py` from its pinned `SDK_REF`,
+because `apps-v1.3.0` has neither. The floor check reads the build SDK's headers,
+so `minKernelVersion: 1.3.0` passes against interface 2. It would fail against
+`SDK_REF`'s interface 3 (`'1.3.0' is below the ABI 3 floor '1.4.0'`).
+
+The cost of 1.3 is `SDK::AppConfig`, which this app cannot use; see
+[Dumping part of flash](#dumping-part-of-flash-optional). Nothing else this app
+needs is missing from 1.3.
+
+| Build, against `apps-v1.3.0` | `.uapp` bytes | GUI `.text` | Service `.text` |
+| --- | --- | --- | --- |
+| 1.0.0 source (`555bca3`) | 147,348 | 120,380 | 16,744 |
+| This branch | 101,016 | 69,628 | 21,264 |
+
+The GUI shrank because it no longer carries the stopwatch's SemiBold 20/40/60
+fonts, which were 50,359 bytes of the ELF by `nm` to draw nothing. The Service
+grew by the gate, the image scan, `README.txt` and the envelope reader. Both
+from real builds in the pinned toolchain image (`cca44e2ca090`).
+
+`AppID` is `78C1174ADA9C5EBD`, the id this app is registered under. It replaced
+`5D041A7EB1D16CAA`, a hash of a URL that nothing had registered, and which 1.0.0
+shipped with. The AppID is the whole of an app's identity on the watch, the
+phone and in Kira, so 1.0.0 and everything after it are **two different apps**
+that happen to share the `Apps/FwDump/` folder. Delete the old `.uapp` from that
+folder when installing the new one: two `.uapp`s in one folder is a coin toss
+over which one the kernel loads (see [Installing](../Docs/INSTALLING.md)). The
+build prints the AppID it packed (`INFO:root:ID : 78C1174ADA9C5EBD` in the
+`app_merging.py` output), so check it there rather than assume it.
 
 `apps-v1.3.0` passes `-fcyclomatic-complexity`, which only ST's CubeIDE GCC
 accepts; mainline `arm-none-eabi-gcc` rejects it outright. The `CMakeLists.txt`
@@ -457,7 +626,28 @@ it regenerates from whatever `.uapp` files it finds, so if a rebuild changes
 file must be **deleted**, not just overwritten. Two `.uapp`s in one folder sharing
 an `APP_ID`, or a stale `app_list.json` entry naming a file that is gone, both
 need a power-cycle to sort out. Turn off BLE
-phone-sync first — see the warnings above.
+phone-sync first — see the warnings above. A watch that still has 1.0.0 has a
+`.uapp` under the old AppID in this folder, and the `rm` above is what keeps it
+from winning. Then check the app actually registered, as
+[Installing](../Docs/INSTALLING.md) says, rather than trusting that the file is
+in place.
+
+## What was deliberately not done
+
+- **No `SDK::AppConfig`.** It would have given nothing the envelope reader does
+  not, and cost firmware 1.3: it first appears in `sdk-v1.4.0`.
+- **No SRAM, ROM or peripheral windows.** The 1.0.0 README said they were
+  dumpable with a config file. None has a recorded clean read of a known range,
+  so none is allowed.
+- **No dump timing in the bundle.** It would be the one column the firmware
+  table cannot fill from the files, but the manifest's format is fixed by
+  `reassemble_dump.py`. A new file just for a number nobody parses was not
+  worth it. The Dumping screen shows the rate, and a UART capture has the rest.
+- **No vendored `reassemble_dump.py`.** The `README.txt` check covers what a
+  store user needs. The script stays on `una-sdk@research`, as one copy.
+- **The simulator's Checking and mid-dump screens were not captured.** The
+  synthetic dump finishes in under two seconds, before a screenshot lands. The
+  code for both is unchanged from 1.0.0.
 
 ## Credit
 

@@ -30,8 +30,8 @@ class ModelListener;
  *
  * The status lives here and not in the View for a specific reason: TouchGFX
  * destroys a screen on every transition, so anything a View remembers is lost
- * the moment the user navigates. A dump runs for minutes across screen blanks;
- * its progress has to outlive any one screen.
+ * the moment the user navigates, and a dump's progress has to outlive any one
+ * screen.
  *
  * This is a polled mirror rather than an event-driven one. The service sends a
  * fresh snapshot on a fixed interval while a dump runs, because "bytes done"
@@ -66,6 +66,7 @@ public:
 
         CustomMessage::DumpState state = CustomMessage::DumpState::Idle;
         CustomMessage::DumpError error = CustomMessage::DumpError::None;
+        CustomMessage::DumpRefusal refusal = CustomMessage::DumpRefusal::None;
 
         uint8_t configStatus = 0;
         bool    scanComplete = false;

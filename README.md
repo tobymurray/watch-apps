@@ -12,6 +12,7 @@ than living inside it.
 | [`Barcode`](Barcode) | A parkrun-style Code 128 barcode for an id you supply, read from a small JSON file you write into the app's folder over USB — because the SDK has no supported way to get a user-specific value onto the watch. |
 | [`BikeMap`](BikeMap) | The stock Cycling activity with a live map on the in-activity screen: offline basemap tiles under the GPS breadcrumb, instead of breadcrumb-on-black. |
 | [`Chrono`](Chrono) | The SDK's Stopwatch example backported to SDK 1.3, which upstream never had a build of — so it launches on a watch whose kernel is still on interface version 2. |
+| [`FwDump`](FwDump) | Reads the watch's own 4 MB of internal flash into its folder as 32 CRC-checked chunks, with a record of the registers the image cannot carry, to copy off over USB. Read-only, resumable, and it refuses rather than crashes on a firmware that isolates apps. Built against SDK 1.3 so it starts on firmware 1.3 onward. |
 | [`GpsLab`](GpsLab) | The Running activity plus GNSS instrumentation — per-sample error estimate, fix and dead-reckoning state, recorded alongside the activity. |
 | [`HikeMap`](HikeMap) | The stock Hiking activity with the same live map. |
 | [`MapManager`](MapManager) | A background, autostart `Utility` app that discovers and CRC-verifies offline map packs dropped into the shared `SharedData/maps/` directory, so map-consuming apps read from one already-verified location instead of each running their own copy of this pipeline. |
