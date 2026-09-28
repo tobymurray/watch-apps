@@ -62,8 +62,8 @@ env:
   # breaks an app should break it in a run somebody can point at, not silently on
   # whatever day main moved. Bumping this is a one-line change that rebuilds
   # every app, which is the correct blast radius for changing the SDK.
-  SDK_REPO: tobymurray/una-sdk
-  SDK_REF: 40dc55004b129d0503aafb4473ad285e7fc9aff2
+  SDK_REPO: UNAWatch/una-sdk
+  SDK_REF: 33a8d8700566140b833cefde887830973adf4aab
 
 jobs:
   build:

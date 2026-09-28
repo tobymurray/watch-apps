@@ -56,7 +56,7 @@ Gui::Gui(SDK::Kernel &kernel)
 
 uint8_t Gui::strapFromAccessoryState(uint8_t accessoryState)
 {
-    // Mirrors SDK::Gui::SensorStatusRow::hrState(), whose header is
+    // Mirrors SDK::GUI::SensorStatusRow::hrState(), whose header is
     // TouchGFX-only and cannot be included here.
     switch (accessoryState) {
         case 2: case 3: case 5: return SPIN_GUI_STRAP_SEARCHING;
