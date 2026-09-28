@@ -26,7 +26,28 @@ std::vector<uint8_t> shapedLike140()
     return image;
 }
 
+/// The same, where the 1.5.0 dump has them.
+std::vector<uint8_t> shapedLike150()
+{
+    std::vector<uint8_t> image(0x00200000u, 0xFF);
+    put(image, 0x08019190u, "ice\0" "0.1.4\0" "Starti", 16);
+    put(image, 0x0817AB81u, "%06lu\0" "1.5.0\0" "vir", 15);
+    return image;
+}
+
 } // namespace
+
+TEST(FirmwareStrings, NamesTheKernelIn150AsWell)
+{
+    const std::vector<uint8_t> image = shapedLike150();
+    const FirmwareStrings::Result result = FirmwareStrings::scan(image.data(), kBase, image.size());
+
+    ASSERT_EQ(2u, result.total);
+    EXPECT_EQ(0x0817AB87u, result.matches[1].address);
+    const FirmwareStrings::Match* kernel = result.kernel(kVtor);
+    ASSERT_NE(nullptr, kernel);
+    EXPECT_STREQ("1.5.0", kernel->text);
+}
 
 TEST(FirmwareStrings, FindsBothStringsThe140ImageCarries)
 {

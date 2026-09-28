@@ -9,8 +9,9 @@
  * The image carries it anyway. In the 1.4.0 dump (whole-image CRC-32
  * 0x14009D03), exactly two whole strings of the form N.N.N lie between NUL
  * bytes: "0.1.4" at 0x08019194, below the kernel's vector table, and "1.4.0" at
- * 0x08168255, above it at 0x08060000. Whether other versions keep that shape
- * is unproven; a dump_context.txt from another version shows it either way,
+ * 0x08168255, above it at 0x08060000. The 1.5.0 dump (CRC-32 0xCC925D97) has
+ * the same shape, with "1.5.0" at 0x0817AB87 between the same neighbours. A
+ * dump_context.txt from any other version shows whether it still holds,
  * because every match is recorded with its address, not only the one chosen.
  *
  * Free of SDK types, so it is tested on the host.

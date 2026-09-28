@@ -85,21 +85,20 @@ a header.
 | --- | --- | --- | --- | --- | --- |
 | 1.3.0 | **Yes**, by FwDump's first build (`cbcb869`, built against `apps-v1.3.0`, 2026-08-17): 32/32 chunks clean, device and host agree. It is the 1.3.0 half of the two dumps `555bca3` compares | 0 / 0 / 0. `CONTROL=0x00000006`, `MPU_CTRL=0x00000000`, from the 2026-07-29 investigation's sweep #3 on this unit | Not recorded: that build did not ask | Not recorded | `658D9BB2` |
 | 1.4.0 | **Yes**, by FwDump on 2026-08-18: all 32 chunks match the manifest. The image is kept on `una-sdk@research` under `firmware-dumps/1.4.0/` | Not kept. Its `dump_context.txt` was not preserved. The whole of flash read without a fault, which is consistent with all three being 0 but does not show it | `REQUEST_SYSTEM_INFO` is answered `FAIL` by kernel 1.4.0 (see [NotifyToggle](../NotifyToggle/README.md)), so it said `unavailable`. The image scan this build adds reads `1.4.0` from that same image | Not recorded | `14009D03` |
-| 1.5.0 | **No.** No watch on 1.5 has run any build of this app | Not measured | Not measured | Not measured | Not measured |
+| 1.5.0 | **Yes**, by this build (1.1.0, AppID `78C1174ADA9C5EBD`) on 2026-09-28: gate `allowed`, 32/32 chunks clean by both the `README.txt` check and `reassemble_dump.py`, all three spot lines match | 0 / 0 / 0. `CONTROL=0x00000006`, `MPU_CTRL=0x00000000`, `FLASH_OPTR=0x1FEFF8AA` | Kernel still gives no answer to `REQUEST_SYSTEM_INFO` (`unavailable`). `CTX kernel interface=3`. The image scan reads `1.5.0` at `0817AB87`, and so does a host scan of the reassembled image | Not recorded | `CC925D97` |
 
 Two things this table does **not** show:
 
-- **This build has not run on a watch yet.** Every "Yes" is from 1.0.0, whose
-  dump engine (`FlashDumper`, `DumpManifest`, `Crc32`) this build reuses
-  unchanged, and which was built against the same `apps-v1.3.0`. The gate, the
-  image scan, the settings envelope and `README.txt` are new, and have been run
-  only on the host and in the simulator.
-- **1.5 is expected to work but is not shown to.** `apps-v1.5.0` is still
-  kernel interface version 3, and the launch check in
-  `Libs/Source/AppSystem/system.cpp` refuses only a kernel *older* than the
-  app. So an interface-2 build should start on 1.5, as the 1.0.0 build did on
-  1.4. Kira's own table (`kernel.rs`, `CHECKED_THROUGH = "apps-v1.4.0"`)
-  cannot tell yet either.
+- **This build has run on 1.5.0 only.** Its 1.3.0 and 1.4.0 rows are from
+  1.0.0, whose dump engine (`FlashDumper`, `DumpManifest`, `Crc32`) this build
+  reuses unchanged, built against the same `apps-v1.3.0`. The gate, the image
+  scan, the settings envelope and `README.txt` have run on a watch only on
+  1.5.0.
+- **The image scan has held across two versions, not every version.** In 1.4.0
+  and 1.5.0 the kernel string sits between the same neighbours (`%06lu` before,
+  `virtual bool Driver::Uart::transmit…` after), and the bootloader's `0.1.4`
+  is at `08019194` in both. The scan took 333 ms of startup on 1.5.0
+  (`scan_ms`).
 
 **What would add or complete a row:** open the app once on that firmware (with
 USB out), let a dump finish, and keep `dump_context.txt`, the DONE screen's CRC
@@ -110,7 +109,8 @@ capture.
 
 `minKernelVersion` in `app-manifest.json` is `1.3.0`: the oldest firmware
 this app has run on, not the interface-2 floor of `1.0.0`. It is a floor with no
-ceiling, so it cannot say 1.5 is unproven. This table has to say that.
+ceiling, so it cannot say which later versions are unproven. This table has to
+say that.
 
 ## The two-phase workflow
 
@@ -234,10 +234,10 @@ rather than in `0x08000000`–`0x08400000`:
     flash, each with its address, and the one above the kernel's vector table
     (`VTOR`) named as the firmware. In the 1.4.0 image there are exactly two:
     `0.1.4` at `08019194` in the bootloader and `1.4.0` at `08168255` in the
-    kernel. The scanner reports `1.4.0` when run over that real image. Whether
-    other versions keep that layout is unproven. Because every match is listed,
-    a version that differs shows it rather than being summarised wrongly. The
-    line also carries `scan_ms`, which the watch has not yet measured.
+    kernel. The scanner reports `1.4.0` when run over that real image. On a
+    1.5.0 watch it reported `1.5.0` at `0817AB87`, with the same two
+    neighbours, in `scan_ms=333`. A version whose layout differs would show
+    it rather than be summarised wrongly, because every match is listed.
     (`FirmwareStrings.hpp`)
 - **A raw sweep** of `SCB`, `NVIC_ISER`, `NVIC_IPR`, `RCC`, `GPIOA`–`GPIOH`,
   `I2C1`–`I2C6`, `SPI1`/`SPI3`, `USART3` and `LPUART1` — which clocks and
