@@ -113,7 +113,7 @@ inline const char* describe(Status status)
         case Status::Ok:          return "config applied";
         case Status::TooLarge:    return "config too large";
         case Status::NotJson:     return "config not JSON";
-        case Status::WrongSchema: return "config schema unknown";
+        case Status::WrongSchema: return "config schema wrong";
         case Status::BadField:    return "config field invalid";
         case Status::BadGeometry: return "config does not tile";
         case Status::Unproven:    return "config not in flash";

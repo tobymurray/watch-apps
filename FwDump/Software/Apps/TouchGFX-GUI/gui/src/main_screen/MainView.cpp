@@ -250,7 +250,7 @@ void MainView::refresh()
                                                               : DumpConfig::describe(config));
             }
             setBar(false, 0, 0);
-            setLine(mHint, mHintBuf, "Unplug USB, then play");
+            setLine(mHint, mHintBuf, "USB out, then play");
             setLine(mHint2, mHint2Buf, "no USB until DONE");
             break;
         }
@@ -318,7 +318,8 @@ void MainView::refresh()
                     static_cast<unsigned>(status.chunksDone), total);
             setLine(mDetail2, mDetail2Buf, "CRC32 %08lX",
                     static_cast<unsigned long>(status.wholeCrc));
-            setLine(mHint, mHintBuf, "plug in USB, copy");
+            // Phone sync first; why is the README's "USB-MSC warnings".
+            setLine(mHint, mHintBuf, "phone sync off, copy");
             setLine(mHint2, mHint2Buf, "Apps/FwDump/");
             break;
 
