@@ -35,10 +35,9 @@ set(APP_USER_NAME "FW Dump")
 set(APP_TYPE "Utility")
 set(APP_AUTOSTART Off)
 set(DEV_ID "UNA")
-# sha256("https://github.com/tobymurray/watch-apps#firmwaredump")[0:8]. The
-# anchor is the app's purpose rather than its folder name, which is why it reads
-# "firmwaredump" and not "fwdump"; recompute it before changing either.
-set(APP_ID "5D041A7EB1D16CAA")
+# The id this app is registered under, and its whole identity on the watch and in
+# the store: changing it makes a different app.
+set(APP_ID "78C1174ADA9C5EBD")
 set(RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Resources")
 set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")
 set(LIBS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../Libs")

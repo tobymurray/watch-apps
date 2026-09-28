@@ -407,10 +407,15 @@ kernel, and nothing catches the mistake at build time. This is the same pinning
 [Chrono](../Chrono/README.md#why-13-matters) and
 [Map Manager](../MapManager/README.md#why-its-pinned-to-sdk-13) describe.
 
-`AppID` is `5D041A7EB1D16CAA` =
-`sha256("https://github.com/tobymurray/watch-apps#firmwaredump")[0:8]`, following
-the repo convention. Note the anchor is `firmwaredump`, the app's purpose, not
-`fwdump`, its folder — recompute it before changing either.
+`AppID` is `78C1174ADA9C5EBD`, the id this app is registered under. It replaced
+`5D041A7EB1D16CAA`, a hash of a URL that nothing had registered, and which 1.0.0
+shipped with. The AppID is the whole of an app's identity on the watch, the
+phone and in Kira, so 1.0.0 and everything after it are **two different apps**
+that happen to share the `Apps/FwDump/` folder. Delete the old `.uapp` from that
+folder when installing the new one: two `.uapp`s in one folder is a coin toss
+over which one the kernel loads (see [Installing](../Docs/INSTALLING.md)). The
+build prints the AppID it packed (`INFO:root:ID : 78C1174ADA9C5EBD` in the
+`app_merging.py` output), so check it there rather than assume it.
 
 `apps-v1.3.0` passes `-fcyclomatic-complexity`, which only ST's CubeIDE GCC
 accepts; mainline `arm-none-eabi-gcc` rejects it outright. The `CMakeLists.txt`
