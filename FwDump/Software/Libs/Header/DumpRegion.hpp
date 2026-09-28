@@ -99,6 +99,20 @@ struct DumpRegion {
         }
         return true;
     }
+
+    /// The one range this app has read whole on a watch without a fault: the
+    /// 4 MB of internal flash, dumped clean on firmware 1.3.0 and 1.4.0. A
+    /// range joins this list only with a clean manifest of it from a watch.
+    static constexpr uint32_t kReadableBase = 0x08000000u;
+    static constexpr uint32_t kReadableSize = 0x00400000u;
+
+    /// Whether every address in the region lies inside a range already read.
+    bool knownReadable() const
+    {
+        return base >= kReadableBase
+               && static_cast<uint64_t>(base) + size
+                      <= static_cast<uint64_t>(kReadableBase) + kReadableSize;
+    }
 };
 
 #endif // DUMP_REGION_HPP

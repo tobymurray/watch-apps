@@ -5,10 +5,9 @@
  ******************************************************************************
  *
  * The default region -- 4 MB of internal flash -- needs no configuration, and
- * the app ships working without this file. What it buys is the ability to point
- * the same app at a different window (SRAM, a peripheral block) without
- * rebuilding it, which is the difference between a firmware dumper and a
- * general memory reader.
+ * the app ships working without this file. What it buys is a smaller window of
+ * flash, or a different chunk size, without rebuilding. A window outside flash
+ * is refused: see DumpRegion::knownReadable().
  *
  * The file is `fwdump.json`, a bare relative name, so it resolves into the
  * app's own sandbox folder -- the same directory the USB-MSC volume exposes,
@@ -35,9 +34,7 @@
  *
  * **The override does not make the app write anything.** A configured region is
  * read exactly as flash is -- see FlashDumper's class comment, and the
- * read-only guarantee in the README. What it does change is the risk that an
- * address does not decode, which faults rather than returning an error; that is
- * why the default is a region already known to be readable.
+ * read-only guarantee in the README.
  *
  ******************************************************************************
  */
@@ -82,6 +79,7 @@ enum class Status : uint8_t {
     WrongSchema,   ///< Parsed, but its "schema" is not kSchemaSupported.
     BadField,      ///< A field was present but not a valid hex number.
     BadGeometry,   ///< Parsed and read, but the region fails DumpRegion::valid().
+    Unproven,      ///< Coherent, but outside DumpRegion::knownReadable().
 };
 
 /**
@@ -105,8 +103,22 @@ struct Result {
  */
 Result load(const SDK::Kernel& kernel);
 
-/// Short, screen-sized description of a status, for the error line.
-const char* describe(Status status);
+/// Short, screen-sized description of a status. Inline so the GUI, which does
+/// not link this reader, can show it too.
+inline const char* describe(Status status)
+{
+    switch (status) {
+        case Status::Default:     return "default region";
+        case Status::Ok:          return "config applied";
+        case Status::TooLarge:    return "config too large";
+        case Status::NotJson:     return "config not JSON";
+        case Status::WrongSchema: return "config schema unknown";
+        case Status::BadField:    return "config field invalid";
+        case Status::BadGeometry: return "config does not tile";
+        case Status::Unproven:    return "config not in flash";
+    }
+    return "config unknown";
+}
 
 } // namespace DumpConfig
 

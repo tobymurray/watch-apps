@@ -49,14 +49,14 @@ TEST(DumpConfigTest, AppliesAWellFormedOverride)
     SDK::TestSupport::KernelFixture fixture;
     const DumpConfig::Result result = loadWith(fixture, R"({
         "schema": 1,
-        "base": "20000000",
+        "base": "08060000",
         "size": "00040000",
         "chunk": "00010000",
         "subwrite": "00001000"
     })");
 
     ASSERT_EQ(DumpConfig::Status::Ok, result.status);
-    EXPECT_EQ(0x20000000u, result.region.base);
+    EXPECT_EQ(0x08060000u, result.region.base);
     EXPECT_EQ(0x00040000u, result.region.size);
     EXPECT_EQ(0x00010000u, result.region.chunk);
     EXPECT_EQ(0x00001000u, result.region.subwrite);
@@ -174,6 +174,34 @@ TEST(DumpConfigTest, RejectsAGeometryThatDoesNotTile)
     expectDefaultRegion(result);
 }
 
+TEST(DumpConfigTest, RefusesARegionOutsideFlash)
+{
+    SDK::TestSupport::KernelFixture fixture;
+
+    // SRAM, the ST ROM, and a window that starts in flash but runs past its end.
+    for (const char* json : {
+             R"({"schema": 1, "base": "20000000", "size": "00040000"})",
+             R"({"schema": 1, "base": "0BF90000", "size": "00020000"})",
+             R"({"schema": 1, "base": "083E0000", "size": "00040000"})",
+             R"({"schema": 1, "base": "07FE0000", "size": "00040000"})",
+         }) {
+        fixture.fileSystem.files.clear();
+        const DumpConfig::Result result = loadWith(fixture, json);
+
+        EXPECT_EQ(DumpConfig::Status::Unproven, result.status) << json;
+        expectDefaultRegion(result);
+    }
+}
+
+TEST(DumpConfigTest, AcceptsTheLastChunkOfFlash)
+{
+    SDK::TestSupport::KernelFixture fixture;
+    const DumpConfig::Result result =
+        loadWith(fixture, R"({"schema": 1, "base": "083E0000", "size": "00020000"})");
+
+    EXPECT_EQ(DumpConfig::Status::Ok, result.status);
+}
+
 TEST(DumpConfigTest, RejectsAnOversizedFile)
 {
     SDK::TestSupport::KernelFixture fixture;
@@ -192,7 +220,8 @@ TEST(DumpConfigTest, EveryStatusHasADescription)
     for (const DumpConfig::Status status :
          {DumpConfig::Status::Default, DumpConfig::Status::Ok, DumpConfig::Status::TooLarge,
           DumpConfig::Status::NotJson, DumpConfig::Status::WrongSchema,
-          DumpConfig::Status::BadField, DumpConfig::Status::BadGeometry}) {
+          DumpConfig::Status::BadField, DumpConfig::Status::BadGeometry,
+          DumpConfig::Status::Unproven}) {
         const char* text = DumpConfig::describe(status);
         ASSERT_NE(nullptr, text);
         EXPECT_STRNE("config unknown", text);

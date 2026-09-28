@@ -6,6 +6,8 @@
 
 #include "SDK/GUI/Button.hpp"
 
+#include "DumpConfig.hpp"
+
 #include <cstdarg>
 #include <cstdio>
 
@@ -242,7 +244,10 @@ void MainView::refresh()
             } else {
                 setLine(mHeadline, mHeadlineBuf, "READY");
                 setLine(mDetail, mDetailBuf, "%u.%u MB, %u chunks", mbWhole, mbTenths, total);
-                setLine(mDetail2, mDetail2Buf, "a few minutes");
+                const auto config = static_cast<DumpConfig::Status>(status.configStatus);
+                setLine(mDetail2, mDetail2Buf, "%s",
+                        config == DumpConfig::Status::Default ? "a few minutes"
+                                                              : DumpConfig::describe(config));
             }
             setBar(false, 0, 0);
             setLine(mHint, mHintBuf, "Unplug USB, then play");

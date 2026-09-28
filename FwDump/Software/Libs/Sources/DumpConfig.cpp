@@ -78,20 +78,6 @@ FieldResult readHexField(const SDK::JsonStreamReader& reader, const char* key, u
 namespace DumpConfig
 {
 
-const char* describe(Status status)
-{
-    switch (status) {
-        case Status::Default:     return "default region";
-        case Status::Ok:          return "config applied";
-        case Status::TooLarge:    return "config too large";
-        case Status::NotJson:     return "config not JSON";
-        case Status::WrongSchema: return "config schema unknown";
-        case Status::BadField:    return "config field invalid";
-        case Status::BadGeometry: return "config geometry invalid";
-    }
-    return "config unknown";
-}
-
 Result load(const SDK::Kernel& kernel)
 {
     Result result; // Default-constructed: the flash region, Status::Default.
@@ -150,6 +136,13 @@ Result load(const SDK::Kernel& kernel)
 
     if (!candidate.valid()) {
         result.status = Status::BadGeometry;
+        return result;
+    }
+
+    // An address that does not decode faults rather than returning an error,
+    // so a range is dumped only once it is known to read.
+    if (!candidate.knownReadable()) {
+        result.status = Status::Unproven;
         return result;
     }
 
