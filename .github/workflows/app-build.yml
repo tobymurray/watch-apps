@@ -62,8 +62,8 @@ env:
   # breaks an app should break it in a run somebody can point at, not silently on
   # whatever day main moved. Bumping this is a one-line change that rebuilds
   # every app, which is the correct blast radius for changing the SDK.
-  SDK_REPO: tobymurray/una-sdk
-  SDK_REF: 40dc55004b129d0503aafb4473ad285e7fc9aff2
+  SDK_REPO: UNAWatch/una-sdk
+  SDK_REF: 33a8d8700566140b833cefde887830973adf4aab
 
 jobs:
   build:
@@ -237,7 +237,15 @@ jobs:
               if [ "$(rank "$level")" -gt "$(rank "$bump")" ]; then
                 bump="$level"
               fi
-            done < <(git -C apps log --format=%s "$range" -- "${{ inputs.app }}")
+            done < <(
+              # A commit that moves SDK_REF changes every app's binary without
+              # touching any app's directory, so it is scanned as if it did;
+              # nothing else in this file is.
+              {
+                git -C apps log --format='%H %s' "$range" -- "${{ inputs.app }}"
+                git -C apps log --format='%H %s' -G '^[[:space:]]*SDK_REF:' "$range" -- .github/workflows/app-build.yml
+              } | awk '!seen[$1]++' | cut -d' ' -f2-
+            )
 
             echo "bump: $bump"
 

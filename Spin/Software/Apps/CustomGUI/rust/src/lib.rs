@@ -40,8 +40,6 @@ const DIM: Abgr2222 = Abgr2222::rgb(170, 170, 170);
 const RED: Abgr2222 = Abgr2222::rgb(255, 0, 0);
 /// Held / not-what-you-wanted. Paused, and a ride that failed to save.
 const AMBER: Abgr2222 = Abgr2222::rgb(255, 170, 0);
-/// Most zones the dial will draw, matching the ceiling of the kernel's own
-/// threshold table (`RequestSystemSettings::skMaxHearRateTh`).
 pub const MAX_ZONES: usize = 8;
 
 /// The colour ladder, cool to warm, eight stops.

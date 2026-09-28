@@ -28,8 +28,8 @@ permissions:
 env:
   # The C++ half type-checks against the SDK's headers. Must track
   # app-build.yml's pin: two workflows on two SDK commits are two instruments.
-  SDK_REPO: tobymurray/una-sdk
-  SDK_REF: 40dc55004b129d0503aafb4473ad285e7fc9aff2
+  SDK_REPO: UNAWatch/una-sdk
+  SDK_REF: 33a8d8700566140b833cefde887830973adf4aab
 
 jobs:
   # Not in the toolchain container, for the same reason inscribed-disc.yml says:
