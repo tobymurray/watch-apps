@@ -52,9 +52,7 @@ enum Index : size_t {
     kIndexCount,
 };
 
-/// Matches the ceiling of the kernel's own threshold table,
-/// RequestSystemSettings::skMaxHearRateTh.
-constexpr size_t kMaxZones = 8;
+constexpr size_t kMaxZones = kHrZone8Min - kHrZone1Min + 1;
 
 /// The declared maxLength of "intervals", plus the terminator getString adds.
 constexpr size_t kIntervalsBufferBytes = 129;
