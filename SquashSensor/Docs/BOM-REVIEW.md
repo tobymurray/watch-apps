@@ -84,7 +84,7 @@ The flash (B7.1) is decided in architecture and needs one validation to settle 1
 2 Gbit, and one measurement could still move a part: whether full-power shots clip the
 ADXL375 (§5).
 
-Seven findings follow, ordered by how much they change. Three "settled" items in §2 of the
+Nine findings follow, ordered by how much they change. Three "settled" items in §2 of the
 prompt are challenged in §4, one of them successfully.
 
 ---
@@ -1195,6 +1195,60 @@ so rather than let somebody print it in PLA and find out in July.
 
 ---
 
+### B9 — Prior art rechecked, 2026-09-28. **Changes no part; strengthens the openness argument and adds a requirement about how it is checked.**
+
+`ADVERSARIAL-REVIEW.md` §5 established that six shipped racket sensors died in 2020–21, and
+that *"their value depended entirely on a company maintaining a server"*. Two years of
+further evidence say the same thing more sharply, and extend it to a category §5 never
+examined.
+
+**B9.1 — the open-source counter-example never released.** **SmartDampener** (ACM IMWUT
+8(3) art. 118, September 2024, Penn State) is a tennis analytics platform in a vibration-
+dampener form factor: **ICM-20948 + nRF52832, 100 Hz, 6.1 g, $9.42 BOM**, reporting ball
+speed to 3.59 mph median error, impact location to 3.03 cm, and six stroke types at 96.75%,
+validated leave-one-subject-out.
+
+Its paper says **"We *will* open-source SmartDampener"** — future tense. Searched by project
+name, by author, by institution, and through the ACM DL and Penn State publication records:
+**no repository, schematic, PCB file, firmware or dataset.** Two years on.
+
+**This is the sharpest available version of §5's finding, because it is the case that should
+have worked.** Peer-reviewed, in a venue that rewards released artifacts, by authors with no
+commercial incentive to withhold, in a paper titled *An Open Source Platform*. Not a company
+going under — a project ending when its students moved on.
+
+**B9.2 — the string-bed category has the same shape, and §5 never looked at it.** §5's table
+covers butt-cap, wrist and factory-embedded mounts. Sensors mounted **in the string bed** are
+a distinct family and fare no better: **Qlipp** is listed *currently unavailable* on its main
+retail channel as of May 2026 with continuity unconfirmed, and **Courtmatics**'s product page
+refused a connection when tried, with the only substantive coverage dating from 2016
+describing it as pre-launch. *Neither is confirmed dead; neither is confirmed alive.*
+
+**B9.3 — what survived has no hardware.** The one product unambiguously thriving is
+**SwingVision**, phone-camera computer vision on a $149.99/year subscription — which
+SmartDampener itself used as ground truth. That does not bear on the BOM, but it bears on
+the corpus argument: the market moved to a method that produces no raw kinematics at all.
+
+**The requirement this generates, and it is the useful part: "will be published" is not
+published.** §4.5 lists what has to ship — schematic, editable layout, BOM with orderable
+part numbers, mechanical CAD, firmware source, placement files, calibration procedure and
+jig. **That list should be checked as files present in the repository, not as an intention
+recorded in a README.** SmartDampener is the case study for why the distinction matters.
+
+**And one claim worth verifying before leaning on it.** §5 says no public wrist corpus
+exists, and the README says no public racket-frame corpus does. The recheck suggests
+something stronger — **no released raw corpus in racket sports at all, from any mount
+position** — because none of the nine products or projects above published data, and the
+one that promised to did not. That is a bigger claim than either document makes, it is the
+strongest form of the reason to build this device, and it rests on absence of evidence.
+**It should be searched for properly before it is asserted anywhere.**
+
+*Source caution, unchanged from §10: the shutdown chronology comes from a vendor selling a
+competing sensor, so the dates are corroborated and the framing is interested. Its claim
+that one particular sensor is "the only one still working" is that vendor's own product.*
+
+---
+
 ## 3. Battery retention — the answer, specific enough to draw
 
 ### 3.1 What shock the cell actually sees
@@ -1359,7 +1413,7 @@ benefit is real and the instruction to pick the angle from a recorded distributi
 than from symmetry is the right method — but it stops being load-bearing, and a finding that
 stops being load-bearing should be re-costed rather than inherited.
 
-**Four corrections to the documents themselves, none in §2.**
+**Five corrections to the documents themselves, none in §2.**
 
 - **F13 — "the high-g channel is the hard real-time deadline in this design" — is closed,
   and the README should say so.** The deadline was measured at 57% utilisation with a
@@ -1379,6 +1433,12 @@ as "a larger, more expensive module", and an earlier draft of this review repeat
 MDBT50Q is **163 mm² against the MDBT42Q's 160**, at the same thickness — 1.9%, not a size
 penalty. **"Larger" should be struck from both**; only "more expensive" survives, and at a
 few dollars it does not decide anything. See B8.5.
+
+**A fifth, in `ADVERSARIAL-REVIEW.md` §5's table rather than in a claim.** The table covers
+butt-cap, wrist and factory-embedded mounts and omits the **string-bed / dampener** family
+entirely — Qlipp, Courtmatics and the SmartDampener research platform. Adding them does not
+change §5's conclusion; it extends it to a third mount position and one non-commercial
+project. See B9.
 
 **And one requirement the documents do not yet have.** The ADXL375's ODR wanders ~500 ppm
 *within* a session and trends about +1 Hz/min, so assuming a single fitted rate costs up to
@@ -1412,6 +1472,7 @@ this review, which is the test.
 | ~~LiFePO4 at 100–150 mAh from a supplier with a datasheet.~~ | **Closed 2026-09-26 — none exists.** The search covered Canadian distribution and makers worldwide; the closest documented LFP cell is 200 mAh and 5 mm, sold by quotation. No quotation was sent, because no maker lists one with a datasheet. B1 is settled — B1.6, [`CELL-SOURCING.md`](CELL-SOURCING.md). |
 | ~~Varta CoinPower availability in ones and twos.~~ | **Closed 2026-09-26.** The tabbed assemblies are end-of-life (last delivery 31 January 2025), and no distributor selling into Canada lists CoinPower. |
 | **The actual shock the cell sees.** §3.1 derives 200–5,000 g from plausible drop heights and *assumed* stopping distances, and the answer is most sensitive to the assumed term. | **The instrument now exists.** The rig captured a 130 g flick unclipped with visible ringing (**M9**), so twenty drops onto a court floor is a session's work, not a project. Do it in the same trip as the ball test. |
+| **Whether any raw racket-sport corpus has ever been released.** B9 suggests none has, from any mount position — which would be the strongest form of the reason to build this device, and it currently rests on absence of evidence across nine products and projects. | A proper literature and dataset search: PhysioNet, Zenodo, Figshare, IEEE DataPort, and the datasets behind the classification papers §5 cites. Cheap, and it either hardens the project's central claim or finds the corpus that already exists. |
 | **Whether the recording format survives being a filesystem.** B8.5 picks the '840 for USB mass storage, which means exposing 128 MB as a block device — and a filesystem written continuously at 48 kB/s can be corrupted by power loss mid-write. The common answer is to write raw and synthesise a filesystem view on connect. | A `Docs/FORMAT.md` decision, not a measurement. It is cheaper now than after the format is frozen, and it is the clearest case in the BOM of a part choice moving work into firmware. |
 | **Per-unit calibration at 50 g.** TDK's AN-000265 is explicit that full calibration needs a **2-DOF rate table**, and temperature calibration needs that table **inside a temperature chamber** for a ~7-hour soak sequence per unit. Neither is available to somebody reproducing this design. The affordable procedure is **6-side flip** (no machine — and the puck's own six faces are the fixture), which yields offset and sensitivity **at 1 g**. | Nothing cheap. The honest response is to publish the 6-side-flip jig, record the temperature the calibration was done at, and **state in the file that the scale factor is a 1 g figure extrapolated to a 50 g operating range** — rather than let a reader assume it was calibrated where it is used. Note this matters far more for the high-g channel (ADXL375 ±10% scale factor) than for the primary IMU (ICM-45686 ±0.2%). |
 
@@ -1488,6 +1549,16 @@ is insensitive to the rig.**
 knock-up pace: fifteen ghost swings in three intensity groups, then five ball hits. The
 throat position matters for M15 and is why B2.10 does not treat it as an F2 comparison. **No
 full-power shots were hit**, which is the largest gap in the data and the next measurement.
+
+**Prior art rechecked 2026-09-28** — B9. **SmartDampener**: Liu, Lu, Yuan, Zhou and Gowda,
+*"SmartDampener: An Open Source Platform for Sport Analytics in Tennis"*, Proc. ACM IMWUT
+8(3) art. 118, September 2024, doi:10.1145/3678507 — **read in full** for the hardware
+(ICM-20948 + nRF52832, 100 Hz), the ball-speed method (physics model abandoned in favour of
+an SVR with an RBF kernel), the impact-location method (rigid-body angular impulse on the
+gyroscope, *not* modal analysis), the results and the leave-one-subject-out validation.
+Release status checked against the ACM DL entry, the Penn State publication record and
+searches by project, author and institution: **no artifact found**. Qlipp and Courtmatics
+status from retail listings and their own sites.
 
 Secondary, and flagged as such in the text: distributor catalogue searches for LiFePO4 stock
 (DigiKey/ZEUS, Mouser); microSD connector retention figures (connector-vendor and
