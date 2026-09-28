@@ -51,6 +51,15 @@ inline uint32_t read32(uint32_t address)
 }
 #endif
 
+#if !defined(SIMULATOR) && defined(__ARM_ARCH)
+} // namespace
+
+// Defined by the SDK's AppSystem, which checks the same field before main().
+extern const SDK::Interface::IKernel* gIKernel;
+
+namespace {
+#endif
+
 // The SDK's service build defines both; a build that does not says so.
 #if defined(BUILD_VERSION)
 constexpr char kBuildVersion[] = BUILD_VERSION;
@@ -152,6 +161,8 @@ Result read(const SDK::Kernel& kernel)
     // reporting the zero-initialised fields as findings would claim the
     // permissive answer for every isolation field.
 #else
+    result.kernelInterface = gIKernel->version;
+
     uint32_t control = 0;
     __asm volatile("MRS %0, CONTROL" : "=r"(control));
     result.control  = control;
@@ -193,6 +204,15 @@ Result read(const SDK::Kernel& kernel)
     result.peripheralsRead = true;
 
     result.verdict = ReadGate::decide(result.control, result.mpuCtrl, result.flashOptr);
+
+    if (result.verdict == ReadGate::Verdict::Allowed) {
+        const uint32_t startedMs = kernel.sys.getTimeMs();
+        result.imageStrings = FirmwareStrings::scan(
+            reinterpret_cast<const uint8_t*>(static_cast<uintptr_t>(DumpRegion::kReadableBase)),
+            DumpRegion::kReadableBase, DumpRegion::kReadableSize);
+        result.imageScanMs  = kernel.sys.getTimeMs() - startedMs;
+        result.imageScanned = true;
+    }
 #endif
 
     return result;
@@ -267,7 +287,7 @@ bool write(const SDK::Kernel& kernel, const Result& result, const DumpRegion& re
     // Built in one buffer and written once. Small enough to be a stack frame on
     // a 10 kB service stack with room to spare, and one write means the file is
     // either whole or absent rather than half a record.
-    char text[1600];
+    char text[2048];
     int at = 0;
 
     // Appends with a running offset, giving up quietly if the buffer fills. A
@@ -301,6 +321,24 @@ bool write(const SDK::Kernel& kernel, const Result& result, const DumpRegion& re
             result.hardwareVersion, static_cast<unsigned long>(result.uptimeSeconds));
     } else {
         add("CTX kernel firmware=unavailable (no answer to REQUEST_SYSTEM_INFO)\n");
+    }
+    add("CTX kernel interface=%lu\n", static_cast<unsigned long>(result.kernelInterface));
+
+    if (!result.imageScanned) {
+        add("CTX image not-scanned\n");
+    } else {
+        // Every match with its address, so a firmware whose strings are shaped
+        // differently shows it rather than being summarised wrongly.
+        for (size_t i = 0; i < result.imageStrings.kept; ++i) {
+            add("CTX image string addr=%08lX text=%s\n",
+                static_cast<unsigned long>(result.imageStrings.matches[i].address),
+                result.imageStrings.matches[i].text);
+        }
+        const FirmwareStrings::Match* kernelString = result.imageStrings.kernel(result.vtor);
+        add("CTX image strings=%u firmware=%s scan_ms=%lu\n",
+            static_cast<unsigned>(result.imageStrings.total),
+            kernelString != nullptr ? kernelString->text : "ambiguous",
+            static_cast<unsigned long>(result.imageScanMs));
     }
 
     if (!result.measured) {

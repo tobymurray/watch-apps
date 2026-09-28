@@ -77,6 +77,7 @@
 #include "SDK/Kernel/Kernel.hpp"
 
 #include "DumpRegion.hpp"
+#include "FirmwareStrings.hpp"
 #include "ReadGate.hpp"
 
 namespace DeviceContext
@@ -119,6 +120,14 @@ struct Result {
     char hardwareVersion[16] = {};
     uint32_t uptimeSeconds   = 0;
     bool     systemInfoOk    = false;
+
+    /// gIKernel->version, the interface version the running kernel reports.
+    uint32_t kernelInterface = 0;
+
+    /// Version strings in internal flash. Scanned only once the gate allows it.
+    FirmwareStrings::Result imageStrings{};
+    bool     imageScanned = false;
+    uint32_t imageScanMs  = 0; ///< ms; the startup delay the scan costs.
 
     /// False on a build with no such registers (the host simulator). Callers
     /// must not present the zeros above as measurements in that case: "not
