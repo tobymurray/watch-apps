@@ -48,6 +48,7 @@ add_executable(fwdump-dumper-tests
     DumpManifest_test.cpp
     DumpConfig_test.cpp
     FlashDumper_test.cpp
+    ReadGate_test.cpp
     "${APP_LIBS}/Sources/Crc32.cpp"
     "${APP_LIBS}/Sources/DumpManifest.cpp"
     "${APP_LIBS}/Sources/DumpConfig.cpp"

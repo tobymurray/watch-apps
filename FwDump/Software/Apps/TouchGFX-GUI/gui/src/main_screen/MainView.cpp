@@ -42,6 +42,18 @@ const char* describeError(CustomMessage::DumpError error)
     return "unknown error";
 }
 
+/// Which isolation stopped the read, in the detail line's width.
+const char* describeRefusal(CustomMessage::DumpRefusal refusal)
+{
+    switch (refusal) {
+        case CustomMessage::DumpRefusal::None:         return "isolation is on";
+        case CustomMessage::DumpRefusal::Unprivileged: return "app is unprivileged";
+        case CustomMessage::DumpRefusal::MpuEnabled:   return "the MPU is on";
+        case CustomMessage::DumpRefusal::TrustZone:    return "TrustZone is on";
+    }
+    return "isolation is on";
+}
+
 } // namespace
 
 MainView::MainView()
@@ -317,6 +329,17 @@ void MainView::refresh()
             setLine(mHint, mHintBuf, "%u chunks kept",
                     static_cast<unsigned>(status.chunksDone));
             setLine(mHint2, mHint2Buf, "play to retry");
+            break;
+
+        case CustomMessage::DumpState::Refused:
+            // Terminal for this firmware: no press can change a register the
+            // app will not write, so nothing here offers one.
+            setLine(mHeadline, mHeadlineBuf, "BLOCKED");
+            setBar(false, 0, 0);
+            setLine(mDetail, mDetailBuf, "%s", describeRefusal(status.refusal));
+            setLine(mDetail2, mDetail2Buf, "a read would crash");
+            setLine(mHint, mHintBuf, "nothing read; see");
+            setLine(mHint2, mHint2Buf, "dump_context.txt");
             break;
     }
 }

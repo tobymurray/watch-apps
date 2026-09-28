@@ -33,6 +33,7 @@
 #include "DumpConfig.hpp"
 #include "DumpRegion.hpp"
 #include "FlashDumper.hpp"
+#include "ReadGate.hpp"
 
 class Service
 {
@@ -120,6 +121,10 @@ private:
     std::unique_ptr<FlashDumper> mDumper;
 
     bool mGuiStarted = false;
+
+    /// Set once at startup from the isolation registers; anything but Allowed
+    /// means the dumper is never started.
+    ReadGate::Verdict mReadVerdict = ReadGate::Verdict::Allowed;
 
     uint32_t mStartedAtMs    = 0;
     uint32_t mLastPublishAtMs = 0;

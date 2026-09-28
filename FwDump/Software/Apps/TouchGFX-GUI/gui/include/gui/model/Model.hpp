@@ -66,6 +66,7 @@ public:
 
         CustomMessage::DumpState state = CustomMessage::DumpState::Idle;
         CustomMessage::DumpError error = CustomMessage::DumpError::None;
+        CustomMessage::DumpRefusal refusal = CustomMessage::DumpRefusal::None;
 
         uint8_t configStatus = 0;
         bool    scanComplete = false;

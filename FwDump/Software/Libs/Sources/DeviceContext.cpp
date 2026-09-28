@@ -140,12 +140,15 @@ Result read(const SDK::Kernel& kernel)
     // reporting the zero-initialised fields as findings would claim the
     // permissive answer for every isolation field.
 #else
-    // CONTROL first: an MRS from a system register, which cannot fault however
-    // locked down the system is. So the log always carries the privilege answer
-    // even if a later memory-mapped read is the thing that goes wrong.
     uint32_t control = 0;
     __asm volatile("MRS %0, CONTROL" : "=r"(control));
-    result.control = control;
+    result.control  = control;
+    result.measured = true;
+
+    if (!ReadGate::privileged(control)) {
+        result.verdict = ReadGate::Verdict::Unprivileged;
+        return result;
+    }
 
     // ARM System Control Space: architectural addresses, identical on every
     // Cortex-M33.
@@ -156,6 +159,12 @@ Result read(const SDK::Kernel& kernel)
     result.sauCtrl = read32(kSauCtrl);
     result.sauType = read32(kSauType);
     result.dbgIdcode = read32(kDbgIdcode);
+    result.scsRead   = true;
+
+    if (ReadGate::mpuEnabled(result.mpuCtrl)) {
+        result.verdict = ReadGate::Verdict::MpuEnabled;
+        return result;
+    }
 
     // STM32U5 system information area.
     result.uid[0] = read32(kUid + 0);
@@ -169,8 +178,9 @@ Result read(const SDK::Kernel& kernel)
     result.flashOptr  = read32(kFlashOptr);
     result.nsBootAdd0 = read32(kNsBootAdd0);
     result.nsBootAdd1 = read32(kNsBootAdd1);
+    result.peripheralsRead = true;
 
-    result.measured = true;
+    result.verdict = ReadGate::decide(result.control, result.mpuCtrl, result.flashOptr);
 #endif
 
     return result;
@@ -195,10 +205,11 @@ void log(const Result& result)
              static_cast<unsigned long>(result.dbgIdcode),
              static_cast<unsigned long>(result.flashSizeKb));
 
-    if (result.unrestricted()) {
+    if (result.verdict == ReadGate::Verdict::Allowed) {
         LOG_INFO("no isolation active: unrestricted reads expected to work\n");
     } else {
-        LOG_INFO("ISOLATION ACTIVE -- reads of kernel flash may fault and end the app\n");
+        LOG_INFO("ISOLATION ACTIVE (%s) -- refusing to read memory\n",
+                 ReadGate::blockingBit(result.verdict));
     }
 }
 
@@ -287,36 +298,51 @@ bool write(const SDK::Kernel& kernel, const Result& result, const DumpRegion& re
         add("CTX measured=N reason=no-such-registers-on-this-build\n");
     } else {
         add("CTX measured=Y\n");
-        add("CTX identity cpuid=%08lX idcode=%08lX dev_id=%03lX rev_id=%04lX flash_kb=%lu\n",
-            static_cast<unsigned long>(result.cpuid),
-            static_cast<unsigned long>(result.dbgIdcode),
-            static_cast<unsigned long>(result.dbgIdcode & 0xFFFu),
-            static_cast<unsigned long>((result.dbgIdcode >> 16) & 0xFFFFu),
-            static_cast<unsigned long>(result.flashSizeKb));
-        // The per-unit serial: the only thing here that says which watch this
-        // image came off.
-        add("CTX uid=%08lX%08lX%08lX\n", static_cast<unsigned long>(result.uid[2]),
-            static_cast<unsigned long>(result.uid[1]),
-            static_cast<unsigned long>(result.uid[0]));
-        add("CTX vtor=%08lX\n", static_cast<unsigned long>(result.vtor));
-        add("CTX isolation control=%08lX nPRIV=%u mpu_ctrl=%08lX mpu_enable=%u dregion=%u "
-            "sau_ctrl=%08lX sau_sregion=%u unrestricted=%s\n",
+        add("CTX gate verdict=%s blocked_by=%s\n",
+            result.verdict == ReadGate::Verdict::Allowed ? "allowed" : "refused",
+            ReadGate::blockingBit(result.verdict));
+        add("CTX isolation control=%08lX nPRIV=%u\n",
             static_cast<unsigned long>(result.control),
-            static_cast<unsigned>(result.control & 1u),
-            static_cast<unsigned long>(result.mpuCtrl),
-            static_cast<unsigned>(result.mpuCtrl & 1u),
-            static_cast<unsigned>((result.mpuType >> 8) & 0xFFu),
-            static_cast<unsigned long>(result.sauCtrl),
-            static_cast<unsigned>(result.sauType & 0xFFu),
-            result.unrestricted() ? "Y" : "N");
-        add("CTX option flash_acr=%08lX flash_optr=%08lX rdp=%02X tzen=%u dualbank=%u "
-            "nsbootadd0=%08lX nsbootadd1=%08lX\n",
-            static_cast<unsigned long>(result.flashAcr),
-            static_cast<unsigned long>(result.flashOptr), result.rdpByte(),
-            static_cast<unsigned>((result.flashOptr >> 31) & 1u),
-            static_cast<unsigned>((result.flashOptr >> 21) & 1u),
-            static_cast<unsigned long>(result.nsBootAdd0),
-            static_cast<unsigned long>(result.nsBootAdd1));
+            static_cast<unsigned>(result.control & 1u));
+
+        if (!result.scsRead) {
+            add("CTX scs not-read reason=unprivileged\n");
+        } else {
+            add("CTX isolation mpu_ctrl=%08lX mpu_enable=%u dregion=%u sau_ctrl=%08lX "
+                "sau_sregion=%u\n",
+                static_cast<unsigned long>(result.mpuCtrl),
+                static_cast<unsigned>(result.mpuCtrl & 1u),
+                static_cast<unsigned>((result.mpuType >> 8) & 0xFFu),
+                static_cast<unsigned long>(result.sauCtrl),
+                static_cast<unsigned>(result.sauType & 0xFFu));
+            add("CTX identity cpuid=%08lX idcode=%08lX dev_id=%03lX rev_id=%04lX\n",
+                static_cast<unsigned long>(result.cpuid),
+                static_cast<unsigned long>(result.dbgIdcode),
+                static_cast<unsigned long>(result.dbgIdcode & 0xFFFu),
+                static_cast<unsigned long>((result.dbgIdcode >> 16) & 0xFFFFu));
+            add("CTX vtor=%08lX\n", static_cast<unsigned long>(result.vtor));
+        }
+
+        if (!result.peripheralsRead) {
+            add("CTX peripherals not-read reason=%s\n",
+                result.scsRead ? "mpu-enabled" : "unprivileged");
+        } else {
+            // The per-unit serial: the only thing here that says which watch
+            // this image came off.
+            add("CTX uid=%08lX%08lX%08lX flash_kb=%lu\n",
+                static_cast<unsigned long>(result.uid[2]),
+                static_cast<unsigned long>(result.uid[1]),
+                static_cast<unsigned long>(result.uid[0]),
+                static_cast<unsigned long>(result.flashSizeKb));
+            add("CTX option flash_acr=%08lX flash_optr=%08lX rdp=%02X tzen=%u dualbank=%u "
+                "nsbootadd0=%08lX nsbootadd1=%08lX\n",
+                static_cast<unsigned long>(result.flashAcr),
+                static_cast<unsigned long>(result.flashOptr), result.rdpByte(),
+                static_cast<unsigned>((result.flashOptr >> 31) & 1u),
+                static_cast<unsigned>((result.flashOptr >> 21) & 1u),
+                static_cast<unsigned long>(result.nsBootAdd0),
+                static_cast<unsigned long>(result.nsBootAdd1));
+        }
     }
 
     if (at <= 0) {
@@ -344,7 +370,7 @@ bool write(const SDK::Kernel& kernel, const Result& result, const DumpRegion& re
     // buffering it: unlike the manifest, nothing parses this with a regex that a
     // partial line could mislead, so a truncated sweep is merely shorter rather
     // than wrong.
-    if (ok && result.measured) {
+    if (ok && result.measured && result.verdict == ReadGate::Verdict::Allowed) {
         ok = appendSweep(*f);
     }
 

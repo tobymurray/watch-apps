@@ -48,6 +48,17 @@ CustomMessage::DumpError toWireError(FlashDumper::Error error)
     return CustomMessage::DumpError::None;
 }
 
+CustomMessage::DumpRefusal toWireRefusal(ReadGate::Verdict verdict)
+{
+    switch (verdict) {
+        case ReadGate::Verdict::Allowed:      return CustomMessage::DumpRefusal::None;
+        case ReadGate::Verdict::Unprivileged: return CustomMessage::DumpRefusal::Unprivileged;
+        case ReadGate::Verdict::MpuEnabled:   return CustomMessage::DumpRefusal::MpuEnabled;
+        case ReadGate::Verdict::TrustZone:    return CustomMessage::DumpRefusal::TrustZone;
+    }
+    return CustomMessage::DumpRefusal::MpuEnabled;
+}
+
 } // namespace
 
 Service::Service(SDK::Kernel& kernel)
@@ -138,10 +149,15 @@ void Service::run()
              static_cast<unsigned long>(mRegion.base));
 #endif
 
-    // Find out what is already on disk without being asked. The screen's first
-    // frame is then able to say "12/32 already done" rather than offering a
-    // fresh start that would silently redo completed work.
-    mDumper->beginScan();
+    if (!context.mayRead()) {
+        mReadVerdict = context.verdict;
+        LOG_INFO("refusing to dump: %s is set\n", ReadGate::blockingBit(mReadVerdict));
+    } else {
+        // Find out what is already on disk without being asked. The screen's
+        // first frame is then able to say "12/32 already done" rather than
+        // offering a fresh start that would silently redo completed work.
+        mDumper->beginScan();
+    }
     mLastSliceAtMs = mKernel.sys.getTimeMs();
 
     while (true) {
@@ -253,6 +269,11 @@ void Service::handleCommand(SDK::MessageBase* msg)
 
 void Service::handleStart()
 {
+    if (mReadVerdict != ReadGate::Verdict::Allowed) {
+        LOG_INFO("start ignored: %s is set\n", ReadGate::blockingBit(mReadVerdict));
+        return;
+    }
+
     // A press while the dump is already running, or while the presence scan is,
     // is a no-op rather than a restart. FlashDumper enforces this too; saying it
     // here as well keeps the log honest about what was ignored and why.
@@ -292,7 +313,10 @@ void Service::publish()
 
     const uint64_t bytesDone = mDumper->bytesDone();
 
-    msg->state          = static_cast<uint8_t>(toWireState(mDumper->state()));
+    const bool refused  = mReadVerdict != ReadGate::Verdict::Allowed;
+    msg->state          = static_cast<uint8_t>(refused ? CustomMessage::DumpState::Refused
+                                                       : toWireState(mDumper->state()));
+    msg->refusal        = static_cast<uint8_t>(toWireRefusal(mReadVerdict));
     msg->error          = static_cast<uint8_t>(toWireError(mDumper->error()));
     msg->configStatus   = static_cast<uint8_t>(mConfigStatus);
     msg->scanComplete   = mDumper->scanComplete();

@@ -64,6 +64,16 @@ enum class DumpState : uint8_t {
     Dumping  = 2, ///< Reading, hashing and writing.
     Done     = 3, ///< Finished, verified, safe to plug in.
     Error    = 4, ///< Stopped and will not finish on its own.
+    Refused  = 5, ///< This firmware isolates apps; nothing will be read.
+};
+
+/// Which isolation register refused the read. Mirrors ReadGate::Verdict as
+/// wire format, for the same reason DumpError mirrors FlashDumper::Error.
+enum class DumpRefusal : uint8_t {
+    None         = 0,
+    Unprivileged = 1, ///< CONTROL.nPRIV = 1.
+    MpuEnabled   = 2, ///< MPU_CTRL.ENABLE = 1.
+    TrustZone    = 3, ///< FLASH_OPTR.TZEN = 1.
 };
 
 /// Why a dump stopped. Mirrors FlashDumper::Error as wire format; see the file
@@ -122,6 +132,7 @@ struct FwDumpStatus : public SDK::MessageBase {
     uint8_t error;        ///< A DumpError.
     uint8_t configStatus; ///< A DumpConfig::Status, so the screen can flag an ignored config.
     bool    scanComplete; ///< Whether chunksPresent is trustworthy yet.
+    uint8_t refusal;      ///< A DumpRefusal. Only meaningful on Refused.
 
     FwDumpStatus()
         : SDK::MessageBase(FWDUMP_STATUS)
@@ -143,6 +154,7 @@ struct FwDumpStatus : public SDK::MessageBase {
         , error(static_cast<uint8_t>(DumpError::None))
         , configStatus(0)
         , scanComplete(false)
+        , refusal(static_cast<uint8_t>(DumpRefusal::None))
     {
     }
 };

@@ -37,11 +37,9 @@
  * will not. `MPU_TYPE` and `MPU_CTRL` answer the question that matters (is it on)
  * without writing anything.
  *
- * Reads are ordered safest-first -- system registers, then the ARM System
- * Control Space, then the one peripheral base -- so that if an address ever
- * faults it happens as late as possible. `CONTROL` comes first because it is an
- * `MRS` from a system register and cannot fault at all, which means the log
- * always carries the privilege answer even if something later goes wrong.
+ * Reads are ordered safest-first -- `CONTROL`, then the ARM System Control
+ * Space, then the peripheral bases -- and each stage runs only if the one
+ * before it says it cannot fault. See ReadGate.hpp for the rule.
  *
  * Host builds get a stub: there is no MPU and no `FLASH_OPTR` on a Linux
  * simulator, and inventing values would be worse than saying so, because zero is
@@ -79,6 +77,7 @@
 #include "SDK/Kernel/Kernel.hpp"
 
 #include "DumpRegion.hpp"
+#include "ReadGate.hpp"
 
 namespace DeviceContext
 {
@@ -126,18 +125,21 @@ struct Result {
     /// measured" and "measured as zero" are opposite conclusions here.
     bool measured = false;
 
-    /// Whether all three isolation mechanisms read as inactive, i.e. whether
-    /// unrestricted reads should be expected to work. False when not measured.
-    bool unrestricted() const
-    {
-        if (!measured) {
-            return false;
-        }
-        const bool privileged = (control & 1u) == 0u;            // nPRIV == 0
-        const bool mpuOff     = (mpuCtrl & 1u) == 0u;            // ENABLE == 0
-        const bool tzOff      = (flashOptr & (1u << 31)) == 0u;  // TZEN == 0
-        return privileged && mpuOff && tzOff;
-    }
+    /// Whether the System Control Space fields were read. They are not when
+    /// CONTROL says the thread is unprivileged, since that read would fault.
+    bool scsRead = false;
+
+    /// Whether the UID, flash size and FLASH registers were read. They are not
+    /// when the MPU is on, since the MPU may guard them.
+    bool peripheralsRead = false;
+
+    /// Whether memory may be read, decided from the three isolation fields as
+    /// they are read. Meaningful only when measured.
+    ReadGate::Verdict verdict = ReadGate::Verdict::Allowed;
+
+    /// Whether the dump may run: on a build with no registers the region is a
+    /// synthetic buffer, so nothing real is dereferenced.
+    bool mayRead() const { return !measured || verdict == ReadGate::Verdict::Allowed; }
 
     /// RDP level as the reference manual defines it: 0xAA is level 0 (open),
     /// 0xCC is level 2 (permanently locked), anything else is level 1.
