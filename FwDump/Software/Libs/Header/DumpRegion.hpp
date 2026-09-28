@@ -106,6 +106,12 @@ struct DumpRegion {
     static constexpr uint32_t kReadableBase = 0x08000000u;
     static constexpr uint32_t kReadableSize = 0x00400000u;
 
+    bool operator==(const DumpRegion& other) const
+    {
+        return base == other.base && size == other.size && chunk == other.chunk
+               && subwrite == other.subwrite;
+    }
+
     /// Whether every address in the region lies inside a range already read.
     bool knownReadable() const
     {

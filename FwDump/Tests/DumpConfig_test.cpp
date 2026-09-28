@@ -63,6 +63,56 @@ TEST(DumpConfigTest, AppliesAWellFormedOverride)
     EXPECT_EQ(4u, result.region.nchunks());
 }
 
+TEST(DumpConfigTest, ReadsTheCompanionEnvelope)
+{
+    SDK::TestSupport::KernelFixture fixture;
+    const DumpConfig::Result result = loadWith(fixture, R"({
+        "schema": 1,
+        "values": { "base": "08060000", "size": "00100000" }
+    })");
+
+    ASSERT_EQ(DumpConfig::Status::Ok, result.status);
+    EXPECT_EQ(0x08060000u, result.region.base);
+    EXPECT_EQ(0x00100000u, result.region.size);
+    EXPECT_EQ(DumpRegion{}.chunk, result.region.chunk);
+}
+
+TEST(DumpConfigTest, InAnEnvelopeOnlyValuesCount)
+{
+    SDK::TestSupport::KernelFixture fixture;
+    const DumpConfig::Result result = loadWith(fixture, R"({
+        "schema": 1,
+        "base": "08060000",
+        "values": {}
+    })");
+
+    EXPECT_EQ(DumpConfig::Status::Default, result.status);
+    expectDefaultRegion(result);
+}
+
+TEST(DumpConfigTest, AnEnvelopeValueIsCheckedLikeAFlatOne)
+{
+    SDK::TestSupport::KernelFixture fixture;
+    DumpConfig::Result result =
+        loadWith(fixture, R"({"schema": 1, "values": {"base": "0x8000000"}})");
+    EXPECT_EQ(DumpConfig::Status::BadField, result.status);
+    expectDefaultRegion(result);
+
+    fixture.fileSystem.files.clear();
+    result = loadWith(fixture, R"({"schema": 1, "values": {"base": "20000000"}})");
+    EXPECT_EQ(DumpConfig::Status::Unproven, result.status);
+    expectDefaultRegion(result);
+}
+
+TEST(DumpConfigTest, AFileThatRestatesTheDefaultIsTheDefault)
+{
+    SDK::TestSupport::KernelFixture fixture;
+    const DumpConfig::Result result =
+        loadWith(fixture, R"({"schema": 1, "values": {"base": "08000000"}})");
+
+    EXPECT_EQ(DumpConfig::Status::Default, result.status);
+}
+
 TEST(DumpConfigTest, OmittedFieldsKeepTheirDefaults)
 {
     SDK::TestSupport::KernelFixture fixture;

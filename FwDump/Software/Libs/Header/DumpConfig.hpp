@@ -11,17 +11,18 @@
  *
  * The file is `fwdump.json`, a bare relative name, so it resolves into the
  * app's own sandbox folder -- the same directory the USB-MSC volume exposes,
- * which is what makes it writable from a desktop at all. This follows Barcode's
- * InputConfig, which is the established pattern here for "a value only the user
- * can supply, typed on a host and read on the watch".
+ * which is what makes it writable from a desktop at all. It is the envelope of
+ * the SDK's Docs/app-config-fields.md, which a companion app writes from the
+ * fields app-manifest.json declares:
  *
  *     {
  *       "schema": 1,
- *       "base": "08000000",
- *       "size": "00400000",
- *       "chunk": "00020000",
- *       "subwrite": "00001000"
+ *       "values": { "base": "08060000", "size": "00100000" }
  *     }
+ *
+ * Read here rather than through SDK::AppConfig, which does not exist in the
+ * SDK 1.3 this app builds against. A file with no "values" object is read with
+ * the same keys at the top level, which is the form 1.0.0 documented.
  *
  * Addresses are hex strings without `0x`, matching the manifest's own notation
  * and sidestepping the fact that JSON has no hex literal -- writing 0x08000000
@@ -72,8 +73,8 @@ constexpr char kPath[] = "fwdump.json";
 /// wrote is wrong", which need different things done about them and neither of
 /// which is discoverable from a watch.
 enum class Status : uint8_t {
-    Default,       ///< No file present. The built-in flash region is in use.
-    Ok,            ///< File read and applied.
+    Default,       ///< No file, or one that asks for the built-in flash region.
+    Ok,            ///< File read and applied, and it differs from the default.
     TooLarge,      ///< Larger than kMaxFileBytes; not read.
     NotJson,       ///< Present but not parseable as JSON.
     WrongSchema,   ///< Parsed, but its "schema" is not kSchemaSupported.

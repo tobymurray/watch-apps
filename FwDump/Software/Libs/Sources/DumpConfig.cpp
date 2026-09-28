@@ -123,11 +123,19 @@ Result load(const SDK::Kernel& kernel)
     // incoherent must leave the default entirely intact rather than contribute
     // whichever of its fields happened to parse.
     DumpRegion candidate;
-    const char* const keys[] = {"base", "size", "chunk", "subwrite"};
+    const char* const flatKeys[]     = {"base", "size", "chunk", "subwrite"};
+    const char* const envelopeKeys[] = {"values.base", "values.size", "values.chunk",
+                                        "values.subwrite"};
     uint32_t* const   fields[] = {&candidate.base, &candidate.size, &candidate.chunk,
                                   &candidate.subwrite};
 
-    for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
+    // The companion's envelope, or the flat file 1.0.0 documented.
+    const char* valuesText = nullptr;
+    size_t      valuesLen  = 0;
+    const bool  envelope   = reader.get("values", valuesText, valuesLen);
+    const char* const* keys = envelope ? envelopeKeys : flatKeys;
+
+    for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); ++i) {
         if (readHexField(reader, keys[i], *fields[i]) == FieldResult::Malformed) {
             result.status = Status::BadField;
             return result;
@@ -147,7 +155,7 @@ Result load(const SDK::Kernel& kernel)
     }
 
     result.region = candidate;
-    result.status = Status::Ok;
+    result.status = candidate == DumpRegion{} ? Status::Default : Status::Ok;
     return result;
 }
 
