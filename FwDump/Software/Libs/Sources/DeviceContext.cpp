@@ -51,6 +51,18 @@ inline uint32_t read32(uint32_t address)
 }
 #endif
 
+// The SDK's service build defines both; a build that does not says so.
+#if defined(BUILD_VERSION)
+constexpr char kBuildVersion[] = BUILD_VERSION;
+#else
+constexpr char kBuildVersion[] = "unversioned";
+#endif
+#if defined(APP_ID)
+constexpr char kAppId[] = APP_ID;
+#else
+constexpr char kAppId[] = "unknown";
+#endif
+
 /// How long to wait for the kernel to answer the system-info request. Short:
 /// this runs before the app is usable, so a kernel that does not implement the
 /// message must cost a blink rather than a visible stall. Everything it would
@@ -274,7 +286,7 @@ bool write(const SDK::Kernel& kernel, const Result& result, const DumpRegion& re
     add("# FwDump context -- what the flash image cannot say about itself.\n");
     add("# Registers are not inside the dumped region, so they are recorded here\n");
     add("# or lost. Written at app start, before any dump.\n");
-    add("CTX dumper=FwDump app_version=%s\n", "1.0.0");
+    add("CTX dumper=FwDump app_version=%s app_id=%s\n", kBuildVersion, kAppId);
     add("CTX region base=%08lX size=%08lX chunk=%08lX subwrite=%08lX nchunks=%u source=%s\n",
         static_cast<unsigned long>(region.base), static_cast<unsigned long>(region.size),
         static_cast<unsigned long>(region.chunk), static_cast<unsigned long>(region.subwrite),
