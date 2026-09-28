@@ -11,8 +11,8 @@
  * message waits, and the screen is only ever told about it.
  *
  * Unlike a typical utility app's service, this one does NOT end itself when the
- * GUI stops. A 4 MB dump takes minutes, the screen blanks long before that, and
- * a dump that died whenever the user stopped looking at it would be useless.
+ * GUI stops: a dump that died whenever the user left the screen or it blanked
+ * would be useless.
  * Leaving the app for good is COMMAND_APP_STOP, which does end it -- with every
  * completed chunk still on disk for the next run to resume from.
  *

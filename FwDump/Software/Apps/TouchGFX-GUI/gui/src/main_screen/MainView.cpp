@@ -246,7 +246,7 @@ void MainView::refresh()
                 setLine(mDetail, mDetailBuf, "%u.%u MB, %u chunks", mbWhole, mbTenths, total);
                 const auto config = static_cast<DumpConfig::Status>(status.configStatus);
                 setLine(mDetail2, mDetail2Buf, "%s",
-                        config == DumpConfig::Status::Default ? "a few minutes"
+                        config == DumpConfig::Status::Default ? "under a minute"
                                                               : DumpConfig::describe(config));
             }
             setBar(false, 0, 0);

@@ -185,9 +185,7 @@ void Service::run()
                 case SDK::MessageType::COMMAND_APP_NOTIF_GUI_STOP:
                     LOG_INFO("GUI has stopped\n");
                     mGuiStarted = false;
-                    // Does NOT end the service, and does not stop the dump. The
-                    // screen blanks minutes before a 4 MB dump finishes; losing
-                    // the dump with it would make the app pointless.
+                    // Does NOT end the service, and does not stop the dump.
                     break;
 
                 default:

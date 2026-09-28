@@ -96,9 +96,8 @@ private:
     static constexpr int16_t kBarBorder = 1;
 
     /// Above this, an ETA extrapolated from the first slices of a pass is noise
-    /// rather than an estimate, and is shown as "--". Generous: a 4 MB dump at
-    /// the rate this storage sustains is a few minutes, so anything past an hour
-    /// is a rate that has not settled yet.
+    /// rather than an estimate, and is shown as "--". A whole 4 MB dump took
+    /// under 10 s on firmware 1.5.0, so an hour is far past any settled rate.
     static constexpr uint32_t kImplausibleEtaSec = 60u * 60u;
 
     void refresh();
