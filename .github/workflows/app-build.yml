@@ -113,11 +113,8 @@ jobs:
           persist-credentials: false
           path: sdk
 
-      # An app that must run on firmware older than SDK_REF's interface
-      # version needs building against an older SDK, and an older SDK does not
-      # carry the validators below -- apps-v1.3.0 has neither
-      # validate_app_config.py nor min_kernel_version.py. So the app is built
-      # and tested against this checkout while the checks still run from sdk/.
+      # The validators still run from sdk/, because an older SDK such as
+      # apps-v1.3.0 carries neither of them.
       - name: Check out the SDK this app builds against
         if: inputs.sdk_ref != ''
         uses: actions/checkout@v7

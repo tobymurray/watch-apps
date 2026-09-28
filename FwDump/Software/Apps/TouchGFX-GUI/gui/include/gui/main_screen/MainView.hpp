@@ -97,7 +97,8 @@ private:
 
     /// Above this, an ETA extrapolated from the first slices of a pass is noise
     /// rather than an estimate, and is shown as "--". A whole 4 MB dump took
-    /// under 10 s on firmware 1.5.0, so an hour is far past any settled rate.
+    /// under 10 s, play to DONE, on firmware 1.5.0, so an hour is far past any
+    /// settled rate.
     static constexpr uint32_t kImplausibleEtaSec = 60u * 60u;
 
     void refresh();

@@ -54,13 +54,12 @@ inline uint32_t read32(uint32_t address)
 #if !defined(SIMULATOR) && defined(__ARM_ARCH)
 } // namespace
 
-// Defined by the SDK's AppSystem, which checks the same field before main().
+// Defined in the SDK's Libs/Source/AppSystem/system.cpp.
 extern const SDK::Interface::IKernel* gIKernel;
 
 namespace {
 #endif
 
-// The SDK's service build defines both; a build that does not says so.
 #if defined(BUILD_VERSION)
 constexpr char kBuildVersion[] = BUILD_VERSION;
 #else

@@ -36,7 +36,6 @@
 namespace ReadGate
 {
 
-/// The values are what dump_context.txt and the status message carry.
 enum class Verdict : uint8_t {
     Allowed      = 0,
     Unprivileged = 1,

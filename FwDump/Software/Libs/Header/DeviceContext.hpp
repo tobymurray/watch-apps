@@ -134,12 +134,11 @@ struct Result {
     /// measured" and "measured as zero" are opposite conclusions here.
     bool measured = false;
 
-    /// Whether the System Control Space fields were read. They are not when
-    /// CONTROL says the thread is unprivileged, since that read would fault.
+    /// False when the thread is unprivileged, since reading the SCS would fault.
     bool scsRead = false;
 
-    /// Whether the UID, flash size and FLASH registers were read. They are not
-    /// when the MPU is on, since the MPU may guard them.
+    /// Whether the UID, flash size and FLASH registers were read; false when the
+    /// MPU is on, since it may guard them.
     bool peripheralsRead = false;
 
     /// Whether memory may be read, decided from the three isolation fields as

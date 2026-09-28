@@ -67,8 +67,8 @@ enum class DumpState : uint8_t {
     Refused  = 5, ///< This firmware isolates apps; nothing will be read.
 };
 
-/// Which isolation register refused the read. Mirrors ReadGate::Verdict as
-/// wire format, for the same reason DumpError mirrors FlashDumper::Error.
+/// Which isolation register refused the read: the wire copy of
+/// ReadGate::Verdict, kept separate for the reason the file comment gives.
 enum class DumpRefusal : uint8_t {
     None         = 0,
     Unprivileged = 1, ///< CONTROL.nPRIV = 1.

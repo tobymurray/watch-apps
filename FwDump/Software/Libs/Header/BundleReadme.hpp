@@ -15,7 +15,6 @@ namespace BundleReadme
 
 constexpr char kPath[] = "README.txt";
 
-/// Rewritten at every launch, so it always describes this build's files.
 /// @return Whether the file was written whole.
 bool write(const SDK::Kernel& kernel);
 

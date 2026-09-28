@@ -20,9 +20,8 @@
  *       "values": { "base": "08060000", "size": "00100000" }
  *     }
  *
- * Read here rather than through SDK::AppConfig, which does not exist in the
- * SDK 1.3 this app builds against. A file with no "values" object is read with
- * the same keys at the top level, which is the form 1.0.0 documented.
+ * Not read through SDK::AppConfig, which apps-v1.3.0 does not have. A file with
+ * no "values" object is read flat, the form 1.0.0 documented.
  *
  * Addresses are hex strings without `0x`, matching the manifest's own notation
  * and sidestepping the fact that JSON has no hex literal -- writing 0x08000000
@@ -104,8 +103,7 @@ struct Result {
  */
 Result load(const SDK::Kernel& kernel);
 
-/// Short, screen-sized description of a status. Inline so the GUI, which does
-/// not link this reader, can show it too.
+/// Short, screen-sized description of a status.
 inline const char* describe(Status status)
 {
     switch (status) {

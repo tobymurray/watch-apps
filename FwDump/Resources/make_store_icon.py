@@ -3,9 +3,8 @@
 
     python3 FwDump/Resources/make_store_icon.py FwDump/Resources
 
-The watch's icon_60x60.png is a chip with an arrow leaving it; this draws the
-same two shapes at 512px, in the round watch-face frame the other apps' store
-icons use, as an ordinary full-colour PNG.
+The same chip and arrow as icon_60x60.png, drawn at 512px in a round
+watch-face frame, as an ordinary full-colour PNG.
 """
 import sys
 

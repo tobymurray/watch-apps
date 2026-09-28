@@ -13,8 +13,6 @@
 
 namespace {
 
-// The python3 command is extracted and run over a synthetic dump by the host
-// tests, which is what keeps it correct.
 constexpr char kText[] = R"TXT(FW Dump
 =======
 
