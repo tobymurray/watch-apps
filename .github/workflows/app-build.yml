@@ -34,6 +34,11 @@ on:
         required: false
         type: string
         default: ''
+      sdk_ref:
+        description: 'An SDK_REPO commit to build and test this app against instead of SDK_REF. The validators still run from SDK_REF.'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -107,6 +112,32 @@ jobs:
           ref: ${{ env.SDK_REF }}
           persist-credentials: false
           path: sdk
+
+      # An app that must run on firmware older than SDK_REF's interface
+      # version needs building against an older SDK, and an older SDK does not
+      # carry the validators below -- apps-v1.3.0 has neither
+      # validate_app_config.py nor min_kernel_version.py. So the app is built
+      # and tested against this checkout while the checks still run from sdk/.
+      - name: Check out the SDK this app builds against
+        if: inputs.sdk_ref != ''
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ env.SDK_REPO }}
+          ref: ${{ inputs.sdk_ref }}
+          persist-credentials: false
+          path: build-sdk
+
+      - name: Choose the SDK to build against
+        id: sdk
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.sdk_ref }}" ]; then
+            echo "dir=$GITHUB_WORKSPACE/build-sdk" >> "$GITHUB_OUTPUT"
+            echo "ref=${{ inputs.sdk_ref }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "dir=$GITHUB_WORKSPACE/sdk" >> "$GITHUB_OUTPUT"
+            echo "ref=$SDK_REF" >> "$GITHUB_OUTPUT"
+          fi
 
       # No separate "install the packer's requirements" step: toolchain/Dockerfile
       # installs pyelftools and Pillow via apt, so the image already satisfies
@@ -240,10 +271,15 @@ jobs:
             done < <(
               # A commit that moves SDK_REF changes every app's binary without
               # touching any app's directory, so it is scanned as if it did;
-              # nothing else in this file is.
+              # nothing else in this file is. The same goes for a caller's own
+              # sdk_ref, which github.workflow_ref names the file of.
+              caller="${{ github.workflow_ref }}"
+              caller="${caller#${{ github.repository }}/}"
+              caller="${caller%%@*}"
               {
                 git -C apps log --format='%H %s' "$range" -- "${{ inputs.app }}"
                 git -C apps log --format='%H %s' -G '^[[:space:]]*SDK_REF:' "$range" -- .github/workflows/app-build.yml
+                git -C apps log --format='%H %s' -G '^[[:space:]]*sdk_ref:' "$range" -- "$caller"
               } | awk '!seen[$1]++' | cut -d' ' -f2-
             )
 
@@ -362,13 +398,14 @@ jobs:
         run: |
           set -euo pipefail
           python3 sdk/Utilities/Scripts/app_packer/min_kernel_version.py \
+            --sdk-root "${{ steps.sdk.outputs.dir }}" \
             --check "${{ steps.app.outputs.manifest }}"
 
       - name: Host tests
         if: steps.app.outputs.tests != ''
         shell: bash
         env:
-          UNA_SDK: ${{ github.workspace }}/sdk
+          UNA_SDK: ${{ steps.sdk.outputs.dir }}
         run: |
           set -euo pipefail
           cmake -B /tmp/host-tests -S "${{ steps.app.outputs.tests }}"
@@ -429,7 +466,7 @@ jobs:
         id: uapp
         shell: bash
         env:
-          UNA_SDK: ${{ github.workspace }}/sdk
+          UNA_SDK: ${{ steps.sdk.outputs.dir }}
         run: |
           set -euo pipefail
           version="${{ steps.bump.outputs.version }}"
@@ -492,7 +529,7 @@ jobs:
             echo "| --- | --- |"
             echo "| bytes | ${{ steps.uapp.outputs.bytes }} |"
             echo "| CRC | ${{ steps.uapp.outputs.crc }} |"
-            echo "| SDK | \`${SDK_REF}\` |"
+            echo "| SDK | \`${{ steps.sdk.outputs.ref }}\` |"
             echo "| toolchain | \`${TOOLCHAIN##*@}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
