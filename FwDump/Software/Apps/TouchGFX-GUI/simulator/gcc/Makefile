@@ -39,6 +39,7 @@ ADDITIONAL_SOURCES_UNA :=\
 ../../Libs/Sources/DumpConfig.cpp\
 ../../Libs/Sources/DeviceContext.cpp\
 ../../Libs/Sources/Crc32.cpp\
+../../Libs/Sources/BundleReadme.cpp\
 Libs/Source/JSON/JsonStreamReader.cpp\
 ThirdParty/coreJSON/source/core_json.c\
 Libs/Source/Simulator/Kernel/Mock/FileSystem.cpp\

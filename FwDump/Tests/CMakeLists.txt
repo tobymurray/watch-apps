@@ -82,6 +82,7 @@ add_test(NAME fwdump-dumper-tests COMMAND fwdump-dumper-tests)
 # inspects -- see the README's "Verifying the contract" section.
 add_executable(fwdump-export-synthetic
     export_synthetic.cpp
+    "${APP_LIBS}/Sources/BundleReadme.cpp"
     "${APP_LIBS}/Sources/Crc32.cpp"
     "${APP_LIBS}/Sources/DumpManifest.cpp"
     "${APP_LIBS}/Sources/FlashDumper.cpp"
@@ -95,3 +96,10 @@ target_include_directories(fwdump-export-synthetic PRIVATE
     "${UNA_SDK_ROOT}/Libs/Header"
     "${UNA_SDK_ROOT}/Tests/Host/support"
 )
+
+# The check README.txt gives a user, run exactly as written over a synthetic
+# dump, and over the same dump with one byte flipped.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(NAME fwdump-readme-verifier
+    COMMAND Python3::Interpreter "${CMAKE_CURRENT_LIST_DIR}/check_readme_verifier.py"
+            $<TARGET_FILE:fwdump-export-synthetic> "${CMAKE_CURRENT_BINARY_DIR}/readme-bundle")

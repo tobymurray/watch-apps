@@ -9,6 +9,7 @@
 
 #include "SDK/Messages/MessageGuard.hpp"
 
+#include "BundleReadme.hpp"
 #include "DeviceContext.hpp"
 
 #define LOG_MODULE_PRX      "Service"
@@ -131,6 +132,9 @@ void Service::run()
         // Worth a line, not worth stopping for: the dump is the job, and the
         // context is a courtesy the dump does not depend on.
         LOG_INFO("could not write %s\n", DeviceContext::kPath);
+    }
+    if (!BundleReadme::write(mKernel)) {
+        LOG_INFO("could not write %s\n", BundleReadme::kPath);
     }
 
     LOG_INFO("region base=%08lX size=%08lX chunk=%08lX subwrite=%08lX (%s)\n",

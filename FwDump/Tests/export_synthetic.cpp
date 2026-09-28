@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 
+#include "BundleReadme.hpp"
 #include "DumpRegion.hpp"
 #include "FlashDumper.hpp"
 #include "KernelTestDoubles.hpp"
@@ -96,6 +97,11 @@ int main(int argc, char** argv)
         std::fprintf(stderr, "dump did not complete: state=%u error=%u chunk=%u\n",
                      static_cast<unsigned>(dumper.state()),
                      static_cast<unsigned>(dumper.error()), dumper.errorChunk());
+        return 1;
+    }
+
+    if (!BundleReadme::write(fixture.kernel)) {
+        std::fprintf(stderr, "could not write %s\n", BundleReadme::kPath);
         return 1;
     }
 
