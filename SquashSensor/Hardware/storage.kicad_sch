@@ -1,0 +1,38 @@
+(kicad_sch
+	(version 20250114)
+	(generator "eeschema")
+	(generator_version "10.0")
+	(uuid "d2a6ddc3-9e15-4f20-b4d3-45c9402a8111")
+	(paper "A4")
+	(title_block
+		(title "SquashSensor - Storage")
+		(date "2026-09-28")
+		(rev "A")
+		(comment 1 "Decisions and numbers: SquashSensor/Docs/BOM-REVIEW.md")
+	)
+	(lib_symbols)
+	(text "1 Gbit SPI NOR. MUST be a 2.7-3.6 V part - the 3.0 V rail rules out 1.8 V parts (B4.5)."
+		(exclude_from_sim no)
+		(at 20 30 0)
+		(effects (font (size 1.27 1.27)) (justify left))
+		(uuid "9efb2498-8c54-4854-99cc-3f370cb21d1f")
+	)
+	(text "160 min at 800 Hz 6-axis with the high-g channel triggered (B7.1)."
+		(exclude_from_sim no)
+		(at 20 34 0)
+		(effects (font (size 1.27 1.27)) (justify left))
+		(uuid "d25bea06-1a32-4ae3-8afd-973916be836e")
+	)
+	(text "Above 128 Mbit needs 4-byte addressing; 1-2 Gbit parts are stacked dies."
+		(exclude_from_sim no)
+		(at 20 38 0)
+		(effects (font (size 1.27 1.27)) (justify left))
+		(uuid "321578bb-f983-4fa8-a105-d5a33c1ef8cd")
+	)
+	(text "Go 2 Gbit if the drop-shot trigger validation forces a lower threshold (B7.2)."
+		(exclude_from_sim no)
+		(at 20 42 0)
+		(effects (font (size 1.27 1.27)) (justify left))
+		(uuid "9d480cb5-cabe-42ef-ad54-51f09406bc99")
+	)
+)
