@@ -96,7 +96,7 @@ prompt are challenged in §4, one of them successfully.
 | **Cell — chemistry** | energy | LiFePO4 100–150 mAh | LiPo pouch; Li-ion hard coin (Varta CoinPower); primary CR2032/2450 | **change → Li-ion pouch** — B1, B1.6 |
 | **Cell — format** | retention, thickness | pouch (implied) | hard coin; small cylindrical | **pouch for carrier A; hard coin for carrier B's 4 mm** — B1.6 |
 | **Cell — capacity** | session reserve | 100–150 mAh | 70 mAh | **~100 mAh** — §3.5 |
-| **Charger** | CC/CV | "an LFP charger, 3.6 V, + cell temperature" | MCP73123; CN3058E; BQ25155; MCU-driven | **change → BQ25155 at 4.2 V** — B8.1, B1.6 |
+| **Charger** | CC/CV | "an LFP charger, 3.6 V, + cell temperature" | MCP73123; CN3058E; BQ25155; BQ25180; MCU-driven | **change → BQ25180 at 4.2 V** — B8.1, B8.1a, B1.6 |
 | **Protection IC** | cell fault cutoff | BQ29700 + dual N-FET | BQ29701/2/3; cell-vendor PCM | **holds** — B1.2 reverses with B1.6 |
 | **Protection FETs** | trip current | "pick backwards from trip current" | — | **holds**, with a number it lacked — B8.2 |
 | **PTC** | redundant overcurrent | unspecified | delete | **holds** |
@@ -111,7 +111,7 @@ prompt are challenged in §4, one of them successfully.
 | **Off switch** | break load path | slide, recessed | reed; hall + latch; charger ship-mode | **holds** — B8.3 |
 | **LED** | recording / stopped | one, low-brightness | two; RGB | **holds; red or amber on the 3.0 V rail** — B8.4 |
 | **Charge/data contacts** | dock | recessed gold pads + cradle pogo pins | magnetic; USB-C in cap; edge | **holds** — B8.6 |
-| **ADC divider** | battery sense | resistor divider | nRF52 SAADC VDD channel; charger ADC | **change → BQ25155 ADC** — B4.5 |
+| **ADC divider** | battery sense | resistor divider | nRF52 SAADC VDD channel; charger ADC | **returns** — the BQ25180 has no ADC; 2 × 1 MΩ, 2.1 µA — B8.1a |
 | **ESD protection** | user-touchable pads | not listed | TVS array | **change** — B8.7, a gap not a swap |
 | **Printed sled / puck** | carrier | "printed" | material unspecified | **change** — B8.8 |
 | **Conformal coating, foam, tapes** | seal, preload | listed, unspecified | — | **open** — §3, B8.7 |
@@ -733,7 +733,7 @@ radio event. Stable with 1 µF, and its smart-enable pull-down lets EN tie to th
 **SOT-23-5**, so it does not become a fifth reflow-only part. DigiKey.ca, 2026-09-26: 3,366
 in stock, $0.84 CAD at one.
 
-**It is fed from the BQ25155's PMID, not from the cell.** Docked, the rail runs from the
+**It is fed from the charger's power-path output, not from the cell** — `PMID` on the BQ25155, `SYS` on the BQ25180 that supersedes it (B8.1a). Docked, the rail runs from the
 cradle; on the cell it runs through the charger's battery FET; and in ship mode (10 nA)
 PMID is off, so ship mode is a true hard off. The BQ25155 also enters ship mode by itself
 when a cell is connected with no input present (SLUSDO1B §9.4.1), so an assembled kit sits
@@ -1066,6 +1066,63 @@ interlock into firmware in a design others will build from, and the IC it delete
 1.25–500 mA. **Out of reset it charges at 4.2 V (`VBAT_CTRL` = 0x3C) and 10 mA** — a safe
 charge for this cell with no firmware at all, and what the 50 s I²C watchdog falls back to
 if firmware stops talking. Its LDO was weighed as the system rail and rejected in B4.5.
+
+### B8.1a — The package objection was never "WCSP", it was **twenty balls**. The same family has an eight-ball part that keeps everything but the ADC. **Change: BQ25155 → BQ25180.**
+
+B8.1 lists the WCSP as a cost three times over — harder layout, a fourth reflow-only part,
+and a barrier to §4.5's reproducibility list. **All three come from ball count, not from the
+package family**, and that distinction was never drawn.
+
+| | Package | Balls with no outside edge |
+|---|---|---|
+| BQ25155 | **DSBGA-20**, 2.0 × 1.6 mm | ~6, buried in the middle |
+| **BQ25180** | **DSBGA-8** | **none** |
+
+Escape routing is hard in proportion to how many balls are *buried*. The BQ25180's own pin
+table designates `SYS` as **B2** and `TS/MR` as **D1** — rows A–D, columns 1–2. **Two
+columns means every ball touches an outer edge and routes straight out**, which is about as
+hard as a QFN. The 20-ball part is the one needing via-in-pad or extra layers.
+
+**What carries over, from SLUSE99C (September 2021, revised January 2023):**
+
+| | BQ25155 | BQ25180 |
+|---|---|---|
+| Power path feeding the LDO | `PMID` | **`SYS`, "Regulated System Output"** — direct substitution |
+| Ship mode | 10 nA | **15 nA**, or **3.2 µA with button-press wake** |
+| NTC for F11 | `TS` | **`TS/MR`** |
+| I²C `VBATREG` | ✓ | ✓ |
+| Charge current | 1.25–500 mA | **5–1000 mA** |
+| Battery-voltage ADC | 16-bit | **none** |
+
+**Two things get better.** The charge range starts at **5 mA**, which buries B1.3's
+complaint about the MCP73123's 130 mA floor being 0.87–1.3 C on this cell. And `TS/MR`
+accepts **an NTC and a momentary switch on one pin**: the TS function enables below
+`VTS_ENZ` (1.8–2.1 V), the NTC's bias sets the pin in that band, and a switch pulling it to
+ground for longer than `tLPRESS` is unambiguous. *Two cautions: the NTC network must be
+sized so the hottest legitimate cell still sits above the press threshold — a hot cell and a
+button press both pull this pin down — and `ITS_BIAS` is 36.5–38 µA, which would be 39% of
+the ~95 µA standby budget if it were not charge-only. **Confirm the bias is gated on input
+present.***
+
+**What it costs: the ADC, and that is two resistors.** B4.3 moved battery sense onto the
+charger because behind a regulator the MCU's VDD channel reads the rail, not the cell. With
+no ADC, sense returns to a divider into the nRF52840 SAADC. **1 MΩ + 1 MΩ across 4.2 V leaks
+2.1 µA — 2.2% of standby**, and one FET gates even that away if it matters.
+
+*B4.3 rejected a divider when the alternative was free — the SAADC could read VDD directly
+while VDD was the cell. It is not free now; the alternative is a twenty-ball package. Same
+component, opposite answer, because the thing it was being compared against changed.*
+
+**And it sharpens the two-off-switches problem rather than solving it.** B8.3 keeps a
+mechanical slide switch because a person must be able to *see* the state; B4.5 adds ship
+mode as "a true hard off". The BQ25180 prices the difference: **15 nA if something else
+holds it off, 3.2 µA if it must stay wakeable by a button.** Over six months that is
+0.07 mAh against **14 mAh — 14% of a 100 mAh cell**. So a mechanical switch that physically
+breaks the load path is both the visible off B8.3 requires *and* the cheaper one; a switch
+that merely drives `TS/MR` costs 200× the standby to stay wakeable.
+
+**Verdict: change.** Three costs B8.1 accepted are removed for two resistors and 2.2% of
+standby, at the cheapest possible moment — before anything is routed.
 
 **B8.2 — the protection FETs get the number the README asks for.** From the BQ2970
 datasheet the thresholds are fixed voltages across the external FETs: **OCD = 0.100 V,
@@ -1473,6 +1530,7 @@ this review, which is the test.
 | ~~Varta CoinPower availability in ones and twos.~~ | **Closed 2026-09-26.** The tabbed assemblies are end-of-life (last delivery 31 January 2025), and no distributor selling into Canada lists CoinPower. |
 | **The actual shock the cell sees.** §3.1 derives 200–5,000 g from plausible drop heights and *assumed* stopping distances, and the answer is most sensitive to the assumed term. | **The instrument now exists.** The rig captured a 130 g flick unclipped with visible ringing (**M9**), so twenty drops onto a court floor is a session's work, not a project. Do it in the same trip as the ball test. |
 | **Whether any raw racket-sport corpus has ever been released.** B9 suggests none has, from any mount position — which would be the strongest form of the reason to build this device, and it currently rests on absence of evidence across nine products and projects. | A proper literature and dataset search: PhysioNet, Zenodo, Figshare, IEEE DataPort, and the datasets behind the classification papers §5 cites. Cheap, and it either hardens the project's central claim or finds the corpus that already exists. |
+| **Whether the BQ25180's `TS` bias current is charge-only.** `ITS_BIAS` is 36.5–38 µA. If it flows whenever a thermistor is attached rather than only when an input is present, it is **39% of the ~95 µA standby budget** and the NTC has to be switched. The threshold specs are all quoted at VIN = 5 V, which suggests charge-only, but suggests is not says. | SLUSE99C's TS section, or one bench measurement once a board exists. |
 | **Whether the recording format survives being a filesystem.** B8.5 picks the '840 for USB mass storage, which means exposing 128 MB as a block device — and a filesystem written continuously at 48 kB/s can be corrupted by power loss mid-write. The common answer is to write raw and synthesise a filesystem view on connect. | A `Docs/FORMAT.md` decision, not a measurement. It is cheaper now than after the format is frozen, and it is the clearest case in the BOM of a part choice moving work into firmware. |
 | **Per-unit calibration at 50 g.** TDK's AN-000265 is explicit that full calibration needs a **2-DOF rate table**, and temperature calibration needs that table **inside a temperature chamber** for a ~7-hour soak sequence per unit. Neither is available to somebody reproducing this design. The affordable procedure is **6-side flip** (no machine — and the puck's own six faces are the fixture), which yields offset and sensitivity **at 1 g**. | Nothing cheap. The honest response is to publish the 6-side-flip jig, record the temperature the calibration was done at, and **state in the file that the scale factor is a 1 g figure extrapolated to a 50 g operating range** — rather than let a reader assume it was calibrated where it is used. Note this matters far more for the high-g channel (ADXL375 ±10% scale factor) than for the primary IMU (ICM-45686 ±0.2%). |
 

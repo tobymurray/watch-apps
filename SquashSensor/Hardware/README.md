@@ -42,7 +42,7 @@ worth automating, and checking it against the page is the part worth doing by ey
 
 | Part | Package | Pinout source |
 |---|---|---|
-| BQ25155 | WCSP 2.5 × 2.5 mm | TI **SLUSDO1B** |
+| BQ25180 | DSBGA-8 | TI **SLUSE99C** |
 | TPS7A0230 | SOT-23-5 | TI **SBVS277C** |
 | BQ29700 | DSE-6 1.5 × 1.5 mm | TI **SLUSBU9I** |
 | ADXL375 | 14-LGA 3.0 × 5.0 × 0.8 mm | ADI **Rev. B** |
@@ -50,9 +50,11 @@ worth automating, and checking it against the page is the part worth doing by ey
 | SPI NOR, 1 Gbit | — | **Part not yet chosen** — must be 2.7–3.6 V, not 1.8 V (B4.5) |
 | TVS array | — | **Part not yet chosen** — B8.7 |
 
-Three are reflow-only before the charger is counted (ICM-45686 and ADXL375 are both LGA,
-BQ29700 is WSON); BQ25155's WCSP makes four. That is a **reproducibility** cost, not just an
-assembly one — §4.5 requires an assembly-house BOM and placement files.
+Three are reflow-only (ICM-45686 and ADXL375 are both LGA, BQ29700 is WSON). **The charger
+was a fourth until B8.1a swapped the 20-ball BQ25155 for the 8-ball BQ25180** — every ball on
+an outer edge, so it escapes like a QFN rather than needing via-in-pad. That is a
+**reproducibility** win as much as an assembly one; §4.5 requires an assembly-house BOM and
+placement files either way.
 
 ## Before this schematic is finished
 
@@ -66,7 +68,9 @@ Five things the review flagged that the BOM does not yet contain:
    short-circuit protector rather than an overcurrent one** and let the PTC own the middle.
 3. **The 32.768 kHz crystal routed to the ICM-45686's `CLKIN`**, not only to the MCU's
    LFCLK. B5 — this is the entire reason the crystal is in the BOM, and nobody has drawn it.
-4. **The NTC and its bias** for the BQ25155 `TS` pin. This is F11, the one safety finding.
+4. **The NTC and its bias** for the BQ25180's `TS/MR` pin. This is F11, the one safety finding.
+   The same pin takes a momentary switch — see below — so size the network such that the
+   hottest legitimate cell still reads above the button-press threshold.
 5. **The pin and peripheral budget redone on the '840** — *redone*, not ported across from
    the '832, per §7 item 12.
 
@@ -80,12 +84,15 @@ argument no longer applies — **but the conclusion survives for a different rea
 there is no headroom for a current-limiting resistor above a 2.8–3.2 V Vf. Red still wins;
 the reason in the README should be updated.
 
-**Two off switches.** B8.3 keeps a mechanical slide switch, on the grounds that *"a switch
-you can see beats firmware that says so"* and that a FET cannot answer "is it off" to
-somebody looking at it. B4.5 then adds the BQ25155's **10 nA ship mode**, described as "a
-true hard off". **Both are now in the design and the schematic has to say how they relate** —
-whether the slide switch gates the load path directly, or drives ship mode, or both.
-B8.3's requirement is that the *visible* state is the authoritative one.
+**Two off switches, and B8.1a prices the difference.** B8.3 keeps a mechanical slide switch,
+because *"a switch you can see beats firmware that says so"* and a FET cannot answer "is it
+off" to somebody looking at it. B4.5 then adds ship mode as "a true hard off".
+
+The BQ25180 makes the choice numeric: **15 nA if something else holds it off, 3.2 µA if it
+must stay wakeable by a button** — 0.07 mAh against 14 mAh over six months, or **14% of a
+100 mAh cell**. So a slide switch that physically breaks the load path is both the visible
+off B8.3 demands *and* the cheaper one. A switch that merely drives `TS/MR` costs 200× the
+standby to stay wakeable. **Draw the load-path break unless there is a reason not to.**
 
 ## What is not blocking this
 
