@@ -70,19 +70,25 @@ const SettingsAddresses::AddressSet *resolve(SDK::Kernel &kernel, uint32_t kerne
         return nullptr;
     }
 
-    const SettingsAddresses::AddressSet *candidate = SettingsAddresses::resolve(kernelAbi);
+    // Several rows can share this ABI; take the one whose recorded signature
+    // bytes are live in flash, read before any of its addresses is called.
+    const SettingsAddresses::AddressSet *candidate = nullptr;
+    for (size_t i = 0; i < SettingsAddresses::rowCount(); ++i) {
+        const SettingsAddresses::AddressSet *row = SettingsAddresses::rowAt(i);
+        if (row->abi != kernelAbi) {
+            continue;
+        }
+        DebugLog::appendf(fs, "gate: trying row derived on firmware %s", row->derivedFrom);
+        if (signaturesMatch(fs, *row)) {
+            candidate = row;
+            break;
+        }
+    }
     if (candidate == nullptr) {
-        DebugLog::append(fs, "gate: no address row for this ABI -- refusing");
+        DebugLog::append(fs, "gate: no row's signatures match this firmware -- refusing");
         return nullptr;
     }
-    DebugLog::appendf(fs, "gate: candidate row derived on firmware %s", candidate->derivedFrom);
-
-    // An ABI is shared by every firmware version that ships it, so this is what
-    // tells one of them from another -- and it runs before anything is called.
-    if (!signaturesMatch(fs, *candidate)) {
-        DebugLog::append(fs, "gate: this is not the firmware those addresses came from -- refusing");
-        return nullptr;
-    }
+    DebugLog::appendf(fs, "gate: firmware identified as %s", candidate->derivedFrom);
 
     auto *settings = kernel.comm.allocateMessage<SDK::Message::RequestSystemSettings>();
     if (settings == nullptr) {
