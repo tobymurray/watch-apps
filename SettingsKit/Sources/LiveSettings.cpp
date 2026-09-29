@@ -37,17 +37,24 @@ Status readChecked(SDK::Interface::IFileSystem &fs, const SettingsAddresses::Add
                    const Flag &flag, uint8_t &outRaw)
 {
     const uint8_t raw = flagByte(addrs, flag);
-    const uint64_t watchFaceId = readWatchFaceIdRaw(addrs);
 
-    DebugLog::appendf(fs, "LiveSettings: %s raw=0x%02X (addr=0x%08X) watchFaceId=%llu (addr=0x%08X)",
-                       flag.name, raw,
-                       static_cast<unsigned>(addrs.settingsStructBase + flag.offset),
-                       static_cast<unsigned long long>(watchFaceId),
-                       static_cast<unsigned>(addrs.settingsStructBase + addrs.watchFaceIdOffset));
-
-    if (watchFaceId > kWatchFaceIdSanityMax) {
-        DebugLog::append(fs, "LiveSettings: watchFaceId cross-check out of range -- refusing to trust this address");
-        return Status::CrossCheckOutOfRange;
+    // Skipped for a firmware with no watchFaceId (the sentinel): struct
+    // identity is carried by matchesKernel, not by this bound.
+    if (addrs.watchFaceIdOffset != SettingsAddresses::kNoWatchFaceAnchor) {
+        const uint64_t watchFaceId = readWatchFaceIdRaw(addrs);
+        DebugLog::appendf(fs, "LiveSettings: %s raw=0x%02X (addr=0x%08X) watchFaceId=%llu (addr=0x%08X)",
+                           flag.name, raw,
+                           static_cast<unsigned>(addrs.settingsStructBase + flag.offset),
+                           static_cast<unsigned long long>(watchFaceId),
+                           static_cast<unsigned>(addrs.settingsStructBase + addrs.watchFaceIdOffset));
+        if (watchFaceId > kWatchFaceIdSanityMax) {
+            DebugLog::append(fs, "LiveSettings: watchFaceId cross-check out of range -- refusing to trust this address");
+            return Status::CrossCheckOutOfRange;
+        }
+    } else {
+        DebugLog::appendf(fs, "LiveSettings: %s raw=0x%02X (addr=0x%08X) (no watchFaceId anchor; kernel cross-check carries identity)",
+                           flag.name, raw,
+                           static_cast<unsigned>(addrs.settingsStructBase + flag.offset));
     }
 
     if (raw != 0 && raw != 1) {

@@ -14,8 +14,12 @@
  * what derives the live-struct entries; the rest were traced from the flash
  * image that `signatures` fingerprints.
  *
- * One row per ABI, asserted below: nothing this app can read at runtime tells
- * two firmware versions sharing an ABI apart.
+ * Several rows may share an ABI -- one per firmware version that ships that
+ * interface (1.4.0 and 1.5.0 are both ABI 3, at different addresses). What
+ * tells them apart at runtime is the `signatures`: the gate reads the bytes at
+ * each row's addresses and takes the row that matches. The table asserts below
+ * that no two same-ABI rows carry identical signatures, so that choice is
+ * always decidable.
  ******************************************************************************
  */
 
@@ -34,6 +38,10 @@ namespace SettingsAddresses
 /// image except setPath's, which appears twice, and that costs nothing here
 /// because this verifies a known address rather than searching for one.
 constexpr size_t kSignatureBytes = 16;
+
+/// `watchFaceIdOffset` value meaning no watchFaceId exists in this firmware's
+/// live settings struct.
+constexpr size_t kNoWatchFaceAnchor = SIZE_MAX;
 
 struct Signature {
     uintptr_t address;   ///< Thumb bit cleared: this is a load, not a call.
@@ -71,7 +79,8 @@ struct AddressSet {
     size_t    unitsImperialOffset;   ///< 0 = metric, 1 = imperial
 
     /// A 64-bit field, not a 32-bit one: the parser reads it with `strtoull`
-    /// and stores eight bytes (`Docs/2026-09-07-live-settings-struct.md`).
+    /// and stores eight bytes (`Docs/2026-09-07-live-settings-struct.md`), or
+    /// `kNoWatchFaceAnchor` if the firmware keeps no watchFaceId in the struct.
     size_t    watchFaceIdOffset;
 
     /// Six bytes: five zone floors and the wearer's maximum heart rate last.
@@ -120,11 +129,11 @@ struct AddressSet {
     size_t           signatureCount;
 };
 
-/// The row derived under kernel ABI `abi`, or nullptr if none. An ABI is a
-/// coarse key -- it spans every firmware version that ships that interface --
-/// so a row it returns is a candidate, not a verdict: FirmwareGate.hpp then
-/// has to prove the addresses actually behave before anything calls them.
-const AddressSet *resolve(uint32_t abi);
+/// Number of firmware rows in the table the gate walks.
+size_t rowCount();
+
+/// Row `index`, or nullptr past the end.
+const AddressSet *rowAt(size_t index);
 
 } // namespace SettingsAddresses
 

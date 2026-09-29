@@ -12,8 +12,9 @@
  * loader patched in.
  *
  * An ABI is a floor rather than an identity: `abi_kernel_map.json` maps one to
- * the *minimum* firmware providing it, so the row an ABI selects is a
- * candidate that the checks in `resolve` still have to prove.
+ * the *minimum* firmware providing it, and more than one row can carry it. So
+ * the ABI only picks out the candidate rows; the signature check in `resolve`
+ * reads flash to find which one is actually running before anything is called.
  *
  * Those checks run in the order they do because this part has no MPU: a wrong
  * address does not return an error, it runs. Comparing the recorded bytes is a
