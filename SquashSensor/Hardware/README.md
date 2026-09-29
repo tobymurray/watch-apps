@@ -66,8 +66,11 @@ Five things the review flagged that the BOM does not yet contain:
    50 mΩ the trip lands at 2 A / 10 A — 13–29 C on this cell. Roughly 1 Ω of FET would be
    needed to trip near 1 C and no such part exists, so **record that this is a
    short-circuit protector rather than an overcurrent one** and let the PTC own the middle.
-3. **The 32.768 kHz crystal routed to the ICM-45686's `CLKIN`**, not only to the MCU's
-   LFCLK. B5 — this is the entire reason the crystal is in the BOM, and nobody has drawn it.
+3. **A 32.768 kHz active oscillator driving both the MCU's `XL1` and the ICM-45686's
+   `CLKIN`** — **not a crystal.** `CLKIN` is a CMOS input wanting 0.7 × VDDIO = 2.10 V and
+   presenting <10 pF (DS-000577, Digital Inputs); an nRF52840 LFXO node budgets 12.5 pF in
+   total and its swing is unspecified, so tapping the crystal both under-drives `CLKIN` and
+   detunes the oscillator. One XO replaces the crystal and its two load caps.
 4. **The NTC and its bias** for the BQ25180's `TS/MR` pin. This is F11, the one safety finding.
    The same pin takes a momentary switch — see below — so size the network such that the
    hottest legitimate cell still reads above the button-press threshold.

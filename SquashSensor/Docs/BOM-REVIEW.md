@@ -645,7 +645,7 @@ problem this design has.*
 | High-g resolution | 49 mg/LSB | **1.95 mg/LSB at ±64 g** |
 | High-g noise | **measured 7–10 mg/√Hz** (M7, provisional) | 1 mg/√Hz |
 | High-g scale tolerance | **±10%** | **±0.3%** |
-| Clock discipline | **CLKIN to the crystal** | `INTERNAL_FREQ_FINE`, ±650 ppm |
+| Clock discipline | **CLKIN from a shared 32.768 kHz XO** (B5.1) | `INTERNAL_FREQ_FINE`, ±650 ppm |
 | Maturity | ADXL375 Rev. B, 2014 | DS14623 Rev 3, driver still churning (B3 point 6) |
 
 The ST part is better on resolution, noise and scale tolerance; the incumbent is better on
@@ -790,8 +790,22 @@ clock … External clock input supports highly accurate clock input from **20 kH
 
 Three consequences:
 
-1. **Keep the crystal, and route it to the IMU's CLKIN**, not only to the MCU's LFCLK. That
-   is a schematic and layout requirement that appears nowhere in the document.
+1. ~~**Keep the crystal, and route it to the IMU's CLKIN**~~ — **conceded and corrected,
+   2026-09-29. A crystal cannot drive `CLKIN`.** DS-000577's Digital Inputs table puts
+   pin 9 (FSYNC/CLKIN) at **VIH = 0.7 x VDDIO — 2.10 V on the 3.0 V rail — with an input
+   capacitance of <10 pF**. An nRF52840 LFXO node budgets **12.5 pF in total** and the
+   Product Specification does not state the oscillator's swing at all, so tapping it both
+   under-drives a CMOS input and detunes the crystal by loading it ~80% past budget.
+
+   **The part changes: a 32.768 kHz active oscillator (XO) with a CMOS output**, feeding the
+   MCU's `XL1` (which accepts a full-swing external clock) and the ICM's `CLKIN` together.
+   Cost is about **1–3 µA against a ~95 µA standby budget**, 1–3%, against a crystal's
+   ~0.25 µA — and it is one part where the crystal was three, since the load caps go with
+   it. Even a mediocre ±100 ppm XO beats the ICM's ±12,500 ppm internal oscillator by 125x,
+   so the accuracy argument is unaffected; only the component is.
+
+   *This was asserted in three committed documents as a schematic instruction and was wrong
+   in all three. It was caught by the author, not by this review.*
 2. **1024 Hz is the sample rate that divides 32.768 kHz exactly** (÷32); 1000 Hz does not.
    A small, free argument for 1024 Hz in the open sample-rate decision.
 3. **This is the strongest argument against B3.** The LSM6DSV320X has **no external clock

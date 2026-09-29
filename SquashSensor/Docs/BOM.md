@@ -58,7 +58,7 @@ Each is a fact about the world or a measurement, not a preference.
 |---|---|
 | ADXL375 real ODR | **3% slow**, wanders ~500 ppm within a session, trends with temperature |
 | Cost of assuming one fitted rate | **up to 4.9 ms per minute** — so timestamps are per batch, never reconstructed from a nominal rate |
-| ICM-45686 internal clock | ±1.25% initial, ±1% over temperature — **disciplined by routing the 32.768 kHz crystal to its `CLKIN`** |
+| ICM-45686 internal clock | ±1.25% initial, ±1% over temperature — **disciplined by a shared 32.768 kHz oscillator on its `CLKIN`**, not by a crystal (see Timebase) |
 | Achieved host-bus timestamp noise | 1.9 µs RMS |
 
 ### Storage
@@ -106,7 +106,7 @@ Each is a fact about the world or a measurement, not a preference.
 | Function | Part | Why |
 |---|---|---|
 | MCU / radio | **Raytac MDBT50Q-1MV2** (nRF52840) | USB: 128 MB offloads in **2.7 min against 34 min over BLE**. Mass storage needs no software anybody maintains. 163 mm² against the '832 module's 160 |
-| Timebase | 32.768 kHz crystal → **MCU LFCLK *and* the ICM's `CLKIN`** | Without it the sample clock is ±2%, which no RTC resync can fix |
+| Timebase | **32.768 kHz active oscillator (XO), CMOS output** → MCU `XL1` *and* the ICM's `CLKIN` | Without it the sample clock is ±2%, which no RTC resync can fix. **A crystal cannot do this job**: `CLKIN` is a CMOS input needing 0.7 × VDDIO = 2.10 V and presenting <10 pF (DS-000577), against an LFXO node budgeted for 12.5 pF total whose swing Nordic does not specify. One XO replaces the crystal and its two load caps |
 
 ### Sensing
 
