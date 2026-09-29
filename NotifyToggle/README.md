@@ -152,10 +152,13 @@ with a settings file it cannot understand says that instead. Telling someone to
 change their watch software when that is not the fault is worse than saying
 nothing.
 
-Only one row per ABI is possible, and a `static_assert` enforces it: nothing
-this app can read at runtime tells two same-ABI firmware versions apart, so a
-second row could never be selected. Supporting that would need byte signatures
-at each address, which this app deliberately does not carry.
+Several rows can share an ABI, one per firmware version that ships that
+interface -- 1.4.0 and 1.5.0 are both ABI 3, with these functions at different
+addresses. The gate reads the signature bytes at each candidate row's addresses
+and takes the row that matches the flash it is running on, so the ABI only
+narrows the field and the signatures name the exact firmware. A `static_assert`
+requires that no two same-ABI rows carry identical signatures, or that choice
+would not be decidable.
 
 ## Screen and buttons
 
