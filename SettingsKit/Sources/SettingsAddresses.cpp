@@ -263,8 +263,7 @@ static_assert(everyEntryIsWellFormed(),
               "File layout that does not fit its own object size, or a signature filed "
               "under the wrong function.");
 
-/// True if two rows carry the same signature at every index -- the case that
-/// would make a firmware match both, so the gate could not choose between them.
+/// True if two rows carry the same signature at every index.
 constexpr bool signaturesIdentical(const AddressSet &a, const AddressSet &b)
 {
     if (a.signatureCount != b.signatureCount) {
@@ -283,9 +282,7 @@ constexpr bool signaturesIdentical(const AddressSet &a, const AddressSet &b)
     return true;
 }
 
-/// Two rows sharing an ABI must differ in at least one signature, or the gate
-/// -- which picks the row whose recorded bytes are live in flash -- would have
-/// no way to tell which firmware it is running on.
+/// True when no two rows share an ABI and identical signatures.
 constexpr bool sameAbiRowsAreDistinguishable()
 {
     constexpr size_t n = sizeof(kSupported) / sizeof(kSupported[0]);
