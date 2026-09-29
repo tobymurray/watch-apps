@@ -27,17 +27,24 @@ all have named parts and stated reasons.
 |---|---|
 | `MDBT50Q-1MV2` (nRF52840 module) | `RF_Module` |
 | `Thermistor_NTC`, `Crystal_GND24`, passives | `Device` |
+| **`ICM-45686`** | **`SquashSensor`** (this project) |
 
-**To be drawn, with the document each pinout must come from.** These were deliberately *not*
-generated: a symbol with a guessed pin assignment is silent, permanent and looks fine
-locally, which is the one failure mode this project's conventions single out.
+`SquashSensor.kicad_sym` holds the parts with no stock symbol. **Every pinout in it is
+transcribed from a named primary document, and the document is in the symbol's Description
+field.** The ICM-45686 came from **AN-000484 Rev 1.1, Figure 2** — the LGA-14 pinout diagram,
+pins 1–14. Check any symbol against its source before you wire it; a transcription error
+here is silent, permanent and looks fine locally.
+
+**Still to be drawn, with the document each pinout must come from.** These were deliberately
+*not* generated, because I have no verified numbered pin table for any of them. **Drop the
+datasheet in and the symbol is a few minutes' work** — transcribing a pin table is the part
+worth automating, and checking it against the page is the part worth doing by eye.
 
 | Part | Package | Pinout source |
 |---|---|---|
 | BQ25155 | WCSP 2.5 × 2.5 mm | TI **SLUSDO1B** |
 | TPS7A0230 | SOT-23-5 | TI **SBVS277C** |
 | BQ29700 | DSE-6 1.5 × 1.5 mm | TI **SLUSBU9I** |
-| ICM-45686 | LGA-14 2.5 × 3.0 × 0.81 mm | TDK **DS-000577 §4.1**, and AN-000484 Fig. 2 |
 | ADXL375 | 14-LGA 3.0 × 5.0 × 0.8 mm | ADI **Rev. B** |
 | Dual N-FET | — | **Part not yet chosen** — B8.2, pick backwards from the trip current |
 | SPI NOR, 1 Gbit | — | **Part not yet chosen** — must be 2.7–3.6 V, not 1.8 V (B4.5) |

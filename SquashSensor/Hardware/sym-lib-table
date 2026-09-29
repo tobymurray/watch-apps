@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "SquashSensor")(type "KiCad")(uri "${KIPRJMOD}/SquashSensor.kicad_sym")(options "")(descr "Parts with no stock symbol; pinouts transcribed from the datasheet named in each Description field"))
+)

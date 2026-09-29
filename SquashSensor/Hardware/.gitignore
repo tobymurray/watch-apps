@@ -1,5 +1,6 @@
 *-backups/
 *.kicad_prl
-fp-info-cache
+~*.lck
 erc.rpt
+fp-info-cache
 SquashSensor.pdf
