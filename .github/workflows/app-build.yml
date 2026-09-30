@@ -515,6 +515,14 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "staged: $(ls "$stage")"
 
+      # Read from the watch-target ELFs because no host test can hold this: a
+      # host thread is never smaller than PTHREAD_STACK_MIN, 16,384 bytes on
+      # x86_64 glibc (getconf), against a 10,240-byte watch stack.
+      - name: Stack budget
+        if: steps.uapp.outputs.uapp != ''
+        shell: bash
+        run: python3 apps/Tools/stack_budget.py "${{ steps.app.outputs.cmake }}"/build/*.elf
+
       - name: Summary
         if: always() && steps.uapp.outputs.uapp != ''
         shell: bash

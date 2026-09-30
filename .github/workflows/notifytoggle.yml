@@ -22,6 +22,7 @@ on:
       - 'SettingsKit/**'
       - '.github/workflows/notifytoggle.yml'
       - '.github/workflows/app-build.yml'
+      - 'Tools/stack_budget.py'
   pull_request:
     paths:
       - 'NotifyToggle/**'
@@ -33,6 +34,7 @@ on:
       - 'SettingsKit/**'
       - '.github/workflows/notifytoggle.yml'
       - '.github/workflows/app-build.yml'
+      - 'Tools/stack_budget.py'
   workflow_dispatch:
     inputs:
       version:

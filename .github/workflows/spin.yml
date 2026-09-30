@@ -21,6 +21,7 @@ on:
       - 'EffortKit/**'
       - '.github/workflows/spin.yml'
       - '.github/workflows/app-build.yml'
+      - 'Tools/stack_budget.py'
   pull_request:
     paths:
       - 'Spin/**'
@@ -31,6 +32,7 @@ on:
       - 'EffortKit/**'
       - '.github/workflows/spin.yml'
       - '.github/workflows/app-build.yml'
+      - 'Tools/stack_budget.py'
   workflow_dispatch:
     inputs:
       version:
