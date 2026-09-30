@@ -115,6 +115,32 @@ fn a_newer_schema_is_refused_and_nothing_is_read_from_it() {
 }
 
 #[test]
+fn a_load_replaces_what_was_held_and_keeps_the_writer_name() {
+    let mut one = History::new();
+    one.name(b"Spin", b"indoor_cycling");
+    one.add(&session(1));
+    let mut buf = [0u8; MAX_STORE_BYTES];
+    let n = one.save(&mut buf).expect("it fits");
+
+    let mut h = History::new();
+    h.name(b"Spin", b"indoor_cycling");
+    for i in 0..(MAX_SESSIONS as u32 + 3) {
+        h.add(&session(100 + i));
+    }
+    assert_eq!(h.load(&buf[..n]), Load::Ok);
+    assert_eq!(h.sessions(), &[session(1)][..]);
+    assert_eq!(h.dropped(), 0, "the count is the file's, not the old log's");
+
+    let resaved = h.save(&mut buf).expect("it fits");
+    let text = core::str::from_utf8(&buf[..resaved]).unwrap();
+    assert!(text.contains(r#""app":"Spin","sport":"indoor_cycling""#));
+
+    h.add(&session(2));
+    assert_eq!(h.load(b"not json at all"), Load::Unreadable);
+    assert_eq!(h.sessions().len(), 0, "a failed load leaves nothing half-read");
+}
+
+#[test]
 fn something_that_is_not_this_file_is_unreadable_rather_than_empty() {
     let mut h = History::new();
     assert_eq!(h.load(b"not json at all"), Load::Unreadable);

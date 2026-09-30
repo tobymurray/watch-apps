@@ -123,13 +123,12 @@ impl History {
     /// Read a store file. Clears whatever was held first, so a failed load
     /// leaves an empty log rather than a half-read one.
     pub fn load(&mut self, buf: &[u8]) -> Load {
-        let (app, app_len) = (self.app, self.app_len);
-        let (sport, sport_len) = (self.sport, self.sport_len);
-        *self = History::new();
-        self.app = app;
-        self.app_len = app_len;
-        self.sport = sport;
-        self.sport_len = sport_len;
+        // In place, because `*self = History::new()` builds two whole logs on
+        // the stack: 10,708 bytes across `load` and `new` in the thumbv8m
+        // disassembly, which overflowed a 10 KiB Service stack on the watch
+        // (STKOF); the `sub sp` in `load`'s prologue is the number to re-read.
+        self.len = 0;
+        self.dropped = 0;
 
         if buf.is_empty() {
             return Load::Ok;
