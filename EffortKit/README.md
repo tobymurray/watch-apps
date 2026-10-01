@@ -445,6 +445,18 @@ want of an allocator but for want of stack: the Squash session type is 12,656
 bytes against a 10,240-byte Service stack, and building one as a value to move
 into place took an `STKOF` UsageFault (`CFSR=0x00100000`) on the watch.
 
+**The crate holds itself to the same rule: a large type is never reset with
+`*self = Self::new(..)`.** The assignment builds a temporary in the caller's
+frame and another in `new`'s, so the value is on the stack twice, and the crate
+has done this twice. `Segmenter::reset` needed its 7,328 bytes twice over, and
+`History::load` put two 5,040-byte logs on Spin's stack. The second took the
+watch down saving a ride on 2026-09-30: 12,036 bytes deep against 10,240. Both
+now clear field by field. A host test cannot catch this, because no thread on
+x86_64 Linux is smaller than `PTHREAD_STACK_MIN`, which is 16,384 bytes.
+[`Tools/stack_budget.py`](../Tools/stack_budget.py) can: CI runs it on every
+watch ELF and fails a build whose largest frame or deepest call chain is over
+budget.
+
 Each shim must compute an **FNV-1a fingerprint over its own struct layout on
 both sides** — `offsetof` in the C++ header, `offset_of!` in Rust — and refuse
 to start on a disagreement. [`fnv1a`](src/lib.rs) is here so both walks use the
@@ -455,14 +467,16 @@ did.
 ## Building and testing
 
 ```sh
-cargo test --features std                              # 112 tests
+cargo test --features std
 cargo clippy --all-targets --features std
 cargo build --release --target thumbv8m.main-none-eabihf   # the watch target
 cargo run --features std --bin phase-a -- ../Squash/Tests/pulled/*/imu_*.csv
 ```
 
 The `thumbv8m` build is the one that matters most: it is what proves the crate
-is `no_std` and that nothing testable crept in behind `feature = "std"`.
+is `no_std` and that nothing testable crept in behind `feature = "std"`. What it
+cannot show is how much stack the code takes on the watch; that is
+`../Tools/stack_budget.py` on an app's ELF, after the app is built.
 
 ## Licence
 
