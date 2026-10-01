@@ -664,6 +664,16 @@ mid-write leaves either the old file or the new one. It is written **only when
 the `.fit` landed**, so the two records can never disagree about whether a ride
 happened.
 
+Writing it is the deepest the Service's stack goes, and in **0.14.0 and 0.14.1
+it went too deep**. Reading the file built a whole twenty-session log on the
+stack twice: 12,036 bytes against 10,240, after the interval prescription made
+each session 252 bytes. Every saved ride hard-faulted the watch (`STKOF`)
+straight after the `.fit` and its summary were written. The ride itself
+survived; its line in this file did not. The fix is in EffortKit, and it was
+proven on the watch on 2026-09-30: a ride saved, the log went from 11 sessions
+to 12, and no crash dump was written. The same path now measures 2,064 bytes.
+CI holds it there with `Tools/stack_budget.py`.
+
 Footprint of the Service, from CI's toolchain image, before and after the crate
 was linked:
 
