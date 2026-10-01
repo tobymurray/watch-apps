@@ -174,10 +174,13 @@ jobs:
           # A Service that measures heart-rate recovery or writes the shared
           # session log links the EffortKit crate, whose own tests are the only
           # thing that covers either -- Service.cpp has no host test at all.
-          # Found from the app's CMake rather than a Cargo.toml, because this
-          # crate is linked by the Service and lives outside the app.
+          # Searched across the app's whole Software tree, because the Service
+          # links it through its own shim crate, not the renderer's Cargo.toml.
           effortkit=no
-          if [ -n "$cmake" ] && grep -rq 'EffortKit' "$cmake"; then effortkit=yes; fi
+          if grep -rqs --include=Cargo.toml --include=CMakeLists.txt \
+               --exclude-dir=target --exclude-dir=build 'EffortKit' "$dir/Software"; then
+            effortkit=yes
+          fi
 
           {
             echo "manifest=$([ -f "$manifest" ] && echo "$manifest" || echo '')"
@@ -197,6 +200,7 @@ jobs:
           echo "textkit        $textkit"
           echo "inscribed_disc $inscribed_disc"
           echo "panickit       $panickit"
+          echo "effortkit      $effortkit"
           echo "buildable      $([ -n "$cmake" ] && echo yes || echo no)"
 
           if [ ! -f "$manifest" ] && [ ! -f "$tests" ] && [ -z "$cmake" ]; then
