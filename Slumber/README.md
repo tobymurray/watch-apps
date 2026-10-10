@@ -131,7 +131,7 @@ separates sitting still from sleeping, so the screen exists to collect them.
 
 | Path | What |
 | --- | --- |
-| `Days/<yyyymmdd>.csv` | One row per 30 s, named for the local day. Schema in `Software/Libs/Header/Recorder/EpochRow.hpp`; -1 means not measured |
+| `Days/<yyyymmdd>.csv` | One row per 30 s, named for the local day. Schema in `Software/Libs/Header/Recorder/EpochRow.hpp`; -1 means not measured. A day file begun under another schema's header is renamed `<yyyymmdd>-<n>.csv` first, so no file mixes two |
 | `Marks.csv` | `utc,utc_off_min,uptime_ms,local,code,label`, one line per R1 press |
 | `Debug/lifecycle.log` | `start`, `sensors` (upper case = resolved), `day`, `late`, `clock`, `mark`, `write-fail`, `card-fail`, `gui-open`, `gui-close`, `stop` |
 | `../SharedData/slumber/card` | The glance's card, every 5 minutes |

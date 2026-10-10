@@ -39,7 +39,32 @@ inline bool appendFile(SDK::Interface::IFileSystem &fs, const char *path, const 
     return ok;
 }
 
+/// True if `path` is absent, empty, or starts with exactly `header`.
+inline bool startsWith(SDK::Interface::IFileSystem &fs, const char *path, const char *header)
+{
+    if (!fs.exist(path)) {
+        return true;
+    }
+    std::unique_ptr<SDK::Interface::IFile> f = fs.file(path);
+    if (!f || !f->open(false, false)) {
+        return false;
+    }
+    const size_t hl   = std::strlen(header);
+    bool         same = f->size() == 0;
+    if (!same && f->size() >= hl) {
+        char   buf[512];
+        size_t got = 0;
+        same = hl <= sizeof(buf) && f->read(buf, hl, got) && got == hl &&
+               std::memcmp(buf, header, hl) == 0;
+    }
+    f->close();
+    return same;
+}
+
 /// Rows buffered in RAM and appended one local day per file.
+///
+/// A day file written under another header, by an older schema, is renamed to
+/// `<stem>-<n>.csv` before the first append, so no file mixes two schemas.
 class DayLog
 {
 public:
@@ -47,6 +72,8 @@ public:
     static constexpr size_t kRowCap   = 320;
     /// Five minutes of rows per write; a USB unplug flushes through `flush()`.
     static constexpr size_t kFlushRows = 10;
+    /// Set-aside files per day; past this, rows are dropped rather than mixed.
+    static constexpr unsigned kMaxSetAside = 9;
     static constexpr const char *kPreamble =
         "# Slumber epoch log, schema 2: one row per 30 s, all day. -1 = not measured.\n";
 
@@ -62,6 +89,7 @@ public:
             ok = flush();
             std::strncpy(mStem, stem, sizeof(mStem) - 1);
             mRowsInFile = 0;
+            mChecked    = false;
         }
         const size_t n = row.format(mBuf + mLen, sizeof(mBuf) - mLen);
         if (n == 0) {
@@ -87,7 +115,10 @@ public:
 
         char header[512];
         std::snprintf(header, sizeof(header), "%s%s", kPreamble, EpochRow::kHeader);
-        const bool ok = appendFile(mFs, path, header, mBuf, mLen);
+        if (!mChecked) {
+            mChecked = startsWith(mFs, path, header) || setAside(path);
+        }
+        const bool ok = mChecked && appendFile(mFs, path, header, mBuf, mLen);
         mLen     = 0;
         mPending = 0;
         return ok;
@@ -97,12 +128,25 @@ public:
     uint32_t rowsInFile() const { return mRowsInFile; }
 
 private:
+    bool setAside(const char *path)
+    {
+        char to[32];
+        for (unsigned n = 1; n <= kMaxSetAside; ++n) {
+            std::snprintf(to, sizeof(to), "%s/%s-%u.csv", kDir, mStem, n);
+            if (!mFs.exist(to)) {
+                return mFs.rename(path, to);
+            }
+        }
+        return false;
+    }
+
     SDK::Interface::IFileSystem &mFs;
     char     mStem[9] = {};
     char     mBuf[kRowCap * kFlushRows] = {};
     size_t   mLen        = 0;
     size_t   mPending    = 0;
     uint32_t mRowsInFile = 0;
+    bool     mChecked    = false;  ///< the current stem's file has this header
 };
 
 } // namespace Slumber

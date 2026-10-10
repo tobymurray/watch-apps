@@ -213,3 +213,28 @@ TEST(DayLog, ANewDayFlushesTheOldOneFirst)
     log.flush();
     EXPECT_TRUE(fs.exist("Days/20261010.csv"));
 }
+
+/// A day file an older schema began is set aside, not appended to.
+TEST(DayLog, AnOlderSchemasFileIsSetAside)
+{
+    SDK::Test::FakeFileSystem fs;
+    fs.mkdir(DayLog::kDir);
+    const std::string old = "# Slumber epoch log, schema 1\nuptime_ms,utc\n1,2\n";
+    {
+        auto   f = fs.file("Days/20261010.csv");
+        size_t w = 0;
+        ASSERT_TRUE(f->open(true, true));
+        ASSERT_TRUE(f->write(old.data(), old.size(), w));
+        f->close();
+    }
+    DayLog log(fs);
+    ASSERT_TRUE(log.add(EpochRow(), "20261010"));
+    ASSERT_TRUE(log.flush());
+
+    EXPECT_EQ(readAll(fs, "Days/20261010-1.csv"), old);
+    EXPECT_EQ(readAll(fs, "Days/20261010.csv").find(DayLog::kPreamble), 0u);
+
+    ASSERT_TRUE(log.add(EpochRow(), "20261010"));
+    ASSERT_TRUE(log.flush());
+    EXPECT_FALSE(fs.exist("Days/20261010-2.csv"));
+}
