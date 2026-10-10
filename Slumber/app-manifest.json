@@ -1,0 +1,24 @@
+{
+  "manifest_version": 1,
+  "type": [
+    "utility"
+  ],
+  "name": "Slumber",
+  "icon": "icon.png",
+  "binary": "Slumber_0.1.0.uapp",
+  "appVersion": "0.1.0",
+  "minKernelVersion": "1.4.0",
+  "requiredHardware": [],
+  "description": "Sleep tracking that runs in the background with nothing to start at bedtime. This build is a lifecycle probe: it shows how long its background service has been running, on its glance card and its screen.",
+  "id": "118936BE80F158FC",
+  "stravaExport": false,
+  "supportsLaps": false,
+  "supportsDistance": false,
+  "supportsTrack": false,
+  "supportsHeartbeat": false,
+  "supportsElevation": false,
+  "supportsStep": false,
+  "supportsSpeed": "none",
+  "customMeasures": [],
+  "configFields": []
+}

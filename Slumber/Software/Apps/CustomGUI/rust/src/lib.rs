@@ -1,0 +1,462 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
+use inscribed_disc::{Abgr2222, Surface};
+use textkit::{faces, Face, Style};
+
+#[cfg(feature = "device")]
+use panickit as _;
+
+/// Mirrors `slumber_state` (`slumber_gui.h`) field for field.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct State {
+    pub service_up_min: u32,
+    pub rows_today: u32,
+    pub write_fails: u32,
+    pub mark_ago_min: u32,
+    pub have_status: u8,
+    pub selected: u8,
+    pub last_mark: u8,
+    pub acc_ok: u8,
+    pub hr_ok: u8,
+    pub just_logged: u8,
+    pub _pad: [u8; 2],
+}
+
+pub const NO_MARK: u8 = 0xFF;
+pub const NO_MARK_AGE: u32 = 0xFFFF_FFFF;
+
+impl Default for State {
+    fn default() -> Self {
+        State {
+            service_up_min: 0,
+            rows_today: 0,
+            write_fails: 0,
+            mark_ago_min: NO_MARK_AGE,
+            have_status: 0,
+            selected: 0,
+            last_mark: NO_MARK,
+            acc_ok: 0,
+            hr_ok: 0,
+            just_logged: 0,
+            _pad: [0; 2],
+        }
+    }
+}
+
+/// What the wearer can say they are doing; the code written beside each mark
+/// is its index, so append and never reorder.
+pub const MARKS: [&str; 7] = [
+    "Lights out",
+    "Awake in bed",
+    "Out of bed",
+    "Sitting, TV",
+    "Sitting, other",
+    "Moving about",
+    "Watch off",
+];
+
+// Bright on dark only: dark glyphs on a light fill drop out on this panel
+// (RustGuiPoc/Docs/FINDINGS.md).
+const GROUND: Abgr2222 = Abgr2222::BLACK;
+const TITLE_INK: Abgr2222 = Abgr2222::from_levels(2, 2, 3);
+const PICK_INK: Abgr2222 = Abgr2222::WHITE;
+const NEIGHBOUR_INK: Abgr2222 = Abgr2222::GREY;
+const DONE_INK: Abgr2222 = Abgr2222::GREEN;
+const BODY_INK: Abgr2222 = Abgr2222::WHITE;
+const HINT_INK: Abgr2222 = Abgr2222::GREY;
+const WARN_INK: Abgr2222 = Abgr2222::AMBER;
+
+const PANEL_CX: i32 = 120;
+const TITLE_BASELINE_Y: i32 = 40;
+const PREV_BASELINE_Y: i32 = 76;
+const PICK_BASELINE_Y: i32 = 110;
+const NEXT_BASELINE_Y: i32 = 142;
+const MARK_BASELINE_Y: i32 = 170;
+const RECORDER_BASELINE_Y: i32 = 190;
+const HINT_BASELINE_Y: i32 = 210;
+
+static TITLE_FACE: &Face = &faces::SEMIBOLD_18_ASCII;
+static PICK_FACE: &Face = &faces::SEMIBOLD_20_ASCII;
+static NEIGHBOUR_FACE: &Face = &faces::REGULAR_14_ASCII;
+static STATUS_FACE: &Face = &faces::REGULAR_14_ASCII;
+static HINT_FACE: &Face = &faces::REGULAR_12_ASCII;
+
+const TITLE: &str = "SLUMBER";
+const WAITING: &str = "waiting for service";
+const HINT: &str = "L1/L2 PICK  R1 LOG";
+
+/// A fixed buffer for one line; anything past its end is dropped.
+///
+/// Built without `core::fmt`: its integer formatting reaches a table through a
+/// MOVW/MOVT pair, and the SDK's packer relocates only `R_ARM_ABS32`, so on the
+/// watch every number came out as garbage and the line drew nothing.
+struct Line {
+    buf: [u8; 40],
+    len: usize,
+}
+
+impl Line {
+    fn new() -> Self {
+        Line { buf: [0; 40], len: 0 }
+    }
+
+    /// Non-ASCII becomes `?`, which keeps every byte in `buf` ASCII.
+    fn push(&mut self, s: &str) -> &mut Self {
+        for &b in s.as_bytes() {
+            if self.len == self.buf.len() {
+                break;
+            }
+            self.buf[self.len] = if b.is_ascii() { b } else { b'?' };
+            self.len += 1;
+        }
+        self
+    }
+
+    fn num(&mut self, value: u32, min_digits: usize) -> &mut Self {
+        let mut digits = [0u8; 10];
+        let mut n = 0;
+        let mut v = value;
+        while n < digits.len() && (v != 0 || n < min_digits.max(1)) {
+            digits[n] = b'0' + (v % 10) as u8;
+            v /= 10;
+            n += 1;
+        }
+        while n > 0 {
+            n -= 1;
+            if self.len == self.buf.len() {
+                break;
+            }
+            self.buf[self.len] = digits[n];
+            self.len += 1;
+        }
+        self
+    }
+
+    // Not `from_utf8`, which also reaches a table through MOVW/MOVT on entry.
+    fn as_str(&self) -> &str {
+        // SAFETY: `push` and `num` write only ASCII bytes.
+        unsafe { core::str::from_utf8_unchecked(&self.buf[..self.len]) }
+    }
+}
+
+fn text(fb: &mut Surface<Abgr2222>, face: &Face, s: &str, baseline: i32, ink: Abgr2222) {
+    face.draw(fb, s, PANEL_CX, baseline, Style::centered(ink, GROUND)).ok();
+}
+
+fn label(index: u8) -> &'static str {
+    MARKS.get(index as usize).copied().unwrap_or("?")
+}
+
+fn neighbour(selected: u8, step: i32) -> u8 {
+    let n = MARKS.len() as i32;
+    ((selected as i32 + step).rem_euclid(n)) as u8
+}
+
+/// What was marked last and how long ago, or that it just went in.
+fn mark_line(state: &State) -> (Line, Abgr2222) {
+    let mut line = Line::new();
+    if state.just_logged != 0 {
+        line.push("LOGGED");
+        return (line, DONE_INK);
+    }
+    if state.last_mark == NO_MARK || state.mark_ago_min == NO_MARK_AGE {
+        line.push("nothing marked yet");
+        return (line, BODY_INK);
+    }
+    line.push(label(state.last_mark)).push("  ");
+    let ago = state.mark_ago_min;
+    if ago < 60 {
+        line.num(ago, 1).push("m ago");
+    } else {
+        line.num(ago / 60, 1).push("h").num(ago % 60, 2).push(" ago");
+    }
+    (line, BODY_INK)
+}
+
+/// Whether rows are going to disk with both signals in them.
+fn recorder_line(state: &State) -> (Line, Abgr2222) {
+    let mut line = Line::new();
+    if state.have_status == 0 {
+        line.push(WAITING);
+        return (line, WARN_INK);
+    }
+    if state.write_fails != 0 {
+        line.push("WRITE FAILS ").num(state.write_fails, 1);
+        return (line, WARN_INK);
+    }
+    line.push("rows ").num(state.rows_today, 1);
+    line.push(if state.acc_ok != 0 { "  acc ok" } else { "  NO ACC" });
+    line.push(if state.hr_ok != 0 { "  hr ok" } else { "  no hr" });
+    let ink = if state.acc_ok != 0 { BODY_INK } else { WARN_INK };
+    (line, ink)
+}
+
+fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
+    text(fb, TITLE_FACE, TITLE, TITLE_BASELINE_Y, TITLE_INK);
+
+    let sel = state.selected % MARKS.len() as u8;
+    text(fb, NEIGHBOUR_FACE, label(neighbour(sel, -1)), PREV_BASELINE_Y, NEIGHBOUR_INK);
+    let pick_ink = if state.just_logged != 0 { DONE_INK } else { PICK_INK };
+    text(fb, PICK_FACE, label(sel), PICK_BASELINE_Y, pick_ink);
+    text(fb, NEIGHBOUR_FACE, label(neighbour(sel, 1)), NEXT_BASELINE_Y, NEIGHBOUR_INK);
+
+    let (mark, mark_ink) = mark_line(state);
+    text(fb, STATUS_FACE, mark.as_str(), MARK_BASELINE_Y, mark_ink);
+    let (rec, rec_ink) = recorder_line(state);
+    text(fb, HINT_FACE, rec.as_str(), RECORDER_BASELINE_Y, rec_ink);
+
+    text(fb, HINT_FACE, HINT, HINT_BASELINE_Y, HINT_INK);
+}
+
+pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {
+    if width == 0 || height == 0 {
+        return;
+    }
+    let Some(mut fb) = Surface::<Abgr2222>::round(buf, width, height) else {
+        return;
+    };
+    fb.clear(GROUND);
+    draw(&mut fb, state);
+}
+
+const FNV_OFFSET_BASIS: u32 = 0x811C_9DC5;
+const FNV_PRIME: u32 = 0x0100_0193;
+
+const fn fnv1a(hash: u32, byte: usize) -> u32 {
+    (hash ^ ((byte as u32) & 0xFF)).wrapping_mul(FNV_PRIME)
+}
+
+/// Must walk the same values in the same order as `slumber_abi::fingerprint()`
+/// in slumber_gui.h.
+const fn abi_fingerprint() -> u32 {
+    let h = FNV_OFFSET_BASIS;
+    let h = fnv1a(h, core::mem::size_of::<State>());
+    let h = fnv1a(h, core::mem::align_of::<State>());
+    let h = fnv1a(h, core::mem::offset_of!(State, service_up_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, rows_today));
+    let h = fnv1a(h, core::mem::offset_of!(State, write_fails));
+    let h = fnv1a(h, core::mem::offset_of!(State, mark_ago_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, have_status));
+    let h = fnv1a(h, core::mem::offset_of!(State, selected));
+    let h = fnv1a(h, core::mem::offset_of!(State, last_mark));
+    let h = fnv1a(h, core::mem::offset_of!(State, acc_ok));
+    let h = fnv1a(h, core::mem::offset_of!(State, hr_ok));
+    let h = fnv1a(h, core::mem::offset_of!(State, just_logged));
+    fnv1a(h, core::mem::offset_of!(State, _pad))
+}
+
+#[no_mangle]
+pub extern "C" fn slumber_abi_fingerprint() -> u32 {
+    abi_fingerprint()
+}
+
+const _: () = assert!(core::mem::size_of::<State>() == 24);
+const _: () = assert!(core::mem::align_of::<State>() == 4);
+const _: () = assert!(core::mem::offset_of!(State, rows_today) == 4);
+const _: () = assert!(core::mem::offset_of!(State, write_fails) == 8);
+const _: () = assert!(core::mem::offset_of!(State, mark_ago_min) == 12);
+const _: () = assert!(core::mem::offset_of!(State, have_status) == 16);
+const _: () = assert!(core::mem::offset_of!(State, selected) == 17);
+const _: () = assert!(core::mem::offset_of!(State, last_mark) == 18);
+const _: () = assert!(core::mem::offset_of!(State, acc_ok) == 19);
+const _: () = assert!(core::mem::offset_of!(State, hr_ok) == 20);
+const _: () = assert!(core::mem::offset_of!(State, just_logged) == 21);
+
+#[no_mangle]
+pub extern "C" fn slumber_mark_count() -> u32 {
+    MARKS.len() as u32
+}
+
+/// Copies at most `cap - 1` bytes and a NUL; returns the bytes copied.
+pub fn copy_label(index: u32, out: &mut [u8]) -> usize {
+    let Some(src) = MARKS.get(index as usize) else {
+        if let Some(first) = out.first_mut() {
+            *first = 0;
+        }
+        return 0;
+    };
+    if out.is_empty() {
+        return 0;
+    }
+    let n = src.len().min(out.len() - 1);
+    out[..n].copy_from_slice(&src.as_bytes()[..n]);
+    out[n] = 0;
+    n
+}
+
+/// # Safety
+/// `out` must point to at least `cap` writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn slumber_mark_label(index: u32, out: *mut u8, cap: u32) -> u32 {
+    if out.is_null() || cap == 0 {
+        return 0;
+    }
+    copy_label(index, core::slice::from_raw_parts_mut(out, cap as usize)) as u32
+}
+
+/// # Safety
+/// `buf` must point to at least `buf_len` writable bytes and `state` to a valid
+/// `slumber_state`, both valid for the duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn slumber_render(
+    buf: *mut u8,
+    buf_len: u32,
+    width: u16,
+    height: u16,
+    state: *const State,
+) {
+    if buf.is_null() || state.is_null() || buf_len == 0 || width == 0 || height == 0 {
+        return;
+    }
+    let slice = core::slice::from_raw_parts_mut(buf, buf_len as usize);
+    render(slice, width as u32, height as u32, &*state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const W: u32 = 240;
+    const H: u32 = 240;
+
+    fn reported() -> State {
+        State {
+            service_up_min: 9 * 60 + 59,
+            rows_today: 2880,
+            write_fails: 0,
+            mark_ago_min: 23 * 60 + 59,
+            have_status: 1,
+            selected: 4,
+            last_mark: 4,
+            acc_ok: 1,
+            hr_ok: 1,
+            just_logged: 0,
+            _pad: [0; 2],
+        }
+    }
+
+    /// Every state that changes a line's text or ink, at its widest.
+    fn variants() -> Vec<State> {
+        let mut out = vec![State::default(), reported()];
+        for sel in 0..MARKS.len() as u8 {
+            out.push(State { selected: sel, last_mark: sel, ..reported() });
+        }
+        out.push(State { just_logged: 1, ..reported() });
+        out.push(State { write_fails: 4_294_967_295, ..reported() });
+        out.push(State { acc_ok: 0, hr_ok: 0, rows_today: 4_294_967_295, ..reported() });
+        out.push(State { mark_ago_min: 7, ..reported() });
+        out
+    }
+
+    fn frame(state: &State) -> Vec<u8> {
+        let mut buf = vec![0u8; (W * H) as usize];
+        render(&mut buf, W, H, state);
+        buf
+    }
+
+    #[test]
+    fn never_writes_past_the_stated_geometry() {
+        let n = (W * H) as usize;
+        let mut buf = vec![0xAAu8; n + 64];
+        render(&mut buf, W, H, &reported());
+        assert!(buf[n..].iter().all(|&b| b == 0xAA), "overran the framebuffer");
+    }
+
+    #[test]
+    fn every_string_has_a_glyph_in_its_face() {
+        assert!(TITLE_FACE.covers(TITLE));
+        assert!(HINT_FACE.covers(HINT));
+        for m in MARKS {
+            assert!(PICK_FACE.covers(m), "{m}");
+            assert!(NEIGHBOUR_FACE.covers(m), "{m}");
+        }
+        for st in variants() {
+            assert!(STATUS_FACE.covers(mark_line(&st).0.as_str()));
+            assert!(HINT_FACE.covers(recorder_line(&st).0.as_str()));
+        }
+    }
+
+    /// The panel is round and the buffer square, so nothing may land behind
+    /// the bezel in any state.
+    #[test]
+    fn nothing_is_drawn_outside_the_bezel() {
+        for state in variants() {
+            let buf = frame(&state);
+            for y in 0..H as i32 {
+                for x in 0..W as i32 {
+                    let lit = (2 * x - 239).pow(2) + (2 * y - 239).pow(2) <= 239 * 239;
+                    assert!(
+                        lit || buf[(y * W as i32 + x) as usize] == GROUND.0,
+                        "({x},{y}) lit behind the bezel in {state:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn waiting_and_reported_draw_differently() {
+        assert_ne!(frame(&State::default()), frame(&reported()));
+    }
+
+    #[test]
+    fn the_picker_wraps_both_ways() {
+        assert_eq!(neighbour(0, -1) as usize, MARKS.len() - 1);
+        assert_eq!(neighbour(MARKS.len() as u8 - 1, 1), 0);
+    }
+
+    #[test]
+    fn mark_ages_read_as_minutes_then_hours() {
+        let at = |m| mark_line(&State { mark_ago_min: m, last_mark: 3, ..reported() }).0;
+        assert_eq!(at(0).as_str(), "Sitting, TV  0m ago");
+        assert_eq!(at(59).as_str(), "Sitting, TV  59m ago");
+        assert_eq!(at(65).as_str(), "Sitting, TV  1h05 ago");
+    }
+
+    #[test]
+    fn the_recorder_line_says_what_is_missing() {
+        assert_eq!(recorder_line(&reported()).0.as_str(), "rows 2880  acc ok  hr ok");
+        let st = State { acc_ok: 0, hr_ok: 0, ..reported() };
+        assert_eq!(recorder_line(&st).0.as_str(), "rows 2880  NO ACC  no hr");
+        let st = State { write_fails: 3, ..reported() };
+        assert_eq!(recorder_line(&st).0.as_str(), "WRITE FAILS 3");
+    }
+
+    #[test]
+    fn labels_copy_whole_and_terminated() {
+        let mut out = [0xAAu8; 24];
+        assert_eq!(copy_label(4, &mut out), "Sitting, other".len());
+        assert_eq!(&out[..15], b"Sitting, other\0");
+        let mut tiny = [0xAAu8; 4];
+        assert_eq!(copy_label(0, &mut tiny), 3);
+        assert_eq!(&tiny, b"Lig\0");
+        assert_eq!(copy_label(99, &mut out), 0);
+        assert_eq!(out[0], 0);
+    }
+
+    /// The service's Mark message carries 24 bytes including the NUL.
+    #[test]
+    fn every_label_fits_the_mark_message() {
+        for m in MARKS {
+            assert!(m.len() < 24 && m.is_ascii() && !m.contains('\n'), "{m}");
+        }
+    }
+
+    #[test]
+    fn non_ascii_never_reaches_the_buffer() {
+        let mut line = Line::new();
+        line.push("caf\u{e9} \u{1F319}");
+        assert!(line.buf[..line.len].is_ascii());
+        assert_eq!(line.as_str(), "caf?? ????");
+    }
+
+    #[test]
+    fn no_line_is_cut_short_by_its_buffer() {
+        for st in variants() {
+            for line in [mark_line(&st).0, recorder_line(&st).0] {
+                assert!(line.len < line.buf.len(), "{:?} filled its buffer", line.as_str());
+            }
+        }
+    }
+}
