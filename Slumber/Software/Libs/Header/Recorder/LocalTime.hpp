@@ -58,6 +58,16 @@ inline void dayStem(int64_t utc, int32_t offsetMin, char *out)
     std::snprintf(out, 9, "%04u%02u%02u", static_cast<unsigned>(y) % 10000u, m % 100u, d % 100u);
 }
 
+/// Minutes past local midnight at `utc`.
+inline uint16_t minuteOfDay(int64_t utc, int32_t offsetMin)
+{
+    int64_t s = (utc + static_cast<int64_t>(offsetMin) * 60) % 86400;
+    if (s < 0) {
+        s += 86400;
+    }
+    return static_cast<uint16_t>(s / 60);
+}
+
 } // namespace LocalTime
 } // namespace Slumber
 

@@ -11,7 +11,10 @@ ticks while it stays on screen.
 
 | What it read | What the card says |
 | --- | --- |
-| A current card | `Slumber up 3h12` / `beat 2m ago  #7` |
+| A current card with a settled night | `Night 23:47-07:05` / `7h02 at rest` |
+| A current card with a night that could still grow | `Night 23:47-07:05` / `7h02 so far` |
+| A current card whose night was a watch on a table | `No night` / `watch was off`, in grey |
+| A current card with no night, or one 20 h old | `Slumber up 3h12` / `beat 2m ago  #7` |
 | A card whose heartbeat is more than 11 min old | `Slumber stopped` / `last seen 1h05 ago`, in amber |
 | No card, no backup and no temp file | `Slumber` / `open Slumber once` |
 | Files exist but none opens or decodes | The last good card, or `busy, retrying` if there was none |

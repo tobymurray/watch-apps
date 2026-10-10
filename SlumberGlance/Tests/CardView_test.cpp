@@ -107,3 +107,55 @@ TEST(CardView, TheLongestLinesFitTheirBuffers)
     const auto stale = make(Read::Ok, c, nullptr, kNow);
     EXPECT_LT(std::string(stale.bottom).size(), sizeof(stale.bottom) - 1);
 }
+
+namespace
+{
+
+Card night(SlumberCard::State state)
+{
+    Card c          = running(3600, 60);
+    c.state         = state;
+    c.onsetMinOfDay = 23 * 60 + 47;
+    c.wakeMinOfDay  = 7 * 60 + 5;
+    c.restMin       = 7 * 60 + 2;
+    c.spanMin       = 7 * 60 + 18;
+    c.validUntilUtc = kNow + 3600;
+    return c;
+}
+
+} // namespace
+
+TEST(CardView, ASettledNightShowsItsTimesAndRest)
+{
+    const auto v = make(Read::Ok, night(SlumberCard::State::Report), nullptr, kNow);
+    EXPECT_EQ(std::string(v.top), "Night 23:47-07:05");
+    EXPECT_EQ(std::string(v.bottom), "7h02 at rest");
+    EXPECT_EQ(v.tone, Tone::Normal);
+}
+
+TEST(CardView, AnUnsettledNightSaysSoFar)
+{
+    const auto v = make(Read::Ok, night(SlumberCard::State::Provisional), nullptr, kNow);
+    EXPECT_EQ(std::string(v.bottom), "7h02 so far");
+}
+
+TEST(CardView, ANightOnATableIsNotReportedAsSleep)
+{
+    const auto v = make(Read::Ok, night(SlumberCard::State::NotWorn), nullptr, kNow);
+    EXPECT_EQ(std::string(v.top), "No night");
+    EXPECT_EQ(v.tone, Tone::Muted);
+}
+
+TEST(CardView, AnExpiredNightFallsBackToRunning)
+{
+    Card c          = night(SlumberCard::State::Report);
+    c.validUntilUtc = kNow - 1;
+    EXPECT_EQ(std::string(make(Read::Ok, c, nullptr, kNow).top), "Slumber up 1h00");
+}
+
+TEST(CardView, StoppedOutranksLastNight)
+{
+    Card c         = night(SlumberCard::State::Report);
+    c.heartbeatUtc = kNow - 65 * 60;
+    EXPECT_EQ(std::string(make(Read::Ok, c, nullptr, kNow).top), "Slumber stopped");
+}

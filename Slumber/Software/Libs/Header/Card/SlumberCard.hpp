@@ -12,7 +12,7 @@ namespace SlumberCard
 
 constexpr uint32_t kMagic  = 0x424D4C53u;  ///< "SLMB" little-endian
 /// Bumped when a field changes meaning; a reader refuses any other value.
-constexpr uint16_t kSchema = 1;
+constexpr uint16_t kSchema = 2;
 constexpr size_t   kSize   = 48;
 /// How often the writer refreshes `heartbeatUtc`; readers judge staleness by it.
 constexpr uint32_t kHeartbeatS = 5u * 60u;
@@ -21,9 +21,10 @@ enum class State : uint8_t {
     None        = 0,  ///< nothing recorded yet
     Probe       = 1,  ///< a lifecycle probe build, no sleep data
     Recording   = 2,
-    Report      = 3,
-    NotWorn     = 4,
+    Report      = 3,  ///< a settled night
+    NotWorn     = 4,  ///< the night's rest was a watch off the wrist
     Interrupted = 5,
+    Provisional = 6,  ///< a night that could still grow
 };
 
 struct Card {
@@ -34,8 +35,8 @@ struct Card {
     uint32_t serviceStartUtc = 0;  ///< s; when the writer's process started
     uint32_t launchNo        = 0;  ///< writer process starts ever
     State    state           = State::None;
-    uint16_t sleepMin        = 0;
-    uint16_t stillMin        = 0;
+    uint16_t restMin         = 0;  ///< minutes at rest inside the night
+    uint16_t spanMin         = 0;  ///< onset to wake
     int16_t  deltaVsUsualMin = 0;
     uint16_t onsetMinOfDay   = 0;  ///< local
     uint16_t wakeMinOfDay    = 0;  ///< local
@@ -79,7 +80,7 @@ inline uint32_t get32(const uint8_t *p)
     return static_cast<uint32_t>(get16(p)) | (static_cast<uint32_t>(get16(p + 2)) << 16);
 }
 
-// Byte offsets of the frozen v1 layout.
+// Byte offsets, unchanged since v1.
 constexpr size_t kOffMagic     = 0;
 constexpr size_t kOffSchema    = 4;
 constexpr size_t kOffLength    = 6;
@@ -90,8 +91,8 @@ constexpr size_t kOffValid     = 20;
 constexpr size_t kOffStart     = 24;
 constexpr size_t kOffLaunch    = 28;
 constexpr size_t kOffState     = 32;
-constexpr size_t kOffSleep     = 34;
-constexpr size_t kOffStill     = 36;
+constexpr size_t kOffRest      = 34;
+constexpr size_t kOffSpan      = 36;
 constexpr size_t kOffDelta     = 38;
 constexpr size_t kOffOnset     = 40;
 constexpr size_t kOffWake      = 42;
@@ -116,8 +117,8 @@ inline void encode(const Card &c, uint8_t (&out)[kSize])
     put32(out + kOffStart, c.serviceStartUtc);
     put32(out + kOffLaunch, c.launchNo);
     out[kOffState] = static_cast<uint8_t>(c.state);
-    put16(out + kOffSleep, c.sleepMin);
-    put16(out + kOffStill, c.stillMin);
+    put16(out + kOffRest, c.restMin);
+    put16(out + kOffSpan, c.spanMin);
     put16(out + kOffDelta, static_cast<uint16_t>(c.deltaVsUsualMin));
     put16(out + kOffOnset, c.onsetMinOfDay);
     put16(out + kOffWake, c.wakeMinOfDay);
@@ -155,8 +156,8 @@ inline Decode decode(const uint8_t *in, size_t len, Card &out)
     c.serviceStartUtc = get32(in + kOffStart);
     c.launchNo        = get32(in + kOffLaunch);
     c.state           = static_cast<State>(in[kOffState]);
-    c.sleepMin        = get16(in + kOffSleep);
-    c.stillMin        = get16(in + kOffStill);
+    c.restMin         = get16(in + kOffRest);
+    c.spanMin         = get16(in + kOffSpan);
     c.deltaVsUsualMin = static_cast<int16_t>(get16(in + kOffDelta));
     c.onsetMinOfDay   = get16(in + kOffOnset);
     c.wakeMinOfDay    = get16(in + kOffWake);

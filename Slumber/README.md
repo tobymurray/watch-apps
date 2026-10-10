@@ -9,9 +9,9 @@ as two installs:
 2. **[SlumberGlance](../SlumberGlance).** A `Glance` app. It owns the carousel
    card, and it only reads what Slumber publishes.
 
-**This build records; it does not report.** It logs a row every 30 s all day,
-and the wearer's own marks beside it, so the questions below can be answered
-from what is on the watch.
+It logs a row every 30 s all day, and the wearer's own marks beside it, so the
+questions below can be answered from what is on the watch. From the same
+epochs it finds last night and puts it on the card.
 
 ## Why two apps, not one
 
@@ -110,6 +110,26 @@ middle of a worn night is the watch off the wrist or the arm pressed against
 the sensor. One recorded night has one, and it splits that night in three.
 Only a diary can say which it was.
 
+## Reporting a night
+
+Every 5 minutes, with the heartbeat, Slumber runs SleepPeriods over the last
+36 h and puts one period on the card:
+
+- **The longest worn period that ended in the last 20 h.** Longest, not latest:
+  SleepLab's 2026-08-25 night split at a 65-minute awakening into 5.3 h and
+  3.2 h, and the later half is not the night. A nap the next afternoon is
+  shorter than the night, so it does not replace it.
+- **Until SleepPeriods settles it**, an hour after its last rest, the card says
+  `so far`.
+- **Only a table, and no worn period**, reports `No night` / `watch was off`.
+  An uncertain wrist is never reported.
+- **20 h after it ended**, the night expires and the card says Slumber is up.
+
+The 36 h live in RAM and in `Epochs/`, and a restart reloads them before its
+first card, so plugging in to charge in the morning keeps the night on the
+card. `Software/Libs/Header/Sleep/LastNight.hpp` makes the choice;
+`SLUMBER_DAYS_DIR` replays a day file and prints what the card would say.
+
 ## What the log answers
 
 Each question is answered from files on the watch's volume under
@@ -133,8 +153,9 @@ separates sitting still from sleeping, so the screen exists to collect them.
 | --- | --- |
 | `Days/<yyyymmdd>.csv` | One row per 30 s, named for the local day. Schema in `Software/Libs/Header/Recorder/EpochRow.hpp`; -1 means not measured. A day file begun under another schema's header is renamed `<yyyymmdd>-<n>.csv` first, so no file mixes two |
 | `Marks.csv` | `utc,utc_off_min,uptime_ms,local,code,label`, one line per R1 press |
-| `Debug/lifecycle.log` | `start`, `sensors` (upper case = resolved), `day`, `late`, `clock`, `mark`, `write-fail`, `card-fail`, `gui-open`, `gui-close`, `stop` |
-| `../SharedData/slumber/card` | The glance's card, every 5 minutes |
+| `Epochs/<yyyymmdd>.bin` | SleepPeriods' inputs, 12 bytes an epoch, so a restart can reload the last 36 h. A cache of the day CSV; header in `Software/Libs/Header/Recorder/EpochHistory.hpp` |
+| `Debug/lifecycle.log` | `start`, `sensors` (upper case = resolved), `history` (epochs reloaded), `day`, `late`, `clock`, `night` (each change to the reported night), `mark`, `write-fail`, `card-fail`, `gui-open`, `gui-close`, `stop` |
+| `../SharedData/slumber/card` | The glance's card, every 5 minutes: liveness, and last night once there is one |
 
 Rows are buffered and written ten at a time, so a crash loses at most five
 minutes; a USB unplug stops the app cleanly and flushes. A day file is about

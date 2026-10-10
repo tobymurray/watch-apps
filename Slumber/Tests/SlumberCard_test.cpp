@@ -19,8 +19,8 @@ Card sample()
     c.serviceStartUtc = 1'791'400'000u;
     c.launchNo        = 3;
     c.state           = State::Report;
-    c.sleepMin        = 424;
-    c.stillMin        = 401;
+    c.restMin         = 401;
+    c.spanMin         = 424;
     c.deltaVsUsualMin = -12;
     c.onsetMinOfDay   = 23 * 60 + 12;
     c.wakeMinOfDay    = 6 * 60 + 41;
@@ -44,8 +44,8 @@ TEST(SlumberCard, RoundTripsEveryField)
     EXPECT_EQ(out.serviceStartUtc, in.serviceStartUtc);
     EXPECT_EQ(out.launchNo, in.launchNo);
     EXPECT_EQ(out.state, in.state);
-    EXPECT_EQ(out.sleepMin, in.sleepMin);
-    EXPECT_EQ(out.stillMin, in.stillMin);
+    EXPECT_EQ(out.restMin, in.restMin);
+    EXPECT_EQ(out.spanMin, in.spanMin);
     EXPECT_EQ(out.deltaVsUsualMin, in.deltaVsUsualMin);
     EXPECT_EQ(out.onsetMinOfDay, in.onsetMinOfDay);
     EXPECT_EQ(out.wakeMinOfDay, in.wakeMinOfDay);
@@ -58,7 +58,7 @@ TEST(SlumberCard, LayoutIsLittleEndianAndPinned)
     uint8_t bytes[kSize];
     encode(sample(), bytes);
     EXPECT_EQ(std::memcmp(bytes, "SLMB", 4), 0);
-    EXPECT_EQ(bytes[4], 1);   // schema
+    EXPECT_EQ(bytes[4], 2);   // schema
     EXPECT_EQ(bytes[6], 48);  // length
     EXPECT_EQ(bytes[8], 7);   // seq
     EXPECT_EQ(bytes[32], static_cast<uint8_t>(State::Report));
@@ -97,7 +97,7 @@ TEST(SlumberCard, AnotherSchemaIsRefusedNotMisread)
 {
     uint8_t bytes[kSize];
     encode(sample(), bytes);
-    bytes[4] = 2;
+    bytes[4] = 1;
     Card out;
     EXPECT_EQ(decode(bytes, kSize, out), Decode::BadSchema);
 }

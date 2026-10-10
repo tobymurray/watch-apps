@@ -2,11 +2,13 @@
 
 #include <cmath>
 #include <cstring>
+#include <memory>
 #include <string>
 
 #include "ActivityCount.hpp"
 #include "DayLog.hpp"
 #include "Engine/EpochCounter.hpp"
+#include "EpochHistory.hpp"
 #include "EpochRow.hpp"
 #include "FakeFileSystem.hpp"
 #include "LocalTime.hpp"
@@ -237,4 +239,111 @@ TEST(DayLog, AnOlderSchemasFileIsSetAside)
     ASSERT_TRUE(log.add(EpochRow(), "20261010"));
     ASSERT_TRUE(log.flush());
     EXPECT_FALSE(fs.exist("Days/20261010-2.csv"));
+}
+
+TEST(LocalTime, MinuteOfDayIsLocal)
+{
+    const int64_t utc = 1791599400;  // 2026-10-10T02:30:00Z
+    EXPECT_EQ(LocalTime::minuteOfDay(utc, -240), 22 * 60 + 30);
+    EXPECT_EQ(LocalTime::minuteOfDay(utc, 0), 2 * 60 + 30);
+}
+
+namespace
+{
+
+SleepPeriods::Epoch epochAt(uint32_t utc)
+{
+    SleepPeriods::Epoch e;
+    e.utc        = utc;
+    e.count      = utc % 5000;
+    e.steps      = 513;
+    e.hrTrustX10 = 27;
+    e.hasHr      = true;
+    e.hrAsked    = true;
+    return e;
+}
+
+/// 20261009 00:00 in Toronto.
+constexpr uint32_t kMidnight = 1791518400u;  // 2026-10-09T04:00:00Z
+
+} // namespace
+
+TEST(EpochHistory, ARecordRoundTrips)
+{
+    uint8_t buf[EpochHistory::kRecSize];
+    const SleepPeriods::Epoch in = epochAt(1791599400);
+    EpochHistory::encode(in, buf);
+    const SleepPeriods::Epoch out = EpochHistory::decode(buf);
+    EXPECT_EQ(out.utc, in.utc);
+    EXPECT_EQ(out.count, in.count);
+    EXPECT_EQ(out.steps, in.steps);
+    EXPECT_EQ(out.hrTrustX10, in.hrTrustX10);
+    EXPECT_TRUE(out.hasHr);
+    EXPECT_TRUE(out.hrAsked);
+}
+
+/// A restart mid-morning finds the night that crossed midnight, in order.
+TEST(EpochHistory, ARestartRestoresTheWindowAcrossDays)
+{
+    SDK::Test::FakeFileSystem fs;
+    {
+        auto h = std::make_unique<EpochHistory>(fs);
+        char stem[9];
+        for (uint32_t t = kMidnight - 6 * 3600; t < kMidnight + 9 * 3600; t += 30) {
+            LocalTime::dayStem(t, -240, stem);
+            ASSERT_TRUE(h->add(epochAt(t), stem));
+        }
+        ASSERT_TRUE(h->flush());
+    }
+    EXPECT_TRUE(fs.exist("Epochs/20261008.bin"));
+    EXPECT_TRUE(fs.exist("Epochs/20261009.bin"));
+
+    auto h = std::make_unique<EpochHistory>(fs);
+    h->restore(kMidnight + 9 * 3600, -240);
+    ASSERT_EQ(h->size(), 15u * 120u);
+    EXPECT_EQ(h->data()[0].utc, kMidnight - 6 * 3600);
+    for (size_t i = 1; i < h->size(); ++i) {
+        ASSERT_LT(h->data()[i - 1].utc, h->data()[i].utc);
+    }
+}
+
+TEST(EpochHistory, OnlyTheWindowIsKept)
+{
+    SDK::Test::FakeFileSystem fs;
+    auto h = std::make_unique<EpochHistory>(fs);
+    for (uint32_t t = kMidnight; t < kMidnight + EpochHistory::kWindowS + 3600; t += 30) {
+        h->add(epochAt(t), "20261009");
+    }
+    EXPECT_EQ(h->size(), EpochHistory::kCap);
+    EXPECT_EQ(h->data()[0].utc, kMidnight + 3600);
+}
+
+TEST(EpochHistory, AClockSetBackStartsAgain)
+{
+    SDK::Test::FakeFileSystem fs;
+    auto h = std::make_unique<EpochHistory>(fs);
+    h->add(epochAt(kMidnight), "20261009");
+    h->add(epochAt(kMidnight + 30), "20261009");
+    h->add(epochAt(kMidnight - 3600), "20261008");
+    ASSERT_EQ(h->size(), 1u);
+    EXPECT_EQ(h->data()[0].utc, kMidnight - 3600);
+}
+
+TEST(EpochHistory, AFileUnderAnotherHeaderIsReplaced)
+{
+    SDK::Test::FakeFileSystem fs;
+    fs.mkdir(EpochHistory::kDir);
+    {
+        auto   f = fs.file("Epochs/20261009.bin");
+        size_t w = 0;
+        ASSERT_TRUE(f->open(true, true));
+        ASSERT_TRUE(f->write("old\n0123456789AB", 16, w));
+        f->close();
+    }
+    auto h = std::make_unique<EpochHistory>(fs);
+    for (size_t i = 0; i < EpochHistory::kFlushRecs; ++i) {
+        ASSERT_TRUE(h->add(epochAt(kMidnight + 30 * i), "20261009"));
+    }
+    h->restore(kMidnight + 3600, -240);
+    EXPECT_EQ(h->size(), EpochHistory::kFlushRecs);
 }

@@ -8,7 +8,7 @@
 #include "SlumberCard.hpp"
 
 /// What the two lines of the card say, decided without the SDK so it can be
-/// tested on a desk.
+/// tested on a desk: Slumber stopped, else last night, else that it is running.
 namespace CardView
 {
 
@@ -66,6 +66,24 @@ inline View make(SlumberCard::Read read, const SlumberCard::Card &card,
         std::snprintf(v.top, sizeof(v.top), "Slumber stopped");
         std::snprintf(v.bottom, sizeof(v.bottom), "last seen %s ago", span);
         v.tone = Tone::Warning;
+        return v;
+    }
+
+    const bool fresh = shown->validUntilUtc == 0 || nowUtc <= shown->validUntilUtc;
+    if (fresh && (shown->state == SlumberCard::State::Report ||
+                  shown->state == SlumberCard::State::Provisional)) {
+        std::snprintf(v.top, sizeof(v.top), "Night %02u:%02u-%02u:%02u",
+                      (shown->onsetMinOfDay / 60u) % 24u, shown->onsetMinOfDay % 60u,
+                      (shown->wakeMinOfDay / 60u) % 24u, shown->wakeMinOfDay % 60u);
+        hm(span, sizeof(span), shown->restMin * 60u);
+        std::snprintf(v.bottom, sizeof(v.bottom), "%s %s", span,
+                      shown->state == SlumberCard::State::Report ? "at rest" : "so far");
+        return v;
+    }
+    if (fresh && shown->state == SlumberCard::State::NotWorn) {
+        std::snprintf(v.top, sizeof(v.top), "No night");
+        std::snprintf(v.bottom, sizeof(v.bottom), "watch was off");
+        v.tone = Tone::Muted;
         return v;
     }
 

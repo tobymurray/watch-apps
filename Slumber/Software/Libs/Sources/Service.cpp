@@ -5,7 +5,9 @@
 #include <ctime>
 
 #include "CardStore.hpp"
+#include "LastNight.hpp"
 #include "LocalTime.hpp"
+#include "SleepPeriods.hpp"
 
 #include "SDK/Messages/CommandMessages.hpp"
 #include "SDK/Messages/MessageBase.hpp"
@@ -75,12 +77,32 @@ uint16_t bump(uint16_t v)
     return v < 0xFFFFu ? static_cast<uint16_t>(v + 1) : v;
 }
 
+template <typename T>
+T clampTo(int32_t v, T max)
+{
+    return v <= 0 ? T{0} : (static_cast<uint32_t>(v) >= max ? max : static_cast<T>(v));
+}
+
+SleepPeriods::Epoch toEpoch(const Slumber::EpochRow &r)
+{
+    SleepPeriods::Epoch e;
+    // A row's `utc` is when it closed; an epoch is keyed by when it opened.
+    e.utc        = static_cast<uint32_t>(r.utc) - SleepPeriods::kEpochS;
+    e.count      = r.count;
+    e.steps      = clampTo<uint16_t>(r.steps, 0xFFFFu);
+    e.hasHr      = r.hrN > 0;
+    e.hrAsked    = r.hrN >= 0;
+    e.hrTrustX10 = e.hasHr ? clampTo<uint8_t>(r.hrTrustX10, 0xFFu) : 0;
+    return e;
+}
+
 } // namespace
 
 Service::Service(SDK::Kernel &kernel)
     : mKernel(kernel)
     , mLog(kernel)
     , mDays(kernel.fs)
+    , mHistory(kernel.fs)
     , mAccel(SDK::Sensor::Type::ACCELEROMETER, kAccelPeriodMs, kAccelLatencyMs)
     , mHr(SDK::Sensor::Type::HEART_RATE, kHrPeriodMs)
     , mSteps(SDK::Sensor::Type::STEP_COUNTER, kEventPeriodMs)
@@ -356,6 +378,12 @@ void Service::closeEpoch(uint32_t now, uint32_t lateMs, uint32_t slotsLost)
             mLog.line("write-fail", "n=%lu stem=%s", static_cast<unsigned long>(mWriteFails), stem);
         }
     }
+    if (r.utc > 0 && r.utcOffMin != -1) {
+        restoreHistory(static_cast<uint32_t>(r.utc));
+        if (!mHistory.add(toEpoch(r), stem)) {
+            ++mWriteFails;
+        }
+    }
     if (mDays.rowsInFile() == 1) {
         mLog.line("day", "stem=%s off_min=%ld", stem, static_cast<long>(r.utcOffMin));
     }
@@ -421,11 +449,58 @@ void Service::publishCard()
     card.heartbeatUtc    = card.writtenUtc;
     card.serviceStartUtc = mStartUtc;
     card.launchNo        = mLaunchNo;
-    card.state           = SlumberCard::State::Recording;
+    fillNight(card, card.writtenUtc);
 
     mCardOk = SlumberCard::publish(mKernel.fs, card);
     if (!mCardOk) {
         mLog.line("card-fail", "seq=%lu", static_cast<unsigned long>(card.seq));
+    }
+}
+
+void Service::restoreHistory(uint32_t utc)
+{
+    std::tm       local{};
+    const int32_t off = utcOffsetMin(utc, local);
+    if (mHistoryRestored || off == -1) {
+        return;
+    }
+    mHistory.restore(utc, off);
+    mHistoryRestored = true;
+    mLog.line("history", "epochs=%lu", static_cast<unsigned long>(mHistory.size()));
+}
+
+void Service::fillNight(SlumberCard::Card &card, uint32_t utc)
+{
+    card.state = SlumberCard::State::Recording;
+    std::tm       local{};
+    const int32_t off = utcOffsetMin(utc, local);
+    if (off == -1 || mHistory.size() == 0) {
+        return;
+    }
+    const size_t n = SleepPeriods::find(mHistory.data(), mHistory.size(), mPeriods,
+                                        sizeof(mPeriods) / sizeof(mPeriods[0]), utc);
+    const LastNight::Choice c = LastNight::choose(mPeriods, n, utc);
+    if (c.kind == LastNight::Kind::None) {
+        return;
+    }
+    const SleepPeriods::Period &p = *c.period;
+    using SlumberCard::State;
+    card.state         = c.kind == LastNight::Kind::NotWorn ? State::NotWorn
+                         : p.settled                        ? State::Report
+                                                            : State::Provisional;
+    card.restMin       = p.restMin;
+    card.spanMin       = static_cast<uint16_t>((p.endUtc - p.startUtc) / 60u);
+    card.onsetMinOfDay = Slumber::LocalTime::minuteOfDay(p.startUtc, off);
+    card.wakeMinOfDay  = Slumber::LocalTime::minuteOfDay(p.endUtc, off);
+    card.validUntilUtc = p.endUtc + LastNight::kRecentS;
+
+    if (p.startUtc != mReportedStartUtc || card.state != mReportedState) {
+        mLog.line("night", "state=%u start=%lu end=%lu rest_min=%u worn_pct=%u hr_pct=%u",
+                  static_cast<unsigned>(card.state), static_cast<unsigned long>(p.startUtc),
+                  static_cast<unsigned long>(p.endUtc), static_cast<unsigned>(p.restMin),
+                  static_cast<unsigned>(p.wornPct), static_cast<unsigned>(p.hrCoverPct));
+        mReportedStartUtc = p.startUtc;
+        mReportedState    = card.state;
     }
 }
 
@@ -470,6 +545,9 @@ void Service::run()
     if (prior == SlumberCard::Read::Ok || prior == SlumberCard::Read::FromBackup) {
         mCardSeq = previous.seq;
     }
+    if (mStartUtc > 0) {
+        restoreHistory(mStartUtc);
+    }
     publishCard();
 
     connectSensors();
@@ -504,7 +582,8 @@ void Service::run()
 
         switch (msg->getType()) {
             case SDK::MessageType::COMMAND_APP_STOP: {
-                const bool flushed = mDays.flush();
+                const bool historyFlushed = mHistory.flush();
+                const bool flushed        = mDays.flush() && historyFlushed;
                 mLog.line("stop", "up_min=%lu rows=%lu fails=%lu flushed=%d",
                           static_cast<unsigned long>(upMinutes()),
                           static_cast<unsigned long>(mEpochs),

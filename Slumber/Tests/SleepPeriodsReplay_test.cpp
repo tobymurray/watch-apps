@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "LastNight.hpp"
 #include "SleepPeriods.hpp"
 
 using namespace SleepPeriods;
@@ -279,6 +280,14 @@ TEST(SleepPeriodsReplay, SlumberDays)
         std::printf("%-12s %-6s %6.1f %6u %5u %5u %s\n", local(q.startUtc).c_str(),
                     local(q.endUtc).substr(6).c_str(), (q.endUtc - q.startUtc) / 3600.0,
                     q.restMin, q.wornPct, q.hrCoverPct, name(q.worn));
+    }
+
+    const uint32_t          end = e.back().utc + kEpochS;
+    const LastNight::Choice c   = LastNight::choose(p.data(), p.size(), end);
+    if (c.period != nullptr) {
+        std::printf("card at the last row: %s %s-%s\n",
+                    c.kind == LastNight::Kind::Worn ? "night" : "table",
+                    local(c.period->startUtc).c_str(), local(c.period->endUtc).substr(6).c_str());
     }
 
     // A period with heart rate asked for and never trusted is a table.

@@ -10,13 +10,16 @@
 #include "ActivityCount.hpp"
 #include "Commands.hpp"
 #include "DayLog.hpp"
+#include "EpochHistory.hpp"
 #include "EpochRow.hpp"
+#include "LastNight.hpp"
 #include "Lifecycle.hpp"
 #include "SlumberCard.hpp"
 #include "Tilt.hpp"
 
 /// Records a row every 30 s for the device's whole life, and the wearer's
-/// marks beside it; `Slumber/README.md` says what each is for.
+/// marks beside it, and reports the last night on the card;
+/// `Slumber/README.md` says what each is for.
 class Service
 {
 public:
@@ -53,6 +56,8 @@ private:
     void closeEpoch(uint32_t now, uint32_t lateMs, uint32_t slotsLost);
     void onMark(const CustomMessage::Mark &mark);
     void publishCard();
+    void restoreHistory(uint32_t utc);
+    void fillNight(SlumberCard::Card &card, uint32_t utc);
     void publishStatus();
     uint32_t upMinutes() const;
 
@@ -62,6 +67,9 @@ private:
     SDK::Kernel        &mKernel;
     Slumber::Lifecycle  mLog;
     Slumber::DayLog     mDays;
+    Slumber::EpochHistory mHistory;
+    /// Every period holds at least 30 min of rest, so 36 h holds fewer than 72.
+    SleepPeriods::Period  mPeriods[72];
 
     Slumber::ActivityCount mCount;
     Slumber::Tilt          mTilt;
@@ -101,6 +109,9 @@ private:
     bool     mGuiAttached    = false;
     bool     mLastAccOk      = false;
     bool     mLastHrOk       = false;
+    bool     mHistoryRestored = false;
+    uint32_t mReportedStartUtc = 0;
+    SlumberCard::State mReportedState = SlumberCard::State::None;
     int64_t  mLastRowUtc     = -1;
     uint32_t mLastRowUptime  = 0;
 
