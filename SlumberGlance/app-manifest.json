@@ -1,0 +1,23 @@
+{
+  "manifest_version": 1,
+  "type": [
+    "glance"
+  ],
+  "name": "Slumber Glance",
+  "binary": "Slumber_Glance_0.1.0.uapp",
+  "appVersion": "0.1.0",
+  "minKernelVersion": "1.4.0",
+  "requiredHardware": [],
+  "description": "The glance card for Slumber. It shows what Slumber last published, and says so when Slumber has stopped running. Install Slumber too; on its own this card only asks you to.",
+  "id": "7DB9C8AE10255D53",
+  "stravaExport": false,
+  "supportsLaps": false,
+  "supportsDistance": false,
+  "supportsTrack": false,
+  "supportsHeartbeat": false,
+  "supportsElevation": false,
+  "supportsStep": false,
+  "supportsSpeed": "none",
+  "customMeasures": [],
+  "configFields": []
+}
