@@ -77,6 +77,13 @@ public:
     static constexpr const char *kPreamble =
         "# Slumber epoch log, schema 2: one row per 30 s, all day. -1 = not measured.\n";
 
+    /// Bytes a day file starts with; `out` holds at least kHeaderCap.
+    static constexpr size_t kHeaderCap = 512;
+    static void header(char *out)
+    {
+        std::snprintf(out, kHeaderCap, "%s%s", kPreamble, EpochRow::kHeader);
+    }
+
     explicit DayLog(SDK::Interface::IFileSystem &fs)
         : mFs(fs)
     {}
@@ -113,12 +120,12 @@ public:
         std::snprintf(path, sizeof(path), "%s/%s.csv", kDir, mStem);
         mFs.mkdir(kDir);
 
-        char header[512];
-        std::snprintf(header, sizeof(header), "%s%s", kPreamble, EpochRow::kHeader);
+        char head[kHeaderCap];
+        header(head);
         if (!mChecked) {
-            mChecked = startsWith(mFs, path, header) || setAside(path);
+            mChecked = startsWith(mFs, path, head) || setAside(path);
         }
-        const bool ok = mChecked && appendFile(mFs, path, header, mBuf, mLen);
+        const bool ok = mChecked && appendFile(mFs, path, head, mBuf, mLen);
         mLen     = 0;
         mPending = 0;
         return ok;

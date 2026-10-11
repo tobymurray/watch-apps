@@ -347,3 +347,104 @@ TEST(EpochHistory, AFileUnderAnotherHeaderIsReplaced)
     h->restore(kMidnight + 3600, -240);
     EXPECT_EQ(h->size(), EpochHistory::kFlushRecs);
 }
+
+namespace
+{
+
+EpochRow rowClosingAt(int64_t utc)
+{
+    EpochRow r;
+    r.utc        = utc;
+    r.count      = static_cast<uint32_t>(utc % 5000);
+    r.steps      = static_cast<int32_t>(utc % 3);
+    r.hrN        = static_cast<int32_t>(utc % 4) - 1;
+    r.hrTrustX10 = 27;
+    return r;
+}
+
+/// The day files a watch upgraded from a build without `Epochs/` holds.
+void writeDays(SDK::Test::FakeFileSystem &fs, uint32_t from, uint32_t to)
+{
+    auto log = std::make_unique<DayLog>(fs);
+    char stem[9];
+    for (uint32_t t = from; t < to; t += 30) {
+        LocalTime::dayStem(t, -240, stem);
+        ASSERT_TRUE(log->add(rowClosingAt(t), stem));
+    }
+    ASSERT_TRUE(log->flush());
+}
+
+} // namespace
+
+TEST(EpochHistory, AMissingCacheIsRebuiltFromTheDayFiles)
+{
+    SDK::Test::FakeFileSystem fs;
+    writeDays(fs, kMidnight - 6 * 3600 + 30, kMidnight + 9 * 3600 + 30);
+
+    auto h = std::make_unique<EpochHistory>(fs);
+    EXPECT_EQ(h->restore(kMidnight + 9 * 3600, -240), 2u);
+    ASSERT_EQ(h->size(), 15u * 120u);
+    for (size_t i = 0; i < h->size(); ++i) {
+        const EpochRow            r    = rowClosingAt(kMidnight - 6 * 3600 + 30 * (i + 1));
+        const SleepPeriods::Epoch want = EpochHistory::fromRow(r.utc, r.count, r.steps, r.hrN, r.hrTrustX10);
+        const SleepPeriods::Epoch got  = h->data()[i];
+        ASSERT_EQ(got.utc, want.utc);
+        ASSERT_EQ(got.count, want.count);
+        ASSERT_EQ(got.steps, want.steps);
+        ASSERT_EQ(got.hasHr, want.hasHr);
+        ASSERT_EQ(got.hrAsked, want.hrAsked);
+        ASSERT_EQ(got.hrTrustX10, want.hrTrustX10);
+    }
+}
+
+/// The rebuilt cache is written, so the next restart does not read the day files.
+TEST(EpochHistory, ARebuiltCacheIsKept)
+{
+    SDK::Test::FakeFileSystem fs;
+    writeDays(fs, kMidnight - 6 * 3600 + 30, kMidnight + 9 * 3600 + 30);
+    std::make_unique<EpochHistory>(fs)->restore(kMidnight + 9 * 3600, -240);
+    fs.remove("Days/20261008.csv");
+    fs.remove("Days/20261009.csv");
+
+    auto h = std::make_unique<EpochHistory>(fs);
+    EXPECT_EQ(h->restore(kMidnight + 9 * 3600, -240), 0u);
+    EXPECT_EQ(h->size(), 15u * 120u);
+}
+
+TEST(EpochHistory, ADayFileUnderAnotherSchemaIsNotRead)
+{
+    SDK::Test::FakeFileSystem fs;
+    fs.mkdir(DayLog::kDir);
+    {
+        const std::string text = std::string("# Slumber epoch log, schema 1\n") + EpochRow::kHeader +
+                                 "1,1791518430,-240\n";
+        auto   f = fs.file("Days/20261009.csv");
+        size_t w = 0;
+        ASSERT_TRUE(f->open(true, true));
+        ASSERT_TRUE(f->write(text.data(), text.size(), w));
+        f->close();
+    }
+    auto h = std::make_unique<EpochHistory>(fs);
+    EXPECT_EQ(h->restore(kMidnight + 3600, -240), 0u);
+    EXPECT_EQ(h->size(), 0u);
+    EXPECT_FALSE(fs.exist("Epochs/20261009.bin"));
+}
+
+/// A crash can leave the last row half-written; the rows before it still count.
+TEST(EpochHistory, AHalfWrittenRowIsSkipped)
+{
+    SDK::Test::FakeFileSystem fs;
+    writeDays(fs, kMidnight + 30, kMidnight + 3600 + 30);
+    {
+        auto   f    = fs.file("Days/20261009.csv");
+        size_t w    = 0;
+        const char cut[] = "3600000,1791522030,-240,30000";
+        ASSERT_TRUE(f->open(true, false));
+        ASSERT_TRUE(f->seek(f->size()));
+        ASSERT_TRUE(f->write(cut, sizeof(cut) - 1, w));
+        f->close();
+    }
+    auto h = std::make_unique<EpochHistory>(fs);
+    h->restore(kMidnight + 2 * 3600, -240);
+    EXPECT_EQ(h->size(), 120u);
+}

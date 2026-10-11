@@ -77,23 +77,9 @@ uint16_t bump(uint16_t v)
     return v < 0xFFFFu ? static_cast<uint16_t>(v + 1) : v;
 }
 
-template <typename T>
-T clampTo(int32_t v, T max)
-{
-    return v <= 0 ? T{0} : (static_cast<uint32_t>(v) >= max ? max : static_cast<T>(v));
-}
-
 SleepPeriods::Epoch toEpoch(const Slumber::EpochRow &r)
 {
-    SleepPeriods::Epoch e;
-    // A row's `utc` is when it closed; an epoch is keyed by when it opened.
-    e.utc        = static_cast<uint32_t>(r.utc) - SleepPeriods::kEpochS;
-    e.count      = r.count;
-    e.steps      = clampTo<uint16_t>(r.steps, 0xFFFFu);
-    e.hasHr      = r.hrN > 0;
-    e.hrAsked    = r.hrN >= 0;
-    e.hrTrustX10 = e.hasHr ? clampTo<uint8_t>(r.hrTrustX10, 0xFFu) : 0;
-    return e;
+    return Slumber::EpochHistory::fromRow(r.utc, r.count, r.steps, r.hrN, r.hrTrustX10);
 }
 
 } // namespace
@@ -464,9 +450,12 @@ void Service::restoreHistory(uint32_t utc)
     if (mHistoryRestored || off == -1) {
         return;
     }
-    mHistory.restore(utc, off);
-    mHistoryRestored = true;
-    mLog.line("history", "epochs=%lu", static_cast<unsigned long>(mHistory.size()));
+    const uint32_t from    = mKernel.sys.getTimeMs();
+    const unsigned rebuilt = mHistory.restore(utc, off);
+    mHistoryRestored       = true;
+    mLog.line("history", "epochs=%lu rebuilt_days=%u ms=%lu",
+              static_cast<unsigned long>(mHistory.size()), rebuilt,
+              static_cast<unsigned long>(mKernel.sys.getTimeMs() - from));
 }
 
 void Service::fillNight(SlumberCard::Card &card, uint32_t utc)
