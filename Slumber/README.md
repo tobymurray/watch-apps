@@ -182,6 +182,15 @@ Rows are buffered and written ten at a time, so a crash loses at most five
 minutes; a USB unplug stops the app cleanly and flushes. A day file is about
 0.5 MB.
 
+**Reading a pull on a desk.** Copy the watch's `Apps/Slumber/` somewhere
+outside this repository, then run
+`python3 Slumber/Tools/analyse.py <that copy>`. It needs `c++` and Python 3
+only. It compiles `Tools/nights.cpp` from the headers the watch runs, so the
+rest, wrist, periods and card it prints are the watch's own. Around them it
+prints recording health, the lifecycle log, `Nights.csv`, the night's edges
+against the marks, each marked state's movement and heart rate, every
+low-trust stretch against `kSensorFloorCount`, and battery drain.
+
 **The counts are SleepLab's.** `ActivityCount` is SleepLab's counter, and a
 host test holds the two equal sample for sample, so SleepPeriods' measured
 thresholds apply to these rows unchanged.
