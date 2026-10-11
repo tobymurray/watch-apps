@@ -186,8 +186,7 @@ installed and recording beside it. Schema 2 is what it changed.
   raw values.
 - **The rate is the firmware's.** Both apps ask for 40 ms with 5 s batching;
   both got 50 Hz (1,500 samples a row) in batches about every 190 ms, about 190
-  wakes a row. SleepLab's nights show the same back to August. With SleepLab
-  removed, `acc_samples` and `acc_batches` say whether that was it.
+  wakes a row. SleepLab's nights show the same back to August.
 - **Off the wrist, heart rate is silent, not untrusted.** On a table for over
   three hours, not one of 354 rows had a reading. The count sat at 163-205,
   the sensor's floor, and the gravity vector did not turn. This is why silence
@@ -199,8 +198,27 @@ installed and recording beside it. Schema 2 is what it changed.
   to 4,267 mV. Read `batt_mah`.
 - **Skin temperature separated the table from the wrist that day**, but it
   depends on the room and the wearer, so nothing reads it; it stays in the log.
-- **Not answered yet:** whether sitting still looks like sleep. No sitting marks
-  were made.
+
+## What the second day settled
+
+23.25 hours of schema 2 on 2026-10-10 and 11, worn with 27 marks, Slumber
+alone on the watch.
+
+- **The rate is still 50 Hz without SleepLab**: 1,500 samples and 156 batches
+  in every row. Nothing another app asked for set it.
+- **Watching TV does not look like sleep by movement alone.** Over 2.6 hours
+  marked `Sitting, TV`, the longest rest run was 10.5 minutes, against the
+  30-minute block a period needs; the gravity vector turned a median 24-35° an
+  epoch, against 0.2° asleep. Heart rate did not separate them (54-61 bpm
+  watching, 47-60 asleep). One evening, one wearer.
+- **Heart rate can keep reading on a table.** Set down at 10:46, the watch
+  reported 70-100 bpm with trust up to 2.9 for ten minutes before going
+  silent; set down at 17:59 and 18:40, it was silent at once.
+- **Recording all day cost about 1.4 mA, the whole watch**: `batt_mah` fell
+  from 204 to 172.
+- **The night matched the marks**: rest from 23:54 (`Lights out` 23:54) to
+  09:05 (`Awake in bed` 09:07), once an arm on the sensor stopped splitting it
+  (see "Finding a night").
 
 ## The screen
 
