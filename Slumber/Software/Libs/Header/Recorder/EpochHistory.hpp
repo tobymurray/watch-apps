@@ -4,14 +4,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <memory>
 
 #include "SDK/Interfaces/IFileSystem.hpp"
 
 #include "DayLog.hpp"
-#include "EpochRow.hpp"
+#include "DayRow.hpp"
 #include "LocalTime.hpp"
 #include "SleepPeriods.hpp"
 
@@ -98,21 +97,6 @@ public:
     const SleepPeriods::Epoch *data() const { return mEpochs; }
     size_t                     size() const { return mN; }
 
-    /// The epoch a day-file row describes: the row's `utc` is when it closed,
-    /// an epoch is keyed by when it opened.
-    static SleepPeriods::Epoch fromRow(int64_t utc, uint32_t count, int32_t steps, int32_t hrN,
-                                       int32_t hrTrustX10)
-    {
-        SleepPeriods::Epoch e;
-        e.utc        = static_cast<uint32_t>(utc) - SleepPeriods::kEpochS;
-        e.count      = count;
-        e.steps      = clampTo<uint16_t>(steps, 0xFFFFu);
-        e.hasHr      = hrN > 0;
-        e.hrAsked    = hrN >= 0;
-        e.hrTrustX10 = e.hasHr ? clampTo<uint8_t>(hrTrustX10, 0xFFu) : 0;
-        return e;
-    }
-
     static void encode(const SleepPeriods::Epoch &e, uint8_t *out)
     {
         put32(out, e.utc);
@@ -148,12 +132,6 @@ private:
             --mN;
         }
         mEpochs[mN++] = e;
-    }
-
-    template <typename T>
-    static T clampTo(int32_t v, uint32_t max)
-    {
-        return v <= 0 ? T{0} : (static_cast<uint32_t>(v) >= max ? static_cast<T>(max) : static_cast<T>(v));
     }
 
     /// True if `e` is inside the window and after the epochs already held.
@@ -196,30 +174,6 @@ private:
         return true;
     }
 
-    /// Index of `name` among EpochRow's columns, or -1.
-    static int column(const char *name)
-    {
-        const size_t len = std::strlen(name);
-        int          at  = 0;
-        for (const char *p = EpochRow::kHeader; *p != '\0' && *p != '\n'; ++at) {
-            const char *end = p + std::strcspn(p, ",\n");
-            if (static_cast<size_t>(end - p) == len && std::strncmp(p, name, len) == 0) {
-                return at;
-            }
-            p = *end == ',' ? end + 1 : end;
-        }
-        return -1;
-    }
-
-    static int columnCount()
-    {
-        int n = 1;
-        for (const char *p = EpochRow::kHeader; *p != '\0'; ++p) {
-            n += *p == ',' ? 1 : 0;
-        }
-        return n;
-    }
-
     /// Reads `Days/<stem>.csv` into the history and writes what it kept to
     /// `Epochs/<stem>.bin`. Only a day file under this build's header is read.
     bool rebuild(const char *stem, uint32_t nowUtc)
@@ -243,17 +197,16 @@ private:
         }
         mFs.mkdir(kDir);
 
-        Columns cols;
-        RowReader rows{};
-        uint8_t   out[kRecSize * 64];
-        size_t    outN = 0;
-        char      buf[512];
-        size_t    got = 0;
-        bool      ok  = f->seek(std::strlen(head));
+        DayRow::Reader rows;
+        uint8_t        out[kRecSize * 64];
+        size_t         outN = 0;
+        char           buf[512];
+        size_t         got = 0;
+        bool           ok  = f->seek(std::strlen(head));
         while (ok && f->read(buf, sizeof(buf), got) && got > 0) {
             for (size_t i = 0; i < got; ++i) {
                 SleepPeriods::Epoch e;
-                if (!rows.take(buf[i], cols, e)) {
+                if (!rows.take(buf[i], e)) {
                     continue;
                 }
                 if (keep(e, nowUtc)) {
@@ -275,70 +228,6 @@ private:
         }
         return ok;
     }
-
-    struct Columns {
-        int utc   = column("utc");
-        int count = column("count");
-        int steps = column("steps");
-        int hrN   = column("hr_n");
-        int trust = column("hr_trust_x10");
-        int total = columnCount();
-    };
-
-    /// Assembles a day file's bytes into rows; a row cut short by a crash, or
-    /// one too long to be a row, is skipped.
-    struct RowReader {
-        char   line[DayLog::kRowCap];
-        size_t len      = 0;
-        bool   overflow = false;
-
-        bool take(char c, const Columns &cols, SleepPeriods::Epoch &e)
-        {
-            if (c != '\n') {
-                if (len < sizeof(line) - 1) {
-                    line[len++] = c;
-                } else {
-                    overflow = true;
-                }
-                return false;
-            }
-            line[len]        = '\0';
-            const bool whole = !overflow;
-            len              = 0;
-            overflow         = false;
-            return whole && parse(cols, e);
-        }
-
-        bool parse(const Columns &cols, SleepPeriods::Epoch &e) const
-        {
-            const int   want[5] = {cols.utc, cols.count, cols.steps, cols.hrN, cols.trust};
-            int64_t     v[5]    = {};
-            int         at      = 0;
-            const char *p       = line;
-            for (;; ++at) {
-                char          *end = nullptr;
-                const int64_t  n   = std::strtoll(p, &end, 10);
-                if (end == p || (*end != ',' && *end != '\0')) {
-                    return false;
-                }
-                for (int k = 0; k < 5; ++k) {
-                    if (at == want[k]) {
-                        v[k] = n;
-                    }
-                }
-                if (*end == '\0') {
-                    break;
-                }
-                p = end + 1;
-            }
-            if (at + 1 != cols.total || v[0] <= 0) {
-                return false;
-            }
-            e = fromRow(v[0], static_cast<uint32_t>(v[1]), static_cast<int32_t>(v[2]),
-                        static_cast<int32_t>(v[3]), static_cast<int32_t>(v[4]));
-            return true;
-        }
-    };
 
     static void put32(uint8_t *p, uint32_t v)
     {

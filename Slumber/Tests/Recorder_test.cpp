@@ -386,7 +386,7 @@ TEST(EpochHistory, AMissingCacheIsRebuiltFromTheDayFiles)
     ASSERT_EQ(h->size(), 15u * 120u);
     for (size_t i = 0; i < h->size(); ++i) {
         const EpochRow            r    = rowClosingAt(kMidnight - 6 * 3600 + 30 * (i + 1));
-        const SleepPeriods::Epoch want = EpochHistory::fromRow(r.utc, r.count, r.steps, r.hrN, r.hrTrustX10);
+        const SleepPeriods::Epoch want = DayRow::toEpoch(r.utc, r.count, r.steps, r.hrN, r.hrTrustX10);
         const SleepPeriods::Epoch got  = h->data()[i];
         ASSERT_EQ(got.utc, want.utc);
         ASSERT_EQ(got.count, want.count);

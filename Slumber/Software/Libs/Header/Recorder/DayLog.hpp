@@ -9,6 +9,7 @@
 
 #include "SDK/Interfaces/IFileSystem.hpp"
 
+#include "DayRow.hpp"
 #include "EpochRow.hpp"
 
 namespace Slumber
@@ -69,7 +70,7 @@ class DayLog
 {
 public:
     static constexpr char   kDir[]    = "Days";
-    static constexpr size_t kRowCap   = 320;
+    static constexpr size_t kRowCap   = DayRow::kRowCap;
     /// Five minutes of rows per write; a USB unplug flushes through `flush()`.
     static constexpr size_t kFlushRows = 10;
     /// Set-aside files per day; past this, rows are dropped rather than mixed.
