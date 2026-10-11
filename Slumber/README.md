@@ -138,6 +138,18 @@ card. A day missing from `Epochs/`, as after an upgrade from a build without
 it, is rebuilt from its day file and written back. `Software/Libs/Header/Sleep/LastNight.hpp` makes the choice;
 `SLUMBER_DAYS_DIR` replays a day file and prints what the card would say.
 
+**Every period is logged once it settles**, one line in `Nights.csv`, so the
+nights outlive the 36 h window. Besides its edges and rest, each line carries
+`Software/Libs/Header/Sleep/NightSummary.hpp`'s two numbers:
+
+- **Longest rest**, the longest stretch at rest unbroken by movement or missing
+  data.
+- **Restless spells**, a minute or more of movement above the rest ceiling.
+  Not awakenings: over 23 worn nights, SleepLab's and Slumber's, movement came
+  in runs of 1-2 minutes, 198 runs of a minute or more and none of 5. A wrist
+  cannot see someone lying awake and still, so nothing here claims to count
+  awakenings.
+
 ## What the log answers
 
 Each question is answered from files on the watch's volume under
@@ -161,6 +173,7 @@ separates sitting still from sleeping, so the screen exists to collect them.
 | --- | --- |
 | `Days/<yyyymmdd>.csv` | One row per 30 s, named for the local day. Schema in `Software/Libs/Header/Recorder/EpochRow.hpp`; -1 means not measured. A day file begun under another schema's header is renamed `<yyyymmdd>-<n>.csv` first, so no file mixes two |
 | `Marks.csv` | `utc,utc_off_min,uptime_ms,local,code,label`, one line per R1 press |
+| `Nights.csv` | One line per settled period: edges in UTC and local time, rest, missing, longest rest, restless spells, the wrist verdict. Header in `Software/Libs/Header/Recorder/NightLog.hpp`; another schema's file is renamed `Nights-<n>.csv` |
 | `Epochs/<yyyymmdd>.bin` | SleepPeriods' inputs, 12 bytes an epoch, so a restart can reload the last 36 h. A cache of the day CSV, rebuilt from it when missing or under another header; header in `Software/Libs/Header/Recorder/EpochHistory.hpp` |
 | `Debug/lifecycle.log` | `start`, `sensors` (upper case = resolved), `history` (epochs reloaded, days rebuilt from their day file, and the ms it took), `day`, `late`, `clock`, `night` (each change to the reported night), `mark`, `write-fail`, `card-fail`, `gui-open`, `gui-close`, `stop` |
 | `../SharedData/slumber/card` | The glance's card, every 5 minutes: liveness, and last night once there is one |

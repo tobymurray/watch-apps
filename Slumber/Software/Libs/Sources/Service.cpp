@@ -89,6 +89,7 @@ Service::Service(SDK::Kernel &kernel)
     , mLog(kernel)
     , mDays(kernel.fs)
     , mHistory(kernel.fs)
+    , mNights(kernel.fs)
     , mAccel(SDK::Sensor::Type::ACCELEROMETER, kAccelPeriodMs, kAccelLatencyMs)
     , mHr(SDK::Sensor::Type::HEART_RATE, kHrPeriodMs)
     , mSteps(SDK::Sensor::Type::STEP_COUNTER, kEventPeriodMs)
@@ -458,6 +459,22 @@ void Service::restoreHistory(uint32_t utc)
               static_cast<unsigned long>(mKernel.sys.getTimeMs() - from));
 }
 
+void Service::logNights(size_t n, int32_t offsetMin)
+{
+    for (size_t i = 0; i < n; ++i) {
+        const SleepPeriods::Period &p = mPeriods[i];
+        if (!mNights.due(p)) {
+            continue;
+        }
+        const NightSummary::Summary s = NightSummary::summarise(mHistory.data(), mHistory.size(), p);
+        if (!mNights.add(p, s, offsetMin)) {
+            ++mWriteFails;
+            mLog.line("write-fail", "n=%lu path=%s", static_cast<unsigned long>(mWriteFails),
+                      Slumber::NightLog::kPath);
+        }
+    }
+}
+
 void Service::fillNight(SlumberCard::Card &card, uint32_t utc)
 {
     card.state = SlumberCard::State::Recording;
@@ -468,6 +485,7 @@ void Service::fillNight(SlumberCard::Card &card, uint32_t utc)
     }
     const size_t n = SleepPeriods::find(mHistory.data(), mHistory.size(), mPeriods,
                                         sizeof(mPeriods) / sizeof(mPeriods[0]), utc);
+    logNights(n, off);
     const LastNight::Choice c = LastNight::choose(mPeriods, n, utc);
     if (c.kind == LastNight::Kind::None) {
         return;

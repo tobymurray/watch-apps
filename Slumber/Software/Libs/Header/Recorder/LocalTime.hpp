@@ -68,6 +68,22 @@ inline uint16_t minuteOfDay(int64_t utc, int32_t offsetMin)
     return static_cast<uint16_t>(s / 60);
 }
 
+/// `yyyy-mm-dd hh:mm` of `utc` in local time; `out` holds at least 17 bytes.
+inline void stamp(int64_t utc, int32_t offsetMin, char *out)
+{
+    const int64_t local = utc + static_cast<int64_t>(offsetMin) * 60;
+    int64_t       days  = local / 86400;
+    if (local < 0 && local % 86400 != 0) {
+        --days;
+    }
+    int      y = 0;
+    unsigned m = 0, d = 0;
+    civilFromDays(static_cast<int32_t>(days), y, m, d);
+    const unsigned minute = minuteOfDay(utc, offsetMin);
+    std::snprintf(out, 17, "%04u-%02u-%02u %02u:%02u", static_cast<unsigned>(y) % 10000u, m % 100u,
+                  d % 100u, minute / 60u % 24u, minute % 60u);
+}
+
 } // namespace LocalTime
 } // namespace Slumber
 

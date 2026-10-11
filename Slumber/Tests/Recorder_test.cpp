@@ -12,6 +12,7 @@
 #include "EpochRow.hpp"
 #include "FakeFileSystem.hpp"
 #include "LocalTime.hpp"
+#include "NightLog.hpp"
 #include "Tilt.hpp"
 
 using namespace Slumber;
@@ -447,4 +448,75 @@ TEST(EpochHistory, AHalfWrittenRowIsSkipped)
     auto h = std::make_unique<EpochHistory>(fs);
     h->restore(kMidnight + 2 * 3600, -240);
     EXPECT_EQ(h->size(), 120u);
+}
+
+TEST(LocalTime, AStampIsLocal)
+{
+    char out[17];
+    LocalTime::stamp(1791599400, -240, out);  // 2026-10-10T02:30:00Z
+    EXPECT_STREQ(out, "2026-10-09 22:30");
+}
+
+namespace
+{
+
+/// 2026-10-08 23:54 to 2026-10-09 09:05 in Toronto.
+SleepPeriods::Period settledNight()
+{
+    SleepPeriods::Period p;
+    p.startUtc   = kMidnight - 6 * 60;
+    p.endUtc     = kMidnight + 9 * 3600 + 5 * 60;
+    p.restMin    = 551;
+    p.wornPct    = 100;
+    p.hrCoverPct = 83;
+    p.worn       = SleepPeriods::Worn::Worn;
+    p.settled    = true;
+    return p;
+}
+
+} // namespace
+
+TEST(NightLog, ASettledNightIsLoggedOnce)
+{
+    SDK::Test::FakeFileSystem fs;
+    NightLog                  log(fs);
+    NightSummary::Summary     s;
+    s.restlessSpells = 15;
+    s.longestRestMin = 240;
+    const SleepPeriods::Period p = settledNight();
+    ASSERT_TRUE(log.due(p));
+    ASSERT_TRUE(log.add(p, s, -240));
+    EXPECT_FALSE(log.due(p));
+
+    const std::string all = readAll(fs, NightLog::kPath);
+    EXPECT_EQ(all.find(NightLog::kHeader), 0u);
+    EXPECT_EQ(all.substr(std::strlen(NightLog::kHeader)),
+              "1791518040,1791551100,-240,2026-10-08 23:54,2026-10-09 09:05,551,551,0,240,15,worn,100,83\n");
+}
+
+TEST(NightLog, ARestartDoesNotLogItAgain)
+{
+    SDK::Test::FakeFileSystem fs;
+    const SleepPeriods::Period p = settledNight();
+    {
+        NightLog log(fs);
+        ASSERT_TRUE(log.due(p));
+        ASSERT_TRUE(log.add(p, {}, -240));
+    }
+    NightLog log(fs);
+    EXPECT_FALSE(log.due(p));
+    SleepPeriods::Period next = p;
+    next.startUtc += 86400;
+    next.endUtc += 86400;
+    EXPECT_TRUE(log.due(next));
+}
+
+TEST(NightLog, AnUnsettledNightWaits)
+{
+    SDK::Test::FakeFileSystem fs;
+    NightLog                  log(fs);
+    SleepPeriods::Period      p = settledNight();
+    p.settled = false;
+    EXPECT_FALSE(log.due(p));
+    EXPECT_FALSE(fs.exist(NightLog::kPath));
 }

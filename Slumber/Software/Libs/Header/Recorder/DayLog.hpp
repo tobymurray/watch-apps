@@ -62,6 +62,24 @@ inline bool startsWith(SDK::Interface::IFileSystem &fs, const char *path, const 
     return same;
 }
 
+/// Renames `<name>.csv` to the first free `<name>-<n>.csv`, n up to 9, so a file
+/// begun under another schema's header is kept rather than appended to.
+inline bool setAside(SDK::Interface::IFileSystem &fs, const char *path)
+{
+    const char *dot = std::strrchr(path, '.');
+    if (dot == nullptr) {
+        return false;
+    }
+    char to[48];
+    for (unsigned n = 1; n <= 9; ++n) {
+        std::snprintf(to, sizeof(to), "%.*s-%u%s", static_cast<int>(dot - path), path, n, dot);
+        if (!fs.exist(to)) {
+            return fs.rename(path, to);
+        }
+    }
+    return false;
+}
+
 /// Rows buffered in RAM and appended one local day per file.
 ///
 /// A day file written under another header, by an older schema, is renamed to
@@ -73,8 +91,6 @@ public:
     static constexpr size_t kRowCap   = DayRow::kRowCap;
     /// Five minutes of rows per write; a USB unplug flushes through `flush()`.
     static constexpr size_t kFlushRows = 10;
-    /// Set-aside files per day; past this, rows are dropped rather than mixed.
-    static constexpr unsigned kMaxSetAside = 9;
     static constexpr const char *kPreamble =
         "# Slumber epoch log, schema 2: one row per 30 s, all day. -1 = not measured.\n";
 
@@ -124,7 +140,7 @@ public:
         char head[kHeaderCap];
         header(head);
         if (!mChecked) {
-            mChecked = startsWith(mFs, path, head) || setAside(path);
+            mChecked = startsWith(mFs, path, head) || setAside(mFs, path);
         }
         const bool ok = mChecked && appendFile(mFs, path, head, mBuf, mLen);
         mLen     = 0;
@@ -136,18 +152,6 @@ public:
     uint32_t rowsInFile() const { return mRowsInFile; }
 
 private:
-    bool setAside(const char *path)
-    {
-        char to[32];
-        for (unsigned n = 1; n <= kMaxSetAside; ++n) {
-            std::snprintf(to, sizeof(to), "%s/%s-%u.csv", kDir, mStem, n);
-            if (!mFs.exist(to)) {
-                return mFs.rename(path, to);
-            }
-        }
-        return false;
-    }
-
     SDK::Interface::IFileSystem &mFs;
     char     mStem[9] = {};
     char     mBuf[kRowCap * kFlushRows] = {};
