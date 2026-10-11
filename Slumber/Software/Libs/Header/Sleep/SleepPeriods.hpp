@@ -41,6 +41,11 @@ constexpr uint32_t kMaxStepS = 3u * kEpochS;
 /// SleepLab's `gate_min_hr_trust_x10`. Measured: 86% of worn epochs reach it,
 /// 2.4% of epochs from a watch on a nightstand.
 constexpr uint8_t kWornTrustX10 = 20;
+/// Above this count a low-trust reading is an arm pressed on the sensor, not a
+/// table: over the SleepLab sessions, quiet low-trust epochs on a nightstand or
+/// pillow exceeded it 0.28% of the time (p99 224) and those in worn sessions 92%
+/// (median 455); the floor is the BMI270's own noise, 183-187 on any surface.
+constexpr uint32_t kSensorFloorCount = 250;
 /// Per recorded session, worn nights scored 77-98% and nightstand nights 0-3%.
 constexpr uint8_t kWornMinPct    = 70;
 constexpr uint8_t kNotWornMaxPct = 30;
@@ -68,8 +73,8 @@ struct Period {
     uint32_t endUtc       = 0;  ///< s, end of the last rest epoch
     uint16_t restMin      = 0;  ///< minutes of rest epochs inside it
     uint16_t missingMin   = 0;  ///< minutes inside it with no epoch at all
-    uint8_t  wornPct      = 0;  ///< of epochs with heart rate asked for
-    uint8_t  hrCoverPct   = 0;  ///< of epochs present, those with heart rate asked for
+    uint8_t  wornPct      = 0;  ///< of epochs whose heart rate is evidence
+    uint8_t  hrCoverPct   = 0;  ///< of epochs present, those whose heart rate is evidence
     Worn     worn         = Worn::Uncertain;
     /// A period is final once kMergeGapS has passed after it, since nothing
     /// later could still be merged into it.
@@ -84,9 +89,15 @@ inline uint32_t activity(const Epoch &e)
     return e.steps >= kStepsAwake ? UINT32_MAX : e.count;
 }
 
+inline bool lowTrustAboveFloor(const Epoch &e)
+{
+    return e.hasHr && e.hrTrustX10 < kWornTrustX10 && e.count > kSensorFloorCount;
+}
+
+/// A low-trust reading above the sensor floor says nothing about the wrist.
 inline bool hrEvidence(const Epoch &e)
 {
-    return e.hrAsked || e.hasHr;
+    return (e.hrAsked || e.hasHr) && !lowTrustAboveFloor(e);
 }
 
 inline bool hrSaysWorn(const Epoch &e)

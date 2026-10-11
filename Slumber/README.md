@@ -75,9 +75,9 @@ any hour. It uses no bedtime window.
 - **Blocks less than 60 minutes apart are merged**, so a bathroom trip stays
   inside its night, and a night that runs past noon is not cut at a clock.
 - **Coming off the wrist ends a period.** Off the wrist means two thirds of the
-  nearby heart-rate epochs have trust under 2.0, or no reading at all while
-  heart rate was subscribed. A watch left on the table before or after a night
-  is its own `NotWorn` period.
+  nearby heart-rate epochs have trust under 2.0 with the count at the sensor
+  floor, or no reading at all while heart rate was subscribed. A watch left on
+  the table before or after a night is its own `NotWorn` period.
 - **A period is final** once 60 minutes have passed after it.
 
 The 30-minute block, the 60-minute merge and the rolling median are van Hees et
@@ -90,7 +90,7 @@ carries its numbers in the header.
 | | SleepLab's segmenter | SleepPeriods |
 | --- | --- | --- |
 | Worn nights split in two | 7 | 3. The rest were 64, 102 and 108 min apart, more than the 60-minute merge |
-| Worn nights split in three | 0 | 1, at a stretch of low-trust heart rate (see below) |
+| Worn nights split in three | 0 | none |
 | A table session judged worn | 1 | none |
 | A table session with heart rate silent | uncertain | not-worn |
 
@@ -105,10 +105,17 @@ Recorded nights are personal data and are never committed. Set
 `SLUMBER_DAYS_DIR` to a copy of `Apps/Slumber/Days/`, and
 `Tests/SleepPeriodsReplay_test.cpp` replays them. Otherwise each skips.
 
-**Not yet known:** whether a 35-minute stretch of low-trust heart rate in the
-middle of a worn night is the watch off the wrist or the arm pressed against
-the sensor. One recorded night has one, and it splits that night in three.
-Only a diary can say which it was.
+**Low trust in the middle of a night is an arm on the sensor**, not the watch
+off. On 2026-10-11 the wearer lay on the watch from 01:33 to 02:32, with no
+`Watch off` mark: heart rate read at 56 bpm in all 118 epochs with trust under
+2.0 in 112, and the count sat at 420-500. Off the wrist the count is the
+accelerometer's own noise, 167-205 on a table or a pillow, so a low-trust
+reading above `kSensorFloorCount` (250) is no evidence either way. Over the
+SleepLab sessions, quiet low-trust epochs on a nightstand or pillow exceeded
+250 0.28% of the time and those in worn sessions 92%. The rule rejoined that
+night and SleepLab's 2026-09-07, which had split in three, and changed no
+table's verdict. Heart rate alone cannot make this call: the pillow read a
+plausible 46-76 bpm.
 
 ## Reporting a night
 

@@ -15,6 +15,7 @@ constexpr uint32_t kMin      = 60u;
 
 constexpr uint32_t kStill  = 300;    // a sleeping wrist
 constexpr uint32_t kMoving = 20000;  // awake and about
+constexpr uint32_t kTable  = 185;    // the accelerometer's own noise
 
 /// A day of epochs from `from` to `to`, active unless a phase says otherwise.
 class Day
@@ -49,6 +50,15 @@ public:
     Day &trust(uint32_t from, uint32_t to, uint8_t t)
     {
         return each(from, to, [t](Epoch &e) { e.hrTrustX10 = t; });
+    }
+
+    /// Off the wrist: the count at the sensor floor, and heart rate untrusted.
+    Day &table(uint32_t from, uint32_t to)
+    {
+        return each(from, to, [](Epoch &e) {
+            e.count      = kTable;
+            e.hrTrustX10 = 8;
+        });
     }
 
     Day &hrNotAsked(uint32_t from, uint32_t to)
@@ -182,7 +192,7 @@ TEST(SleepPeriods, OneSpikeDoesNotWakeAnyone)
 
 TEST(SleepPeriods, ANightstandIsNotWorn)
 {
-    const auto p = Day(kNoon, kNextNoon).still(at(-2), at(9)).trust(kNoon, kNextNoon, 8).periods();
+    const auto p = Day(kNoon, kNextNoon).table(at(-2), at(9)).periods();
     ASSERT_EQ(p.size(), 1u);
     EXPECT_EQ(p[0].worn, Worn::NotWorn);
 }
@@ -190,7 +200,7 @@ TEST(SleepPeriods, ANightstandIsNotWorn)
 /// The watch taken off at 08:00 and left on a table: still, but not sleep.
 TEST(SleepPeriods, ATableAfterTheNightIsNotPartOfIt)
 {
-    const auto p = Day(kNoon, kNextNoon).still(at(-1), at(11)).trust(at(8), at(11), 8).periods();
+    const auto p = Day(kNoon, kNextNoon).still(at(-1), at(8)).table(at(8), at(11)).periods();
     ASSERT_EQ(p.size(), 2u);
     expectNear(p[0].endUtc, at(8));
     EXPECT_EQ(p[0].worn, Worn::Worn);
@@ -202,6 +212,17 @@ TEST(SleepPeriods, OneLowTrustReadingDoesNotEndTheNight)
     const auto p = Day(kNoon, kNextNoon).still(at(-1), at(7)).trust(at(3), at(3) + 2 * kEpochS, 8).periods();
     ASSERT_EQ(p.size(), 1u);
     EXPECT_EQ(p[0].worn, Worn::Worn);
+}
+
+/// An hour lying on the watch: heart rate read but untrusted, the count above
+/// the floor a table sits at.
+TEST(SleepPeriods, AnArmOnTheSensorDoesNotSplitTheNight)
+{
+    const auto p = Day(kNoon, kNextNoon).still(at(-1), at(7)).trust(at(1, 30), at(2, 30), 8).periods();
+    ASSERT_EQ(p.size(), 1u);
+    EXPECT_EQ(p[0].worn, Worn::Worn);
+    expectNear(p[0].startUtc, at(-1));
+    expectNear(p[0].endUtc, at(7));
 }
 
 TEST(SleepPeriods, WithHeartRateNeverAskedForTheWristIsUncertain)
@@ -238,9 +259,9 @@ TEST(SleepPeriods, ASilentTableBeforeTheNightIsNotPartOfIt)
 TEST(SleepPeriods, AnUndecidedWristIsUncertain)
 {
     Day d(kNoon, kNextNoon);
-    d.still(at(-1), at(7));
-    for (size_t i = 0; i < d.epochs.size(); i += 2) {
-        d.epochs[i].hrTrustX10 = 8;
+    d.table(at(-1), at(7));
+    for (size_t i = 1; i < d.epochs.size(); i += 2) {
+        d.epochs[i].hrTrustX10 = 30;
     }
     const auto p = d.periods();
     ASSERT_EQ(p.size(), 1u);
