@@ -254,3 +254,96 @@ reaching the volume.
 Marks are states, not events: `Sitting, TV` holds until the next mark. Press
 `Watch off` before taking the watch off, and pick what you are doing when it
 goes back on.
+
+## The screens to come
+
+The redesign is agreed but not built. It waits until the recording period
+ends, so nothing on the watch changes while nights are being collected.
+
+**Two rings, not a score.** A 0–100 sleep score is the most criticised thing
+wrist trackers show, and wrist movement cannot score sleep stages: across six
+devices against polysomnography, staging agreement was κ 0.21–0.53 and only
+29–52% of wake was caught (Schyvens et al. 2025). What a wrist can see is
+when, and for how long. So the morning screen has two goal rings:
+
+- **Rest**, the night's rest against 7 h, the AASM/SRS adult recommendation
+  of "7 or more hours" (Watson et al. 2015). A night past the goal laps the ring
+  in the same colour, and only the second lap's leading end and the shadow under
+  it mark the overlap, as Apple's rings do. A lighter second lap was tried on the
+  watch and read as a heavy unfilled track.
+- **Rhythm**, tonight's bedtime against the usual one: the median of up to the
+  six nights before, once there are three. Within 30 minutes it is full, and it
+  empties linearly to 2 h. Sleep regularity predicted mortality better than
+  duration in about 61,000 UK Biobank wearers (Windred et al. 2023), and bedtime
+  is the part of it a wearer controls. The 30-minute window and 2 h floor are
+  design choices, not measurements.
+
+`Software/Libs/Header/Sleep/Rhythm.hpp` holds both, and `Tests/` checks them.
+Around the rings: a week of floating bars, bedtime to wake, and an evening
+screen that says the usual bedtime.
+
+**Colours chosen for a reflective panel.** The panel is a Sharp LS012B7DD06A
+reflective memory LCD. Its datasheet gives 8.4% white reflectance, a contrast
+ratio of about 25:1 and 18% NTSC gamut, so saturated colours land as pastels
+and black is dark grey; slippypack's
+`Docs/Investigations/2026-08-07-watch-cartography` turns that into a colour
+model. Through that model, purple against cyan stays ΔE 39 apart, while purple
+against magenta collapses to 21. So Rest is a violet→purple→magenta gradient,
+codes (1,0,3)→(2,0,3)→(3,0,3), and Rhythm is cyan, (0,2,3)→(0,3,3). Purples
+keep their colour only with green at 0. Only 3 of the 64 codes are darker than
+L\* 40, so there is no dim purple for a track. Unfilled ring is a 3 px line
+instead of a full-width band. Amber marks restless spells and nothing else.
+
+**What the watch showed.** A test app drew the 64 colours, brightness ramps and
+the mockups on the glass, and they were photographed:
+
+- **The four levels per channel are roughly equal steps,** as the model
+  assumes. In direct sun, normalised, level 1 measured 0.29–0.44 and level 2
+  measured 0.60–0.83.
+- **A 1-px checkerboard of two adjacent levels lands about halfway between
+  them** (0.4–0.6), so dithered ring edges and gradients blend on the glass.
+- **In direct sun, glare off the front glass cut black/white contrast to
+  about 3–5:1.**
+- **Under the backlight, the purple and cyan rings stayed clearly distinct to
+  the eye;** phone photos blow out there and cannot judge it.
+
+Rerun: photograph the same ramp page and normalise each row's four solid cells.
+
+**Text.** SemiBold only, because Regular's 1.5 px stems go soft at 16–20 px
+(`Docs/TEXT.md`). Main lines are 22–24 px, the size confirmed readable on the
+glass, and 18 px is the floor. Every string is checked against the chord inside
+the ring at its own rows. TextKit carries `SEMIBOLD_22_ASCII` and
+`SEMIBOLD_24_ASCII` for this.
+
+**Themes.** The colours are a setting, one of four. Ring geometry, thin
+tracks, the same-colour second lap and the text rules are shared by all four.
+The ΔE figures are the Rest and Rhythm fills compared through the panel model.
+
+- **Nebula**, the default, as above: purple and cyan, ΔE 39.
+- **Peak** uses the colours of UNA's own Peak face, which already puts two
+  goal rings on the rim. Rest is cyan (0,3,3) and Rhythm is orange (3,2,0), on
+  (1,1,1) tracks, ΔE 36. Restless spells are white, because orange already
+  means Rhythm.
+- **Smile** uses UNA's Smile face: teal (0,2,2) Rest and white Rhythm, ΔE 23.
+  It is the calmest, with white text at 25:1.
+- **Mono**, after UNA's Retro face, and the one theme that changes shape. Two
+  greys cannot carry the rings: white against (2,2,2) is ΔE 8.5, under the 10
+  needed to tell them apart at a glance. So both rings are white, and Rhythm is
+  cut into 60 ticks, like a dial's minute track, while Rest stays solid.
+  Restless spells are black notches in the white band. A dim (1,1,1) Rhythm
+  measures ΔE 22. It was passed over because it is the dimmest ink, and glare
+  flattens that first.
+
+The SDK's setting fields have no pick-list. So the theme is a text field limited
+by a pattern, as Barcode's format field is. The watch reads it once at launch,
+and anything it cannot read means Nebula:
+
+```json
+{"id": "theme", "type": "string", "label": "Colours", "default": "Nebula",
+ "maxLength": 6, "pattern": "(?:[Nn]ebula|[Pp]eak|[Ss]mile|[Mm]ono)?",
+ "validationMessage": "Nebula, Peak, Smile or Mono."}
+```
+
+Rerun: the Peak, Smile and Mono colours come from the SDK's screenshots of the
+faces, and the swatch test app has not photographed them. Photograph them
+before shipping.
