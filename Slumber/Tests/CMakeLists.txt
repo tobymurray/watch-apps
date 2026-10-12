@@ -47,6 +47,7 @@ add_test(NAME slumber-sleep-tests COMMAND slumber-sleep-tests)
 # SleepLab's counter is compiled in so the recorder's counts can be held to it.
 add_executable(slumber-recorder-tests
     Recorder_test.cpp
+    Retention_test.cpp
     "${CMAKE_CURRENT_LIST_DIR}/../../SleepLab/Software/Libs/Sources/Engine/EpochCounter.cpp"
 )
 target_include_directories(slumber-recorder-tests PRIVATE

@@ -7,6 +7,7 @@
 #include "CardStore.hpp"
 #include "LastNight.hpp"
 #include "LocalTime.hpp"
+#include "Retention.hpp"
 #include "SleepPeriods.hpp"
 
 #include "SDK/Messages/CommandMessages.hpp"
@@ -373,6 +374,12 @@ void Service::closeEpoch(uint32_t now, uint32_t lateMs, uint32_t slotsLost)
     }
     if (mDays.rowsInFile() == 1) {
         mLog.line("day", "stem=%s off_min=%ld", stem, static_cast<long>(r.utcOffMin));
+        if (r.utc > 0 && r.utcOffMin != -1) {
+            const uint32_t from    = mKernel.sys.getTimeMs();
+            const unsigned removed = Slumber::Retention::prune(mKernel.fs, r.utc, r.utcOffMin);
+            mLog.line("prune", "files=%u ms=%lu", removed,
+                      static_cast<unsigned long>(mKernel.sys.getTimeMs() - from));
+        }
     }
     if (slotsLost > 0) {
         mLog.line("late", "late_ms=%lu lost=%lu", static_cast<unsigned long>(lateMs),
