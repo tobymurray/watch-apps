@@ -61,3 +61,22 @@ TEST(LastNight, AnUncertainWristIsNeverReported)
     const Period p[] = {period(2 * kH, 8, Worn::Uncertain)};
     EXPECT_EQ(choose(p, 1, kNow).kind, Kind::None);
 }
+
+TEST(LastNight, AsleepNowIsTheWornPeriodStillRunning)
+{
+    Period p[2] = {period(30 * kH, 8, Worn::Worn), period(0, 2, Worn::Worn)};
+    p[0].settled = true;
+    EXPECT_EQ(LastNight::asleepSince(p, 2, p[1].endUtc - kEpochS), p[1].startUtc);
+}
+
+TEST(LastNight, APeriodThatEndedIsNotAsleepNow)
+{
+    Period p[1] = {period(kH, 2, Worn::Worn)};
+    EXPECT_EQ(LastNight::asleepSince(p, 1, kNow), 0u);
+}
+
+TEST(LastNight, ATableIsNotAsleep)
+{
+    Period p[1] = {period(0, 2, Worn::NotWorn)};
+    EXPECT_EQ(LastNight::asleepSince(p, 1, p[0].endUtc - kEpochS), 0u);
+}

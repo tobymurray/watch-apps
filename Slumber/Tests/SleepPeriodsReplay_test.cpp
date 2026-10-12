@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "LastNight.hpp"
+#include "Segments.hpp"
 #include "SleepPeriods.hpp"
 
 using namespace SleepPeriods;
@@ -296,4 +297,38 @@ TEST(SleepPeriodsReplay, SlumberDays)
             EXPECT_EQ(q.worn, Worn::NotWorn) << "at " << local(q.startUtc);
         }
     }
+}
+
+/// Every recorded night becomes one character per epoch slot, its movement
+/// matches the raw epochs, and the lengths are printed, since they size the
+/// shared sessions file's lines.
+TEST(SegmentsReplay, EveryRecordedNightBecomesAStrip)
+{
+    const char *dir = std::getenv("SLUMBER_REPLAY_DIR");
+    if (dir == nullptr) {
+        GTEST_SKIP() << "SLUMBER_REPLAY_DIR is not set";
+    }
+    const Replay      r = replay(dir);
+    std::vector<char> out(36u * 120u + 1u);
+    size_t            longest = 0;
+    for (const Period &p : r.periods) {
+        const size_t k = Segments::strip(r.epochs.data(), r.epochs.size(), p, out.data(), out.size());
+        ASSERT_EQ(k, Segments::slots(p));
+        size_t moving = 0, rawMoving = 0, none = 0;
+        for (size_t i = 0; i < k; ++i) {
+            moving += out[i] == Segments::kMovement ? 1 : 0;
+            none += out[i] == Segments::kNoData ? 1 : 0;
+        }
+        for (const Epoch &e : r.epochs) {
+            rawMoving += e.utc >= p.startUtc && e.utc < p.endUtc &&
+                                 detail::activity(e) >= kRestCountCeiling
+                             ? 1
+                             : 0;
+        }
+        EXPECT_EQ(moving, rawMoving) << "at " << local(p.startUtc);
+        longest = std::max(longest, k);
+        std::printf("%-12s %5.1f h %5zu slots %4zu moving %4zu no-data\n", local(p.startUtc).c_str(),
+                    (p.endUtc - p.startUtc) / 3600.0, k, moving, none);
+    }
+    std::printf("longest strip: %zu slots over %zu periods\n", longest, r.periods.size());
 }

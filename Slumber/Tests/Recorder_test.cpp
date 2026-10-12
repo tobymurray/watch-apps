@@ -4,6 +4,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "ActivityCount.hpp"
 #include "DayLog.hpp"
@@ -13,6 +14,7 @@
 #include "FakeFileSystem.hpp"
 #include "LocalTime.hpp"
 #include "NightLog.hpp"
+#include "SleepNow.hpp"
 #include "Tilt.hpp"
 
 using namespace Slumber;
@@ -476,22 +478,52 @@ SleepPeriods::Period settledNight()
 
 } // namespace
 
-TEST(NightLog, ASettledNightIsLoggedOnce)
+/// One epoch every 30 s across `p`, moving at `moveAt` slots.
+std::vector<SleepPeriods::Epoch> epochsOf(const SleepPeriods::Period &p, std::vector<size_t> moveAt = {})
+{
+    std::vector<SleepPeriods::Epoch> e;
+    for (uint32_t t = p.startUtc; t < p.endUtc; t += SleepPeriods::kEpochS) {
+        SleepPeriods::Epoch x;
+        x.utc   = t;
+        x.count = 200;
+        e.push_back(x);
+    }
+    for (size_t k : moveAt) {
+        e[k].count = 5000;
+    }
+    return e;
+}
+
+bool logNight(NightLog &log, const SleepPeriods::Period &p, NightSummary::Summary s = {},
+              std::vector<size_t> moveAt = {})
+{
+    const auto e = epochsOf(p, moveAt);
+    return log.add(p, s, -240, e.data(), e.size());
+}
+
+TEST(NightLog, ASettledNightIsLoggedOnceAsOneJsonLine)
 {
     SDK::Test::FakeFileSystem fs;
-    NightLog                  log(fs);
+    auto                      log = std::make_unique<NightLog>(fs);
     NightSummary::Summary     s;
     s.restlessSpells = 15;
     s.longestRestMin = 240;
     const SleepPeriods::Period p = settledNight();
-    ASSERT_TRUE(log.due(p));
-    ASSERT_TRUE(log.add(p, s, -240));
-    EXPECT_FALSE(log.due(p));
+    ASSERT_TRUE(log->due(p));
+    ASSERT_TRUE(logNight(*log, p, s, {1}));
+    EXPECT_FALSE(log->due(p));
 
     const std::string all = readAll(fs, NightLog::kPath);
-    EXPECT_EQ(all.find(NightLog::kHeader), 0u);
-    EXPECT_EQ(all.substr(std::strlen(NightLog::kHeader)),
-              "1791518040,1791551100,-240,2026-10-08 23:54,2026-10-09 09:05,551,551,0,240,15,worn,100,83\n");
+    const std::string head =
+        "{\"schema\":1,\"source\":\"Slumber\",\"start\":1791518040,\"end\":1791551100,"
+        "\"utc_off_min\":-240,\"rest_min\":551,\"worn\":\"worn\",\"start_local\":\"2026-10-08 23:54\","
+        "\"end_local\":\"2026-10-09 09:05\",\"span_min\":551,\"missing_min\":0,\"longest_rest_min\":240,"
+        "\"restless_spells\":15,\"worn_pct\":100,\"hr_cover_pct\":83,\"epoch_s\":30,\"epochs\":\"";
+    ASSERT_EQ(all.find(head), 0u);
+    const std::string strip = all.substr(head.size(), all.size() - head.size() - 3);
+    EXPECT_EQ(strip.size(), 551u * 2u);
+    EXPECT_EQ(strip.substr(0, 3), "rmr");
+    EXPECT_EQ(all.substr(all.size() - 3), "\"}\n");
 }
 
 TEST(NightLog, ARestartDoesNotLogItAgain)
@@ -499,24 +531,123 @@ TEST(NightLog, ARestartDoesNotLogItAgain)
     SDK::Test::FakeFileSystem fs;
     const SleepPeriods::Period p = settledNight();
     {
-        NightLog log(fs);
-        ASSERT_TRUE(log.due(p));
-        ASSERT_TRUE(log.add(p, {}, -240));
+        auto log = std::make_unique<NightLog>(fs);
+        ASSERT_TRUE(log->due(p));
+        ASSERT_TRUE(logNight(*log, p));
     }
-    NightLog log(fs);
-    EXPECT_FALSE(log.due(p));
+    auto log = std::make_unique<NightLog>(fs);
+    EXPECT_FALSE(log->due(p));
     SleepPeriods::Period next = p;
     next.startUtc += 86400;
     next.endUtc += 86400;
-    EXPECT_TRUE(log.due(next));
+    EXPECT_TRUE(log->due(next));
+}
+
+TEST(NightLog, AnotherSourcesLinesAreNotItsOwn)
+{
+    SDK::Test::FakeFileSystem fs;
+    fs.seedFile(NightLog::kPath, "{\"schema\":1,\"source\":\"Other\",\"start\":1791518040,"
+                                 "\"end\":1791551100,\"utc_off_min\":-240,\"rest_min\":551,\"worn\":\"worn\"}\n");
+    auto log = std::make_unique<NightLog>(fs);
+    EXPECT_TRUE(log->due(settledNight()));
+    EXPECT_EQ(log->recent().size(), 0u);
+}
+
+TEST(NightLog, ATornLineIsClosedOffBeforeTheNext)
+{
+    SDK::Test::FakeFileSystem fs;
+    fs.seedFile(NightLog::kPath, "{\"schema\":1,\"source\":\"Slumber\",\"start\":17915");
+    auto log = std::make_unique<NightLog>(fs);
+    ASSERT_TRUE(log->due(settledNight()));
+    ASSERT_TRUE(logNight(*log, settledNight()));
+    const std::string all = readAll(fs, NightLog::kPath);
+    const size_t      nl  = all.find('\n');
+    EXPECT_EQ(all.substr(0, nl), "{\"schema\":1,\"source\":\"Slumber\",\"start\":17915");
+    EXPECT_EQ(all.find("{\"schema\"", nl), nl + 1);
+}
+
+TEST(NightLog, MainNightsAreReadBackForTheUsual)
+{
+    SDK::Test::FakeFileSystem fs;
+    {
+        auto log = std::make_unique<NightLog>(fs);
+        for (int d = 0; d < 4; ++d) {
+            SleepPeriods::Period p = settledNight();
+            p.startUtc += d * 86400;
+            p.endUtc += d * 86400;
+            ASSERT_TRUE(log->due(p));
+            ASSERT_TRUE(logNight(*log, p));
+        }
+    }
+    auto                log = std::make_unique<NightLog>(fs);
+    const Rhythm::Usual u   = log->recent().usualBefore(UINT32_MAX);
+    ASSERT_TRUE(u.known);
+    EXPECT_EQ(u.nights, 4u);
+    EXPECT_EQ(Rhythm::minuteOfDay(u.bed), 23 * 60 + 54);
+    EXPECT_EQ(Rhythm::minuteOfDay(u.wake), 9 * 60 + 5);
 }
 
 TEST(NightLog, AnUnsettledNightWaits)
 {
     SDK::Test::FakeFileSystem fs;
-    NightLog                  log(fs);
-    SleepPeriods::Period      p = settledNight();
+    auto                      log = std::make_unique<NightLog>(fs);
+    SleepPeriods::Period      p   = settledNight();
     p.settled = false;
-    EXPECT_FALSE(log.due(p));
+    EXPECT_FALSE(log->due(p));
     EXPECT_FALSE(fs.exist(NightLog::kPath));
+}
+
+TEST(SleepNow, BeforeAnyNightEveryAnswerIsNull)
+{
+    SleepNow::State s;
+    s.writtenUtc = 1791600000;
+    s.heartbeatS = 300;
+    s.offsetMin  = -240;
+    char out[SleepNow::kCap];
+    ASSERT_GT(SleepNow::format(s, out, sizeof(out)), 0u);
+    EXPECT_STREQ(out, "{\"schema\":1,\"source\":\"Slumber\",\"written\":1791600000,\"heartbeat_s\":300,"
+                      "\"utc_off_min\":-240,\"asleep_since\":null,\"last_night\":null,\"usual\":null,"
+                      "\"rest_goal_min\":420,\"rest_fill\":null,\"rhythm_fill\":null,\"rhythm_offset_min\":null}");
+}
+
+TEST(SleepNow, ANightIsScoredAgainstTheNightsBeforeIt)
+{
+    const SleepPeriods::Period p = settledNight();
+    SleepNow::State            s;
+    s.writtenUtc     = p.endUtc + 3600;
+    s.heartbeatS     = 300;
+    s.offsetMin      = -240;
+    s.lastNight      = &p;
+    s.usualBefore.known  = true;
+    s.usualBefore.bed    = Rhythm::afterNoon(p.startUtc, -240) - 50;
+    s.usualBefore.nights = 3;
+    s.usual              = s.usualBefore;
+    char out[SleepNow::kCap];
+    ASSERT_GT(SleepNow::format(s, out, sizeof(out)), 0u);
+    const std::string j = out;
+    EXPECT_NE(j.find("\"last_night\":{\"start\":1791518040,\"end\":1791551100,\"rest_min\":551,"
+                     "\"worn\":\"worn\",\"settled\":true}"), std::string::npos);
+    EXPECT_NE(j.find("\"usual\":{\"bed_min\":1384,\"wake_min\":720,\"nights\":3}"), std::string::npos);
+    EXPECT_NE(j.find("\"rest_fill\":1311,"), std::string::npos);
+    EXPECT_NE(j.find("\"rhythm_fill\":778,\"rhythm_offset_min\":50}"), std::string::npos);
+}
+
+TEST(SleepNow, ShortOfRoomItWritesNothing)
+{
+    SleepNow::State s;
+    char            out[40];
+    EXPECT_EQ(SleepNow::format(s, out, sizeof(out)), 0u);
+}
+
+TEST(SleepNow, PublishingKeepsTheLastCopyAsBackup)
+{
+    SDK::Test::FakeFileSystem fs;
+    SleepNow::State           s;
+    s.writtenUtc = 1;
+    ASSERT_TRUE(SleepNow::publish(fs, s));
+    s.writtenUtc = 2;
+    ASSERT_TRUE(SleepNow::publish(fs, s));
+    EXPECT_NE(readAll(fs, SleepNow::kPath).find("\"written\":2,"), std::string::npos);
+    EXPECT_NE(readAll(fs, SleepNow::kBakPath).find("\"written\":1,"), std::string::npos);
+    EXPECT_FALSE(fs.exist(SleepNow::kTmpPath));
 }

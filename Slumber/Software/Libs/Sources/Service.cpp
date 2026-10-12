@@ -444,10 +444,36 @@ void Service::publishCard()
     card.serviceStartUtc = mStartUtc;
     card.launchNo        = mLaunchNo;
     fillNight(card, card.writtenUtc);
+    publishNow(card.writtenUtc);
 
     mCardOk = SlumberCard::publish(mKernel.fs, card);
     if (!mCardOk) {
         mLog.line("card-fail", "seq=%lu", static_cast<unsigned long>(card.seq));
+    }
+}
+
+void Service::publishNow(uint32_t utc)
+{
+    std::tm       local{};
+    const int32_t off = utcOffsetMin(utc, local);
+    if (utc == 0 || off == -1) {
+        return;
+    }
+    Slumber::SleepNow::State s;
+    s.writtenUtc = utc;
+    s.heartbeatS = SlumberCard::kHeartbeatS;
+    s.offsetMin  = off;
+    if (mHistory.size() > 0) {
+        s.asleepSinceUtc =
+            LastNight::asleepSince(mPeriods, mPeriodN, mHistory.data()[mHistory.size() - 1].utc);
+    }
+    s.lastNight   = mLastNight;
+    s.usual       = mNights.recent().usualBefore(UINT32_MAX);
+    s.usualBefore = mNights.recent().usualBefore(mLastNight != nullptr ? mLastNight->startUtc : UINT32_MAX);
+    if (!Slumber::SleepNow::publish(mKernel.fs, s)) {
+        ++mWriteFails;
+        mLog.line("write-fail", "n=%lu path=%s", static_cast<unsigned long>(mWriteFails),
+                  Slumber::SleepNow::kPath);
     }
 }
 
@@ -474,7 +500,7 @@ void Service::logNights(size_t n, int32_t offsetMin)
             continue;
         }
         const NightSummary::Summary s = NightSummary::summarise(mHistory.data(), mHistory.size(), p);
-        if (!mNights.add(p, s, offsetMin)) {
+        if (!mNights.add(p, s, offsetMin, mHistory.data(), mHistory.size())) {
             ++mWriteFails;
             mLog.line("write-fail", "n=%lu path=%s", static_cast<unsigned long>(mWriteFails),
                       Slumber::NightLog::kPath);
@@ -485,6 +511,8 @@ void Service::logNights(size_t n, int32_t offsetMin)
 void Service::fillNight(SlumberCard::Card &card, uint32_t utc)
 {
     card.state = SlumberCard::State::Recording;
+    mPeriodN   = 0;
+    mLastNight = nullptr;
     std::tm       local{};
     const int32_t off = utcOffsetMin(utc, local);
     if (off == -1 || mHistory.size() == 0) {
@@ -492,11 +520,13 @@ void Service::fillNight(SlumberCard::Card &card, uint32_t utc)
     }
     const size_t n = SleepPeriods::find(mHistory.data(), mHistory.size(), mPeriods,
                                         sizeof(mPeriods) / sizeof(mPeriods[0]), utc);
+    mPeriodN = n;
     logNights(n, off);
     const LastNight::Choice c = LastNight::choose(mPeriods, n, utc);
     if (c.kind == LastNight::Kind::None) {
         return;
     }
+    mLastNight = c.period;
     const SleepPeriods::Period &p = *c.period;
     using SlumberCard::State;
     card.state         = c.kind == LastNight::Kind::NotWorn ? State::NotWorn

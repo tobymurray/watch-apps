@@ -3,12 +3,16 @@
 
     python3 Slumber/Tools/analyse.py <copy of Apps/Slumber>
 
+Copy Apps/SharedData/health/ beside it as <copy>/../SharedData/health/, as it
+sits on the watch, and the shared sleep sessions are read too.
+
 Rest, wrist, periods and the card come from nights.cpp, compiled here from the
 headers the watch runs, so this never re-derives what the watch decides. Every
 number it prints comes from the copy; nothing is written into the repository.
 """
 
 import csv
+import json
 import os
 import statistics
 import subprocess
@@ -159,15 +163,34 @@ def nights(exe, day_files, off):
 
 
 def night_log(path):
-    section('Nights.csv (what the watch logged)')
+    section('Nights.csv (what builds before the shared sessions logged)')
     if not os.path.exists(path):
-        print('none yet: a night is logged once it settles, an hour after its last rest')
+        print('none')
         return
     with open(path) as f:
         lines = [l for l in f if not l.startswith('#') and l.strip()]
     for r in csv.DictReader(lines):
         print(f"  {r['start_local']} -> {r['end_local'][11:]} rest {r['rest_min']} min, longest "
               f"{r['longest_rest_min']}, spells {r['restless_spells']}, {r['worn']}")
+
+
+def shared_sessions(path):
+    section('sessions.jsonl (what other apps can read)')
+    if not os.path.exists(path):
+        print('none yet: a night is shared once it settles, an hour after its last rest')
+        return
+    with open(path) as f:
+        for line in f:
+            if not line.endswith('\n'):
+                print('  (a torn last line, which readers skip)')
+                continue
+            r = json.loads(line)
+            if r.get('source') != 'Slumber':
+                continue
+            strip = r['epochs']
+            print(f"  {r['start_local']} -> {r['end_local'][11:]} rest {r['rest_min']} min, longest "
+                  f"{r['longest_rest_min']}, spells {r['restless_spells']}, {r['worn']}; "
+                  f"{strip.count('m')} moving and {strip.count('-')} missing of {len(strip)} epochs")
 
 
 def read_marks(path):
@@ -279,6 +302,7 @@ def main():
         lifecycle(os.path.join(root, 'Debug', 'lifecycle.log'))
         epochs, periods = nights(exe, day_files, off)
     night_log(os.path.join(root, 'Nights.csv'))
+    shared_sessions(os.path.join(root, '..', 'SharedData', 'health', 'sleep', 'sessions.jsonl'))
     marks = read_marks(os.path.join(root, 'Marks.csv'))
     marks_against_periods(marks, periods, off)
     states(rows, [m for m in marks if m['utc'] >= rows[0]['utc'] - EPOCH_S], epochs, off)

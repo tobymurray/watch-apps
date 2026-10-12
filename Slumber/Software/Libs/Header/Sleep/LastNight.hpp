@@ -54,6 +54,21 @@ inline Choice choose(const SleepPeriods::Period *p, size_t n, uint32_t nowUtc)
     return best;
 }
 
+/// When the worn period still running at `lastEpochUtc` began, or 0. A period
+/// needs SleepPeriods::kMinBlockS of rest to exist, so this lags falling asleep
+/// by that much.
+inline uint32_t asleepSince(const SleepPeriods::Period *p, size_t n, uint32_t lastEpochUtc)
+{
+    using namespace SleepPeriods;
+    for (size_t i = n; i > 0; --i) {
+        const Period &q = p[i - 1];
+        if (!q.settled && q.worn == Worn::Worn && q.endUtc + kMaxStepS >= lastEpochUtc + kEpochS) {
+            return q.startUtc;
+        }
+    }
+    return 0;
+}
+
 } // namespace LastNight
 
 #endif // SLUMBER_LAST_NIGHT_HPP

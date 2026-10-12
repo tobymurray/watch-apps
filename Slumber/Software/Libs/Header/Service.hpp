@@ -16,6 +16,7 @@
 #include "LastNight.hpp"
 #include "Lifecycle.hpp"
 #include "NightLog.hpp"
+#include "SleepNow.hpp"
 #include "SlumberCard.hpp"
 #include "Tilt.hpp"
 
@@ -60,6 +61,7 @@ private:
     void publishCard();
     void restoreHistory(uint32_t utc);
     void fillNight(SlumberCard::Card &card, uint32_t utc);
+    void publishNow(uint32_t utc);
     void logNights(size_t n, int32_t offsetMin);
     void publishStatus();
     uint32_t upMinutes() const;
@@ -74,6 +76,8 @@ private:
     Slumber::NightLog   mNights;
     /// Every period holds at least 30 min of rest, so 36 h holds fewer than 72.
     SleepPeriods::Period  mPeriods[72];
+    size_t                mPeriodN   = 0;
+    const SleepPeriods::Period *mLastNight = nullptr;  ///< into mPeriods, as last found
 
     Slumber::ActivityCount mCount;
     Slumber::Tilt          mTilt;

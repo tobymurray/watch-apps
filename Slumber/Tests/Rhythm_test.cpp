@@ -96,3 +96,44 @@ TEST(Rhythm, ABedtimeInTheWindowClosesTheRingAndAnEarlyOneDoesNot)
     EXPECT_EQ(offset(v[6].bed, before6), -82);
     EXPECT_EQ(rhythmFill(offset(v[6].bed, before6)), 423);
 }
+
+namespace
+{
+
+constexpr uint32_t k0030Edt = 1791520200u;  // 2026-10-09 00:30 at UTC-4
+
+} // namespace
+
+TEST(Rhythm, RecentKeepsTheLongestWornPeriodOfEachDay)
+{
+    Recent r;
+    r.add(k0030Edt, k0030Edt + 8 * 3600, -240, 450);
+    r.add(k0030Edt - 10 * 3600, k0030Edt - 9 * 3600, -240, 50);  // the 14:30 nap before it, same noon-to-noon day
+    EXPECT_EQ(r.size(), 1u);
+    const Usual u = r.usualBefore(UINT32_MAX);
+    EXPECT_FALSE(u.known);
+}
+
+TEST(Rhythm, RecentHoldsAWeekAndForgetsTheOldest)
+{
+    Recent r;
+    for (uint32_t d = 0; d < 10; ++d) {
+        r.add(k0030Edt + d * 86400, k0030Edt + d * 86400 + 8 * 3600, -240, 450);
+    }
+    EXPECT_EQ(r.size(), Recent::kCap);
+    const Usual u = r.usualBefore(UINT32_MAX);
+    ASSERT_TRUE(u.known);
+    EXPECT_EQ(u.nights, kBaselineNights);
+    EXPECT_EQ(minuteOfDay(u.bed), 30);
+    EXPECT_EQ(minuteOfDay(u.wake), 8 * 60 + 30);
+}
+
+TEST(Rhythm, UsualBeforeLeavesOutTheNightScored)
+{
+    Recent r;
+    for (uint32_t d = 0; d < 3; ++d) {
+        r.add(k0030Edt + d * 86400, k0030Edt + d * 86400 + 8 * 3600, -240, 450);
+    }
+    EXPECT_TRUE(r.usualBefore(UINT32_MAX).known);
+    EXPECT_FALSE(r.usualBefore(k0030Edt + 2 * 86400).known);
+}

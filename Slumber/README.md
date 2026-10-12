@@ -64,6 +64,55 @@ two missed heartbeats and a minute's grace, the glance says Slumber has stopped.
 Five minutes is a probe's pace. The flash cost of keeping it in a shipping
 build is not yet measured.
 
+## Sharing sleep with other apps
+
+Slumber writes what it finds to `../SharedData/health/sleep/` for any other app on the
+watch to read. An aggregator might, for example, set nights against training load.
+`Docs/SHARED-HEALTH.md` owns the conventions: the directory, how a line is appended, how
+the state file is replaced, and what `null` means. This section is what Slumber puts there.
+
+The card above stays the glance's private contract.
+
+**`sessions.jsonl`**: one line per period, once SleepPeriods has settled it, an hour
+after its last rest. Naps and table sessions are periods too, so filter on `worn`.
+
+| Field | Meaning |
+| --- | --- |
+| `schema`, `source` | `1`, `"Slumber"` |
+| `start`, `end`, `utc_off_min` | The period, in UTC seconds, and the offset at the time |
+| `rest_min` | Minutes of rest inside it, after the 5-minute median |
+| `worn` | `"worn"`, `"not_worn"` (rest on a table) or `"uncertain"` |
+| `start_local`, `end_local` | The same edges as `yyyy-mm-dd hh:mm` local, for people |
+| `span_min`, `missing_min` | Its length, and the minutes inside it with no data |
+| `longest_rest_min`, `restless_spells` | "Reporting a night" defines them |
+| `worn_pct`, `hr_cover_pct` | The heart-rate evidence the `worn` verdict came from |
+| `epoch_s`, `epochs` | One character per 30 s from `start`: `r` rest, `m` movement, `-` no data |
+
+`epochs` is what the wrist saw before any smoothing. `m` is an epoch whose activity count
+reached SleepPeriods' rest ceiling, or had 10 or more steps. Neither letter is a claim
+about being awake: a wearer lying awake and still is `r`, and the wrist cannot tell sleep
+stages apart (see "The screens to come"). Over the 76 SleepLab sessions replayed in
+`Tests/`, the longest period was 1,683 epochs, so a line stays under about 2 KB.
+
+**`now.json`**: rewritten with the card, every 5 minutes.
+
+| Field | Meaning |
+| --- | --- |
+| `written`, `heartbeat_s`, `utc_off_min` | When, how often, and the offset |
+| `asleep_since` | Start of the worn period still running, else `null` |
+| `last_night` | `{start, end, rest_min, worn, settled}`, the night the card shows, else `null` |
+| `usual` | `{bed_min, wake_min, nights}`: medians, in minutes past local midnight, of the main nights logged, at most six; `null` until three |
+| `rest_goal_min`, `rest_fill` | 420, and last night's rest against it in per mille; past 1000 is a second lap |
+| `rhythm_fill`, `rhythm_offset_min` | Last night's onset against the usual of the nights before it; `+` is later |
+
+`asleep_since` comes late. A period exists only once it holds 30 minutes of rest, so it
+appears about half an hour after falling asleep, and an app silencing notifications at
+bedtime cannot do better from this file. A night's main night is the longest worn
+period starting between noon and noon, so a nap does not move the usual.
+
+The files outlive Slumber, as `shared-data.md` says every shared file does. The sessions
+file grows by about 1 KB a night, and nothing trims it yet.
+
 ## Finding a night
 
 `Software/Libs/Header/Sleep/SleepPeriods.hpp` finds sleep in 30 s epochs at
@@ -138,8 +187,9 @@ card. A day missing from `Epochs/`, as after an upgrade from a build without
 it, is rebuilt from its day file and written back. `Software/Libs/Header/Sleep/LastNight.hpp` makes the choice;
 `SLUMBER_DAYS_DIR` replays a day file and prints what the card would say.
 
-**Every period is logged once it settles**, one line in `Nights.csv`, so the
-nights outlive the 36 h window. Besides its edges and rest, each line carries
+**Every period is logged once it settles**, one line in the shared
+`sessions.jsonl` (see "Sharing sleep with other apps"), so the nights outlive
+the 36 h window. Besides its edges and rest, each line carries
 `Software/Libs/Header/Sleep/NightSummary.hpp`'s two numbers:
 
 - **Longest rest**, the longest stretch at rest unbroken by movement or missing
@@ -173,10 +223,11 @@ separates sitting still from sleeping, so the screen exists to collect them.
 | --- | --- |
 | `Days/<yyyymmdd>.csv` | One row per 30 s, named for the local day. Schema in `Software/Libs/Header/Recorder/EpochRow.hpp`; -1 means not measured. A day file begun under another schema's header is renamed `<yyyymmdd>-<n>.csv` first, so no file mixes two |
 | `Marks.csv` | `utc,utc_off_min,uptime_ms,local,code,label`, one line per R1 press |
-| `Nights.csv` | One line per settled period: edges in UTC and local time, rest, missing, longest rest, restless spells, the wrist verdict. Header in `Software/Libs/Header/Recorder/NightLog.hpp`; another schema's file is renamed `Nights-<n>.csv` |
+| `Nights.csv` | What builds before the shared sessions logged per settled period; nothing writes it now |
 | `Epochs/<yyyymmdd>.bin` | SleepPeriods' inputs, 12 bytes an epoch, so a restart can reload the last 36 h. A cache of the day CSV, rebuilt from it when missing or under another header; header in `Software/Libs/Header/Recorder/EpochHistory.hpp` |
 | `Debug/lifecycle.log` | `start`, `sensors` (upper case = resolved), `history` (epochs reloaded, days rebuilt from their day file, and the ms it took), `day`, `late`, `clock`, `night` (each change to the reported night), `mark`, `write-fail`, `card-fail`, `gui-open`, `gui-close`, `stop` |
 | `../SharedData/slumber/card` | The glance's card, every 5 minutes: liveness, and last night once there is one |
+| `../SharedData/health/sleep/sessions.jsonl`, `now.json` | What other apps read; "Sharing sleep with other apps" |
 
 Rows are buffered and written ten at a time, so a crash loses at most five
 minutes; a USB unplug stops the app cleanly and flushes. A day file is about

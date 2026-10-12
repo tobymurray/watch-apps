@@ -41,9 +41,10 @@ struct Night {
 };
 
 struct Usual {
-    bool    known = false;
-    int32_t bed   = 0;  ///< afterNoon
-    int32_t wake  = 0;  ///< afterNoon
+    bool    known  = false;
+    int32_t bed    = 0;  ///< afterNoon
+    int32_t wake   = 0;  ///< afterNoon
+    uint8_t nights = 0;  ///< the median is of this many
 };
 
 namespace detail
@@ -79,11 +80,86 @@ inline Usual usual(const Night *prior, size_t n)
         beds[i]  = prior[from + i].bed;
         wakes[i] = prior[from + i].wake;
     }
-    u.known = true;
-    u.bed   = detail::median(beds, k);
-    u.wake  = detail::median(wakes, k);
+    u.known  = true;
+    u.bed    = detail::median(beds, k);
+    u.wake   = detail::median(wakes, k);
+    u.nights = static_cast<uint8_t>(k);
     return u;
 }
+
+/// Minutes past local midnight of an afterNoon time.
+inline int32_t minuteOfDay(int32_t afterNoonMin)
+{
+    return (afterNoonMin + 720) % 1440;
+}
+
+/// The main night of each recent noon-to-noon local day, the longest worn
+/// period that began in it, oldest first; a nap beside a night is not one.
+class Recent
+{
+public:
+    static constexpr size_t kCap = kBaselineNights + 1;
+
+    void add(uint32_t startUtc, uint32_t endUtc, int32_t offsetMin, uint16_t restMin)
+    {
+        const int64_t local = static_cast<int64_t>(startUtc) + static_cast<int64_t>(offsetMin) * 60 - 43200;
+        const int32_t day   = static_cast<int32_t>(local >= 0 ? local / 86400 : (local - 86399) / 86400);
+        Main m{day, startUtc, endUtc - startUtc,
+               Night{afterNoon(startUtc, offsetMin), afterNoon(endUtc, offsetMin), restMin}};
+        for (size_t i = 0; i < mN; ++i) {
+            if (mMain[i].day == day) {
+                if (m.spanS > mMain[i].spanS) {
+                    mMain[i] = m;
+                }
+                return;
+            }
+        }
+        size_t at = mN;
+        while (at > 0 && mMain[at - 1].day > day) {
+            --at;
+        }
+        if (mN == kCap) {
+            if (at == 0) {
+                return;
+            }
+            for (size_t i = 1; i < mN; ++i) {
+                mMain[i - 1] = mMain[i];
+            }
+            --mN;
+            --at;
+        }
+        for (size_t i = mN; i > at; --i) {
+            mMain[i] = mMain[i - 1];
+        }
+        mMain[at] = m;
+        ++mN;
+    }
+
+    /// The usual from the main nights that began before `beforeUtc`.
+    Usual usualBefore(uint32_t beforeUtc) const
+    {
+        Night  prior[kCap];
+        size_t k = 0;
+        for (size_t i = 0; i < mN; ++i) {
+            if (mMain[i].startUtc < beforeUtc) {
+                prior[k++] = mMain[i].night;
+            }
+        }
+        return usual(prior, k);
+    }
+
+    size_t size() const { return mN; }
+
+private:
+    struct Main {
+        int32_t  day     = 0;
+        uint32_t startUtc = 0;
+        uint32_t spanS   = 0;
+        Night    night;
+    };
+    Main   mMain[kCap];
+    size_t mN = 0;
+};
 
 /// Rest against the goal; past kFull is a second lap.
 inline uint16_t restFill(uint16_t restMin)

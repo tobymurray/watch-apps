@@ -4,7 +4,7 @@
 # SleepLab's counter to compare against.
 
 cmake_minimum_required(VERSION 3.21)
-project(slumber-host-tests CXX)
+project(slumber-host-tests C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -59,3 +59,19 @@ target_include_directories(slumber-recorder-tests PRIVATE
 )
 target_link_libraries(slumber-recorder-tests PRIVATE GTest::gtest_main)
 add_test(NAME slumber-recorder-tests COMMAND slumber-recorder-tests)
+
+# Another app's view of the shared sleep files, through the SDK's JSON reader.
+add_executable(slumber-shared-tests
+    SharedSleep_test.cpp
+    "${UNA_SDK_ROOT}/Libs/Source/JSON/JsonStreamReader.cpp"
+    "${UNA_SDK_ROOT}/ThirdParty/coreJSON/source/core_json.c"
+)
+target_include_directories(slumber-shared-tests PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/../Software/Libs/Header/Sleep"
+    "${CMAKE_CURRENT_LIST_DIR}/../Software/Libs/Header/Recorder"
+    "${UNA_SDK_ROOT}/Libs/Header"
+    "${UNA_SDK_ROOT}/ThirdParty/coreJSON/source/include"
+    "${UNA_SDK_ROOT}/Tests/Host/support"
+)
+target_link_libraries(slumber-shared-tests PRIVATE GTest::gtest_main)
+add_test(NAME slumber-shared-tests COMMAND slumber-shared-tests)
