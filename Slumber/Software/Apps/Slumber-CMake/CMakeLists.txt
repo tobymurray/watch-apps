@@ -7,9 +7,9 @@ set(APP_TYPE "Utility")
 # the app.
 set(APP_AUTOSTART On)
 set(DEV_ID "UNA")
-# sha256("https://github.com/tobymurray/watch-apps#slumber")[0:8], the repo
-# convention.
-set(APP_ID "118936BE80F158FC")
+# Assigned by UNA and stable for the life of the app: it is how the mobile app
+# matches a new *.uapp to the installed one, and it must equal "id" in app-manifest.json.
+set(APP_ID "B4E825F662FAD77B")
 set(APP_USE_ICONS On)
 set(RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Resources")
 set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")

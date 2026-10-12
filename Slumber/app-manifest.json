@@ -10,7 +10,7 @@
   "minKernelVersion": "1.4.0",
   "requiredHardware": [],
   "description": "Sleep tracking that runs in the background with nothing to start at bedtime. This build is a lifecycle probe: it shows how long its background service has been running, on its glance card and its screen.",
-  "id": "118936BE80F158FC",
+  "id": "B4E825F662FAD77B",
   "stravaExport": false,
   "supportsLaps": false,
   "supportsDistance": false,
