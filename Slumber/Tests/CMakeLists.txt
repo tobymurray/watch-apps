@@ -36,6 +36,7 @@ add_executable(slumber-sleep-tests
     SleepPeriodsReplay_test.cpp
     LastNight_test.cpp
     NightSummary_test.cpp
+    Rhythm_test.cpp
 )
 target_include_directories(slumber-sleep-tests PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../Software/Libs/Header/Sleep"
