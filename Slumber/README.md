@@ -200,6 +200,33 @@ the 36 h window. Besides its edges and rest, each line carries
   cannot see someone lying awake and still, so nothing here claims to count
   awakenings.
 
+## Learning the week
+
+Slumber learns a usual for each night of the week from the main nights of the last 56
+days, so a routine that changes is relearned within two months. `Sleep/Schedule.hpp`
+holds it, and `Tests/Schedule_test.cpp` drives it through synthetic weeks.
+
+- **A night belongs to the evening it began on.** Asleep at 00:40 on a Thursday is
+  Wednesday night. Before 04:00, tonight is still the night begun the evening before.
+- **A weekday's usual starts as the rest of the week's and moves toward its own.** It is
+  `(n × own median + 2 × rest-of-week median) / (n + 2)`, so one late Wednesday moves the
+  next Wednesday's usual a third of the way, and four of them move it two thirds.
+- **A weekday differs only once it has shown it.** It needs three nights of its own and
+  three of the rest of the week, a median 45 minutes or more from the rest of the week's,
+  and three in four of its nights at least 22 minutes the same way. Two late Wednesdays
+  out of the last six do not make a late Wednesday.
+- **Social jetlag** is the median sleep midpoint of Friday and Saturday nights minus that
+  of the other nights, the free-day and work-day comparison of Wittmann et al. (2006).
+  The weekday arrays find other free days, such as a shift worker's, without assuming them.
+
+None of this is on the watch's screen yet. `now.json` carries it for other apps, and the
+screens to come decide how it is shown. One rule for them: the Rhythm ring may score
+tonight against tonight's own usual, but a regularity measure must not, or a habit of
+late Wednesdays would score as perfectly regular.
+
+These thresholds are chosen, not measured. Each needs weeks of nights per wearer before
+it can be checked, and the recording period gives two of each weekday at most.
+
 ## What the log answers
 
 Each question is answered from files on the watch's volume under

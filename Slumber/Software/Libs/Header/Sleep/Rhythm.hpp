@@ -34,6 +34,14 @@ inline int32_t afterNoon(uint32_t utc, int32_t offsetMin)
     return (min + 720) % 1440;
 }
 
+/// The noon-to-noon local day `utc` falls in, as days since 1970-01-01; a night
+/// belongs to the evening it began on.
+inline int32_t noonDay(uint32_t utc, int32_t offsetMin)
+{
+    const int64_t local = static_cast<int64_t>(utc) + static_cast<int64_t>(offsetMin) * 60 - 43200;
+    return static_cast<int32_t>(local >= 0 ? local / 86400 : (local - 86399) / 86400);
+}
+
 struct Night {
     int32_t  bed  = 0;  ///< afterNoon of the start
     int32_t  wake = 0;  ///< afterNoon of the end
@@ -102,8 +110,7 @@ public:
 
     void add(uint32_t startUtc, uint32_t endUtc, int32_t offsetMin, uint16_t restMin)
     {
-        const int64_t local = static_cast<int64_t>(startUtc) + static_cast<int64_t>(offsetMin) * 60 - 43200;
-        const int32_t day   = static_cast<int32_t>(local >= 0 ? local / 86400 : (local - 86399) / 86400);
+        const int32_t day = noonDay(startUtc, offsetMin);
         Main m{day, startUtc, endUtc - startUtc,
                Night{afterNoon(startUtc, offsetMin), afterNoon(endUtc, offsetMin), restMin}};
         for (size_t i = 0; i < mN; ++i) {
