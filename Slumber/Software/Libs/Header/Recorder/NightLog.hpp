@@ -14,6 +14,7 @@
 #include "LocalTime.hpp"
 #include "NightSummary.hpp"
 #include "Rhythm.hpp"
+#include "Schedule.hpp"
 #include "Segments.hpp"
 #include "SleepPeriods.hpp"
 
@@ -64,6 +65,7 @@ public:
         mLastEndUtc = p.endUtc;
         if (p.worn == SleepPeriods::Worn::Worn) {
             mRecent.add(p.startUtc, p.endUtc, offsetMin, p.restMin);
+            mSchedule.add(p.startUtc, p.endUtc, offsetMin);
         }
         return true;
     }
@@ -73,6 +75,13 @@ public:
     {
         ensureRead();
         return mRecent;
+    }
+
+    /// The week learned from the same nights.
+    const Schedule::Learner &schedule()
+    {
+        ensureRead();
+        return mSchedule;
     }
 
     static const char *name(SleepPeriods::Worn w)
@@ -167,6 +176,7 @@ private:
     {
         mLastEndUtc = 0;
         mRecent     = Rhythm::Recent{};
+        mSchedule   = Schedule::Learner{};
         if (!mFs.exist(kPath)) {
             return true;
         }
@@ -223,11 +233,13 @@ private:
         if (std::strstr(line, "\"worn\":\"worn\"") != nullptr && end > start) {
             mRecent.add(static_cast<uint32_t>(start), static_cast<uint32_t>(end),
                         static_cast<int32_t>(off), static_cast<uint16_t>(rest));
+            mSchedule.add(static_cast<uint32_t>(start), static_cast<uint32_t>(end), static_cast<int32_t>(off));
         }
     }
 
     SDK::Interface::IFileSystem &mFs;
-    Rhythm::Recent mRecent;
+    Rhythm::Recent    mRecent;
+    Schedule::Learner mSchedule;
     char           mStrip[EpochHistory::kCap + 1] = {};
     uint32_t       mLastEndUtc = 0;
     bool           mRead       = false;

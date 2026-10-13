@@ -104,6 +104,8 @@ stages apart (see "The screens to come"). Over the 76 SleepLab sessions replayed
 | `usual` | `{bed_min, wake_min, nights}`: medians, in minutes past local midnight, of the main nights logged, at most six; `null` until three |
 | `rest_goal_min`, `rest_fill` | 420, and last night's rest against it in per mille; past 1000 is a second lap |
 | `rhythm_fill`, `rhythm_offset_min` | Last night's onset against the usual of the nights before it; `+` is later |
+| `tonight` | `{weekday, bed_min, wake_min, own_nights, nights}`: the usual for the night ahead, learned for its weekday (0 is Sunday); `null` until three nights. "Learning the week" says how |
+| `week` | `{later_bed, earlier_bed, later_wake, earlier_wake}`, arrays of the weekdays that keep their own hours, and `social_jetlag_min`, or `null` until there are enough nights |
 
 `asleep_since` comes late. A period exists only once it holds 30 minutes of rest, so it
 appears about half an hour after falling asleep, and an app silencing notifications at

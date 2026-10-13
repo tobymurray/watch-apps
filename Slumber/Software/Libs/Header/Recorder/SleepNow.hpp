@@ -10,6 +10,7 @@
 
 #include "NightLog.hpp"
 #include "Rhythm.hpp"
+#include "Schedule.hpp"
 #include "SleepPeriods.hpp"
 
 namespace Slumber
@@ -24,7 +25,7 @@ constexpr char kPath[]    = "../SharedData/health/sleep/now.json";
 constexpr char kTmpPath[] = "../SharedData/health/sleep/now.json.tmp";
 constexpr char kBakPath[] = "../SharedData/health/sleep/now.json.bak";
 constexpr unsigned kSchema = 1;
-constexpr size_t   kCap    = 640;
+constexpr size_t   kCap    = 768;
 
 struct State {
     uint32_t writtenUtc     = 0;
@@ -34,7 +35,27 @@ struct State {
     const SleepPeriods::Period *lastNight = nullptr;
     Rhythm::Usual usual;           ///< for tonight: every main night logged
     Rhythm::Usual usualBefore;     ///< what last night is scored against
+    int32_t       tonightDay = 0;  ///< Schedule::tonight
+    Schedule::Expected tonight;
+    Schedule::Week     week;
 };
+
+/// Writes the weekdays set in `mask` as a JSON array, Sunday as 0.
+inline void days(uint8_t mask, char *out, size_t cap)
+{
+    size_t len = 0;
+    out[len++] = '[';
+    for (uint8_t d = Schedule::kSunday; d <= Schedule::kSaturday && len + 3 < cap; ++d) {
+        if (mask & (1u << d)) {
+            if (len > 1) {
+                out[len++] = ',';
+            }
+            out[len++] = static_cast<char>('0' + d);
+        }
+    }
+    out[len++] = ']';
+    out[len]   = '\0';
+}
 
 /// Writes `s` as one JSON object; returns its length, or 0 if `cap` is short.
 inline size_t format(const State &s, char *out, size_t cap)
@@ -69,6 +90,27 @@ inline size_t format(const State &s, char *out, size_t cap)
             static_cast<long>(Rhythm::minuteOfDay(s.usual.wake)), static_cast<unsigned>(s.usual.nights));
     } else {
         put("%s", "\"usual\":null,");
+    }
+    if (s.tonight.known) {
+        put("\"tonight\":{\"weekday\":%u,\"bed_min\":%ld,\"wake_min\":%ld,\"own_nights\":%u,\"nights\":%u},",
+            static_cast<unsigned>(Schedule::weekday(s.tonightDay)),
+            static_cast<long>(Rhythm::minuteOfDay(s.tonight.bed)),
+            static_cast<long>(Rhythm::minuteOfDay(s.tonight.wake)), static_cast<unsigned>(s.tonight.own),
+            static_cast<unsigned>(s.tonight.nights));
+    } else {
+        put("%s", "\"tonight\":null,");
+    }
+    char lb[16], eb[16], lw[16], ew[16];
+    days(s.week.laterBed, lb, sizeof(lb));
+    days(s.week.earlierBed, eb, sizeof(eb));
+    days(s.week.laterWake, lw, sizeof(lw));
+    days(s.week.earlierWake, ew, sizeof(ew));
+    put("\"week\":{\"later_bed\":%s,\"earlier_bed\":%s,\"later_wake\":%s,\"earlier_wake\":%s,", lb, eb, lw,
+        ew);
+    if (s.week.jetlagKnown) {
+        put("\"social_jetlag_min\":%ld},", static_cast<long>(s.week.socialJetlagMin));
+    } else {
+        put("%s", "\"social_jetlag_min\":null},");
     }
     put("\"rest_goal_min\":%u,", static_cast<unsigned>(Rhythm::kRestGoalMin));
     const bool worn = p != nullptr && p->worn == SleepPeriods::Worn::Worn;

@@ -470,6 +470,9 @@ void Service::publishNow(uint32_t utc)
     s.lastNight   = mLastNight;
     s.usual       = mNights.recent().usualBefore(UINT32_MAX);
     s.usualBefore = mNights.recent().usualBefore(mLastNight != nullptr ? mLastNight->startUtc : UINT32_MAX);
+    s.tonightDay  = Schedule::tonight(utc, off);
+    s.tonight     = mNights.schedule().expect(s.tonightDay);
+    s.week        = mNights.schedule().week();
     if (!Slumber::SleepNow::publish(mKernel.fs, s)) {
         ++mWriteFails;
         mLog.line("write-fail", "n=%lu path=%s", static_cast<unsigned long>(mWriteFails),

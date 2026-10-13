@@ -93,6 +93,9 @@ TEST(SharedSleep, NowReadsThroughTheSdkJsonReader)
     s.usual.bed      = Rhythm::afterNoon(p.startUtc, -240);
     s.usual.wake     = Rhythm::afterNoon(p.endUtc, -240);
     s.usual.nights   = 5;
+    s.tonightDay     = Schedule::tonight(s.writtenUtc, -240);
+    s.tonight        = Schedule::Expected{true, s.usual.bed, s.usual.wake, 1, 5};
+    s.week.laterBed  = (1u << Schedule::kFriday) | (1u << Schedule::kSaturday);
     ASSERT_TRUE(SleepNow::publish(fs, s));
 
     const std::string all = fs.fileContents(SleepNow::kPath);
@@ -116,4 +119,21 @@ TEST(SharedSleep, NowReadsThroughTheSdkJsonReader)
     EXPECT_EQ(wake, 9 * 60 + 5);
     EXPECT_EQ(restFill, 1311);
     EXPECT_TRUE(rhythmNull);
+
+    uint8_t  weekday = 9, lateDay = 9;
+    uint16_t tonightBed = 0;
+    size_t   lateDays = 0, earlyDays = 9;
+    bool     jetlagNull = false;
+    ASSERT_TRUE(json.get("tonight.weekday", weekday));
+    ASSERT_TRUE(json.get("tonight.bed_min", tonightBed));
+    ASSERT_TRUE(json.getArrayLength("week.later_bed", lateDays));
+    ASSERT_TRUE(json.get("week.later_bed[1]", lateDay));
+    ASSERT_TRUE(json.getArrayLength("week.earlier_bed", earlyDays));
+    ASSERT_TRUE(json.getNull("week.social_jetlag_min", jetlagNull));
+    EXPECT_EQ(weekday, Schedule::weekday(s.tonightDay));
+    EXPECT_EQ(tonightBed, 23 * 60 + 54);
+    EXPECT_EQ(lateDays, 2u);
+    EXPECT_EQ(lateDay, Schedule::kSaturday);
+    EXPECT_EQ(earlyDays, 0u);
+    EXPECT_TRUE(jetlagNull);
 }
