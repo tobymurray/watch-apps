@@ -206,7 +206,7 @@ either way.
 
 ## Building
 
-Targets **`apps-v1.4.0`**, the same as RustGuiPoc, QrGuiPoc and Spin.
+Builds against the SDK commit CI pins (`SDK_REF` in [`app-build.yml`](../.github/workflows/app-build.yml)); no release tag names the CustomGUI build inputs its CMakeLists uses yet.
 
 ```sh
 rustup target add thumbv8m.main-none-eabihf

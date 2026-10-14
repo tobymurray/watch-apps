@@ -67,7 +67,7 @@ only way out is rebooting the watch.
 
 ## Building
 
-Targets **`apps-v1.4.0`**. Needs the ARM embedded toolchain, CMake, Python 3 with
+Builds against the SDK commit CI pins (`SDK_REF` in [`app-build.yml`](../.github/workflows/app-build.yml)); no release tag names the CustomGUI build inputs its CMakeLists uses yet. Needs the ARM embedded toolchain, CMake, Python 3 with
 `pyelftools`, and a Rust toolchain with the Cortex-M33 target.
 
 ```sh

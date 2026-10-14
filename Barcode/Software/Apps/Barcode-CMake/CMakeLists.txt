@@ -16,9 +16,7 @@ set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")
 set(LIBS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../Libs")
 set(CUSTOMGUI_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../CustomGUI")
 set(RUST_CRATE_DIR "${CUSTOMGUI_PATH}/rust")
-# cmake/una-app.cmake gates GUI-ELF merging on TOUCHGFX_PATH; there is no
-# TouchGFX here any more, this only satisfies that gate.
-set(TOUCHGFX_PATH "${CUSTOMGUI_PATH}")
+set(GUI_PATH "${CUSTOMGUI_PATH}")
 
 if("$ENV{UNA_SDK}" STREQUAL "")
     message(FATAL_ERROR "UNA_SDK environment variable is not set. Run SDK/Utilities/Scripts/set-una-sdk-env.ps1 or set UNA_SDK to the SDK root.")
@@ -79,7 +77,7 @@ set(SERVICE_INCLUDE_DIRS
 una_app_build_service(${APP_NAME}Service.elf)
 
 set(GUI_SOURCES
-    $ENV{UNA_SDK}/Libs/Source/AppSystem/EntryPoint/CustomGUI/main.cpp
+    ${UNA_SDK_SOURCES_GUI_CUSTOM}
     ${CUSTOMGUI_PATH}/Gui.cpp
     ${UNA_SDK_SOURCES_COMMON}
 )
@@ -89,8 +87,7 @@ set(GUI_INCLUDE_DIRS
     ${CUSTOMGUI_PATH}
 )
 
-# una_app_build_gui() links TOUCHGFX_LIBS into the GUI ELF.
-set(TOUCHGFX_LIBS ${RUST_LIB})
+set(GUI_LIBS ${RUST_LIB})
 
 una_app_build_gui(${APP_NAME}GUI.elf)
 add_dependencies(${APP_NAME}GUI.elf barcode_gui_rust)

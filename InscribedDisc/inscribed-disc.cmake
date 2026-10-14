@@ -11,15 +11,8 @@
 #     inscribed_disc_gui_depends_on_rust(${APP_NAME}GUI.elf)
 #
 # `inscribed_disc_rust_gui` has to run before `una_app_build_gui`, because it
-# is what sets TOUCHGFX_PATH and TOUCHGFX_LIBS; the depends call has to run
-# after, because the ELF target does not exist until then.
-#
-# The two variables it sets are not guessable:
-#
-#   TOUCHGFX_PATH  -- cmake/una-app.cmake gates GUI-ELF merging on this being
-#                     set. There is no TouchGFX in a Rust GUI; it only satisfies
-#                     that gate, and the value is the CustomGUI directory.
-#   TOUCHGFX_LIBS  -- what una_app_build_gui() links into the GUI ELF.
+# is what sets GUI_PATH and GUI_LIBS; the depends call has to run after, because
+# the ELF target does not exist until then.
 
 if(NOT DEFINED CUSTOMGUI_PATH)
     message(FATAL_ERROR "inscribed-disc.cmake: set CUSTOMGUI_PATH before including it")
@@ -63,10 +56,8 @@ function(inscribed_disc_rust_gui crate_name)
     set(INSCRIBED_DISC_RUST_LIB "${_lib}" PARENT_SCOPE)
     set(INSCRIBED_DISC_RUST_TARGET_NAME "${crate_name}_rust" PARENT_SCOPE)
 
-    # Both of these have to be set before una_app_build_gui() runs. See the
-    # header of this file for what each is for.
-    set(TOUCHGFX_PATH "${CUSTOMGUI_PATH}" PARENT_SCOPE)
-    set(TOUCHGFX_LIBS "${_lib}" PARENT_SCOPE)
+    set(GUI_PATH "${CUSTOMGUI_PATH}" PARENT_SCOPE)
+    set(GUI_LIBS "${_lib}" PARENT_SCOPE)
 endfunction()
 
 # Orders the GUI ELF behind cargo. Call after una_app_build_gui().

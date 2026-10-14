@@ -79,6 +79,12 @@ not run once installed. The check is one-directional, so an app built against an
 older SDK still runs on newer firmware — it just cannot use what the newer line
 added.
 
+The apps with a Rust GUI (`Barcode`, `NotifyToggle`, `QrGuiPoc`, `RustGuiPoc`,
+`Spin` and `UnitToggle`) are the exception: they need the SDK commit CI pins
+(`SDK_REF` in [`app-build.yml`](.github/workflows/app-build.yml)), because no
+release tag names the CustomGUI build inputs they use yet. Its kernel interface
+version is the same as `apps-v1.4.0`'s.
+
 The three map apps additionally reach `MapKit/` by relative path within this repository, which is the arrangement
 Kira's registry recommends for a monorepo and which its one-`*-CMake`-per-app
 rule is unaffected by — see [MapKit's README](MapKit/README.md#layout-and-why-kira-is-fine-with-it).

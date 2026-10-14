@@ -1035,7 +1035,7 @@ compiled against.
 
 ## Building
 
-Needs `$UNA_SDK` pointing at an `apps-v1.4.0` checkout, and `cargo` with the
+Needs `$UNA_SDK` pointing at the SDK commit CI pins (`SDK_REF` in [`app-build.yml`](../.github/workflows/app-build.yml)); no release tag names the CustomGUI build inputs its CMakeLists uses yet, and `cargo` with the
 `thumbv8m.main-none-eabihf` target installed. Two Rust archives are built, not
 one: `libspin_gui.a` for the GUI and [`libspin_engine.a`](Software/Libs/rust) for the
 Service. They stay separate because they land in different ELFs — two archives
@@ -1043,7 +1043,7 @@ each carrying a `#[panic_handler]` would collide if they landed in one.
 
 ```sh
 rustup target add thumbv8m.main-none-eabihf
-export UNA_SDK=/path/to/una-sdk-apps-v1.4.0
+export UNA_SDK=/path/to/una-sdk
 cd Spin/Software/Apps/Spin-CMake
 cmake -B build -G "Unix Makefiles" -DBUILD_VERSION=0.1.0 . && cmake --build build
 ```
