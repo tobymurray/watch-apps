@@ -355,7 +355,16 @@ and how long ago, then rows written today and whether the last row had
 accelerometer and heart-rate data. `WRITE FAILS` in amber means rows are not
 reaching the volume.
 
-Marks are states, not events: `Sitting, TV` holds until the next mark. Press
+The picker offers four marks: `Lights out` (trying to sleep), `Awake in bed`
+(woken, still lying there), `Up and about` (any other waking time) and `Watch
+off`. Each answers one question detection must get right: asleep against awake
+and still, awake against asleep, and worn against off. Earlier builds also
+offered `Out of bed`, `Sitting, TV`, `Sitting, other` and `Moving about`; their
+codes stay reserved so old marks still read, and none of their rest runs reached
+the 30 minutes a night needs except one `Moving about` stretch of 33.5, most
+likely a mark left unchanged on sitting down.
+
+Marks are states, not events: `Lights out` holds until the next mark. Press
 `Watch off` before taking the watch off, and pick what you are doing when it
 goes back on.
 

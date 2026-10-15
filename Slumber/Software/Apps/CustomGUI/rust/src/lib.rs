@@ -44,9 +44,9 @@ impl Default for State {
     }
 }
 
-/// What the wearer can say they are doing; the code written beside each mark
-/// is its index, so append and never reorder.
-pub const MARKS: [&str; 7] = [
+/// Every label a mark has had; the code written beside each mark is its index,
+/// so append and never reorder.
+pub const MARKS: [&str; 8] = [
     "Lights out",
     "Awake in bed",
     "Out of bed",
@@ -54,7 +54,11 @@ pub const MARKS: [&str; 7] = [
     "Sitting, other",
     "Moving about",
     "Watch off",
+    "Up and about",
 ];
+
+/// The codes the picker offers, in the order it offers them.
+pub const PICKER: [u8; 4] = [0, 1, 7, 6];
 
 // Bright on dark only: dark glyphs on a light fill drop out on this panel
 // (RustGuiPoc/Docs/FINDINGS.md).
@@ -148,8 +152,13 @@ fn label(index: u8) -> &'static str {
     MARKS.get(index as usize).copied().unwrap_or("?")
 }
 
+/// The code at picker position `selected`.
+fn picked(selected: u8) -> u8 {
+    PICKER[selected as usize % PICKER.len()]
+}
+
 fn neighbour(selected: u8, step: i32) -> u8 {
-    let n = MARKS.len() as i32;
+    let n = PICKER.len() as i32;
     ((selected as i32 + step).rem_euclid(n)) as u8
 }
 
@@ -195,11 +204,11 @@ fn recorder_line(state: &State) -> (Line, Abgr2222) {
 fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
     text(fb, TITLE_FACE, TITLE, TITLE_BASELINE_Y, TITLE_INK);
 
-    let sel = state.selected % MARKS.len() as u8;
-    text(fb, NEIGHBOUR_FACE, label(neighbour(sel, -1)), PREV_BASELINE_Y, NEIGHBOUR_INK);
+    let sel = state.selected;
+    text(fb, NEIGHBOUR_FACE, label(picked(neighbour(sel, -1))), PREV_BASELINE_Y, NEIGHBOUR_INK);
     let pick_ink = if state.just_logged != 0 { DONE_INK } else { PICK_INK };
-    text(fb, PICK_FACE, label(sel), PICK_BASELINE_Y, pick_ink);
-    text(fb, NEIGHBOUR_FACE, label(neighbour(sel, 1)), NEXT_BASELINE_Y, NEIGHBOUR_INK);
+    text(fb, PICK_FACE, label(picked(sel)), PICK_BASELINE_Y, pick_ink);
+    text(fb, NEIGHBOUR_FACE, label(picked(neighbour(sel, 1))), NEXT_BASELINE_Y, NEIGHBOUR_INK);
 
     let (mark, mark_ink) = mark_line(state);
     text(fb, STATUS_FACE, mark.as_str(), MARK_BASELINE_Y, mark_ink);
@@ -265,12 +274,17 @@ const _: () = assert!(core::mem::offset_of!(State, just_logged) == 21);
 
 #[no_mangle]
 pub extern "C" fn slumber_mark_count() -> u32 {
-    MARKS.len() as u32
+    PICKER.len() as u32
+}
+
+#[no_mangle]
+pub extern "C" fn slumber_mark_code(index: u32) -> u32 {
+    picked((index % PICKER.len() as u32) as u8) as u32
 }
 
 /// Copies at most `cap - 1` bytes and a NUL; returns the bytes copied.
-pub fn copy_label(index: u32, out: &mut [u8]) -> usize {
-    let Some(src) = MARKS.get(index as usize) else {
+pub fn copy_label(code: u32, out: &mut [u8]) -> usize {
+    let Some(src) = MARKS.get(code as usize) else {
         if let Some(first) = out.first_mut() {
             *first = 0;
         }
@@ -288,11 +302,11 @@ pub fn copy_label(index: u32, out: &mut [u8]) -> usize {
 /// # Safety
 /// `out` must point to at least `cap` writable bytes.
 #[no_mangle]
-pub unsafe extern "C" fn slumber_mark_label(index: u32, out: *mut u8, cap: u32) -> u32 {
+pub unsafe extern "C" fn slumber_mark_label(code: u32, out: *mut u8, cap: u32) -> u32 {
     if out.is_null() || cap == 0 {
         return 0;
     }
-    copy_label(index, core::slice::from_raw_parts_mut(out, cap as usize)) as u32
+    copy_label(code, core::slice::from_raw_parts_mut(out, cap as usize)) as u32
 }
 
 /// # Safety
@@ -327,7 +341,7 @@ mod tests {
             write_fails: 0,
             mark_ago_min: 23 * 60 + 59,
             have_status: 1,
-            selected: 4,
+            selected: 2,
             last_mark: 4,
             acc_ok: 1,
             hr_ok: 1,
@@ -339,8 +353,11 @@ mod tests {
     /// Every state that changes a line's text or ink, at its widest.
     fn variants() -> Vec<State> {
         let mut out = vec![State::default(), reported()];
-        for sel in 0..MARKS.len() as u8 {
-            out.push(State { selected: sel, last_mark: sel, ..reported() });
+        for sel in 0..PICKER.len() as u8 {
+            out.push(State { selected: sel, last_mark: picked(sel), ..reported() });
+        }
+        for code in 0..MARKS.len() as u8 {
+            out.push(State { last_mark: code, ..reported() });
         }
         out.push(State { just_logged: 1, ..reported() });
         out.push(State { write_fails: 4_294_967_295, ..reported() });
@@ -402,8 +419,16 @@ mod tests {
 
     #[test]
     fn the_picker_wraps_both_ways() {
-        assert_eq!(neighbour(0, -1) as usize, MARKS.len() - 1);
-        assert_eq!(neighbour(MARKS.len() as u8 - 1, 1), 0);
+        assert_eq!(neighbour(0, -1) as usize, PICKER.len() - 1);
+        assert_eq!(neighbour(PICKER.len() as u8 - 1, 1), 0);
+    }
+
+    #[test]
+    fn the_picker_offers_four_and_keeps_the_old_codes() {
+        let offered: Vec<&str> =
+            (0..slumber_mark_count()).map(|i| label(slumber_mark_code(i) as u8)).collect();
+        assert_eq!(offered, ["Lights out", "Awake in bed", "Up and about", "Watch off"]);
+        assert_eq!(MARKS[3], "Sitting, TV");
     }
 
     #[test]

@@ -76,8 +76,8 @@ void Gui::sendMark()
     if (!mark) {
         return;
     }
-    mark->code = mState.selected;
-    slumber_mark_label(mState.selected, reinterpret_cast<uint8_t *>(mark->label),
+    mark->code = static_cast<uint8_t>(slumber_mark_code(mState.selected));
+    slumber_mark_label(mark->code, reinterpret_cast<uint8_t *>(mark->label),
                        CustomMessage::kMarkLabelCap);
     if (mark.send()) {
         mMarkPending = true;
@@ -150,7 +150,7 @@ void Gui::run()
                 mState.have_status    = 1;
                 if (mMarkPending) {
                     mMarkPending       = false;
-                    mState.just_logged = st->lastMark == mState.selected ? 1 : 0;
+                    mState.just_logged = st->lastMark == slumber_mark_code(mState.selected) ? 1 : 0;
                 }
                 mDirty = true;
                 msg->setResult(SDK::MessageResult::SUCCESS);

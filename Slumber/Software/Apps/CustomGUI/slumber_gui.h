@@ -18,7 +18,7 @@ typedef struct {
     uint32_t write_fails;
     uint32_t mark_ago_min;  /* SLUMBER_NO_MARK_AGE = none */
     uint8_t  have_status;   /* 0 or 1 */
-    uint8_t  selected;      /* index of the highlighted label */
+    uint8_t  selected;      /* picker position of the highlighted label */
     uint8_t  last_mark;     /* SLUMBER_NO_MARK = none */
     uint8_t  acc_ok;        /* 0 or 1 */
     uint8_t  hr_ok;         /* 0 or 1 */
@@ -39,8 +39,11 @@ void slumber_render(uint8_t* buf, uint32_t buf_len,
 /* How many labels the picker offers. */
 uint32_t slumber_mark_count(void);
 
-/* Copies label `index` as ASCII, NUL-terminated, into `out`; returns its length. */
-uint32_t slumber_mark_label(uint32_t index, uint8_t* out, uint32_t cap);
+/* The mark code at picker position `index`. */
+uint32_t slumber_mark_code(uint32_t index);
+
+/* Copies the label of mark code `code` as ASCII, NUL-terminated, into `out`; returns its length. */
+uint32_t slumber_mark_label(uint32_t code, uint8_t* out, uint32_t cap);
 
 #ifdef __cplusplus
 } // extern "C"
