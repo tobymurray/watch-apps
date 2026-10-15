@@ -27,7 +27,7 @@ protected:
     using Menu = App::MenuNav::Root;
 
     bool mGpsFix = false;
-    SDK::Gui::SensorStatusRow mSensorRow;
+    SDK::GUI::SensorStatusRow mSensorRow;
 
     /// The licence notice the map data owes, put up once per app launch and
     /// dismissed by any key. Owned here rather than in the generated tree
