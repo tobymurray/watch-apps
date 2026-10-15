@@ -53,6 +53,7 @@ jobs:
     uses: ./.github/workflows/app-build.yml
     with:
       app: UnitToggle
+      links: TextKit SettingsKit
       version: ${{ inputs.version || '' }}
     permissions:
       # write, not read: a caller's grant caps what the called workflow can

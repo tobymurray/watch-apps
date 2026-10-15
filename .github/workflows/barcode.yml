@@ -47,6 +47,7 @@ jobs:
     uses: ./.github/workflows/app-build.yml
     with:
       app: Barcode
+      links: TextKit
       version: ${{ inputs.version || '' }}
     permissions:
       # write, not read: a caller's grant caps what the called workflow can

@@ -51,6 +51,7 @@ jobs:
     uses: ./.github/workflows/app-build.yml
     with:
       app: Spin
+      links: TextKit EffortKit
       version: ${{ inputs.version || '' }}
     permissions:
       # write, not read: a caller's grant caps what the called workflow can

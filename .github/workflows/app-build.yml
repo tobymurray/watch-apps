@@ -34,6 +34,11 @@ on:
         required: false
         type: string
         default: ''
+      links:
+        description: 'Space-separated shared-crate directories this app links, whose feat/fix commits bump it as if they touched the app directory.'
+        required: false
+        type: string
+        default: ''
       sdk_ref:
         description: 'An SDK_REPO commit to build and test this app against instead of SDK_REF. The validators still run from SDK_REF.'
         required: false
@@ -278,7 +283,7 @@ jobs:
               caller="${caller#${{ github.repository }}/}"
               caller="${caller%%@*}"
               {
-                git -C apps log --format='%H %s' "$range" -- "${{ inputs.app }}"
+                git -C apps log --format='%H %s' "$range" -- "${{ inputs.app }}" ${{ inputs.links }}
                 git -C apps log --format='%H %s' -G '^[[:space:]]*SDK_REF:' "$range" -- .github/workflows/app-build.yml
                 git -C apps log --format='%H %s' -G '^[[:space:]]*sdk_ref:' "$range" -- "$caller"
               } | awk '!seen[$1]++' | cut -d' ' -f2-
