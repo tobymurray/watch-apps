@@ -140,8 +140,11 @@ constexpr AddressSet kFirmware_1_5_0 = {
 
 // Kernel 1.6.0, same ABI (3) as 1.4.0 and 1.5.0. Derived statically from the
 // CRC-32 0xA44C79C9 flash image (FwDump 1.1.0 on 2026-10-15), by matching 1.5.0's
-// functions across the rebuild -- NOT yet run on a watch. Nothing here is measured
-// on hardware; the first on-device run is the verification.
+// functions across the rebuild, then run on a watch (2026-10-15): the wearer reports
+// both NotifyToggle and UnitToggle working, and settings.json was left valid with
+// only the units field changed. No debug log was captured, and the struct base is
+// a static read rather than an SRAM dump, so the runtime file cross-check remains
+// what guards it.
 //
 // File class: every method is byte-identical to its 1.5.0 counterpart up to its
 // literal pool and the relocated bl targets (Read, Close and the others differ
