@@ -28,7 +28,7 @@ env:
   # The C++ half type-checks against the SDK's headers. Must track
   # app-build.yml's pin: two workflows on two SDK commits are two instruments.
   SDK_REPO: UNAWatch/una-sdk
-  SDK_REF: 33a8d8700566140b833cefde887830973adf4aab
+  SDK_REF: bd04a5b8ebc7cb56cdbabe7071bad0468f9f7249
 
 jobs:
   # Not in the toolchain container: that image carries cargo-clippy and
