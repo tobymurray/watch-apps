@@ -98,6 +98,7 @@ std::vector<Session> loadSessions(const std::string &dir)
             e.hasHr      = get("hr_samples") > 0;
             e.hrAsked    = get("hr_samples") >= 0;
             e.hrTrustX10 = static_cast<uint8_t>(std::max(0L, get("hr_trust_x10")));
+            e.hrX10      = static_cast<uint16_t>(std::max(0L, get("hr_mean_x10")));
             s.epochs.push_back(e);
         }
         sessions.push_back(s);
@@ -256,6 +257,7 @@ std::vector<Epoch> loadDays(const std::string &dir)
             e.hasHr      = get("hr_n") > 0;
             e.hrAsked    = get("hr_n") >= 0;
             e.hrTrustX10 = static_cast<uint8_t>(std::max(0L, get("hr_trust_x10")));
+            e.hrX10      = static_cast<uint16_t>(std::max(0L, get("hr_mean_x10")));
             out.push_back(e);
         }
     }

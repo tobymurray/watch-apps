@@ -58,6 +58,7 @@ struct Epoch {
     uint32_t count      = 0;  ///< activity count, SleepLab's EpochCounter scale
     uint16_t steps      = 0;
     uint8_t  hrTrustX10 = 0;  ///< meaningful only when hasHr
+    uint16_t hrX10      = 0;  ///< bpm x 10, the epoch's mean; meaningful only when hasHr
     bool     hasHr      = false;
     /// HEART_RATE was subscribed, so an epoch without a reading is evidence
     /// against the wrist rather than no evidence: SleepLab's `WornGate` rule.

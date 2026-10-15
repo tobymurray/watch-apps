@@ -28,7 +28,7 @@ T clampTo(int32_t v, uint32_t max)
 /// The epoch a row describes: the row's `utc` is when it closed, an epoch is
 /// keyed by when it opened.
 inline SleepPeriods::Epoch toEpoch(int64_t utc, uint32_t count, int32_t steps, int32_t hrN,
-                                   int32_t hrTrustX10)
+                                   int32_t hrTrustX10, int32_t hrMeanX10)
 {
     SleepPeriods::Epoch e;
     e.utc        = static_cast<uint32_t>(utc) - SleepPeriods::kEpochS;
@@ -37,6 +37,7 @@ inline SleepPeriods::Epoch toEpoch(int64_t utc, uint32_t count, int32_t steps, i
     e.hasHr      = hrN > 0;
     e.hrAsked    = hrN >= 0;
     e.hrTrustX10 = e.hasHr ? clampTo<uint8_t>(hrTrustX10, 0xFFu) : 0;
+    e.hrX10      = e.hasHr ? clampTo<uint16_t>(hrMeanX10, 0xFFFFu) : 0;
     return e;
 }
 
@@ -90,7 +91,7 @@ public:
 private:
     bool parse(SleepPeriods::Epoch &e) const
     {
-        int64_t     v[5] = {};
+        int64_t     v[6] = {};
         int         at   = 0;
         const char *p    = mLine;
         for (;; ++at) {
@@ -99,7 +100,7 @@ private:
             if (end == p || (*end != ',' && *end != '\0')) {
                 return false;
             }
-            for (int k = 0; k < 5; ++k) {
+            for (int k = 0; k < 6; ++k) {
                 if (at == mWant[k]) {
                     v[k] = n;
                 }
@@ -113,12 +114,12 @@ private:
             return false;
         }
         e = toEpoch(v[0], static_cast<uint32_t>(v[1]), static_cast<int32_t>(v[2]),
-                    static_cast<int32_t>(v[3]), static_cast<int32_t>(v[4]));
+                    static_cast<int32_t>(v[3]), static_cast<int32_t>(v[4]), static_cast<int32_t>(v[5]));
         return true;
     }
 
-    const int mWant[5] = {column("utc"), column("count"), column("steps"), column("hr_n"),
-                          column("hr_trust_x10")};
+    const int mWant[6] = {column("utc"),  column("count"),        column("steps"),
+                          column("hr_n"), column("hr_trust_x10"), column("hr_mean_x10")};
     const int mColumns = columnCount();
     char      mLine[kRowCap];
     size_t    mLen      = 0;

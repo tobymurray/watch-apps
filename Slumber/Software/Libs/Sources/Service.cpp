@@ -80,7 +80,7 @@ uint16_t bump(uint16_t v)
 
 SleepPeriods::Epoch toEpoch(const Slumber::EpochRow &r)
 {
-    return Slumber::DayRow::toEpoch(r.utc, r.count, r.steps, r.hrN, r.hrTrustX10);
+    return Slumber::DayRow::toEpoch(r.utc, r.count, r.steps, r.hrN, r.hrTrustX10, r.hrMeanX10);
 }
 
 } // namespace

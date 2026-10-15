@@ -28,11 +28,11 @@ public:
     /// A night, the hour SleepPeriods waits before settling it, and the day before.
     static constexpr uint32_t kWindowS   = 36u * 60u * 60u;
     static constexpr size_t   kCap       = kWindowS / SleepPeriods::kEpochS;
-    static constexpr size_t   kRecSize   = 12;
+    static constexpr size_t   kRecSize   = 14;
     static constexpr size_t   kFlushRecs = DayLog::kFlushRows;
     static constexpr const char *kHeader =
-        "slumber-epochs 1: 12-byte little-endian records of utc u32, count u32, "
-        "steps u16, hr_trust_x10 u8, flags u8 (1 = heart rate read, 2 = asked)\n";
+        "slumber-epochs 2: 14-byte little-endian records of utc u32, count u32, "
+        "steps u16, hr_trust_x10 u8, flags u8 (1 = heart rate read, 2 = asked), hr_x10 u16\n";
 
     explicit EpochHistory(SDK::Interface::IFileSystem &fs)
         : mFs(fs)
@@ -105,6 +105,8 @@ public:
         out[9]  = static_cast<uint8_t>(e.steps >> 8);
         out[10] = e.hrTrustX10;
         out[11] = static_cast<uint8_t>((e.hasHr ? 1u : 0u) | (e.hrAsked ? 2u : 0u));
+        out[12] = static_cast<uint8_t>(e.hrX10);
+        out[13] = static_cast<uint8_t>(e.hrX10 >> 8);
     }
 
     static SleepPeriods::Epoch decode(const uint8_t *in)
@@ -116,6 +118,7 @@ public:
         e.hrTrustX10 = in[10];
         e.hasHr      = (in[11] & 1u) != 0;
         e.hrAsked    = (in[11] & 2u) != 0;
+        e.hrX10      = static_cast<uint16_t>(in[12] | (in[13] << 8));
         return e;
     }
 
@@ -159,7 +162,7 @@ private:
         }
         const size_t hl = std::strlen(kHeader);
         if (f->seek(hl)) {
-            uint8_t buf[kRecSize * 64];
+            uint8_t buf[kRecSize * 48];
             size_t  got = 0;
             while (f->read(reinterpret_cast<char *>(buf), sizeof(buf), got) && got >= kRecSize) {
                 for (size_t at = 0; at + kRecSize <= got; at += kRecSize) {
@@ -198,7 +201,7 @@ private:
         mFs.mkdir(kDir);
 
         DayRow::Reader rows;
-        uint8_t        out[kRecSize * 64];
+        uint8_t        out[kRecSize * 48];
         size_t         outN = 0;
         char           buf[512];
         size_t         got = 0;

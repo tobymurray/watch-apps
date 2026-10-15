@@ -261,6 +261,7 @@ SleepPeriods::Epoch epochAt(uint32_t utc)
     e.count      = utc % 5000;
     e.steps      = 513;
     e.hrTrustX10 = 27;
+    e.hrX10      = static_cast<uint16_t>(400 + utc % 600);
     e.hasHr      = true;
     e.hrAsked    = true;
     return e;
@@ -281,6 +282,7 @@ TEST(EpochHistory, ARecordRoundTrips)
     EXPECT_EQ(out.count, in.count);
     EXPECT_EQ(out.steps, in.steps);
     EXPECT_EQ(out.hrTrustX10, in.hrTrustX10);
+    EXPECT_EQ(out.hrX10, in.hrX10);
     EXPECT_TRUE(out.hasHr);
     EXPECT_TRUE(out.hrAsked);
 }
@@ -362,6 +364,7 @@ EpochRow rowClosingAt(int64_t utc)
     r.steps      = static_cast<int32_t>(utc % 3);
     r.hrN        = static_cast<int32_t>(utc % 4) - 1;
     r.hrTrustX10 = 27;
+    r.hrMeanX10  = static_cast<int32_t>(500 + utc % 300);
     return r;
 }
 
@@ -389,7 +392,8 @@ TEST(EpochHistory, AMissingCacheIsRebuiltFromTheDayFiles)
     ASSERT_EQ(h->size(), 15u * 120u);
     for (size_t i = 0; i < h->size(); ++i) {
         const EpochRow            r    = rowClosingAt(kMidnight - 6 * 3600 + 30 * (i + 1));
-        const SleepPeriods::Epoch want = DayRow::toEpoch(r.utc, r.count, r.steps, r.hrN, r.hrTrustX10);
+        const SleepPeriods::Epoch want = DayRow::toEpoch(r.utc, r.count, r.steps, r.hrN, r.hrTrustX10,
+                                                                        r.hrMeanX10);
         const SleepPeriods::Epoch got  = h->data()[i];
         ASSERT_EQ(got.utc, want.utc);
         ASSERT_EQ(got.count, want.count);
