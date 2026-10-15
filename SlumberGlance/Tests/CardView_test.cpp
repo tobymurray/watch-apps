@@ -26,12 +26,12 @@ Card running(uint32_t upS, uint32_t sinceBeatS)
 
 } // namespace
 
-TEST(CardView, AFreshCardShowsUptimeAndHeartbeat)
+TEST(CardView, RunningWithNoNightSaysNoneYet)
 {
     const auto v = make(Read::Ok, running(3 * 3600 + 12 * 60, 120), nullptr, kNow);
-    EXPECT_EQ(std::string(v.top), "Slumber up 3h12");
-    EXPECT_EQ(std::string(v.bottom), "beat 2m ago  #42");
-    EXPECT_EQ(v.tone, Tone::Normal);
+    EXPECT_EQ(std::string(v.top), "No night yet");
+    EXPECT_EQ(std::string(v.bottom), "wear it to bed");
+    EXPECT_EQ(v.tone, Tone::Muted);
 }
 
 TEST(CardView, TheBackupCopyReadsTheSameAsThePrimary)
@@ -46,7 +46,7 @@ TEST(CardView, TheBackupCopyReadsTheSameAsThePrimary)
 TEST(CardView, OneMissedHeartbeatIsNotYetStopped)
 {
     const auto v = make(Read::Ok, running(7200, CardView::kStaleAfterS), nullptr, kNow);
-    EXPECT_EQ(v.tone, Tone::Normal);
+    EXPECT_NE(v.tone, Tone::Warning);
 }
 
 TEST(CardView, ASilentWriterIsCalledStopped)
@@ -67,21 +67,25 @@ TEST(CardView, NothingPublishedAsksForSlumber)
 /// A write in progress must not blank a card that was showing a good value.
 TEST(CardView, BusyKeepsTheLastGoodCard)
 {
-    const Card last = running(600, 60);
-    const auto v    = make(Read::Busy, Card{}, &last, kNow);
-    EXPECT_EQ(std::string(v.bottom), "beat 1m ago  #42");
+    Card last          = running(600, 60);
+    last.state         = SlumberCard::State::Report;
+    last.onsetMinOfDay = 23 * 60 + 47;
+    last.wakeMinOfDay  = 7 * 60 + 5;
+    last.restMin       = 7 * 60 + 2;
+    const auto v       = make(Read::Busy, Card{}, &last, kNow);
+    EXPECT_EQ(std::string(v.top), "Night 23:47-07:05");
 }
 
 TEST(CardView, BusyWithNothingBeforeSaysSo)
 {
     const auto v = make(Read::Busy, Card{}, nullptr, kNow);
-    EXPECT_EQ(std::string(v.bottom), "busy, retrying");
+    EXPECT_EQ(std::string(v.bottom), "one moment");
 }
 
 TEST(CardView, AnUnsetClockIsNotReadAsAStoppedWriter)
 {
     const auto v = make(Read::Ok, running(600, 60), nullptr, 0);
-    EXPECT_EQ(std::string(v.bottom), "no clock  #42");
+    EXPECT_EQ(std::string(v.bottom), "waiting for clock");
     EXPECT_NE(v.tone, Tone::Warning);
 }
 
@@ -91,7 +95,7 @@ TEST(CardView, AHeartbeatFromTheFutureIsFresh)
     Card c         = running(600, 0);
     c.heartbeatUtc = kNow + 30;
     const auto v   = make(Read::Ok, c, nullptr, kNow);
-    EXPECT_EQ(v.tone, Tone::Normal);
+    EXPECT_NE(v.tone, Tone::Warning);
 }
 
 TEST(CardView, TheLongestLinesFitTheirBuffers)
@@ -146,11 +150,11 @@ TEST(CardView, ANightOnATableIsNotReportedAsSleep)
     EXPECT_EQ(v.tone, Tone::Muted);
 }
 
-TEST(CardView, AnExpiredNightFallsBackToRunning)
+TEST(CardView, AnExpiredNightFallsBackToNoneYet)
 {
     Card c          = night(SlumberCard::State::Report);
     c.validUntilUtc = kNow - 1;
-    EXPECT_EQ(std::string(make(Read::Ok, c, nullptr, kNow).top), "Slumber up 1h00");
+    EXPECT_EQ(std::string(make(Read::Ok, c, nullptr, kNow).top), "No night yet");
 }
 
 TEST(CardView, StoppedOutranksLastNight)

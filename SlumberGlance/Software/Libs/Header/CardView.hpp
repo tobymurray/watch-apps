@@ -8,7 +8,7 @@
 #include "SlumberCard.hpp"
 
 /// What the two lines of the card say, decided without the SDK so it can be
-/// tested on a desk: Slumber stopped, else last night, else that it is running.
+/// tested on a desk: Slumber stopped, else last night, else that none is found yet.
 namespace CardView
 {
 
@@ -46,15 +46,14 @@ inline View make(SlumberCard::Read read, const SlumberCard::Card &card,
     const SlumberCard::Card *shown = (read == Read::Busy) ? last : &card;
     if (shown == nullptr) {
         std::snprintf(v.top, sizeof(v.top), "Slumber");
-        std::snprintf(v.bottom, sizeof(v.bottom), "busy, retrying");
+        std::snprintf(v.bottom, sizeof(v.bottom), "one moment");
         v.tone = Tone::Muted;
         return v;
     }
 
     if (nowUtc == 0 || shown->heartbeatUtc == 0) {
         std::snprintf(v.top, sizeof(v.top), "Slumber");
-        std::snprintf(v.bottom, sizeof(v.bottom), "no clock  #%lu",
-                      static_cast<unsigned long>(shown->seq));
+        std::snprintf(v.bottom, sizeof(v.bottom), "waiting for clock");
         v.tone = Tone::Muted;
         return v;
     }
@@ -87,14 +86,9 @@ inline View make(SlumberCard::Read read, const SlumberCard::Card &card,
         return v;
     }
 
-    const uint32_t up = (shown->serviceStartUtc != 0 && nowUtc > shown->serviceStartUtc)
-                            ? nowUtc - shown->serviceStartUtc
-                            : 0u;
-    hm(span, sizeof(span), up);
-    std::snprintf(v.top, sizeof(v.top), "Slumber up %s", span);
-    std::snprintf(v.bottom, sizeof(v.bottom), "beat %lum ago  #%lu",
-                  static_cast<unsigned long>(sinceBeat / 60u),
-                  static_cast<unsigned long>(shown->seq));
+    std::snprintf(v.top, sizeof(v.top), "No night yet");
+    std::snprintf(v.bottom, sizeof(v.bottom), "wear it to bed");
+    v.tone = Tone::Muted;
     return v;
 }
 
