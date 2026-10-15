@@ -32,7 +32,7 @@ public:
     static constexpr char     kSource[] = "Slumber";
     static constexpr unsigned kSchema   = 1;
     /// Every key a reader needs to find a session fits in a line's first bytes.
-    static constexpr size_t   kPrefixCap = 384;
+    static constexpr size_t   kPrefixCap = 512;
 
     explicit NightLog(SDK::Interface::IFileSystem &fs)
         : mFs(fs)
@@ -50,8 +50,9 @@ public:
     bool add(const SleepPeriods::Period &p, const NightSummary::Summary &s, int32_t offsetMin,
              const SleepPeriods::Epoch *e, size_t n)
     {
-        char      head[kPrefixCap];
-        const int len = prefix(p, s, offsetMin, head, sizeof(head));
+        const NightSummary::Heart h = NightSummary::heart(e, n, p);
+        char                      head[kPrefixCap];
+        const int                 len = prefix(p, s, h, offsetMin, head, sizeof(head));
         if (len <= 0 || static_cast<size_t>(len) >= sizeof(head)) {
             return false;
         }
@@ -65,7 +66,7 @@ public:
         mLastEndUtc = p.endUtc;
         if (p.worn == SleepPeriods::Worn::Worn) {
             mRecent.add(p.startUtc, p.endUtc, offsetMin, p.restMin);
-            mSchedule.add(p.startUtc, p.endUtc, offsetMin);
+            mSchedule.add(p.startUtc, p.endUtc, offsetMin, h.medianBpm, h.lowBpm);
         }
         return true;
     }
@@ -93,25 +94,36 @@ public:
 
     /// The line up to the opening quote of `epochs`, NUL-terminated.
     static int prefix(const SleepPeriods::Period &p, const NightSummary::Summary &s,
-                      int32_t offsetMin, char *out, size_t cap)
+                      const NightSummary::Heart &h, int32_t offsetMin, char *out, size_t cap)
     {
         char from[17];
         char to[17];
         LocalTime::stamp(p.startUtc, offsetMin, from);
         LocalTime::stamp(p.endUtc, offsetMin, to);
+        char med[5] = "null";
+        char low[5] = "null";
+        char at[11] = "null";
+        if (h.medianBpm != 0) {
+            std::snprintf(med, sizeof(med), "%u", static_cast<unsigned>(h.medianBpm));
+        }
+        if (h.lowBpm != 0) {
+            std::snprintf(low, sizeof(low), "%u", static_cast<unsigned>(h.lowBpm));
+            std::snprintf(at, sizeof(at), "%lu", static_cast<unsigned long>(h.lowUtc));
+        }
         return std::snprintf(
             out, cap,
             "{\"schema\":%u,\"source\":\"%s\",\"start\":%lu,\"end\":%lu,\"utc_off_min\":%ld,"
             "\"rest_min\":%u,\"worn\":\"%s\",\"start_local\":\"%s\",\"end_local\":\"%s\","
             "\"span_min\":%lu,\"missing_min\":%u,\"longest_rest_min\":%u,\"restless_spells\":%u,"
-            "\"worn_pct\":%u,\"hr_cover_pct\":%u,\"epoch_s\":%u,\"epochs\":\"",
+            "\"worn_pct\":%u,\"hr_cover_pct\":%u,\"hr_median_bpm\":%s,\"hr_low_bpm\":%s,\"hr_low_at\":%s,"
+            "\"epoch_s\":%u,\"epochs\":\"",
             kSchema, kSource, static_cast<unsigned long>(p.startUtc),
             static_cast<unsigned long>(p.endUtc), static_cast<long>(offsetMin),
             static_cast<unsigned>(p.restMin), name(p.worn), from, to,
             static_cast<unsigned long>((p.endUtc - p.startUtc) / 60u),
             static_cast<unsigned>(p.missingMin), static_cast<unsigned>(s.longestRestMin),
             static_cast<unsigned>(s.restlessSpells), static_cast<unsigned>(p.wornPct),
-            static_cast<unsigned>(p.hrCoverPct), static_cast<unsigned>(SleepPeriods::kEpochS));
+            static_cast<unsigned>(p.hrCoverPct), med, low, at, static_cast<unsigned>(SleepPeriods::kEpochS));
     }
 
 private:
@@ -233,7 +245,12 @@ private:
         if (std::strstr(line, "\"worn\":\"worn\"") != nullptr && end > start) {
             mRecent.add(static_cast<uint32_t>(start), static_cast<uint32_t>(end),
                         static_cast<int32_t>(off), static_cast<uint16_t>(rest));
-            mSchedule.add(static_cast<uint32_t>(start), static_cast<uint32_t>(end), static_cast<int32_t>(off));
+            long hrMed = 0, hrLow = 0;
+            number(line, "\"hr_median_bpm\":", hrMed);
+            number(line, "\"hr_low_bpm\":", hrLow);
+            mSchedule.add(static_cast<uint32_t>(start), static_cast<uint32_t>(end), static_cast<int32_t>(off),
+                          static_cast<uint8_t>(hrMed > 0 && hrMed < 256 ? hrMed : 0),
+                          static_cast<uint8_t>(hrLow > 0 && hrLow < 256 ? hrLow : 0));
         }
     }
 

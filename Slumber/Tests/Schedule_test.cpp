@@ -220,3 +220,67 @@ TEST(Schedule, DaySleepWrapsPastNoon)
     EXPECT_EQ(Rhythm::minuteOfDay(e.bed), 8 * 60);
     EXPECT_EQ(Rhythm::minuteOfDay(e.wake), 15 * 60);
 }
+
+namespace
+{
+
+void sleepWithHeart(Schedule::Learner &l, int32_t day, uint8_t median, uint8_t low)
+{
+    const uint32_t s = at(day, 23, 0);
+    l.add(s, s + 8 * 3600, kOff, median, low);
+}
+
+} // namespace
+
+TEST(ScheduleHeart, ThreeNightsBeforeThereIsAUsual)
+{
+    Schedule::Learner l;
+    sleepWithHeart(l, kMonday, 55, 49);
+    sleepWithHeart(l, kMonday + 1, 57, 50);
+    EXPECT_FALSE(l.heartBefore(kMonday + 2).known);
+    sleepWithHeart(l, kMonday + 2, 53, 47);
+    const Schedule::UsualHeart u = l.heartBefore(kMonday + 3);
+    ASSERT_TRUE(u.known);
+    EXPECT_EQ(u.medianBpm, 55);
+    EXPECT_EQ(u.lowBpm, 49);
+    EXPECT_EQ(u.nights, 3);
+}
+
+TEST(ScheduleHeart, TheNightComparedIsNotItsOwnUsual)
+{
+    Schedule::Learner l;
+    for (int32_t d = 0; d < 3; ++d) {
+        sleepWithHeart(l, kMonday + d, 52, 46);
+    }
+    sleepWithHeart(l, kMonday + 3, 70, 60);
+    EXPECT_EQ(l.heartBefore(kMonday + 3).medianBpm, 52);
+}
+
+TEST(ScheduleHeart, NightsWithoutAHeartRateAreSkipped)
+{
+    Schedule::Learner l;
+    sleepWithHeart(l, kMonday, 55, 0);
+    sleepWithHeart(l, kMonday + 1, 0, 0);
+    sleepWithHeart(l, kMonday + 2, 57, 0);
+    EXPECT_FALSE(l.heartBefore(kMonday + 3).known);
+    sleepWithHeart(l, kMonday + 3, 59, 0);
+    const Schedule::UsualHeart u = l.heartBefore(kMonday + 4);
+    ASSERT_TRUE(u.known);
+    EXPECT_EQ(u.nights, 3);
+    EXPECT_EQ(u.medianBpm, 57);
+    EXPECT_EQ(u.lowBpm, 0);
+}
+
+TEST(ScheduleHeart, OnlyTheLastFortnightCounts)
+{
+    Schedule::Learner l;
+    for (int32_t d = 0; d < 10; ++d) {
+        sleepWithHeart(l, kMonday + d, 70, 60);
+    }
+    for (int32_t d = 10; d < 10 + static_cast<int32_t>(Schedule::kHeartNights); ++d) {
+        sleepWithHeart(l, kMonday + d, 52, 46);
+    }
+    const Schedule::UsualHeart u = l.heartBefore(kMonday + 30);
+    EXPECT_EQ(u.nights, Schedule::kHeartNights);
+    EXPECT_EQ(u.medianBpm, 52);
+}

@@ -401,6 +401,7 @@ TEST(EpochHistory, AMissingCacheIsRebuiltFromTheDayFiles)
         ASSERT_EQ(got.hasHr, want.hasHr);
         ASSERT_EQ(got.hrAsked, want.hrAsked);
         ASSERT_EQ(got.hrTrustX10, want.hrTrustX10);
+        ASSERT_EQ(got.hrX10, want.hrX10);
     }
 }
 
@@ -482,14 +483,20 @@ SleepPeriods::Period settledNight()
 
 } // namespace
 
-/// One epoch every 30 s across `p`, moving at `moveAt` slots.
-std::vector<SleepPeriods::Epoch> epochsOf(const SleepPeriods::Period &p, std::vector<size_t> moveAt = {})
+/// One epoch every 30 s across `p`, moving at `moveAt` slots, with a trusted
+/// heart rate of `hrX10` unless it is 0.
+std::vector<SleepPeriods::Epoch> epochsOf(const SleepPeriods::Period &p, std::vector<size_t> moveAt = {},
+                                          uint16_t hrX10 = 0)
 {
     std::vector<SleepPeriods::Epoch> e;
     for (uint32_t t = p.startUtc; t < p.endUtc; t += SleepPeriods::kEpochS) {
         SleepPeriods::Epoch x;
-        x.utc   = t;
-        x.count = 200;
+        x.utc        = t;
+        x.count      = 200;
+        x.hasHr      = hrX10 != 0;
+        x.hrAsked    = true;
+        x.hrTrustX10 = 30;
+        x.hrX10      = hrX10;
         e.push_back(x);
     }
     for (size_t k : moveAt) {
@@ -499,9 +506,9 @@ std::vector<SleepPeriods::Epoch> epochsOf(const SleepPeriods::Period &p, std::ve
 }
 
 bool logNight(NightLog &log, const SleepPeriods::Period &p, NightSummary::Summary s = {},
-              std::vector<size_t> moveAt = {})
+              std::vector<size_t> moveAt = {}, uint16_t hrX10 = 0)
 {
-    const auto e = epochsOf(p, moveAt);
+    const auto e = epochsOf(p, moveAt, hrX10);
     return log.add(p, s, -240, e.data(), e.size());
 }
 
@@ -522,12 +529,40 @@ TEST(NightLog, ASettledNightIsLoggedOnceAsOneJsonLine)
         "{\"schema\":1,\"source\":\"Slumber\",\"start\":1791518040,\"end\":1791551100,"
         "\"utc_off_min\":-240,\"rest_min\":551,\"worn\":\"worn\",\"start_local\":\"2026-10-08 23:54\","
         "\"end_local\":\"2026-10-09 09:05\",\"span_min\":551,\"missing_min\":0,\"longest_rest_min\":240,"
-        "\"restless_spells\":15,\"worn_pct\":100,\"hr_cover_pct\":83,\"epoch_s\":30,\"epochs\":\"";
+        "\"restless_spells\":15,\"worn_pct\":100,\"hr_cover_pct\":83,\"hr_median_bpm\":null,"
+        "\"hr_low_bpm\":null,\"hr_low_at\":null,\"epoch_s\":30,\"epochs\":\"";
     ASSERT_EQ(all.find(head), 0u);
     const std::string strip = all.substr(head.size(), all.size() - head.size() - 3);
     EXPECT_EQ(strip.size(), 551u * 2u);
     EXPECT_EQ(strip.substr(0, 3), "rmr");
     EXPECT_EQ(all.substr(all.size() - 3), "\"}\n");
+}
+
+TEST(NightLog, TheSleepingHeartRateIsLogged)
+{
+    SDK::Test::FakeFileSystem  fs;
+    auto                       log = std::make_unique<NightLog>(fs);
+    const SleepPeriods::Period p   = settledNight();
+    ASSERT_TRUE(logNight(*log, p, {}, {}, 552));
+    const std::string all = readAll(fs, NightLog::kPath);
+    EXPECT_NE(all.find("\"hr_median_bpm\":55,\"hr_low_bpm\":55,\"hr_low_at\":1791518340,"), std::string::npos)
+        << all.substr(0, 400);
+}
+
+TEST(NightLog, TheLongestPrefixFits)
+{
+    SleepPeriods::Period p = settledNight();
+    p.startUtc             = 4000000000u;
+    p.endUtc               = 4000086400u;
+    p.restMin              = 1440;
+    p.missingMin           = 1440;
+    p.worn                 = SleepPeriods::Worn::Uncertain;
+    NightSummary::Summary s{65535, 65535};
+    NightSummary::Heart   h{149, 149, 4000000000u};
+    char                  out[NightLog::kPrefixCap];
+    const int             len = NightLog::prefix(p, s, h, -720, out, sizeof(out));
+    ASSERT_GT(len, 0);
+    EXPECT_LT(static_cast<size_t>(len), NightLog::kPrefixCap - 64) << len;
 }
 
 TEST(NightLog, ARestartDoesNotLogItAgain)
@@ -610,6 +645,25 @@ TEST(NightLog, MainNightsAreReadBackForTheWeek)
     EXPECT_EQ(Rhythm::minuteOfDay(e.bed), 23 * 60 + 54);
 }
 
+TEST(NightLog, SleepingHeartRatesAreReadBackForTheUsual)
+{
+    SDK::Test::FakeFileSystem fs;
+    {
+        auto log = std::make_unique<NightLog>(fs);
+        for (int d = 0; d < 4; ++d) {
+            SleepPeriods::Period p = settledNight();
+            p.startUtc += d * 86400;
+            p.endUtc += d * 86400;
+            ASSERT_TRUE(logNight(*log, p, {}, {}, static_cast<uint16_t>(530 + 20 * d)));
+        }
+    }
+    auto                       log = std::make_unique<NightLog>(fs);
+    const Schedule::UsualHeart u   = log->schedule().heartBefore(Rhythm::noonDay(settledNight().startUtc, -240) + 4);
+    ASSERT_TRUE(u.known);
+    EXPECT_EQ(u.nights, 4);
+    EXPECT_EQ(u.medianBpm, 56);  // 53, 55, 57, 59
+}
+
 TEST(NightLog, AnUnsettledNightWaits)
 {
     SDK::Test::FakeFileSystem fs;
@@ -631,7 +685,7 @@ TEST(SleepNow, BeforeAnyNightEveryAnswerIsNull)
     EXPECT_STREQ(out, "{\"schema\":1,\"source\":\"Slumber\",\"written\":1791600000,\"heartbeat_s\":300,"
                       "\"utc_off_min\":-240,\"asleep_since\":null,\"last_night\":null,\"usual\":null,"
                       "\"tonight\":null,\"week\":{\"later_bed\":[],\"earlier_bed\":[],\"later_wake\":[],"
-                      "\"earlier_wake\":[],\"social_jetlag_min\":null},"
+                      "\"earlier_wake\":[],\"social_jetlag_min\":null},\"heart\":null,"
                       "\"rest_goal_min\":420,\"rest_fill\":null,\"rhythm_fill\":null,\"rhythm_offset_min\":null}");
 }
 
@@ -697,10 +751,39 @@ TEST(SleepNow, TheLongestStateFits)
     s.usualBefore    = Rhythm::Usual{true, 0, 0, 255};
     s.tonight        = Schedule::Expected{true, 1439, 1439, 255, 255};
     s.week           = Schedule::Week{0x7F, 0, 0x7F, 0, true, -1439};  // a day is later or earlier, not both
+    s.lastHeart      = NightSummary::Heart{149, 149, 4000000000u};
+    s.usualHeart     = Schedule::UsualHeart{true, 30, 30, 255};
     char out[SleepNow::kCap];
     const size_t len = SleepNow::format(s, out, sizeof(out));
     ASSERT_GT(len, 0u);
     EXPECT_LT(len, SleepNow::kCap * 3 / 4) << len;
+}
+
+TEST(SleepNow, LastNightsHeartIsSetAgainstTheUsual)
+{
+    const SleepPeriods::Period p = settledNight();
+    SleepNow::State            s;
+    s.lastNight  = &p;
+    s.lastHeart  = NightSummary::Heart{57, 51, 1791545000u};
+    s.usualHeart = Schedule::UsualHeart{true, 53, 47, 3};
+    char out[SleepNow::kCap];
+    ASSERT_GT(SleepNow::format(s, out, sizeof(out)), 0u);
+    EXPECT_NE(std::string(out).find("\"heart\":{\"median_bpm\":57,\"low_bpm\":51,\"low_at\":1791545000,"
+                                    "\"usual_median_bpm\":53,\"usual_nights\":3,\"median_vs_usual_bpm\":4,"
+                                    "\"notable\":true,\"usual_low_bpm\":47},"),
+              std::string::npos)
+        << out;
+
+    s.lastHeart.medianBpm = 50;
+    ASSERT_GT(SleepNow::format(s, out, sizeof(out)), 0u);
+    EXPECT_NE(std::string(out).find("\"median_vs_usual_bpm\":-3,\"notable\":false,"), std::string::npos) << out;
+
+    s.usualHeart = Schedule::UsualHeart{};
+    ASSERT_GT(SleepNow::format(s, out, sizeof(out)), 0u);
+    EXPECT_NE(std::string(out).find("\"usual_median_bpm\":null,\"usual_nights\":null,\"median_vs_usual_bpm\":null,"
+                                    "\"notable\":null,\"usual_low_bpm\":null},"),
+              std::string::npos)
+        << out;
 }
 
 TEST(SleepNow, ShortOfRoomItWritesNothing)

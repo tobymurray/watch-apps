@@ -6,9 +6,9 @@
 
 #include "Rhythm.hpp"
 
-/// The wearer's week as it is lived, learned from the main night of each day:
-/// a usual bed and wake for each night of the week, and the weekdays that
-/// keep to their own hours.
+/// The wearer's normal, learned from the main night of each day: a usual bed
+/// and wake for each night of the week, the weekdays that keep to their own
+/// hours, and the usual sleeping heart rate.
 namespace Schedule
 {
 
@@ -31,6 +31,16 @@ constexpr unsigned kAgreePct = 75;
 
 /// Before this local time, tonight is still the night begun the evening before.
 constexpr int32_t kDayTurnMin = 4 * 60;
+
+/// The usual heart rate is the median of up to this many nights before the one compared.
+constexpr size_t kHeartNights = 14;
+
+/// A night's median heart rate this far from the usual is worth saying.
+/// Measured by `Tools/hr_noise.py` over one wearer's 18 nights (SleepLab and
+/// Slumber), each against up to 14 before it: deviations p50 1.6, p90 4.1, max
+/// 4.8 bpm, and 13% reached 4; the lowest 10-minute mean strayed to 6.9, so it
+/// is shared but never judged. Rerun it over more wearers' nights to move this.
+constexpr int32_t kNotableBpm = 4;
 
 constexpr uint8_t kSunday   = 0;
 constexpr uint8_t kFriday   = 5;
@@ -65,6 +75,13 @@ struct Pattern {
     uint8_t nights     = 0;
     uint8_t bedAgree   = 0;  ///< nights leaning the way bedShift does
     uint8_t wakeAgree  = 0;  ///< nights leaning the way wakeShift does
+};
+
+struct UsualHeart {
+    bool    known     = false;
+    uint8_t medianBpm = 0;  ///< median of the nights' medians
+    uint8_t lowBpm    = 0;  ///< median of the nights' lows; 0 = none had one
+    uint8_t nights    = 0;
 };
 
 /// Bit `weekday` is set for each weekday that differs that way.
@@ -108,7 +125,8 @@ public:
     static constexpr size_t kCap = static_cast<size_t>(kWindowDays);
 
     /// Keeps the longest period begun on each day as that day's night.
-    void add(uint32_t startUtc, uint32_t endUtc, int32_t offsetMin)
+    void add(uint32_t startUtc, uint32_t endUtc, int32_t offsetMin, uint8_t hrMedianBpm = 0,
+             uint8_t hrLowBpm = 0)
     {
         const int32_t day    = Rhythm::noonDay(startUtc, offsetMin);
         const int32_t newest = mN > 0 && mMain[mN - 1].day > day ? mMain[mN - 1].day : day;
@@ -121,7 +139,8 @@ public:
         if (wake < bed) {
             wake += 1440;
         }
-        const Main m{day, endUtc - startUtc, static_cast<int16_t>(bed), static_cast<int16_t>(wake)};
+        const Main m{day, endUtc - startUtc, static_cast<int16_t>(bed), static_cast<int16_t>(wake),
+                     hrMedianBpm, hrLowBpm};
         size_t     at = mN;
         while (at > 0 && mMain[at - 1].day > day) {
             --at;
@@ -246,6 +265,33 @@ public:
         return w;
     }
 
+    /// The usual sleeping heart rate from the last kHeartNights nights before
+    /// `day` that had one; unknown under Rhythm::kMinBaselineNights.
+    UsualHeart heartBefore(int32_t day) const
+    {
+        UsualHeart u;
+        int16_t    med[kHeartNights], low[kHeartNights];
+        size_t     nm = 0, nl = 0;
+        for (size_t i = mN; i > 0 && nm < kHeartNights; --i) {
+            const Main &m = mMain[i - 1];
+            if (m.day >= day || m.hrMedian == 0) {
+                continue;
+            }
+            med[nm++] = m.hrMedian;
+            if (m.hrLow != 0) {
+                low[nl++] = m.hrLow;
+            }
+        }
+        if (nm < Rhythm::kMinBaselineNights) {
+            return u;
+        }
+        u.known     = true;
+        u.nights    = static_cast<uint8_t>(nm);
+        u.medianBpm = static_cast<uint8_t>(detail::median(med, nm));
+        u.lowBpm    = nl > 0 ? static_cast<uint8_t>(detail::median(low, nl)) : 0;
+        return u;
+    }
+
     size_t size() const { return mN; }
 
 private:
@@ -270,10 +316,12 @@ private:
     }
 
     struct Main {
-        int32_t  day   = 0;
-        uint32_t spanS = 0;
-        int16_t  bed   = 0;  ///< Rhythm::afterNoon
-        int16_t  wake  = 0;  ///< Rhythm::afterNoon, past 1440 when it wraps noon
+        int32_t  day      = 0;
+        uint32_t spanS    = 0;
+        int16_t  bed      = 0;  ///< Rhythm::afterNoon
+        int16_t  wake     = 0;  ///< Rhythm::afterNoon, past 1440 when it wraps noon
+        uint8_t  hrMedian = 0;  ///< bpm; 0 = unknown
+        uint8_t  hrLow    = 0;  ///< bpm; 0 = unknown
     };
     Main   mMain[kCap];
     size_t mN = 0;
