@@ -1,0 +1,30 @@
+[package]
+name = "batterylab_gui"
+version = "0.1.0"
+edition = "2021"
+description = "no_std Rust rendering core for BatteryLab: draws into an 8bpp ABGR2222 framebuffer over a C ABI."
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["staticlib", "lib"]
+
+[features]
+std = []
+device = ["panickit/panic-message"]
+
+[dependencies]
+# Dependencies, never second staticlibs: two archives each carrying a
+# #[panic_handler] collide at link time.
+panickit = { path = "../../../../../PanicKit", default-features = false }
+textkit = { path = "../../../../../TextKit" }
+embedded-graphics = "0.8"
+inscribed-disc = { path = "../../../../../InscribedDisc", default-features = false, features = [
+    "abgr2222",
+] }
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+overflow-checks = false

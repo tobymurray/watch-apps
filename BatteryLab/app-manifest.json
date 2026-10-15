@@ -1,0 +1,24 @@
+{
+  "manifest_version": 1,
+  "type": [
+    "utility"
+  ],
+  "name": "BatteryLab",
+  "icon": "icon.png",
+  "binary": "BatteryLab_0.1.0.uapp",
+  "appVersion": "0.1.0",
+  "minKernelVersion": "1.4.0",
+  "requiredHardware": [],
+  "description": "A probe that logs every battery reading the watch makes, design capacity included, and shows the latest on its screen.",
+  "id": "36A7A76C0212D90F",
+  "stravaExport": false,
+  "supportsLaps": false,
+  "supportsDistance": false,
+  "supportsTrack": false,
+  "supportsHeartbeat": false,
+  "supportsElevation": false,
+  "supportsStep": false,
+  "supportsSpeed": "none",
+  "customMeasures": [],
+  "configFields": []
+}
