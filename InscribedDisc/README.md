@@ -86,7 +86,8 @@ paints 12,792 pixels the glass never shows, 22.2% of the framebuffer.
 
 | module | | feature |
 |---|---|---|
-| `geometry` | the lit-disc predicate, row chords, the largest centred square | always |
+| `geometry` | the lit-disc predicate, row chords, the width a band of rows shares, the largest centred square | always |
+| `audit` | which drawn pixels of a finished frame the glass would hide, for host tests | always |
 | `clip` | `DiscClipped`, a disc clip over any `DrawTarget`, at any colour depth | `embedded-graphics`, on by default |
 | `surface` | the framebuffer, the clip, a row-fill `fill_solid` | `embedded-graphics`, on by default |
 | `color` | `Abgr2222`, its palette, `decode` to 8-bit RGB, and `shade` for partial coverage | `abgr2222` |
@@ -94,6 +95,11 @@ paints 12,792 pixels the glass never shows, 22.2% of the framebuffer.
 
 Text is not included and neither is a font: bring your own rasteriser and hand
 it the buffer through `Surface::bytes_mut`, applying `geometry::is_lit` yourself.
+What the crate does give a layout is proof: `geometry::band_chord` is `const`,
+so a line's width can be asserted against its rows at compile time, and
+`audit::off_glass` reports any pixel of a finished frame that the glass, or the
+glass inset by a margin, would not show -- rendered with `Surface::rect`, an
+empty report says the clip would have had nothing to do.
 
 ## Constants that came from measuring
 

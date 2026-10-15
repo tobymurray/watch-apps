@@ -126,6 +126,31 @@ pub(crate) fn lit_span(x0: i32, x1: i32, row: i32, w: i32, h: i32) -> Option<(i3
     }
 }
 
+/// The pixels of glass that every row of `[y0, y1)` has: the narrowest
+/// [`lit_chord`] in the band, or 0 for an empty band or one off the panel.
+///
+/// Chords are centred, so a span this wide centred on the panel is glass on
+/// every one of those rows. It is `const` so that a layout can be checked
+/// where it is declared: a line of glyphs `GLYPH_H` tall at `y` fits if its
+/// width is at most `band_chord(y, y + GLYPH_H, w, h)` less whatever margin
+/// the design keeps from the rim, and `const { assert!(..) }` turns that into
+/// a compile error instead of a clipped line found on the glass.
+pub const fn band_chord(y0: i32, y1: i32, w: i32, h: i32) -> i32 {
+    if y0 >= y1 {
+        return 0;
+    }
+    let mut narrowest = i32::MAX;
+    let mut y = y0;
+    while y < y1 {
+        let chord = lit_chord(y, w, h);
+        if chord < narrowest {
+            narrowest = chord;
+        }
+        y += 1;
+    }
+    narrowest
+}
+
 /// Whether every pixel of this box is glass.
 pub const fn box_is_lit(x: i32, y: i32, w: i32, h: i32, panel_w: i32, panel_h: i32) -> bool {
     if w <= 0 || h <= 0 {
@@ -193,6 +218,22 @@ mod tests {
     fn rows_70_and_168_hold_218() {
         assert_eq!(lit_chord(70, W, H), 218);
         assert_eq!(lit_chord(168, W, H), 218);
+    }
+
+    /// A band is as wide as its narrowest row: 220..223 is bounded by row 222.
+    #[test]
+    fn a_band_is_its_narrowest_row() {
+        assert_eq!(band_chord(220, 223, W, H), lit_chord(222, W, H));
+        assert_eq!(band_chord(70, 71, W, H), 218);
+        assert_eq!(band_chord(0, 240, W, H), lit_chord(0, W, H));
+    }
+
+    #[test]
+    fn an_empty_or_offscreen_band_has_no_glass() {
+        assert_eq!(band_chord(10, 10, W, H), 0);
+        assert_eq!(band_chord(12, 8, W, H), 0);
+        assert_eq!(band_chord(-5, -1, W, H), 0);
+        assert_eq!(band_chord(238, 245, W, H), 0);
     }
 
     #[test]
