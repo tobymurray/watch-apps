@@ -155,11 +155,47 @@ time or every ten minutes, whichever comes first.
 At 10 s that is about 17,000 rows and 1.2 MB a day. Nothing deletes old files:
 this is a probe, to be removed once it has answered its questions.
 
+## What the probe has shown
+
+### The first 51 seconds, 2026-10-15
+
+BatteryLab 0.1.0 started with the watch at 14:12:43 local, 9 s after boot, and
+stopped 51 s later when USB went in. Firmware 1.5.0.
+
+| Field | What came |
+| --- | --- |
+| `getDesignCapacity()` | 200.500 mAh, equal to `getCapacity()` in all four metrics messages |
+| `getCapacity()` | 200.500 mAh: half-mAh steps, which Slumber's whole mAh hid |
+| `getCharge()` | 100.000, once, at start; no second level message in 40 s |
+| `getCurrent()`, `getAverageCurrent()` | Every non-zero value a whole multiple of 0.15625 mA (5/32), from -5.781 to -18.750 with the screen on |
+| The first `getCurrent()` | 0.000, in a valid message |
+| USB in | One charging message, connected 1 and charging 1, then the stop 0.7 s later |
+
+So the design capacity is not about 148 mAh, and it does not explain the clamp.
+Whether it is a separate field at all is open: in these four messages it equals
+the remaining charge to the half mAh. The kernel's own boot line, from
+`SystemLog/LastLog.txt` on 2026-10-05 on the firmware before 1.5.0, reads
+
+```
+Battery: 4.369V, 99.922% (real level 99.926%), Capacity 205.500/206.000 mAh
+```
+
+which names a full capacity 0.5 mAh above the remaining, and two percentages: a
+"real level" and the one reported. The clamp is more likely in how the firmware
+turns the one into the other than in the capacity it divides by.
+
+At 0.15625 mA a step, a 1.5 mA drain is read to about 10 %. That cannot by itself
+make the current integrate to 35 % more than the counter fell overnight, unless
+the firmware rounds every reading the same way.
+
+**To overturn:** a day of rows in which `design_mah_x1000` stays put while
+`mah_x1000` falls would make it a separate field after all; a current reading
+that is not a multiple of 5/32 mA would end the step.
+
 ## The experiments
 
-1. **Install it and read the screen.** `design` is `getDesignCapacity()`. If it
-   says about 148 mAh, the clamp is the gauge working out the percentage against
-   the design capacity while counting from a full charge 56 mAh larger.
+1. **Install it and read the screen.** Done; see above. A day unplugged answers
+   whether `design` moves with `left`.
 2. **Restart without USB.** Hold the button to restart, off the cable. The first
    `E` rows after the `B` row show whether a boot alone moves the count.
 3. **Charge on a wall plug, not a computer.** If apps keep running on power without
