@@ -17,6 +17,8 @@ on:
       # The renderer's text comes from the shared crate; a change there is a
       # change to this app's binary.
       - 'TextKit/**'
+      - 'InscribedDisc/**'
+      - 'PanicKit/**'
       # So does the settings mechanism: the addresses, the gate and the commit
       # all live in SettingsKit now.
       - 'SettingsKit/**'
@@ -29,6 +31,8 @@ on:
       # The renderer's text comes from the shared crate; a change there is a
       # change to this app's binary.
       - 'TextKit/**'
+      - 'InscribedDisc/**'
+      - 'PanicKit/**'
       # So does the settings mechanism: the addresses, the gate and the commit
       # all live in SettingsKit now.
       - 'SettingsKit/**'
@@ -53,6 +57,7 @@ jobs:
     uses: ./.github/workflows/app-build.yml
     with:
       app: UnitToggle
+      links: TextKit SettingsKit InscribedDisc PanicKit
       version: ${{ inputs.version || '' }}
     permissions:
       # write, not read: a caller's grant caps what the called workflow can
