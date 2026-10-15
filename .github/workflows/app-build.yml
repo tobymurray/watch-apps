@@ -68,7 +68,7 @@ env:
   # whatever day main moved. Bumping this is a one-line change that rebuilds
   # every app, which is the correct blast radius for changing the SDK.
   SDK_REPO: UNAWatch/una-sdk
-  SDK_REF: 33a8d8700566140b833cefde887830973adf4aab
+  SDK_REF: bd04a5b8ebc7cb56cdbabe7071bad0468f9f7249
 
 jobs:
   build:
