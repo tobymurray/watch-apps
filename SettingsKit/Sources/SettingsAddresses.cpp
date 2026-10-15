@@ -138,6 +138,78 @@ constexpr AddressSet kFirmware_1_5_0 = {
     .signatureCount           = sizeof(kSignatures_1_5_0) / sizeof(kSignatures_1_5_0[0]),
 };
 
+// Kernel 1.6.0, same ABI (3) as 1.4.0 and 1.5.0. Derived statically from the
+// CRC-32 0xA44C79C9 flash image (FwDump 1.1.0 on 2026-10-15), by matching 1.5.0's
+// functions across the rebuild, then run on a watch (2026-10-15): the wearer reports
+// both NotifyToggle and UnitToggle working, and settings.json was left valid with
+// only the units field changed. No debug log was captured, and the struct base is
+// a static read rather than an SRAM dump, so the runtime file cross-check remains
+// what guards it.
+//
+// File class: every method is byte-identical to its 1.5.0 counterpart up to its
+// literal pool and the relocated bl targets (Read, Close and the others differ
+// only in those bytes, which is why their signatures cover them). The object is
+// still 856 bytes: 1.6.0's new FileGuard/DirectoryGuard are subclasses that add a
+// filesystem pointer at +0x358 and a read-only mode byte at +0x35c, and enforce it
+// in their own overrides. These addresses are the unguarded base-class methods,
+// which is also what 1.5.0 called; a raw File never reaches that check.
+//
+// Live settings struct: the loader (0x080B8884, was 0x080B4CFC) is instruction-
+// for-instruction identical to 1.5.0's apart from its literal pools, so every
+// field keeps its 1.5.0 offset. Only the base moved, +0x30: the FTS write-
+// completion handler at 0x0806C3E4 loads 0x2001116C and passes base-4 and
+// base+0x3D4 to the loader, exactly as 1.5.0's does with 0x2001113C.
+constexpr Signature kSignatures_1_6_0[] = {
+    // Open
+    {0x080a67ecu, {0xF0, 0xB5, 0x05, 0x46, 0x85, 0xB0, 0x00, 0xF5, 0x84, 0x77, 0x06, 0x1D, 0x0A, 0xB3, 0x00, 0x29}},
+    // Read
+    {0x080a6a9cu, {0x1F, 0xB5, 0x29, 0xB9, 0x8F, 0x21, 0x0F, 0x4B, 0x0F, 0x4A, 0x10, 0x48, 0xC4, 0xF7, 0x28, 0xFC}},
+    // Write
+    {0x080a68f8u, {0x30, 0xB5, 0x14, 0x46, 0x1D, 0x46, 0x85, 0xB0, 0x29, 0xB9, 0x9F, 0x21, 0x0F, 0x4B, 0x10, 0x4A}},
+    // Close
+    {0x080a6a14u, {0x1F, 0xB5, 0x00, 0xF5, 0x84, 0x70, 0x39, 0xF0, 0x23, 0xF9, 0x88, 0xB1, 0x09, 0x4B, 0x01, 0x22}},
+    // Release
+    {0x080a6864u, {0x30, 0xB5, 0x90, 0xF8, 0x04, 0x31, 0x04, 0x46, 0x85, 0xB0, 0x03, 0xB3, 0x00, 0xF5, 0x84, 0x75}},
+    // SetPath -- unmoved since 1.4.0.
+    {0x0802b3eau, {0x01, 0x39, 0x03, 0x46, 0x10, 0xB5, 0x32, 0xB1, 0x11, 0xF8, 0x01, 0x4F, 0x01, 0x3A, 0x03, 0xF8}},
+    // Exists
+    {0x080a6b54u, {0x10, 0xB5, 0x04, 0x46, 0x28, 0xB9, 0xE2, 0x21, 0x06, 0x4B, 0x07, 0x4A, 0x07, 0x48, 0xC4, 0xF7}},
+    // Delete
+    {0x080a6bfcu, {0x10, 0xB5, 0x04, 0x46, 0x28, 0xB9, 0xF0, 0x21, 0x06, 0x4B, 0x07, 0x4A, 0x07, 0x48, 0xC4, 0xF7}},
+    // Rename
+    {0x080a6b8cu, {0x70, 0xB5, 0x0D, 0x46, 0x04, 0x46, 0x28, 0xB9, 0xE8, 0x21, 0x09, 0x4B, 0x09, 0x4A, 0x0A, 0x48}},
+};
+
+constexpr AddressSet kFirmware_1_6_0 = {
+    .abi                      = 3u,
+    .derivedFrom              = "1.6.0",
+    .settingsStructBase       = 0x2001116cu,
+    .phoneNotificationsOffset = 5u,
+    .unitsImperialOffset      = 4u,
+    .watchFaceIdOffset        = kNoWatchFaceAnchor,
+    .heartRateZonesOffset     = 0x06u,
+    .activityMinutesOffset    = 0x0cu,
+    .stepsOffset              = 0x10u,
+    .floorsOffset             = 0x14u,
+    .heightOffset             = 0x18u,
+    .weightOffset             = 0x1cu,
+    .fileOpenAddr             = 0x080a67ecu | 1u,
+    .fileReadAddr             = 0x080a6a9cu | 1u,
+    .fileWriteAddr            = 0x080a68f8u | 1u,
+    .fileCloseAddr            = 0x080a6a14u | 1u,
+    .fileReleaseAddr          = 0x080a6864u | 1u,
+    .setPathAddr              = 0x0802b3eau | 1u,
+    .fileExistsAddr           = 0x080a6b54u | 1u,
+    .fileDeleteAddr           = 0x080a6bfcu | 1u,
+    .fileRenameAddr           = 0x080a6b8cu | 1u,
+    .fileObjectSize           = 856u,
+    .pathBufferOffset         = 0x04u,
+    .pathBufferSize           = 0x100u,
+    .fileSizeFieldOffset      = 0x118u,
+    .signatures               = kSignatures_1_6_0,
+    .signatureCount           = sizeof(kSignatures_1_6_0) / sizeof(kSignatures_1_6_0[0]),
+};
+
 // This part's memory map: code executes from the 4MB flash bank at
 // 0x08000000, and the kernel's live structs sit in SRAM at 0x20000000.
 constexpr uintptr_t kFlashBase = 0x08000000u;
@@ -244,6 +316,7 @@ constexpr bool isWellFormed(const AddressSet &a)
 constexpr const AddressSet *kSupported[] = {
     &kFirmware_1_4_0,
     &kFirmware_1_5_0,
+    &kFirmware_1_6_0,
 };
 
 constexpr bool everyEntryIsWellFormed()
