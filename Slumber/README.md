@@ -175,15 +175,23 @@ plausible 46-76 bpm.
 Every 5 minutes, with the heartbeat, Slumber runs SleepPeriods over the last
 36 h and puts one period on the card:
 
-- **The longest worn period that ended in the last 20 h.** Longest, not latest:
-  SleepLab's 2026-08-25 night split at a 65-minute awakening into 5.3 h and
-  3.2 h, and the later half is not the night. A nap the next afternoon is
-  shorter than the night, so it does not replace it.
+- **The latest sleep that ended in the last 20 h, unless it is under half as
+  long as the longest one.** A sleep is the worn periods less than 3 h apart,
+  and the card shows its longest period. SleepLab's 2026-08-25 night split at
+  a 65-minute awakening into 5.3 h and 3.2 h, and the later half is not the
+  night; the split nights above were 64-108 minutes apart. A nap the next
+  afternoon is under half the night, so it does not replace it. A shorter
+  night after a long one does: a 9 h night ending at 09:00 and a 5 h one
+  ending at 04:00 show the 5 h one.
+- **Only UTC durations choose**, so crossing time zones, or a watch whose clock
+  loses its zone, cannot bring back an older night. The card shows a logged
+  night's times in the offset it was logged with, the wearer's clock when they
+  woke, so a flight later that day does not move them.
 - **Until SleepPeriods settles it**, an hour after its last rest, the card says
   `so far`.
 - **Only a table, and no worn period**, reports `No night` / `watch was off`.
   An uncertain wrist is never reported.
-- **20 h after it ended**, the night expires and the card says Slumber is up.
+- **20 h after it ended**, the night expires and the card says `No night yet`.
 
 The 36 h live in RAM and in `Epochs/`, and a restart reloads them before its
 first card, so plugging in to charge in the morning keeps the night on the
