@@ -37,12 +37,8 @@ pub struct Surface<'a, C> {
 
 /// A colour this crate can write into a byte-per-pixel framebuffer.
 ///
-/// Satisfied by any `embedded-graphics` colour whose `Raw` is [`RawU8`] with no
-/// impl written anywhere, [`Gray8`](embedded_graphics::pixelcolor::Gray8)
-/// included, because that crate's colour macros already generate the two `From`
-/// conversions this needs. `Into<RawU8>` is a supertrait rather than a
-/// `where RawU8: From<Self>` clause: a where-clause on a trait is not an implied
-/// bound, so that spelling leaks the obligation into every downstream signature.
+/// Implemented for every colour whose `Raw` is [`RawU8`] and that converts both
+/// ways, [`Gray8`](embedded_graphics::pixelcolor::Gray8) included.
 pub trait ByteColor: PixelColor<Raw = RawU8> + From<RawU8> + Into<RawU8> + Copy {
     /// The byte this colour occupies in the framebuffer.
     #[inline]
@@ -59,15 +55,13 @@ pub trait ByteColor: PixelColor<Raw = RawU8> + From<RawU8> + Into<RawU8> + Copy 
 impl<C: PixelColor<Raw = RawU8> + From<RawU8> + Into<RawU8> + Copy> ByteColor for C {}
 
 impl<'a, C: ByteColor> Surface<'a, C> {
-    /// A round panel: only the inscribed disc is glass.
-    ///
-    /// `None` rather than a panic when the buffer is smaller than the geometry
-    /// says, because that geometry arrives from outside the app.
+    /// A round panel: only the inscribed disc is glass. `None` when `buf` is
+    /// shorter than `w * h` or either side is zero.
     pub fn round(buf: &'a mut [u8], w: u32, h: u32) -> Option<Self> {
         Self::new(buf, w, h, Clip::Disc)
     }
 
-    /// A square target with no bezel.
+    /// A target with no bezel; `None` as for [`Surface::round`].
     pub fn rect(buf: &'a mut [u8], w: u32, h: u32) -> Option<Self> {
         Self::new(buf, w, h, Clip::Rect)
     }
@@ -102,22 +96,19 @@ impl<'a, C: ByteColor> Surface<'a, C> {
         self.h
     }
 
-    /// The raw bytes, for a caller pushing them at a display.
+    /// The raw bytes, bezel included.
     pub fn bytes(&self) -> &[u8] {
         self.buf
     }
 
-    /// The raw bytes, mutably, **bypassing the clip**.
-    ///
-    /// For a text implementation that rasterises through its own surface type.
-    /// An adapter using this must apply [`crate::geometry::is_lit`] itself, and
-    /// must have a test that says it does.
+    /// The raw bytes, mutably, **bypassing the clip**: apply
+    /// [`crate::geometry::is_lit`] yourself.
     pub fn bytes_mut(&mut self) -> &mut [u8] {
         self.buf
     }
 
-    /// Every pixel, bezel included: the whole buffer is handed to the display,
-    /// so the corners must hold the ground colour and not the last frame's.
+    /// Every pixel, bezel included, so the corners hold the ground colour and
+    /// not the last frame's.
     pub fn clear(&mut self, color: C) {
         self.buf.fill(color.to_byte());
     }
@@ -138,9 +129,6 @@ impl<'a, C: ByteColor> Surface<'a, C> {
     }
 
     /// A rectangle filled a row at a time.
-    ///
-    /// Not `Rectangle::into_styled().draw()`, which pulls in the point-iterator
-    /// layer once per distinct colour it is called with.
     pub fn fill_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: C) {
         if w <= 0 || h <= 0 {
             return;
@@ -215,9 +203,8 @@ mod tests {
 
     use super::*;
 
-    // Gray8, not this crate's own colour: these tests are about the buffer and
-    // the clip, and a foreign `RawU8` colour is what says `ByteColor`'s blanket
-    // impl reaches one.
+    // A colour this crate does not define, so these also show the blanket
+    // `ByteColor` impl reaching one.
 
     const W: u32 = 240;
     const H: u32 = 240;
@@ -268,8 +255,6 @@ mod tests {
         }
     }
 
-    /// The two paths into the same bytes must agree about the clip, which is
-    /// the seam this type exists to close.
     #[test]
     fn fill_rect_and_draw_iter_paint_the_same_pixels() {
         let n = (W * H) as usize;
@@ -305,11 +290,6 @@ mod tests {
         assert_eq!(buf[(110 * 240 + 100) as usize], Gray8::BLACK.to_byte());
     }
 
-    /// `bytes_mut` is documented as bypassing the clip, and §7 of the design
-    /// record calls it the one escape hatch. A test that says so is what stops
-    /// the documentation drifting into a promise it does not make: a caller
-    /// writing through it *can* light the bezel, and must apply
-    /// [`geometry::is_lit`] itself.
     #[test]
     fn bytes_mut_bypasses_the_clip() {
         let n = (W * H) as usize;
@@ -327,8 +307,6 @@ mod tests {
         assert_eq!(buf[0], Gray8::WHITE.to_byte());
     }
 
-    /// `bytes` is the whole buffer including the bezel, because that is what
-    /// goes to the display.
     #[test]
     fn bytes_is_the_whole_buffer_and_the_size_is_the_geometry() {
         let n = (W * H) as usize;
@@ -341,8 +319,6 @@ mod tests {
         assert_eq!(s.bounding_box(), Rectangle::new(Point::zero(), Size::new(W, H)));
     }
 
-    /// `get` answers about the buffer, not the glass: a bezel pixel is `Some`,
-    /// and only being outside the buffer is `None`.
     #[test]
     fn get_is_none_only_outside_the_buffer() {
         let mut buf = vec![0u8; (W * H) as usize];
@@ -354,8 +330,6 @@ mod tests {
         }
     }
 
-    /// `is_lit` follows the clip the surface was built with, which is the only
-    /// difference between the two constructors.
     #[test]
     fn is_lit_follows_the_constructor() {
         let mut buf = vec![0u8; (W * H) as usize];

@@ -1,8 +1,6 @@
 name: InscribedDisc
 
-# A shared crate belongs to no app, so no app's workflow builds it. This is what
-# proves the crate is still correct, still no_std, and still holding the
-# measurements it claims.
+# The crate's own checks: correct, no_std, and still holding its measurements.
 
 on:
   push:
@@ -31,26 +29,14 @@ env:
   SDK_REF: bd04a5b8ebc7cb56cdbabe7071bad0468f9f7249
 
 jobs:
-  # Not in the toolchain container: that image carries cargo-clippy and
-  # clippy-driver on PATH but no clippy component, so `cargo clippy` fails with
-  # "not installed for the toolchain" -- a tool that answers rather than being
-  # absent. This crate needs no SDK and no ARM toolchain to lint, so it runs on a
-  # stock runner instead.
-  #
-  # -D warnings covers rustc's own as well as clippy's. That matters: the lint
-  # this job was added for was an unused import, and a `grep` over a warm
-  # `cargo build` had reported the crate clean three times, because cargo does
-  # not re-emit warnings for a crate it did not recompile.
+  # On a stock runner: the toolchain image has clippy-driver on PATH but no
+  # clippy component, so `cargo clippy` fails there.
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # --all-features alone lints one column of the feature matrix. It missed
-      # two real defects: test modules that used `color` without `abgr2222`, so
-      # `--features embedded-graphics` would not compile at all, and a
-      # `write_location` whose cfg was wider than its only caller's. Both are
-      # invisible with every feature on.
+      # Every column, because a cfg mistake is invisible with every feature on.
       - name: Clippy, and rustc's own warnings, across the feature matrix
         working-directory: InscribedDisc
         run: |
@@ -67,9 +53,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    # The container's default shell is sh, where `set -o pipefail` is an illegal
-    # option and every step below that uses a pipe would report success for a
-    # command that failed. Declared once for the job rather than per step.
+    # The container's default shell is sh, which has no `pipefail`.
     defaults:
       run:
         shell: bash
@@ -90,27 +74,20 @@ jobs:
           persist-credentials: false
           path: sdk
 
-      # Every measured constant in the crate re-runs here, so a number that
-      # rots fails.
       - name: Tests
         working-directory: InscribedDisc
         run: |
           set -euo pipefail
           cargo test --all-features
-          # The core alone, and the default column. Neither runs above, and the
-          # second was a compile error nothing caught.
           cargo test --no-default-features
           cargo test --no-default-features --features embedded-graphics
 
-      # A `std` type reached for from the geometry core compiles fine above and
-      # fails here.
       - name: The zero-dependency core alone
         working-directory: InscribedDisc
         run: cargo build --release --target thumbv8m.main-none-eabihf --no-default-features
 
-      # The claim `geometry` makes to a consumer who wants only the predicate:
-      # nothing in their tree. Nothing else says so -- a build succeeds whether
-      # or not embedded-graphics was resolved.
+      # A build succeeds whether or not embedded-graphics was resolved; this
+      # does not.
       - name: The core resolves no dependencies
         working-directory: InscribedDisc
         run: |
@@ -120,8 +97,6 @@ jobs:
           [ "$(echo "$tree" | wc -l)" -eq 1 ] || {
             echo "::error::--no-default-features resolved a dependency"; exit 1; }
 
-      # The one that matters most. Nothing in the crate may need an allocator or
-      # a host, and this is the only step that says so.
       - name: The watch target, every feature
         working-directory: InscribedDisc
         run: |
@@ -132,8 +107,6 @@ jobs:
               --no-default-features --features "$f"
           done
 
-      # "Platform-generic" is a claim until something other than one ARM target
-      # compiles it. This is what tests it rather than asserting it.
       - name: A second, non-ARM target
         working-directory: InscribedDisc
         run: |
@@ -166,8 +139,7 @@ jobs:
           "${CXX:-g++}" -fsyntax-only -std=c++17 -fno-exceptions \
             -I"$UNA_SDK/Libs/Header" -I InscribedDisc/Header /tmp/shell_check.cpp
 
-      # docs.rs builds with all features, where a doc link that resolves under
-      # only one of them breaks.
+      # docs.rs builds with all features.
       - name: Documentation, with the feature matrix
         working-directory: InscribedDisc
         env:

@@ -2,46 +2,31 @@
 name = "inscribed-disc"
 version = "0.2.0"
 edition = "2021"
-# MEASURED across five toolchains, and it is the dependency that sets this, not
-# the code: `cargo +1.70.0 build --all-features` succeeds, so nothing here needs
-# 1.71.1. It is declared because `embedded-graphics` documents 1.71.1 as its own
-# floor, and promising less than a dependency promises is not a floor at all.
-# Two host-only conveniences were given up to reach it -- `io::Error::other`
-# (1.74) and `div_ceil` (1.73) -- because `rust-version` is package-level, so a
-# `preview` nicety would have gated every embedded consumer of `geometry`.
+# `embedded-graphics` 0.8's own floor; MEASURED, `cargo +1.70.0 build
+# --all-features` succeeds, so this crate's code is not what sets it.
 rust-version = "1.71.1"
 license = "MIT"
 description = "Round displays whose glass is the inscribed disc of a square framebuffer: where the glass is, and embedded-graphics draw targets that clip every pixel to it, at any colour depth."
 repository = "https://github.com/tobymurray/watch-apps/tree/main/InscribedDisc"
 categories = ["embedded", "no-std", "gui"]
-# The discovery channel is search over the description and these, not the name:
-# crates.io returns embedded-graphics for a `gc9a01` query without that string
-# anywhere in its name. So these are what someone holding a round panel types.
 keywords = ["embedded-graphics", "round", "circular", "gc9a01", "sharp-memory"]
-# The published crate is the Rust half only. The C ABI, GuiShell.hpp and
-# inscribed-disc.cmake are this repo's glue to one vendor's SDK and are not
-# part of what anyone else would install.
+# The Rust half only: `Header/` and `inscribed-disc.cmake` are UNA SDK glue.
 include = ["src/**/*.rs", "examples/*.rs", "README.md", "Docs/DESIGN.md", "LICENSE"]
 
 [features]
-# `geometry` is always present and needs nothing; everything else is a feature,
-# so a consumer who wants only "is this pixel on the glass" resolves an empty
-# dependency tree. `cargo tree --no-default-features -e normal` is the check.
+# `geometry` is always present and resolves no dependencies:
+# `cargo tree --no-default-features -e normal` is the check.
 default = ["embedded-graphics"]
 ## The `DrawTarget`s: `DiscClipped` over anyone's target, and `Surface` over a
-## byte-per-pixel buffer. On by default, because it is what most callers want.
+## byte-per-pixel buffer.
 embedded-graphics = ["dep:embedded-graphics"]
-## `Abgr2222`, its palette and `shade`: two bits a channel, 64 colours. The
-## right type for the three round Sharp `DD` panels and for nothing else, which
-## is why it is off.
+## `Abgr2222`, its palette and `shade`: two bits a channel, 64 colours.
 abgr2222 = ["embedded-graphics"]
 ## Host-side helpers and `std` assertions in tests.
 std = []
-## PNG frames, contact sheets and the gamut sheet. Host-only, and the only
-## thing in this crate with a dependency beyond embedded-graphics.
+## PNG frames, contact sheets and the gamut sheet; host-only.
 preview = ["std", "abgr2222", "dep:png"]
 
-# Needs the PNG encoder, so it cannot build without the feature that brings it.
 [[example]]
 name = "gamut"
 required-features = ["preview"]
@@ -52,8 +37,6 @@ png = { version = "0.17", optional = true }
 
 [dev-dependencies]
 embedded-graphics = "0.8"
-# Only the tests: DiscClipped is shown clipping Rgb565 and BinaryColor over
-# somebody else's framebuffer, which is the population Surface cannot reach.
 embedded-graphics-framebuf = "0.5"
 
 [package.metadata.docs.rs]

@@ -1,8 +1,5 @@
 //! The whole 64-colour gamut of a two-bits-a-channel panel, as one sheet.
 //!
-//! The reference a palette choice is made against, and what makes "there are
-//! only 64 of these" concrete rather than a sentence.
-//!
 //!   cargo run --features preview --example gamut [-- <path>]
 
 fn main() {

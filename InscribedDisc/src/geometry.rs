@@ -39,10 +39,7 @@ pub const fn lit_chord(y: i32, w: i32, h: i32) -> i32 {
     0
 }
 
-// Counts calls to `lit_start`. Thread-local because `cargo test` runs in
-// parallel and a shared counter picks up every other test's fills -- as a global
-// it read 1,826 against a correct fast path. A `///` here is an `unused doc
-// comment`, which is why it is not one.
+// Calls to `lit_start`, per thread because `cargo test` runs tests in parallel.
 #[cfg(test)]
 thread_local! {
     pub(crate) static EDGE_SCANS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
@@ -66,8 +63,8 @@ const fn isqrt(v: i32) -> i32 {
 ///
 /// Closed form: the lit x are those with `(2x - (w-1))^2 <= d^2 - dy^2`, so the
 /// half-chord is one integer square root. MEASURED: the O(width) scan this
-/// replaces cost 128 us a frame against 43 for byte-identical output, because
-/// it ran once per row of every clipped fill and callers plot single pixels.
+/// replaces cost 128 us a frame, because it ran once per row of every clipped
+/// fill; re-run `Spin/Software/Apps/CustomGUI/rust/examples/frametime.rs`.
 /// `lit_start_agrees_with_a_scan` checks the two agree.
 pub fn lit_start(y: i32, w: i32, h: i32) -> i32 {
     #[cfg(test)]
@@ -98,7 +95,6 @@ pub fn lit_start(y: i32, w: i32, h: i32) -> i32 {
 ///
 /// A row's lit pixels are an interval, because [`is_lit`] depends on x only
 /// through `(2x - (w-1))^2`, which is convex in x.
-// Both callers are behind `embedded-graphics`, so without it this is dead.
 #[cfg_attr(not(any(test, feature = "embedded-graphics")), allow(dead_code))]
 pub(crate) fn lit_span(x0: i32, x1: i32, row: i32, w: i32, h: i32) -> Option<(i32, i32)> {
     if x0 >= x1 {
@@ -106,9 +102,6 @@ pub(crate) fn lit_span(x0: i32, x1: i32, row: i32, w: i32, h: i32) -> Option<(i3
     }
     let left = is_lit(x0, row, w, h);
 
-    // A single pixel first, answered from `left` alone: callers plot far more
-    // single pixels than anything else, and asking about the other end would
-    // spend a second `is_lit` on the pixel just tested.
     if x1 - x0 == 1 {
         return if left { Some((x0, x1)) } else { None };
     }
@@ -116,10 +109,8 @@ pub(crate) fn lit_span(x0: i32, x1: i32, row: i32, w: i32, h: i32) -> Option<(i3
         return Some((x0, x1));
     }
 
-    // Only a span straddling the rim reaches the arithmetic below. It is O(1),
-    // but its integer square root is dearer than the two tests above: MEASURED,
-    // going straight to it costs 160 us a frame against 55 with these
-    // early-outs, and the scan it replaced cost 128. Re-run
+    // MEASURED: going straight to the square root costs 160 us a frame against
+    // 55 with the early-outs above, and the scan it replaced cost 128. Re-run
     // `Spin/Software/Apps/CustomGUI/rust/examples/frametime.rs`.
     let start = lit_start(row, w, h);
     if start >= w {
@@ -177,24 +168,20 @@ mod tests {
     const W: i32 = 240;
     const H: i32 = 240;
 
-    /// MEASURED: the widest row of a 240-pixel panel is 238, not 240.
     #[test]
     fn widest_row_is_238() {
         let widest = (0..H).map(|y| lit_chord(y, W, H)).max().unwrap();
         assert_eq!(widest, 238);
     }
 
-    /// MEASURED: row 220 holds 130 pixels of glass and row 222 holds 122, so a
-    /// footer wider than 122 cannot sit two rows lower than 220.
     #[test]
-    fn footer_rows_hold_their_measured_chords() {
+    fn rows_220_and_222_hold_130_and_122() {
         assert_eq!(lit_chord(220, W, H), 130);
         assert_eq!(lit_chord(222, W, H), 122);
     }
 
-    /// Every chord is even on an even-width panel, because the disc is
-    /// symmetric about x = 119.5: a lit pixel at `x` implies one at `w-1-x`. An
-    /// odd chord quoted for this panel is arithmetically impossible.
+    /// The disc is symmetric about x = 119.5, so a lit pixel at `x` implies one
+    /// at `w-1-x`.
     #[test]
     fn every_chord_is_even() {
         for y in 0..H {
@@ -202,9 +189,8 @@ mod tests {
         }
     }
 
-    /// MEASURED: rows 70 and 168 hold 218 pixels.
     #[test]
-    fn clock_rows_hold_218() {
+    fn rows_70_and_168_hold_218() {
         assert_eq!(lit_chord(70, W, H), 218);
         assert_eq!(lit_chord(168, W, H), 218);
     }
@@ -219,10 +205,6 @@ mod tests {
     /// both directions. The side always carries the panel's parity, which is
     /// what neither closed form knows: the square is centred, so an even panel
     /// cannot hold an odd centred side.
-    ///
-    /// This is the falsifier for the search itself. If a closed form ever
-    /// matched everywhere, this function would be arithmetic rather than a
-    /// measurement, and this test is what would say so.
     #[test]
     fn no_closed_form_replaces_the_search() {
         let (mut floor_w, mut floor_w_minus_1, mut wrong_parity) = (0, 0, 0);
@@ -253,8 +235,8 @@ mod tests {
 
     #[test]
     fn a_box_inset_from_the_buffer_is_not_inset_from_the_glass() {
-        // The mistake, stated as a test: 8 px in from every edge of the buffer
-        // still has its corners behind the bezel.
+        // 8 px in from every edge of the buffer still has its corners behind
+        // the bezel.
         assert!(!box_is_lit(8, 8, W - 16, H - 16, W, H));
         // The inscribed square, centred, is not.
         let s = largest_square(W, H);
@@ -284,14 +266,11 @@ mod tests {
         }
     }
 
-    /// The early-outs must fire for the shapes callers draw, and the arithmetic
-    /// must still be reachable.
-    ///
-    /// Counts rather than times: MEASURED, the disc/rect ratio is 1.86 with the
-    /// fault and 1.42 without it in a debug build, and 4.56 against 2.75 in
-    /// release, so no single threshold separates them in both profiles.
+    /// Counts rather than times: MEASURED, the disc/rect ratio is 1.86 with an
+    /// early-out broken and 1.42 without in a debug build, and 4.56 against
+    /// 2.75 in release, so no single threshold separates them in both profiles.
     #[test]
-    fn the_shapes_callers_draw_never_reach_the_arithmetic() {
+    fn arcs_and_interior_spans_never_reach_the_arithmetic() {
         let arc = |r_outer: f32| {
             EDGE_SCANS.with(|c| c.set(0));
             let (cx, cy) = (119.5f32, 119.5f32);
@@ -309,20 +288,17 @@ mod tests {
             EDGE_SCANS.with(|c| c.get())
         };
         assert_eq!(arc(118.0), 0, "an arc inside the disc reached the arithmetic");
-        // The case the first fix missed: an arc running off the glass.
         assert_eq!(arc(130.0), 0, "an arc crossing the rim reached the arithmetic");
 
-        // A wide span wholly inside the disc -- the other half, and the half an
-        // arc never exercises because an arc plots single pixels. Without this,
-        // deleting the both-ends test leaves the suite green.
+        // An arc plots single pixels, so only a wide span exercises the
+        // both-ends test.
         EDGE_SCANS.with(|c| c.set(0));
         for row in 40..200 {
             assert_eq!(lit_span(40, 200, row, W, H), Some((40, 200)));
         }
         assert_eq!(EDGE_SCANS.with(|c| c.get()), 0, "a wide interior span reached the arithmetic");
 
-        // And the arithmetic must still be reachable, or the counts above
-        // measure nothing.
+        // Otherwise the zero counts above measure nothing.
         EDGE_SCANS.with(|c| c.set(0));
         for row in 0..H {
             let _ = lit_span(0, W, row, W, H);
@@ -338,8 +314,7 @@ mod tests {
                     for x0 in -2..w + 2 {
                         for x1 in x0..=(x0 + 5).min(w + 2) {
                             // Unclamped: `lit_span` accepts these, so they are
-                            // part of its contract even though `fill_rect`
-                            // happens never to pass them.
+                            // part of its contract.
                             let got = lit_span(x0, x1, row, w, h);
                             let want: Vec<i32> = (x0.max(0)..x1.min(w))
                                 .filter(|&x| is_lit(x, row, w, h))

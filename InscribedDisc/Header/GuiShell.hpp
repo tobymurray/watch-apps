@@ -1,13 +1,9 @@
 #ifndef INSCRIBED_DISC_GUISHELL_HPP
 #define INSCRIBED_DISC_GUISHELL_HPP
 
-// The C++ half of InscribedDisc: the framebuffer, the display config, the
-// render and push, and the message loop.
-//
 // Header-only so it type-checks on a host with
 //   clang++ -fsyntax-only -std=c++17 \
 //       -I"$UNA_SDK/Libs/Header" -I InscribedDisc/Header
-// which catches a rename across the C ABI without an ARM toolchain.
 //
 // MEASURED: no std::string, no nothrow new and no exceptions, because each
 // drags libstdc++'s EH runtime into an otherwise -fno-exceptions app -- 10,036
@@ -40,9 +36,6 @@ enum class Press : uint8_t {
 };
 
 /// What the Rust half asks the shell to do about an event.
-///
-/// `applyAction` switches over this without a default, so adding a value is a
-/// compiler warning rather than a press that silently does nothing.
 enum class Action : uint8_t {
     /// The frame changed and nothing else.
     Redraw = 0,
@@ -80,8 +73,6 @@ struct Config {
 };
 
 /// What an app must supply to be pumped by [`Shell`].
-///
-/// A template rather than a base class, so there is no vtable.
 ///
 /// ```
 /// struct MyApp {
@@ -241,7 +232,8 @@ private:
     /// by re-running the frame-gap capture in RustGuiPoc/Captures.
     static constexpr uint32_t kTickPeriodMs = 100;
 
-    /// Returns true when the app should exit.
+    /// Returns true when the app should exit; no `default`, so a new `Action`
+    /// is a compiler warning.
     bool applyAction(Action action)
     {
         switch (action) {
