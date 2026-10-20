@@ -11,7 +11,7 @@ repository = "https://github.com/tobymurray/watch-apps/tree/main/InscribedDisc"
 categories = ["embedded", "no-std", "gui"]
 keywords = ["embedded-graphics", "round", "circular", "gc9a01", "sharp-memory"]
 # The Rust half only: `Header/` and `inscribed-disc.cmake` are UNA SDK glue.
-include = ["src/**/*.rs", "examples/*.rs", "README.md", "Docs/DESIGN.md", "LICENSE"]
+include = ["src/**/*.rs", "examples/*.rs", "README.md", "CHANGELOG.md", "Docs/DESIGN.md", "LICENSE"]
 
 [features]
 # `geometry` is always present and resolves no dependencies:

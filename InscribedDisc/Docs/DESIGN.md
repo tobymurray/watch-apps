@@ -8,14 +8,13 @@ is for someone consuming it; this is for someone changing it.
 
 ## Status
 
-**Cut back to what has callers.** The modules that were written against a list
-of screens nobody has built yet, and the one that never found a second caller,
+**Published, and cut back to what has callers.** The modules written against a
+list of screens nobody has built, and the one that never found a second caller,
 are parked — see [What is parked](#what-is-parked). What ships is the geometry,
-the two draw targets, the colour and the preview, with `Spin` as the one
-adopting app in this repository.
+the two draw targets, the colour and the preview; releases are in
+[`CHANGELOG.md`](../CHANGELOG.md), and how to cut one is in
+[Releasing](#releasing).
 
-`Spin`'s 43 scene frames are byte-identical after the move, which is the bar for
-an app already installed on wrists, and it has since recorded a session on one.
 What is still missing is listed rather than buried: see
 [What is not built](#what-is-not-built).
 
@@ -752,16 +751,11 @@ Listed so the gap is not something a reader has to find:
 
 - **The opaque payload reader** of §4. The fixed event ABI is built; the data
   half is designed and specified only.
-- **One backport, and the other is done.** The panic handler reached all seven
-  renderers when it moved to [`PanicKit`](../../PanicKit): every archive now
-  needs `panickit_host_panic` and no app declares a handler of its own. What is
-  still outstanding is the **colour-depth guard** — `mDisplayUsable` /
-  `kMaxBitsPerPixel`, which withholds the frame when a panel reports more than
-  8bpp rather than letting the kernel read past the framebuffer. It is in
-  `NotifyToggle` and `UnitToggle` and in no other shell, which is where the
-  survey found it. That one is C++ in each app's `Gui.cpp`, so no Rust crate
-  fixes it by existing; it wants the shell that §4 designed and nobody has
-  taken.
+- **The colour-depth guard in every shell.** `kMaxBitsPerPixel`, which
+  withholds the frame when a panel reports more than 8bpp rather than letting
+  the kernel read past the framebuffer, is in `Header/GuiShell.hpp`; a shell
+  that does not use `Shell` has to carry its own, and no Rust crate can do it
+  for one.
 - **The scaffold** (`new-gui-app <Name>`). "Get started without reinventing
   everything" is a command you can run or it is a claim, and right now it is a
   claim.
@@ -771,17 +765,8 @@ Listed so the gap is not something a reader has to find:
   figure in this file is an archive upper bound it says so.
 - **Frame time on hardware.** The 78 ms slack is the platform's; no scene in
   this kit has been timed against it, on the host or on a watch.
-- **Trusted Publishing and a CHANGELOG.** Neither is set up.
-- **`cargo semver-checks`.** Not installed here, and at 0.1.0 there is no
-  published baseline for it to compare against. It belongs in CI from the first
-  release, not before it.
-- **A ride longer than 23 seconds.** `Spin 0.10.0` runs on the watch and has
-  recorded a session end to end — `start version=0.10.0`, samples, `stop
-  saved=1`, `recoveries=0 dropped=0`, and no panic — but it ceased twice as
-  `too_short`, so the lap split, the target arc filling and the confirm-discard
-  screen have not been drawn on glass. A working app is also not a
-  pixel-accurate one: the goldens say the frames match the pre-conversion build,
-  and nothing has compared glass against glass.
+- **Glass against glass.** Goldens say a frame matches an earlier build;
+  nothing has compared a photograph of the panel against the frame it was sent.
 - **`Surface` past a byte a pixel**, as above. `DiscClipped` reaches those
   panels and `Surface` does not, so the public claim is round rather than
   low-bit-depth, and `Surface`'s own documentation carries the narrower one.
@@ -790,6 +775,15 @@ Listed so the gap is not something a reader has to find:
 - **Anything in [What is parked](#what-is-parked)**, which is where the focus
   model, the text trait, the scene catalogue, the arc sampler and the dither
   now live.
+
+## Releasing
+
+Set `version` in `Cargo.toml`, move `CHANGELOG.md`'s `Unreleased` entries under
+it, and push the tag `inscribed-disc-v<version>` at that commit.
+`.github/workflows/inscribed-disc-release.yml` refuses a tag that disagrees with
+`Cargo.toml` and publishes through crates.io Trusted Publishing, so no token is
+stored; the `semver` job in `.github/workflows/inscribed-disc.yml` is what says
+the version number is large enough.
 
 ## What is deliberately not built
 
@@ -811,11 +805,12 @@ InscribedDisc/
     geometry.rs   the lit disc, chords, the largest centred square
     clip.rs       DiscClipped, the disc clip over anyone's DrawTarget
     surface.rs    the framebuffer, the clip, the fill_solid fast path
-    color.rs      Abgr2222, the palette, shade()
+    color.rs      Abgr2222, the palette, decode(), shade()
     preview.rs    frames to PNG, sheets, the gamut sheet
   Header/
     GuiShell.hpp  the C++ pump, header-only, host-type-checkable
-  inscribed-disc.cmake  the two lines nobody can guess
+  inscribed-disc.cmake  the cargo build behind an app's GUI ELF
+  CHANGELOG.md  what each published version changed
   Docs/           one file per measurement, and the gamut sheet
 ```
 

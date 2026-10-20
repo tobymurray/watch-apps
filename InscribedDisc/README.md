@@ -7,7 +7,7 @@ paint off it. `no_std`, no allocator, no font.
 
 ```toml
 [dependencies]
-inscribed-disc = "0.1"
+inscribed-disc = "0.2"
 ```
 
 `default-features = false` leaves `geometry` alone — the predicate, the chords
@@ -112,9 +112,10 @@ and **43 µs** for rect clipping with no disc at all. So the fast path recovers
 
 ## Status
 
-**0.1.** One application uses it, and has recorded a session on the watch it was
-written for. Modules that had no caller were removed rather than published; the
-design record says which, and they can come back when something needs them.
+**0.x.** A minor version may break the API; [`CHANGELOG.md`](CHANGELOG.md)
+says what each one changed. Modules that had no caller were removed rather than
+published; the design record says which, and they can come back when something
+needs them.
 
 ## Licence
 
