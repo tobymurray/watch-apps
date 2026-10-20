@@ -145,3 +145,13 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --all-features --no-deps
+
+  # Against the newest version on crates.io, with every feature on.
+  semver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          manifest-path: InscribedDisc/Cargo.toml
+          feature-group: all-features
