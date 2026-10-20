@@ -6,6 +6,16 @@ All notable changes to `inscribed-disc`. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-10-20
+
+### Added
+
+- `geometry::band_chord`, the width of glass every row of a band shares. It is
+  `const`, so a line's width can be asserted against its rows at compile time.
+- The `audit` module, with no feature required: `off_glass` lists every pixel
+  of a finished frame, other than the ground colour, that the glass inset by a
+  margin would not show.
+
 ### Changed
 
 - Documentation: the README's install line names 0.2, and comments no longer
@@ -35,6 +45,7 @@ All notable changes to `inscribed-disc`. The format follows
 Initial release: `geometry`, `DiscClipped`, `Surface` and `ByteColor`, and the
 `abgr2222` and `preview` features.
 
-[Unreleased]: https://github.com/tobymurray/watch-apps/compare/inscribed-disc-v0.2.0...HEAD
+[Unreleased]: https://github.com/tobymurray/watch-apps/compare/inscribed-disc-v0.2.1...HEAD
+[0.2.1]: https://github.com/tobymurray/watch-apps/compare/inscribed-disc-v0.2.0...inscribed-disc-v0.2.1
 [0.2.0]: https://github.com/tobymurray/watch-apps/compare/inscribed-disc-v0.1.0...inscribed-disc-v0.2.0
 [0.1.0]: https://github.com/tobymurray/watch-apps/tree/inscribed-disc-v0.1.0/InscribedDisc

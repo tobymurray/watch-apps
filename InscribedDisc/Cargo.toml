@@ -1,6 +1,6 @@
 [package]
 name = "inscribed-disc"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 # `embedded-graphics` 0.8's own floor; MEASURED, `cargo +1.70.0 build
 # --all-features` succeeds, so this crate's code is not what sets it.
