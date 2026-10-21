@@ -61,6 +61,7 @@ private:
     void publishCard();
     void restoreHistory(uint32_t utc);
     void fillNight(SlumberCard::Card &card, uint32_t utc);
+    void showNight(LastNight::Kind kind, const SleepPeriods::Period &p, bool settled, int32_t sleptOff);
     void publishNow(uint32_t utc);
     void logNights(size_t n, int32_t offsetMin);
     void publishStatus();
@@ -78,6 +79,7 @@ private:
     SleepPeriods::Period  mPeriods[72];
     size_t                mPeriodN   = 0;
     const SleepPeriods::Period *mLastNight = nullptr;  ///< into mPeriods, as last found
+    CustomMessage::NightView    mShown;
 
     Slumber::ActivityCount mCount;
     Slumber::Tilt          mTilt;

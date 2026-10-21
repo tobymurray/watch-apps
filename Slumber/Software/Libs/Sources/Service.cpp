@@ -520,10 +520,15 @@ void Service::fillNight(SlumberCard::Card &card, uint32_t utc)
     card.state = SlumberCard::State::Recording;
     mPeriodN   = 0;
     mLastNight = nullptr;
+    mShown     = CustomMessage::NightView{};
     std::tm       local{};
     const int32_t off = utcOffsetMin(utc, local);
     if (off == -1 || mHistory.size() == 0) {
         return;
+    }
+    const Rhythm::Usual usual = mNights.recent().usualBefore(UINT32_MAX);
+    if (usual.known) {
+        mShown.usualBedMin = static_cast<uint16_t>((usual.bed + 720) % 1440);
     }
     const size_t n = SleepPeriods::find(mHistory.data(), mHistory.size(), mPeriods,
                                         sizeof(mPeriods) / sizeof(mPeriods[0]), utc);
@@ -546,6 +551,7 @@ void Service::fillNight(SlumberCard::Card &card, uint32_t utc)
     card.onsetMinOfDay = Slumber::LocalTime::minuteOfDay(p.startUtc, sleptOff);
     card.wakeMinOfDay  = Slumber::LocalTime::minuteOfDay(p.endUtc, sleptOff);
     card.validUntilUtc = p.endUtc + LastNight::kRecentS;
+    showNight(c.kind, p, card.state == State::Report, sleptOff);
 
     if (p.startUtc != mReportedStartUtc || card.state != mReportedState) {
         mLog.line("night", "state=%u start=%lu end=%lu rest_min=%u worn_pct=%u hr_pct=%u",
@@ -554,6 +560,27 @@ void Service::fillNight(SlumberCard::Card &card, uint32_t utc)
                   static_cast<unsigned>(p.wornPct), static_cast<unsigned>(p.hrCoverPct));
         mReportedStartUtc = p.startUtc;
         mReportedState    = card.state;
+    }
+}
+
+void Service::showNight(LastNight::Kind kind, const SleepPeriods::Period &p, bool settled, int32_t sleptOff)
+{
+    using namespace CustomMessage;
+    mShown.kind     = kind == LastNight::Kind::NotWorn ? kNightOffWrist : settled ? kNightSettled : kNightSoFar;
+    mShown.restMin  = p.restMin;
+    mShown.onsetMin = Slumber::LocalTime::minuteOfDay(p.startUtc, sleptOff);
+    mShown.wakeMin  = Slumber::LocalTime::minuteOfDay(p.endUtc, sleptOff);
+    if (mShown.kind == kNightOffWrist) {
+        return;
+    }
+    const NightSummary::Summary s = NightSummary::summarise(mHistory.data(), mHistory.size(), p);
+    mShown.restless = static_cast<uint8_t>(s.restlessSpells > 255 ? 255 : s.restlessSpells);
+    mShown.restFill = Rhythm::restFill(p.restMin);
+    const Rhythm::Usual before = mNights.recent().usualBefore(p.startUtc);
+    if (before.known) {
+        const int32_t d         = Rhythm::offset(Rhythm::afterNoon(p.startUtc, sleptOff), before);
+        mShown.rhythmFill      = Rhythm::rhythmFill(d);
+        mShown.rhythmOffsetMin = static_cast<int16_t>(d);
     }
 }
 
@@ -577,6 +604,7 @@ void Service::publishStatus()
                                : (mKernel.sys.getTimeMs() - mLastMarkMs) / 60000u;
         st->accOk = mLastAccOk ? 1 : 0;
         st->hrOk  = mLastHrOk ? 1 : 0;
+        st->night = mShown;
         st.send();
     }
 }

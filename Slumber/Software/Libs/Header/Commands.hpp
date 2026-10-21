@@ -38,6 +38,28 @@ struct Mark : public SDK::MessageBase {
     {}
 };
 
+constexpr uint16_t kUnknown = 0xFFFFu;
+
+enum NightKind : uint8_t {
+    kNoNight      = 0,
+    kNightSettled = 1,
+    kNightSoFar   = 2,  ///< a night that could still grow
+    kNightOffWrist = 3,  ///< the rest was a watch on a table
+};
+
+/// Last night as the screen shows it.
+struct NightView {
+    uint8_t  kind            = kNoNight;  ///< a NightKind
+    uint8_t  restless        = 0;         ///< restless spells, saturating
+    uint16_t restMin         = 0;
+    uint16_t onsetMin        = 0;  ///< minute of the local day, in the offset the night was slept in
+    uint16_t wakeMin         = 0;
+    uint16_t restFill        = 0;  ///< per mille of the goal; past 1000 is a second lap
+    uint16_t rhythmFill      = kUnknown;  ///< per mille; kUnknown = no usual to score against
+    int16_t  rhythmOffsetMin = 0;         ///< bedtime against the usual; + is later
+    uint16_t usualBedMin     = kUnknown;  ///< minute of day; kUnknown = fewer than three nights
+};
+
 /// Service to GUI.
 struct Status : public SDK::MessageBase {
     uint32_t serviceUpMin;  ///< minutes since this service process started
@@ -47,6 +69,7 @@ struct Status : public SDK::MessageBase {
     uint8_t  lastMark;      ///< kNoMark = none
     uint8_t  accOk;         ///< 1 if the last row had accelerometer samples
     uint8_t  hrOk;          ///< 1 if the last row had a heart rate
+    NightView night;
 
     Status()
         : SDK::MessageBase(STATUS)
@@ -57,6 +80,7 @@ struct Status : public SDK::MessageBase {
         , lastMark(kNoMark)
         , accOk(0)
         , hrOk(0)
+        , night{}
     {}
 };
 
