@@ -664,6 +664,24 @@ TEST(NightLog, SleepingHeartRatesAreReadBackForTheUsual)
     EXPECT_EQ(u.medianBpm, 56);  // 53, 55, 57, 59
 }
 
+TEST(NightLog, TheLatestNightKeepsTheOffsetItWasLoggedWith)
+{
+    SDK::Test::FakeFileSystem  fs;
+    const SleepPeriods::Period p = settledNight();
+    {
+        auto log = std::make_unique<NightLog>(fs);
+        ASSERT_TRUE(logNight(*log, p));
+        int32_t off = 0;
+        ASSERT_TRUE(log->loggedOffset(p.startUtc, off));
+        EXPECT_EQ(off, -240);
+        EXPECT_FALSE(log->loggedOffset(p.startUtc + 1, off));
+    }
+    auto    log = std::make_unique<NightLog>(fs);
+    int32_t off = 0;
+    ASSERT_TRUE(log->loggedOffset(p.startUtc, off));
+    EXPECT_EQ(off, -240);
+}
+
 TEST(NightLog, AnUnsettledNightWaits)
 {
     SDK::Test::FakeFileSystem fs;

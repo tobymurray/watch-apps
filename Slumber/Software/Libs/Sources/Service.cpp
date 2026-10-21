@@ -541,8 +541,10 @@ void Service::fillNight(SlumberCard::Card &card, uint32_t utc)
                                                             : State::Provisional;
     card.restMin       = p.restMin;
     card.spanMin       = static_cast<uint16_t>((p.endUtc - p.startUtc) / 60u);
-    card.onsetMinOfDay = Slumber::LocalTime::minuteOfDay(p.startUtc, off);
-    card.wakeMinOfDay  = Slumber::LocalTime::minuteOfDay(p.endUtc, off);
+    int32_t sleptOff   = off;
+    mNights.loggedOffset(p.startUtc, sleptOff);
+    card.onsetMinOfDay = Slumber::LocalTime::minuteOfDay(p.startUtc, sleptOff);
+    card.wakeMinOfDay  = Slumber::LocalTime::minuteOfDay(p.endUtc, sleptOff);
     card.validUntilUtc = p.endUtc + LastNight::kRecentS;
 
     if (p.startUtc != mReportedStartUtc || card.state != mReportedState) {

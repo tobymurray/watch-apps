@@ -63,11 +63,22 @@ public:
         if (!append(head, static_cast<size_t>(len), slots)) {
             return false;
         }
-        mLastEndUtc = p.endUtc;
+        noteLatest(p.startUtc, p.endUtc, offsetMin);
         if (p.worn == SleepPeriods::Worn::Worn) {
             mRecent.add(p.startUtc, p.endUtc, offsetMin, p.restMin);
             mSchedule.add(p.startUtc, p.endUtc, offsetMin, h.medianBpm, h.lowBpm);
         }
+        return true;
+    }
+
+    /// The offset the period starting at `startUtc` was logged with, if it is the latest logged.
+    bool loggedOffset(uint32_t startUtc, int32_t &offsetMin)
+    {
+        ensureRead();
+        if (mLastEndUtc == 0 || startUtc != mLastStartUtc) {
+            return false;
+        }
+        offsetMin = mLastOffsetMin;
         return true;
     }
 
@@ -186,9 +197,11 @@ private:
     /// exists but could not be read, so nothing is logged twice.
     bool readBack()
     {
-        mLastEndUtc = 0;
-        mRecent     = Rhythm::Recent{};
-        mSchedule   = Schedule::Learner{};
+        mLastStartUtc  = 0;
+        mLastEndUtc    = 0;
+        mLastOffsetMin = 0;
+        mRecent        = Rhythm::Recent{};
+        mSchedule      = Schedule::Learner{};
         if (!mFs.exist(kPath)) {
             return true;
         }
@@ -229,6 +242,15 @@ private:
         return end != at + std::strlen(key);
     }
 
+    void noteLatest(uint32_t startUtc, uint32_t endUtc, int32_t offsetMin)
+    {
+        if (endUtc > mLastEndUtc) {
+            mLastStartUtc  = startUtc;
+            mLastEndUtc    = endUtc;
+            mLastOffsetMin = offsetMin;
+        }
+    }
+
     void note(const char *line)
     {
         if (std::strstr(line, "\"source\":\"Slumber\"") == nullptr) {
@@ -239,9 +261,7 @@ private:
             !number(line, "\"utc_off_min\":", off) || !number(line, "\"rest_min\":", rest)) {
             return;
         }
-        if (static_cast<uint32_t>(end) > mLastEndUtc) {
-            mLastEndUtc = static_cast<uint32_t>(end);
-        }
+        noteLatest(static_cast<uint32_t>(start), static_cast<uint32_t>(end), static_cast<int32_t>(off));
         if (std::strstr(line, "\"worn\":\"worn\"") != nullptr && end > start) {
             mRecent.add(static_cast<uint32_t>(start), static_cast<uint32_t>(end),
                         static_cast<int32_t>(off), static_cast<uint16_t>(rest));
@@ -258,7 +278,9 @@ private:
     Rhythm::Recent    mRecent;
     Schedule::Learner mSchedule;
     char           mStrip[EpochHistory::kCap + 1] = {};
-    uint32_t       mLastEndUtc = 0;
+    uint32_t       mLastStartUtc  = 0;
+    uint32_t       mLastEndUtc    = 0;
+    int32_t        mLastOffsetMin = 0;
     bool           mRead       = false;
 };
 

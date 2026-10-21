@@ -183,6 +183,10 @@ Every 5 minutes, with the heartbeat, Slumber runs SleepPeriods over the last
   afternoon is under half the night, so it does not replace it. A shorter
   night after a long one does: a 9 h night ending at 09:00 and a 5 h one
   ending at 04:00 show the 5 h one.
+- **Only UTC durations choose**, so crossing time zones, or a watch whose clock
+  loses its zone, cannot bring back an older night. The card shows a logged
+  night's times in the offset it was logged with, the wearer's clock when they
+  woke, so a flight later that day does not move them.
 - **Until SleepPeriods settles it**, an hour after its last rest, the card says
   `so far`.
 - **Only a table, and no worn period**, reports `No night` / `watch was off`.
