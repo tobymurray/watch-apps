@@ -191,7 +191,7 @@ Every 5 minutes, with the heartbeat, Slumber runs SleepPeriods over the last
   `so far`.
 - **Only a table, and no worn period**, reports `No night` / `watch was off`.
   An uncertain wrist is never reported.
-- **20 h after it ended**, the night expires and the card says Slumber is up.
+- **20 h after it ended**, the night expires and the card says `No night yet`.
 
 The 36 h live in RAM and in `Epochs/`, and a restart reloads them before its
 first card, so plugging in to charge in the morning keeps the night on the
