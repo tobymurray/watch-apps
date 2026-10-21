@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "SDK/Kernel/Kernel.hpp"
+#include "SDK/Messages/CommandMessages.hpp"
 
 #include "slumber_gui.h"
 
@@ -20,6 +21,8 @@ private:
     void renderAndPush();
     void sendMark();
     void move(int step);
+    void onButton(SDK::Message::EventButton::Id id);
+    void show(uint8_t screen);
 
     static constexpr int16_t  kFallbackWidth     = 240;
     static constexpr int16_t  kFallbackHeight    = 240;
@@ -37,6 +40,9 @@ private:
     bool    mDirty         = true;
 
     bool mMarkPending = false;
+
+    uint8_t  mSequence    = 0;  ///< presses of the picker's sequence made so far
+    uint32_t mLastPressMs = 0;
 
     slumber_state mState{};
 

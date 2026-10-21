@@ -357,7 +357,24 @@ alone on the watch.
 
 ## The screen
 
-L1 and L2 pick what you are doing from now on; R1 logs it, and the label
+Slumber opens on last night: Rest and Rhythm as two rings (see "The screens to
+come" for why those two), and inside them the night's rest, its times and its
+bedtime against the usual, such as `7h42`, `23:29-07:30`, `38m late`. Before
+there is a night it says `No night yet` and the usual bedtime once three nights
+give one; a night on a table says `watch was off`. The times are in the offset
+the night was logged with. R2 leaves.
+
+`Software/Apps/CustomGUI/rust/src/night.rs` draws it. The service sends the
+night with every status, so the screen holds no history of its own. Its tests
+check that every line fits inside the Rhythm ring at the rows it is drawn on,
+and `SLUMBER_PREVIEW_DIR=<dir> cargo test --features std previews` writes each
+state as a PNG.
+
+**The marks picker is behind L1 L1 L2 L2**, pressed with no more than 1.5 s
+between presses; R2 goes back to the night. Long presses are not used: a hold
+never reached Spin's screens.
+
+In the picker, L1 and L2 pick what you are doing from now on; R1 logs it, and the label
 turns green once the service has written it. Below the picker: the last mark
 and how long ago, then rows written today and whether the last row had
 accelerometer and heart-rate data. `WRITE FAILS` in amber means rows are not
@@ -378,8 +395,8 @@ goes back on.
 
 ## The screens to come
 
-The redesign is agreed but not built. It waits until the recording period
-ends, so nothing on the watch changes while nights are being collected.
+The morning rings are built (see "The screen"); the week of bars and the
+evening screen are not.
 
 **Two rings, not a score.** A 0–100 sleep score is the most criticised thing
 wrist trackers show, and wrist movement cannot score sleep stages: across six

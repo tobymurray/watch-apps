@@ -6,6 +6,8 @@ use textkit::{faces, Face, Style};
 #[cfg(feature = "device")]
 use panickit as _;
 
+mod night;
+
 /// Mirrors `slumber_state` (`slumber_gui.h`) field for field.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -20,8 +22,21 @@ pub struct State {
     pub acc_ok: u8,
     pub hr_ok: u8,
     pub just_logged: u8,
-    pub _pad: [u8; 2],
+    pub screen: u8,
+    pub night_kind: u8,
+    pub rest_min: u16,
+    pub onset_min: u16,
+    pub wake_min: u16,
+    pub rest_fill: u16,
+    pub rhythm_fill: u16,
+    pub rhythm_offset_min: i16,
+    pub usual_bed_min: u16,
+    pub restless: u8,
+    pub _pad: [u8; 1],
 }
+
+pub const SCREEN_NIGHT: u8 = 0;
+pub const SCREEN_PICKER: u8 = 1;
 
 pub const NO_MARK: u8 = 0xFF;
 pub const NO_MARK_AGE: u32 = 0xFFFF_FFFF;
@@ -39,7 +54,17 @@ impl Default for State {
             acc_ok: 0,
             hr_ok: 0,
             just_logged: 0,
-            _pad: [0; 2],
+            screen: SCREEN_NIGHT,
+            night_kind: night::KIND_NONE,
+            rest_min: 0,
+            onset_min: 0,
+            wake_min: 0,
+            rest_fill: 0,
+            rhythm_fill: night::UNKNOWN,
+            rhythm_offset_min: 0,
+            usual_bed_min: night::UNKNOWN,
+            restless: 0,
+            _pad: [0; 1],
         }
     }
 }
@@ -95,18 +120,18 @@ const HINT: &str = "L1/L2 PICK  R1 LOG";
 /// Built without `core::fmt`: its integer formatting reaches a table through a
 /// MOVW/MOVT pair, and the SDK's packer relocates only `R_ARM_ABS32`, so on the
 /// watch every number came out as garbage and the line drew nothing.
-struct Line {
+pub(crate) struct Line {
     buf: [u8; 40],
     len: usize,
 }
 
 impl Line {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Line { buf: [0; 40], len: 0 }
     }
 
     /// Non-ASCII becomes `?`, which keeps every byte in `buf` ASCII.
-    fn push(&mut self, s: &str) -> &mut Self {
+    pub(crate) fn push(&mut self, s: &str) -> &mut Self {
         for &b in s.as_bytes() {
             if self.len == self.buf.len() {
                 break;
@@ -117,7 +142,7 @@ impl Line {
         self
     }
 
-    fn num(&mut self, value: u32, min_digits: usize) -> &mut Self {
+    pub(crate) fn num(&mut self, value: u32, min_digits: usize) -> &mut Self {
         let mut digits = [0u8; 10];
         let mut n = 0;
         let mut v = value;
@@ -138,7 +163,7 @@ impl Line {
     }
 
     // Not `from_utf8`, which also reaches a table through MOVW/MOVT on entry.
-    fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         // SAFETY: `push` and `num` write only ASCII bytes.
         unsafe { core::str::from_utf8_unchecked(&self.buf[..self.len]) }
     }
@@ -201,7 +226,7 @@ fn recorder_line(state: &State) -> (Line, Abgr2222) {
     (line, ink)
 }
 
-fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
+fn draw_picker(fb: &mut Surface<Abgr2222>, state: &State) {
     text(fb, TITLE_FACE, TITLE, TITLE_BASELINE_Y, TITLE_INK);
 
     let sel = state.selected;
@@ -226,7 +251,43 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {
         return;
     };
     fb.clear(GROUND);
-    draw(&mut fb, state);
+    if state.screen == SCREEN_PICKER {
+        draw_picker(&mut fb, state);
+    } else {
+        night::draw(&mut fb, state);
+    }
+}
+
+pub const BUTTON_L1: u8 = 0;
+pub const BUTTON_L2: u8 = 1;
+pub const BUTTON_OTHER: u8 = 2;
+
+/// The presses that open the picker from the night screen.
+pub const SEQUENCE: [u8; 4] = [BUTTON_L1, BUTTON_L1, BUTTON_L2, BUTTON_L2];
+/// A longer pause between presses starts the sequence again.
+pub const SEQUENCE_GAP_MS: u32 = 1500;
+
+/// How much of SEQUENCE the presses so far end with, after `button` follows `progress` of it.
+pub fn sequence_step(progress: u8, button: u8, gap_ms: u32) -> u8 {
+    let done = if gap_ms > SEQUENCE_GAP_MS { 0 } else { (progress as usize).min(SEQUENCE.len() - 1) };
+    let mut seen = [0u8; SEQUENCE.len()];
+    seen[..done].copy_from_slice(&SEQUENCE[..done]);
+    seen[done] = button;
+    let pressed = &seen[..=done];
+    (0..=pressed.len())
+        .rev()
+        .find(|&k| k <= SEQUENCE.len() && pressed[pressed.len() - k..] == SEQUENCE[..k])
+        .unwrap_or(0) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn slumber_sequence_step(progress: u8, button: u8, gap_ms: u32) -> u8 {
+    sequence_step(progress, button, gap_ms)
+}
+
+#[no_mangle]
+pub extern "C" fn slumber_sequence_len() -> u8 {
+    SEQUENCE.len() as u8
 }
 
 const FNV_OFFSET_BASIS: u32 = 0x811C_9DC5;
@@ -252,6 +313,16 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(State, acc_ok));
     let h = fnv1a(h, core::mem::offset_of!(State, hr_ok));
     let h = fnv1a(h, core::mem::offset_of!(State, just_logged));
+    let h = fnv1a(h, core::mem::offset_of!(State, screen));
+    let h = fnv1a(h, core::mem::offset_of!(State, night_kind));
+    let h = fnv1a(h, core::mem::offset_of!(State, rest_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, onset_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, wake_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, rest_fill));
+    let h = fnv1a(h, core::mem::offset_of!(State, rhythm_fill));
+    let h = fnv1a(h, core::mem::offset_of!(State, rhythm_offset_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, usual_bed_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, restless));
     fnv1a(h, core::mem::offset_of!(State, _pad))
 }
 
@@ -260,7 +331,7 @@ pub extern "C" fn slumber_abi_fingerprint() -> u32 {
     abi_fingerprint()
 }
 
-const _: () = assert!(core::mem::size_of::<State>() == 24);
+const _: () = assert!(core::mem::size_of::<State>() == 40);
 const _: () = assert!(core::mem::align_of::<State>() == 4);
 const _: () = assert!(core::mem::offset_of!(State, rows_today) == 4);
 const _: () = assert!(core::mem::offset_of!(State, write_fails) == 8);
@@ -271,6 +342,13 @@ const _: () = assert!(core::mem::offset_of!(State, last_mark) == 18);
 const _: () = assert!(core::mem::offset_of!(State, acc_ok) == 19);
 const _: () = assert!(core::mem::offset_of!(State, hr_ok) == 20);
 const _: () = assert!(core::mem::offset_of!(State, just_logged) == 21);
+const _: () = assert!(core::mem::offset_of!(State, screen) == 22);
+const _: () = assert!(core::mem::offset_of!(State, night_kind) == 23);
+const _: () = assert!(core::mem::offset_of!(State, rest_min) == 24);
+const _: () = assert!(core::mem::offset_of!(State, rest_fill) == 30);
+const _: () = assert!(core::mem::offset_of!(State, rhythm_offset_min) == 34);
+const _: () = assert!(core::mem::offset_of!(State, usual_bed_min) == 36);
+const _: () = assert!(core::mem::offset_of!(State, restless) == 38);
 
 #[no_mangle]
 pub extern "C" fn slumber_mark_count() -> u32 {
@@ -346,8 +424,47 @@ mod tests {
             acc_ok: 1,
             hr_ok: 1,
             just_logged: 0,
-            _pad: [0; 2],
+            screen: SCREEN_PICKER,
+            ..State::default()
         }
+    }
+
+    /// Last night as the night screen gets it: 7h42 from 23:29, 38 min late.
+    fn slept() -> State {
+        State {
+            have_status: 1,
+            screen: SCREEN_NIGHT,
+            night_kind: night::KIND_SETTLED,
+            rest_min: 7 * 60 + 42,
+            onset_min: 23 * 60 + 29,
+            wake_min: 7 * 60 + 30,
+            rest_fill: 1100,
+            rhythm_fill: 860,
+            rhythm_offset_min: 38,
+            usual_bed_min: 22 * 60 + 51,
+            ..State::default()
+        }
+    }
+
+    /// The night screen in every state that changes what it says or fills.
+    fn nights() -> Vec<(&'static str, State)> {
+        let s = slept();
+        vec![
+            ("starting", State::default()),
+            ("settled", s),
+            ("short", State { rest_min: 3 * 60 + 30, rest_fill: 500, rhythm_fill: 1000, rhythm_offset_min: -12, ..s }),
+            ("full", State { rest_min: 7 * 60, rest_fill: 1000, ..s }),
+            ("long", State { rest_min: 13 * 60 + 59, onset_min: 20 * 60 + 59, wake_min: 10 * 60 + 58, rest_fill: 1997, ..s }),
+            ("past-two-laps", State { rest_min: 23 * 60 + 59, rest_fill: 3427, ..s }),
+            ("late", State { rhythm_fill: 0, rhythm_offset_min: 23 * 60 + 59, ..s }),
+            ("early", State { rhythm_fill: 400, rhythm_offset_min: -(2 * 60 + 5), ..s }),
+            ("learning", State { rhythm_fill: night::UNKNOWN, ..s }),
+            ("so-far", State { night_kind: night::KIND_SO_FAR, ..s }),
+            ("empty", State { rest_min: 0, rest_fill: 0, rhythm_fill: 0, ..s }),
+            ("off-wrist", State { night_kind: night::KIND_OFF_WRIST, ..s }),
+            ("none-usual", State { night_kind: night::KIND_NONE, ..s }),
+            ("none", State { night_kind: night::KIND_NONE, usual_bed_min: night::UNKNOWN, ..s }),
+        ]
     }
 
     /// Every state that changes a line's text or ink, at its widest.
@@ -363,6 +480,7 @@ mod tests {
         out.push(State { write_fails: 4_294_967_295, ..reported() });
         out.push(State { acc_ok: 0, hr_ok: 0, rows_today: 4_294_967_295, ..reported() });
         out.push(State { mark_ago_min: 7, ..reported() });
+        out.extend(nights().into_iter().map(|(_, st)| st));
         out
     }
 
@@ -482,6 +600,78 @@ mod tests {
             for line in [mark_line(&st).0, recorder_line(&st).0] {
                 assert!(line.len < line.buf.len(), "{:?} filled its buffer", line.as_str());
             }
+        }
+    }
+
+    /// Every line of the night screen sits inside the Rhythm ring, at the rows it is drawn on.
+    #[test]
+    fn night_text_clears_the_rings() {
+        let r = night::TEXT_RADIUS;
+        for (name, st) in nights() {
+            let w = night::words(&st);
+            for (face, line, y) in [
+                (night::TITLE_FACE, &w.title, night::TITLE_Y),
+                (night::REST_FACE, &w.rest, night::REST_Y),
+                (night::DETAIL_FACE, &w.times, night::TIMES_Y),
+                (night::DETAIL_FACE, &w.rhythm, night::RHYTHM_Y),
+            ] {
+                let m = face.measure(line.as_str());
+                let half = (m.ink_right - m.ink_left) as f32 / 2.0 + 1.0;
+                for row in [y - face.ascent as i32, y + face.descent as i32] {
+                    let d = row as f32 - 119.5;
+                    let room = (r * r - d * d).max(0.0).sqrt();
+                    assert!(half <= room, "{name}: {:?} needs {half} at row {row}, has {room}", line.as_str());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn night_lines_say_what_happened() {
+        let w = night::words(&slept());
+        assert_eq!(w.title.as_str(), "Last night");
+        assert_eq!(w.rest.as_str(), "7h42");
+        assert_eq!(w.times.as_str(), "23:29-07:30");
+        assert_eq!(w.rhythm.as_str(), "38m late");
+        let none = night::words(&State { night_kind: night::KIND_NONE, ..slept() });
+        assert_eq!(none.times.as_str(), "usually 22:51");
+    }
+
+    #[test]
+    fn a_night_is_drawn_on_the_rings() {
+        let empty = frame(&State { night_kind: night::KIND_NONE, ..slept() });
+        let full = frame(&slept());
+        let ring_changed = (0..H as i32)
+            .flat_map(|y| (0..W as i32).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                let r = (((x as f32 - 119.5).powi(2) + (y as f32 - 119.5).powi(2)) as f32).sqrt();
+                r > 91.0 && empty[(y * W as i32 + x) as usize] != full[(y * W as i32 + x) as usize]
+            })
+            .count();
+        assert!(ring_changed > 5000, "{ring_changed} ring pixels changed");
+    }
+
+    #[test]
+    fn the_sequence_opens_only_in_order_and_in_time() {
+        let run = |presses: &[(u8, u32)]| presses.iter().fold(0u8, |p, &(b, gap)| sequence_step(p, b, gap));
+        let n = SEQUENCE.len() as u8;
+        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L1, 400), (BUTTON_L2, 400), (BUTTON_L2, 400)]), n);
+        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L1, 400), (BUTTON_L1, 400), (BUTTON_L2, 400), (BUTTON_L2, 400)]), n);
+        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L2, 400), (BUTTON_L2, 400)]), 0);
+        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L1, 400), (BUTTON_L2, 400), (BUTTON_L2, 2000)]), 0);
+        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L1, 400), (BUTTON_OTHER, 400), (BUTTON_L2, 400)]), 0);
+    }
+
+    /// Writes each night state as a PNG when SLUMBER_PREVIEW_DIR is set.
+    #[test]
+    fn previews() {
+        let Ok(dir) = std::env::var("SLUMBER_PREVIEW_DIR") else {
+            return;
+        };
+        let opts = inscribed_disc::preview::Options { scale: 2, ..Default::default() };
+        for (name, st) in nights().into_iter().chain([("picker", reported())]) {
+            let rgba = inscribed_disc::preview::to_rgba(&frame(&st), W, H, opts);
+            inscribed_disc::preview::write_png(format!("{dir}/{name}.png"), &rgba, W * 2, H * 2).unwrap();
         }
     }
 }

@@ -95,6 +95,41 @@ void Gui::move(int step)
     mDirty             = true;
 }
 
+void Gui::show(uint8_t screen)
+{
+    mState.screen      = screen;
+    mState.just_logged = 0;
+    mSequence          = 0;
+    mDirty             = true;
+}
+
+/// L1 L1 L2 L2 on the night screen opens the picker; R2 leaves the picker, or the app.
+void Gui::onButton(SDK::Message::EventButton::Id id)
+{
+    using Id = SDK::Message::EventButton::Id;
+    if (mState.screen == SLUMBER_SCREEN_PICKER) {
+        if (id == Id::SW4) {
+            show(SLUMBER_SCREEN_NIGHT);
+        } else if (id == Id::SW1) {
+            move(-1);
+        } else if (id == Id::SW3) {
+            move(1);
+        } else if (id == Id::SW2) {
+            sendMark();
+        }
+        return;
+    }
+    const uint32_t now    = mKernel.sys.getTimeMs();
+    const uint8_t  button = id == Id::SW1   ? SLUMBER_BUTTON_L1
+                            : id == Id::SW3 ? SLUMBER_BUTTON_L2
+                                            : SLUMBER_BUTTON_OTHER;
+    mSequence    = slumber_sequence_step(mSequence, button, now - mLastPressMs);
+    mLastPressMs = now;
+    if (mSequence == slumber_sequence_len()) {
+        show(SLUMBER_SCREEN_PICKER);
+    }
+}
+
 void Gui::run()
 {
     if (slumber_abi_fingerprint() != slumber_abi::fingerprint()) {
@@ -148,6 +183,15 @@ void Gui::run()
                 mState.acc_ok         = st->accOk;
                 mState.hr_ok          = st->hrOk;
                 mState.have_status    = 1;
+                mState.night_kind        = st->night.kind;
+                mState.restless          = st->night.restless;
+                mState.rest_min          = st->night.restMin;
+                mState.onset_min         = st->night.onsetMin;
+                mState.wake_min          = st->night.wakeMin;
+                mState.rest_fill         = st->night.restFill;
+                mState.rhythm_fill       = st->night.rhythmFill;
+                mState.rhythm_offset_min = st->night.rhythmOffsetMin;
+                mState.usual_bed_min     = st->night.usualBedMin;
                 if (mMarkPending) {
                     mMarkPending       = false;
                     mState.just_logged = st->lastMark == slumber_mark_code(mState.selected) ? 1 : 0;
@@ -161,20 +205,15 @@ void Gui::run()
                 using Id    = SDK::Message::EventButton::Id;
                 using Event = SDK::Message::EventButton::Event;
 
-                if (btn->event == Event::CLICK && btn->id == Id::SW4) {
+                if (btn->event == Event::CLICK && btn->id == Id::SW4 &&
+                    mState.screen == SLUMBER_SCREEN_NIGHT) {
                     msg->setResult(SDK::MessageResult::SUCCESS);
                     mKernel.comm.releaseMessage(msg);
                     mKernel.sys.exit(0);
                     return;
                 }
                 if (btn->event == Event::CLICK) {
-                    if (btn->id == Id::SW1) {
-                        move(-1);
-                    } else if (btn->id == Id::SW3) {
-                        move(1);
-                    } else if (btn->id == Id::SW2) {
-                        sendMark();
-                    }
+                    onButton(btn->id);
                 }
                 msg->setResult(SDK::MessageResult::SUCCESS);
             } break;

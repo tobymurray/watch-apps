@@ -22,6 +22,9 @@ inscribed-disc = { path = "../../../../../InscribedDisc", default-features = fal
     "abgr2222",
 ] }
 
+[dev-dependencies]
+inscribed-disc = { path = "../../../../../InscribedDisc", features = ["preview"] }
+
 [profile.release]
 panic = "abort"
 opt-level = "z"
