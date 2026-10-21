@@ -44,6 +44,39 @@ TEST(LastNight, AnAfternoonNapDoesNotReplaceTheNight)
     EXPECT_EQ(choose(p, 2, kNow).period, &p[0]);
 }
 
+TEST(LastNight, AShorterNightAfterALongOneIsLastNight)
+{
+    const Period p[] = {period(19 * kH, 9, Worn::Worn), period(1 * kH, 5, Worn::Worn)};
+    EXPECT_EQ(choose(p, 2, kNow).period, &p[1]);
+}
+
+TEST(LastNight, ASleepUnderHalfTheLongestDoesNotReplaceIt)
+{
+    const Period p[] = {period(18 * kH, 9, Worn::Worn), period(1 * kH, 4, Worn::Worn)};
+    EXPECT_EQ(choose(p, 2, kNow).period, &p[0]);
+}
+
+/// The halves of a split sleep count together against the half-length rule.
+TEST(LastNight, ASplitSleepIsJudgedWhole)
+{
+    const Period p[] = {period(19 * kH, 9, Worn::Worn), period(4 * kH, 3, Worn::Worn),
+                        period(1 * kH, 2, Worn::Worn)};
+    EXPECT_EQ(choose(p, 3, kNow).period, &p[1]);
+}
+
+/// 2026-10-16: the watch clock lost its zone and ran 4 h behind, so the night
+/// before last ended 19.5 h "ago" and, being longer, was shown in place of last night.
+TEST(LastNight, AClockThatLostItsZoneShowsTheLatestNight)
+{
+    Period p[2];
+    p[0].startUtc = 1792036485u;
+    p[0].endUtc   = 1792069575u;
+    p[1].startUtc = 1792106943u;
+    p[1].endUtc   = 1792135803u;
+    p[0].worn = p[1].worn = Worn::Worn;
+    EXPECT_EQ(choose(p, 2, 1792139949u).period, &p[1]);
+}
+
 TEST(LastNight, AWornNightOutranksALongerTable)
 {
     const Period p[] = {period(14 * kH, 9, Worn::NotWorn), period(2 * kH, 6, Worn::Worn)};
