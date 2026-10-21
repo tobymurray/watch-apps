@@ -19,7 +19,7 @@ const ALPHA_OPAQUE: u8 = 0b11;
 /// The number of levels a channel holds, minus one.
 pub const CHANNEL_MAX: u8 = 3;
 
-/// The only greys this panel has.
+/// The 8-bit value each channel level shows as.
 pub const GREY_LEVELS: [u8; 4] = [0, 85, 170, 255];
 
 /// An opaque `ABGR2222` pixel.
@@ -31,7 +31,7 @@ const fn keep_high_bits(channel: u8) -> u8 {
 }
 
 impl Abgr2222 {
-    /// From per-channel levels of 0 to 3, which is what the panel actually has.
+    /// From per-channel levels of 0 to 3.
     pub const fn from_levels(r2: u8, g2: u8, b2: u8) -> Self {
         Abgr2222(
             (ALPHA_OPAQUE << ALPHA_SHIFT)
@@ -41,8 +41,7 @@ impl Abgr2222 {
         )
     }
 
-    /// From 8-bit channels, truncated. What asking for a colour the panel
-    /// cannot show gets you, and the reason a ramp becomes four bands.
+    /// From 8-bit channels, keeping the top two bits of each.
     pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
         Abgr2222::from_levels(keep_high_bits(r), keep_high_bits(g), keep_high_bits(b))
     }
@@ -66,9 +65,9 @@ impl Abgr2222 {
     pub const BLACK: Abgr2222 = Abgr2222::from_levels(0, 0, 0);
     /// Level 3 on every channel.
     pub const WHITE: Abgr2222 = Abgr2222::from_levels(3, 3, 3);
-    /// The two intermediate greys, named for what they are used for.
+    /// Level 2 on every channel.
     pub const GREY: Abgr2222 = Abgr2222::from_levels(2, 2, 2);
-    /// The dimmer of the two intermediate greys.
+    /// Level 1 on every channel.
     pub const DARK_GREY: Abgr2222 = Abgr2222::from_levels(1, 1, 1);
     /// Full red.
     pub const RED: Abgr2222 = Abgr2222::from_levels(3, 0, 0);
@@ -100,11 +99,7 @@ impl From<Abgr2222> for RawU8 {
     }
 }
 
-/// One `ABGR2222` byte to the 8-bit RGB the panel actually shows.
-///
-/// Here rather than in [`preview`](crate::preview) because it is a fact about
-/// the colour, not about images: a simulator wanting it should not have to
-/// resolve a PNG encoder to get it.
+/// One `ABGR2222` byte to the 8-bit RGB the panel shows.
 pub const fn decode(byte: u8) -> [u8; 3] {
     let c = Abgr2222(byte);
     [
@@ -138,8 +133,6 @@ mod tests {
         assert_eq!(Abgr2222::WHITE.0, 0xFF);
     }
 
-    /// The panel has four greys and no others; a kit that offered more would be
-    /// promising a shade the glass cannot show.
     #[test]
     fn there_are_exactly_four_greys() {
         let mut seen = [false; 4];
@@ -152,8 +145,6 @@ mod tests {
         assert_eq!(GREY_LEVELS.len(), 4);
     }
 
-    /// Every byte decodes to three levels the panel has, and the alpha bits
-    /// cannot leak into a channel.
     #[test]
     fn every_byte_decodes_to_panel_levels() {
         for byte in 0..=255u8 {

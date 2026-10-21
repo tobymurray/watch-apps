@@ -1,0 +1,36 @@
+name: InscribedDisc release
+
+# Publishes to crates.io by Trusted Publishing, which needs this repository and
+# this workflow file registered on the crate's crates.io settings page.
+
+on:
+  push:
+    tags: ['inscribed-disc-v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag names the version in Cargo.toml
+        working-directory: InscribedDisc
+        run: |
+          set -euo pipefail
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "inscribed-disc") | .version')
+          [ "${GITHUB_REF_NAME}" = "inscribed-disc-v${version}" ] || {
+            echo "::error::tag ${GITHUB_REF_NAME} but Cargo.toml says ${version}"; exit 1; }
+
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
+      - name: Publish
+        working-directory: InscribedDisc
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish

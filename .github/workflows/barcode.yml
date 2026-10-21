@@ -17,6 +17,8 @@ on:
       # The renderer's text comes from the shared crate; a change there is a
       # change to this app's binary.
       - 'TextKit/**'
+      - 'InscribedDisc/**'
+      - 'PanicKit/**'
       - '.github/workflows/barcode.yml'
       - '.github/workflows/app-build.yml'
       - 'Tools/stack_budget.py'
@@ -26,6 +28,8 @@ on:
       # The renderer's text comes from the shared crate; a change there is a
       # change to this app's binary.
       - 'TextKit/**'
+      - 'InscribedDisc/**'
+      - 'PanicKit/**'
       - '.github/workflows/barcode.yml'
       - '.github/workflows/app-build.yml'
       - 'Tools/stack_budget.py'
@@ -47,6 +51,7 @@ jobs:
     uses: ./.github/workflows/app-build.yml
     with:
       app: Barcode
+      links: TextKit InscribedDisc PanicKit
       version: ${{ inputs.version || '' }}
     permissions:
       # write, not read: a caller's grant caps what the called workflow can

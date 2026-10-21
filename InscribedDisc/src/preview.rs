@@ -16,7 +16,7 @@
 //! claim; a device photograph is.** Falsified by a device capture that shows
 //! such a readout rendering.
 //!
-//! Size is the third: 240 px at 0.126 mm is about 30 mm across, so a 1:1 image
+//! Nor the size: 240 px at 0.126 mm is about 30 mm across, so a 1:1 image
 //! on a 96 dpi monitor is roughly twice life size and flatters legibility.
 
 use std::io;
@@ -25,9 +25,7 @@ use std::path::Path;
 use crate::color::decode;
 use crate::geometry;
 
-/// `io::Error::other` in a form that predates it: it stabilised in 1.74, and
-/// `rust-version` is package-level, so this one host-only convenience would
-/// raise the floor for every embedded consumer of `geometry`.
+/// `io::Error::other`, which needs 1.74, above this package's `rust-version`.
 fn other<E: Into<Box<dyn std::error::Error + Send + Sync>>>(e: E) -> io::Error {
     io::Error::new(io::ErrorKind::Other, e)
 }
@@ -138,8 +136,7 @@ pub fn sheet_from_frames(
     let (cw, ch) = (w * scale, h * scale);
     // One panel pixel of gutter at this scale, so cells do not touch.
     let gutter = scale;
-    // Not `div_ceil`, which stabilised in 1.73: see `other` above for why this
-    // crate's floor is worth a plain idiom.
+    // Not `div_ceil`, which needs 1.73; see `other`.
     let rows = (frames.len() as u32 + columns - 1) / columns;
     let (sw, sh) = (columns * cw + (columns + 1) * gutter, rows * ch + (rows + 1) * gutter);
 
@@ -202,8 +199,6 @@ mod tests {
     const W: u32 = 240;
     const H: u32 = 240;
 
-    /// The panel has 64 colours, so a decoded frame can hold at most 64 distinct
-    /// triples and every channel must be one the glass can show.
     #[test]
     fn decoding_only_ever_produces_colours_the_panel_has() {
         for byte in 0..=255u8 {

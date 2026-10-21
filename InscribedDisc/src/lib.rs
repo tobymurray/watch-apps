@@ -60,6 +60,8 @@
 
 pub mod geometry;
 
+pub mod audit;
+
 #[cfg(feature = "embedded-graphics")]
 #[cfg_attr(docsrs, doc(cfg(feature = "embedded-graphics")))]
 pub mod clip;

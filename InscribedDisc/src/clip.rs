@@ -1,9 +1,4 @@
-//! A disc clip over somebody else's `DrawTarget`.
-//!
-//! [`Surface`](crate::surface::Surface) is bounded on
-//! [`ByteColor`](crate::surface::ByteColor), so it serves byte-per-pixel panels
-//! only. This wrapper has no colour bound at all: it clips whatever the parent
-//! draws, so an `Rgb565` or `BinaryColor` round panel gets the same clip.
+//! A disc clip over somebody else's `DrawTarget`, at any colour depth.
 
 use embedded_graphics::{prelude::*, primitives::Rectangle};
 
@@ -11,10 +6,8 @@ use crate::geometry;
 
 /// Clips every draw to the inscribed disc of the parent's bounding box.
 ///
-/// The clip is [`geometry::is_lit`], the same predicate
-/// [`Surface`](crate::surface::Surface) uses, so the two paint identical
-/// pixels; `the_wrapper_paints_exactly_what_the_surface_paints` holds them
-/// together.
+/// The clip is [`geometry::is_lit`], so it paints exactly what
+/// [`Surface`](crate::surface::Surface) paints.
 ///
 /// MEASURED, linked `.text` on `thumbv8m.main-none-eabihf` at
 /// `opt-level = "z"`: 444 bytes for a plain rect-clipped target, 704 for this
@@ -23,12 +16,12 @@ use crate::geometry;
 /// 7.4–8.6× for the same clip with `fill_solid` left at the default. Re-run
 /// `InscribedDisc/Docs/measurements/disc-wrapper`.
 ///
-/// Two things to know before using it. The panel is taken to start at the
-/// parent's origin, so a parent whose `bounding_box()` does not begin at
-/// `(0, 0)` is clipped about the wrong centre. And `clear` arrives through
-/// `fill_solid`, so it paints the glass and leaves the bezel holding whatever
-/// was there — clear the parent directly when the whole buffer goes to the
-/// display.
+/// The panel is taken to start at the parent's origin, so a parent whose
+/// `bounding_box()` does not begin at `(0, 0)` is clipped about the wrong
+/// centre.
+///
+/// `clear` paints the glass and leaves the bezel holding whatever was there;
+/// clear the parent directly when the whole buffer goes to the display.
 pub struct DiscClipped<'a, T> {
     parent: &'a mut T,
     w: i32,
@@ -57,8 +50,7 @@ impl<T: DrawTarget> DrawTarget for DiscClipped<'_, T> {
     where
         I: IntoIterator<Item = Pixel<Self::Color>>,
     {
-        // The clip is pulled into locals before `self.parent` is touched, which
-        // is what makes the borrow check pass.
+        // Copied out so the filter does not borrow `self` alongside `self.parent`.
         let (w, h) = (self.w, self.h);
         self.parent
             .draw_iter(pixels.into_iter().filter(|Pixel(p, _)| geometry::is_lit(p.x, p.y, w, h)))
@@ -98,9 +90,7 @@ mod tests {
     const W: u32 = 240;
     const H: u32 = 240;
 
-    // Six distinct byte values rather than this crate's own colour type: the
-    // scene only needs the shapes to be told apart, and `Gray8` keeps these
-    // tests off `abgr2222`.
+    // `Gray8` keeps these tests off the `abgr2222` feature.
     const GROUND: Gray8 = Gray8::new(0x00);
     const BAND: Gray8 = Gray8::new(0xFF);
     const TOP: Gray8 = Gray8::new(0xAA);
@@ -109,7 +99,7 @@ mod tests {
     const WEDGE: Gray8 = Gray8::new(0x30);
     const DOT: Gray8 = Gray8::new(0x11);
 
-    /// A plain rectangular target, standing in for one an adopter already has.
+    /// A plain rectangular target.
     struct Plain<'a> {
         buf: &'a mut [u8],
         w: i32,
@@ -179,8 +169,6 @@ mod tests {
         }
     }
 
-    /// The guard that keeps the two clips one clip: both go through `geometry`,
-    /// and this is what says so in pixels rather than in prose.
     #[test]
     fn the_wrapper_paints_exactly_what_the_surface_paints() {
         let mut via_surface = vec![0u8; (W * H) as usize];
@@ -193,8 +181,7 @@ mod tests {
         let mut via_wrapper = vec![0u8; (W * H) as usize];
         {
             let mut p = Plain { buf: &mut via_wrapper, w: W as i32, h: H as i32 };
-            // The parent is cleared directly: the whole buffer goes to the
-            // display, so the bezel holds the ground colour too.
+            // Cleared directly, so the bezel holds the ground colour too.
             p.buf.fill(GROUND.luma());
             scene(&mut DiscClipped::new(&mut p));
         }
@@ -203,10 +190,6 @@ mod tests {
         assert_eq!(differing, 0, "{differing} of {} bytes differ", via_surface.len());
     }
 
-    /// `clear` arrives through `fill_solid`, so it paints the glass and leaves
-    /// the bezel alone. That is documented on the type because it is a trap for
-    /// a caller who hands the whole buffer to a display; this is what says the
-    /// documentation is true.
     #[test]
     fn clear_paints_the_glass_and_leaves_the_bezel() {
         const PRIOR: u8 = 0x7F;
@@ -230,8 +213,6 @@ mod tests {
         assert_eq!(bezel_kept, 12_792, "clear reached behind the bezel");
     }
 
-    /// The panel need not be square: the disc is inscribed in the shorter side,
-    /// and the wrapper and `Surface` must still agree about it.
     #[test]
     fn a_non_square_panel_clips_to_the_same_disc_as_the_surface() {
         const W2: u32 = 240;
@@ -256,8 +237,6 @@ mod tests {
         assert!(via_wrapper.iter().any(|&b| b == GROUND.luma()), "nothing was clipped");
     }
 
-    /// The wrapper owns no buffer, so a parent that fails must fail through it
-    /// rather than be swallowed by the clip.
     #[test]
     fn a_failing_parent_fails_through_the_wrapper() {
         struct Failing;
@@ -273,8 +252,7 @@ mod tests {
                 &mut self,
                 pixels: I,
             ) -> Result<(), Self::Error> {
-                // Only a pixel that survives the clip may reach the parent, so
-                // draining the iterator is what makes this a real test.
+                // Fails only if a pixel survived the clip.
                 if pixels.into_iter().count() > 0 { Err(()) } else { Ok(()) }
             }
             fn fill_solid(&mut self, _: &Rectangle, _: Self::Color) -> Result<(), Self::Error> {
@@ -290,8 +268,6 @@ mod tests {
         assert_eq!(d.draw_iter([Pixel(Point::new(0, 0), BAND)]), Ok(()));
     }
 
-    /// The wrapper reports the parent's box, not the disc's: a caller asking
-    /// where it may draw is asking about the buffer.
     #[test]
     fn the_bounding_box_is_the_parents() {
         let mut buf = vec![0u8; (W * H) as usize];
@@ -300,8 +276,6 @@ mod tests {
         assert_eq!(DiscClipped::new(&mut p).bounding_box(), parent);
     }
 
-    /// A round GC9A01 module is `Rgb565`, which `Surface` refuses to compile
-    /// against.
     #[test]
     fn a_round_rgb565_panel_is_disc_clipped() {
         let mut data = [Rgb565::BLACK; 240 * 240];
@@ -317,8 +291,6 @@ mod tests {
         assert!(glass > 40_000, "only {glass} lit pixels painted");
     }
 
-    /// `sharp-memory-display` drives the round LS010B7DH04 as `BinaryColor`,
-    /// which is not a byte a pixel either.
     #[test]
     fn a_round_1bpp_panel_is_disc_clipped() {
         let mut data = [BinaryColor::Off; 128 * 128];
