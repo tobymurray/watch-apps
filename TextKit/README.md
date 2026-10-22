@@ -145,7 +145,7 @@ Per-app before and after rows are in each app's README under Footprint.
 
 ```sh
 cd TextKit
-cargo test --features std          # unit tests and the TouchGFX parity oracle
+cargo test                         # unit tests and the TouchGFX parity oracle
 cargo build --release --target thumbv8m.main-none-eabihf
 cargo run --features std --example measure SEMIBOLD_18_ASCII "NOTIFICATIONS"
 ```

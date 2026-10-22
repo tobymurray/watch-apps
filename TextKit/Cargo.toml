@@ -33,7 +33,7 @@ default = ["abgr2222"]
 ## `Ink` for `inscribed-disc`'s `Abgr2222`: two bits a channel, four coverage
 ## levels, which is what the atlases are quantised to.
 abgr2222 = ["dep:inscribed-disc"]
-## Host-side assertions in tests and the `measure` example.
+## Links `std`. No API depends on it, and the tests and examples have it anyway.
 std = []
 
 [dependencies]

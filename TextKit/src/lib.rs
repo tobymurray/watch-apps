@@ -5,7 +5,7 @@
 //! A glyph's coverage is one of four levels, so the ink is blended toward the ground through
 //! [`Ink`]; clipping belongs to the target, not to this crate.
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
 
 use embedded_graphics::{
     prelude::{DrawTarget, Point},
@@ -337,7 +337,8 @@ pub fn pick<'f>(faces: &[&'f Face], text: &str, max_width: i32) -> Option<&'f Fa
     faces.iter().copied().find(|f| f.measure(text).advance <= max_width)
 }
 
-#[cfg(test)]
+// The drawing tests ink in `Abgr2222`, whose `Ink` is that feature's.
+#[cfg(all(test, feature = "abgr2222"))]
 mod tests {
     use super::faces::*;
     use super::*;
