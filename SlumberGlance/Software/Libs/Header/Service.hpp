@@ -38,6 +38,8 @@ private:
     uint32_t          mTicks    = 0;
 
     SDK::Glance::Form        mGlance;
+    bool                     mWithIcon = false;
+    SDK::Glance::ControlImage mIcon;
     SDK::Glance::ControlText mTop;
     SDK::Glance::ControlText mBottom;
     CardView::View           mShown;

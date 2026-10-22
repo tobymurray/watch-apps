@@ -31,8 +31,9 @@ inline void hm(char *out, size_t n, uint32_t seconds)
 }
 
 /// `last` is the card shown before, for a Busy read to keep; null if none.
+/// `withIcon` is whether the crescent stands beside the lines in place of the word "Night".
 inline View make(SlumberCard::Read read, const SlumberCard::Card &card,
-                 const SlumberCard::Card *last, uint32_t nowUtc)
+                 const SlumberCard::Card *last, uint32_t nowUtc, bool withIcon)
 {
     using SlumberCard::Read;
     View v;
@@ -71,7 +72,7 @@ inline View make(SlumberCard::Read read, const SlumberCard::Card &card,
     const bool fresh = shown->validUntilUtc == 0 || nowUtc <= shown->validUntilUtc;
     if (fresh && (shown->state == SlumberCard::State::Report ||
                   shown->state == SlumberCard::State::Provisional)) {
-        std::snprintf(v.top, sizeof(v.top), "Night %02u:%02u-%02u:%02u",
+        std::snprintf(v.top, sizeof(v.top), "%s%02u:%02u-%02u:%02u", withIcon ? "" : "Night ",
                       (shown->onsetMinOfDay / 60u) % 24u, shown->onsetMinOfDay % 60u,
                       (shown->wakeMinOfDay / 60u) % 24u, shown->wakeMinOfDay % 60u);
         hm(span, sizeof(span), shown->restMin * 60u);
