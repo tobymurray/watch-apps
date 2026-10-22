@@ -1,0 +1,55 @@
+name: IncisedText release
+
+# Publishes to crates.io by Trusted Publishing, which needs this repository and
+# this workflow file registered on the crate's crates.io settings page.
+
+on:
+  push:
+    tags: ['incised-text-v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag names the version in Cargo.toml
+        working-directory: IncisedText
+        run: |
+          set -euo pipefail
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "incised-text") | .version')
+          [ "${GITHUB_REF_NAME}" = "incised-text-v${version}" ] || {
+            echo "::error::tag ${GITHUB_REF_NAME} but Cargo.toml says ${version}"; exit 1; }
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: The atlases are what the generator writes
+        working-directory: IncisedText
+        run: |
+          set -euo pipefail
+          python3 -m pip install -r Tools/requirements.txt
+          python3 Tools/atlas.py --check
+
+      - name: Tests
+        working-directory: IncisedText
+        run: |
+          set -euo pipefail
+          cargo test
+          cargo test --features atkinson
+          cargo test --no-default-features
+
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
+      - name: Publish
+        working-directory: IncisedText
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish
