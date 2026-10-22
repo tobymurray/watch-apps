@@ -76,7 +76,8 @@ def draw_glyph(n):
     return layer
 
 
-def draw():
+def face():
+    """The background and the watch face, supersampled: (image, face left edge, face diameter)."""
     S = SIZE * SS
     cx = cy = S / 2.0
 
@@ -99,22 +100,36 @@ def draw():
 
     pen = ImageDraw.Draw(img)
     pen.ellipse([fx, fy, fx + face_d, fy + face_d], fill=FACE)
+    return img.convert("RGBA"), fx, face_d
 
-    glyph_d = int(face_d * 0.78)
-    glyph = draw_glyph(glyph_d)
-    at = (int(cx - glyph_d / 2), int(cy - glyph_d / 2))
+
+def glowing(img, layer, at):
+    """`layer` pasted at `at` over a soft glow of itself."""
+    S = SIZE * SS
     glow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    glow.paste(glyph, at)
+    glow.paste(layer, at)
     glow = glow.filter(ImageFilter.GaussianBlur(radius=S * 0.018))
     glow.putalpha(glow.getchannel("A").point(lambda a: a * 0.55))
-    img = Image.alpha_composite(img.convert("RGBA"), glow)
-    img.alpha_composite(glyph, at)
+    img = Image.alpha_composite(img, glow)
+    img.alpha_composite(layer, at)
+    return img
 
+
+def finish(img, fx, face_d):
+    """The bezel over everything, then down to SIZE."""
+    S = SIZE * SS
     pen = ImageDraw.Draw(img)
-    pen.ellipse([fx, fy, fx + face_d, fy + face_d], outline=BEZEL,
+    pen.ellipse([fx, fx, fx + face_d, fx + face_d], outline=BEZEL,
                 width=max(1, int(S * 0.014)))
-
     return img.convert("RGB").resize((SIZE, SIZE), Image.LANCZOS)
+
+
+def draw():
+    img, fx, face_d = face()
+    cx = cy = SIZE * SS / 2.0
+    glyph_d = int(face_d * 0.78)
+    at = (int(cx - glyph_d / 2), int(cy - glyph_d / 2))
+    return finish(glowing(img, draw_glyph(glyph_d), at), fx, face_d)
 
 
 if __name__ == "__main__":
