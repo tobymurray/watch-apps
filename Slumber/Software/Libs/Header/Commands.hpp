@@ -1,6 +1,7 @@
 #ifndef COMMANDS_HPP
 #define COMMANDS_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 #include "SDK/Messages/MessageBase.hpp"
@@ -60,6 +61,26 @@ struct NightView {
     uint16_t usualBedMin     = kUnknown;  ///< minute of day; kUnknown = fewer than three nights
 };
 
+constexpr int16_t kNoBar      = -1;
+constexpr size_t  kWeekNights = 7;
+
+/// The main night of each of the seven evenings before tonight, oldest first.
+struct WeekView {
+    int16_t bed[kWeekNights]  = {kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar};  ///< min after local noon
+    int16_t wake[kWeekNights] = {kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar};  ///< past 1440 after noon
+    int16_t usualBed      = kNoBar;  ///< minutes after local noon; kNoBar = fewer than three nights
+    int16_t usualWake     = kNoBar;  ///< minutes after local noon, past 1440 for a wake after noon
+    uint8_t newestWeekday = 0;       ///< 0 = Sunday
+};
+
+/// Tonight's usual bed and wake for its weekday.
+struct TonightView {
+    uint16_t bedMin     = kUnknown;  ///< minute of day
+    uint16_t wakeMin    = kUnknown;  ///< minute of day
+    uint16_t nowMin     = kUnknown;  ///< minute of day; kUnknown = the clock is not set
+    uint8_t  nightsToGo = 0;         ///< nights still needed before there is a usual
+};
+
 /// Service to GUI.
 struct Status : public SDK::MessageBase {
     uint32_t serviceUpMin;  ///< minutes since this service process started
@@ -69,7 +90,9 @@ struct Status : public SDK::MessageBase {
     uint8_t  lastMark;      ///< kNoMark = none
     uint8_t  accOk;         ///< 1 if the last row had accelerometer samples
     uint8_t  hrOk;          ///< 1 if the last row had a heart rate
-    NightView night;
+    NightView   night;
+    WeekView    week;
+    TonightView tonight;
 
     Status()
         : SDK::MessageBase(STATUS)
@@ -81,8 +104,14 @@ struct Status : public SDK::MessageBase {
         , accOk(0)
         , hrOk(0)
         , night{}
+        , week{}
+        , tonight{}
     {}
 };
+
+// The kernel's message pool offers nothing larger than 256 bytes, so a status
+// that outgrew it would fail to allocate at runtime rather than at build time.
+static_assert(sizeof(Status) <= 256, "Status must fit the largest kernel message pool block");
 
 } // namespace CustomMessage
 

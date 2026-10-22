@@ -11,6 +11,8 @@ extern "C" {
 #define SLUMBER_NO_MARK     0xFFu
 #define SLUMBER_NO_MARK_AGE 0xFFFFFFFFu
 #define SLUMBER_UNKNOWN     0xFFFFu
+#define SLUMBER_NO_BAR      (-1)
+#define SLUMBER_WEEK_NIGHTS 7
 
 #define SLUMBER_SCREEN_NIGHT  0u
 #define SLUMBER_SCREEN_PICKER 1u
@@ -41,6 +43,15 @@ typedef struct {
     int16_t  rhythm_offset_min;
     uint16_t usual_bed_min; /* minute of day; SLUMBER_UNKNOWN = none */
     uint8_t  restless;
+    uint8_t  week_newest_weekday;             /* 0 = Sunday */
+    int16_t  week_bed[SLUMBER_WEEK_NIGHTS];   /* minutes after local noon, oldest first; SLUMBER_NO_BAR = none */
+    int16_t  week_wake[SLUMBER_WEEK_NIGHTS];  /* minutes after local noon, past 1440 after noon */
+    int16_t  week_usual_bed;                  /* minutes after local noon; SLUMBER_NO_BAR = none */
+    int16_t  week_usual_wake;                 /* minutes after local noon, past 1440 after noon */
+    uint16_t tonight_bed_min;                 /* minute of day; SLUMBER_UNKNOWN = none */
+    uint16_t tonight_wake_min;                /* minute of day; SLUMBER_UNKNOWN = none */
+    uint16_t now_min;                         /* minute of day; SLUMBER_UNKNOWN = clock not set */
+    uint8_t  nights_to_go;                    /* nights still needed before there is a usual */
     uint8_t  _pad[1];
 } slumber_state;
 
@@ -108,13 +119,22 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(slumber_state, rhythm_offset_min));
     h = fnv1a(h, offsetof(slumber_state, usual_bed_min));
     h = fnv1a(h, offsetof(slumber_state, restless));
+    h = fnv1a(h, offsetof(slumber_state, week_newest_weekday));
+    h = fnv1a(h, offsetof(slumber_state, week_bed));
+    h = fnv1a(h, offsetof(slumber_state, week_wake));
+    h = fnv1a(h, offsetof(slumber_state, week_usual_bed));
+    h = fnv1a(h, offsetof(slumber_state, week_usual_wake));
+    h = fnv1a(h, offsetof(slumber_state, tonight_bed_min));
+    h = fnv1a(h, offsetof(slumber_state, tonight_wake_min));
+    h = fnv1a(h, offsetof(slumber_state, now_min));
+    h = fnv1a(h, offsetof(slumber_state, nights_to_go));
     h = fnv1a(h, offsetof(slumber_state, _pad));
     return h;
 }
 
 } // namespace slumber_abi
 
-static_assert(sizeof(slumber_state) == 40, "slumber_state size changed");
+static_assert(sizeof(slumber_state) == 80, "slumber_state size changed");
 static_assert(alignof(slumber_state) == 4, "slumber_state alignment changed");
 static_assert(offsetof(slumber_state, rows_today) == 4, "rows_today moved");
 static_assert(offsetof(slumber_state, write_fails) == 8, "write_fails moved");
@@ -132,6 +152,12 @@ static_assert(offsetof(slumber_state, rest_fill) == 30, "rest_fill moved");
 static_assert(offsetof(slumber_state, rhythm_offset_min) == 34, "rhythm_offset_min moved");
 static_assert(offsetof(slumber_state, usual_bed_min) == 36, "usual_bed_min moved");
 static_assert(offsetof(slumber_state, restless) == 38, "restless moved");
+static_assert(offsetof(slumber_state, week_bed) == 40, "week_bed moved");
+static_assert(offsetof(slumber_state, week_wake) == 54, "week_wake moved");
+static_assert(offsetof(slumber_state, week_usual_bed) == 68, "week_usual_bed moved");
+static_assert(offsetof(slumber_state, tonight_bed_min) == 72, "tonight_bed_min moved");
+static_assert(offsetof(slumber_state, now_min) == 76, "now_min moved");
+static_assert(offsetof(slumber_state, nights_to_go) == 78, "nights_to_go moved");
 #endif
 
 #endif // SLUMBER_GUI_H

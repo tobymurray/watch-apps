@@ -284,3 +284,43 @@ TEST(ScheduleHeart, OnlyTheLastFortnightCounts)
     EXPECT_EQ(u.nights, Schedule::kHeartNights);
     EXPECT_EQ(u.medianBpm, 52);
 }
+
+TEST(Schedule, TheWeekIsTheSevenEveningsBeforeTonight)
+{
+    Schedule::Learner l;
+    for (int32_t d = 0; d < 9; ++d) {
+        if (d != 5) {
+            sleep(l, kMonday + d, 22, d);
+        }
+    }
+    const Schedule::Bars b = l.before(kMonday + 9);
+    EXPECT_EQ(b.newestWeekday, Schedule::weekday(kMonday + 8));
+    for (size_t i = 0; i < Schedule::kWeekNights; ++i) {
+        const int d = static_cast<int>(i) + 2;
+        if (d == 5) {
+            EXPECT_EQ(b.bed[i], Schedule::kNoNight);
+            EXPECT_EQ(b.wake[i], Schedule::kNoNight);
+            continue;
+        }
+        EXPECT_EQ(b.bed[i], clock(22, d)) << i;
+        EXPECT_EQ(b.wake[i], clock(22, d) + 480) << i;
+    }
+}
+
+TEST(Schedule, AWeekBarWakingAfterNoonRunsPastTheDay)
+{
+    Schedule::Learner l;
+    sleep(l, kMonday, 4, 0, 10 * 60);
+    const Schedule::Bars b = l.before(kMonday + 1);
+    EXPECT_EQ(b.bed[Schedule::kWeekNights - 1], clock(4, 0));
+    EXPECT_EQ(b.wake[Schedule::kWeekNights - 1], clock(4, 0) + 600);
+    EXPECT_GT(b.wake[Schedule::kWeekNights - 1], 1440);
+}
+
+TEST(Schedule, AWeekBeforeAnyNightIsEmpty)
+{
+    const Schedule::Bars b = Schedule::Learner{}.before(kMonday);
+    for (size_t i = 0; i < Schedule::kWeekNights; ++i) {
+        EXPECT_EQ(b.bed[i], Schedule::kNoNight);
+    }
+}

@@ -192,6 +192,17 @@ void Gui::run()
                 mState.rhythm_fill       = st->night.rhythmFill;
                 mState.rhythm_offset_min = st->night.rhythmOffsetMin;
                 mState.usual_bed_min     = st->night.usualBedMin;
+                for (size_t i = 0; i < CustomMessage::kWeekNights; ++i) {
+                    mState.week_bed[i]  = st->week.bed[i];
+                    mState.week_wake[i] = st->week.wake[i];
+                }
+                mState.week_newest_weekday = st->week.newestWeekday;
+                mState.week_usual_bed      = st->week.usualBed;
+                mState.week_usual_wake     = st->week.usualWake;
+                mState.tonight_bed_min     = st->tonight.bedMin;
+                mState.tonight_wake_min    = st->tonight.wakeMin;
+                mState.now_min             = st->tonight.nowMin;
+                mState.nights_to_go        = st->tonight.nightsToGo;
                 if (mMarkPending) {
                     mMarkPending       = false;
                     mState.just_logged = st->lastMark == slumber_mark_code(mState.selected) ? 1 : 0;

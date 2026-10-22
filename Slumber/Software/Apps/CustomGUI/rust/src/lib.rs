@@ -33,8 +33,20 @@ pub struct State {
     pub rhythm_offset_min: i16,
     pub usual_bed_min: u16,
     pub restless: u8,
+    pub week_newest_weekday: u8,
+    pub week_bed: [i16; WEEK_NIGHTS],
+    pub week_wake: [i16; WEEK_NIGHTS],
+    pub week_usual_bed: i16,
+    pub week_usual_wake: i16,
+    pub tonight_bed_min: u16,
+    pub tonight_wake_min: u16,
+    pub now_min: u16,
+    pub nights_to_go: u8,
     pub _pad: [u8; 1],
 }
+
+pub const WEEK_NIGHTS: usize = 7;
+pub const NO_BAR: i16 = -1;
 
 pub const SCREEN_NIGHT: u8 = 0;
 pub const SCREEN_PICKER: u8 = 1;
@@ -65,6 +77,15 @@ impl Default for State {
             rhythm_offset_min: 0,
             usual_bed_min: night::UNKNOWN,
             restless: 0,
+            week_newest_weekday: 0,
+            week_bed: [NO_BAR; WEEK_NIGHTS],
+            week_wake: [NO_BAR; WEEK_NIGHTS],
+            week_usual_bed: NO_BAR,
+            week_usual_wake: NO_BAR,
+            tonight_bed_min: night::UNKNOWN,
+            tonight_wake_min: night::UNKNOWN,
+            now_min: night::UNKNOWN,
+            nights_to_go: 0,
             _pad: [0; 1],
         }
     }
@@ -324,6 +345,15 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(State, rhythm_offset_min));
     let h = fnv1a(h, core::mem::offset_of!(State, usual_bed_min));
     let h = fnv1a(h, core::mem::offset_of!(State, restless));
+    let h = fnv1a(h, core::mem::offset_of!(State, week_newest_weekday));
+    let h = fnv1a(h, core::mem::offset_of!(State, week_bed));
+    let h = fnv1a(h, core::mem::offset_of!(State, week_wake));
+    let h = fnv1a(h, core::mem::offset_of!(State, week_usual_bed));
+    let h = fnv1a(h, core::mem::offset_of!(State, week_usual_wake));
+    let h = fnv1a(h, core::mem::offset_of!(State, tonight_bed_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, tonight_wake_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, now_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, nights_to_go));
     fnv1a(h, core::mem::offset_of!(State, _pad))
 }
 
@@ -332,7 +362,7 @@ pub extern "C" fn slumber_abi_fingerprint() -> u32 {
     abi_fingerprint()
 }
 
-const _: () = assert!(core::mem::size_of::<State>() == 40);
+const _: () = assert!(core::mem::size_of::<State>() == 80);
 const _: () = assert!(core::mem::align_of::<State>() == 4);
 const _: () = assert!(core::mem::offset_of!(State, rows_today) == 4);
 const _: () = assert!(core::mem::offset_of!(State, write_fails) == 8);
@@ -350,6 +380,12 @@ const _: () = assert!(core::mem::offset_of!(State, rest_fill) == 30);
 const _: () = assert!(core::mem::offset_of!(State, rhythm_offset_min) == 34);
 const _: () = assert!(core::mem::offset_of!(State, usual_bed_min) == 36);
 const _: () = assert!(core::mem::offset_of!(State, restless) == 38);
+const _: () = assert!(core::mem::offset_of!(State, week_bed) == 40);
+const _: () = assert!(core::mem::offset_of!(State, week_wake) == 54);
+const _: () = assert!(core::mem::offset_of!(State, week_usual_bed) == 68);
+const _: () = assert!(core::mem::offset_of!(State, tonight_bed_min) == 72);
+const _: () = assert!(core::mem::offset_of!(State, now_min) == 76);
+const _: () = assert!(core::mem::offset_of!(State, nights_to_go) == 78);
 
 #[no_mangle]
 pub extern "C" fn slumber_mark_count() -> u32 {
