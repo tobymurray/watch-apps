@@ -9,7 +9,7 @@
   "appVersion": "0.1.0",
   "minKernelVersion": "1.4.0",
   "requiredHardware": [],
-  "description": "Sleep tracking with nothing to start at bedtime. Slumber runs in the background and finds your sleep from wrist movement and heart rate at any hour, so a late night or a sleep-in is never missed or cut short. It reports when you slept and how long you rested, not sleep stages, which a wrist cannot measure reliably. Everything stays on the watch. Install Slumber Glance too: it puts last night on a card in the glance carousel.",
+  "description": "Sleep tracking with nothing to start at bedtime. Slumber runs in the background and finds your sleep from wrist movement and heart rate, whenever you sleep. Open it to see last night: how long you rested, when, and your bedtime against your usual. It does not guess at sleep stages, and everything stays on the watch. Add Slumber Glance to see last night in the carousel.",
   "id": "B4E825F662FAD77B",
   "stravaExport": false,
   "supportsLaps": false,
