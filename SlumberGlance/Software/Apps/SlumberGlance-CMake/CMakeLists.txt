@@ -11,9 +11,9 @@ set(APP_USER_NAME "Slumber Glance")
 set(APP_TYPE "Glance")
 set(APP_AUTOSTART Off)
 set(DEV_ID "UNA")
-# sha256("https://github.com/tobymurray/watch-apps#slumberglance")[0:8], the
-# repo convention.
-set(APP_ID "7DB9C8AE10255D53")
+# Assigned by UNA and stable for the life of the app: it is how the mobile app
+# matches a new *.uapp to the installed one, and it must equal "id" in app-manifest.json.
+set(APP_ID "B97BB18D7A29150E")
 set(APP_USE_ICONS Off)
 set(OUTPUT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../Output")
 set(LIBS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../Libs")
