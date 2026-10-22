@@ -8,6 +8,7 @@ use panickit as _;
 
 mod atlas;
 mod night;
+mod tonight;
 mod week;
 
 /// Mirrors `slumber_state` (`slumber_gui.h`) field for field.
@@ -52,9 +53,10 @@ pub const NO_BAR: i16 = -1;
 pub const SCREEN_NIGHT: u8 = 0;
 pub const SCREEN_PICKER: u8 = 1;
 pub const SCREEN_WEEK: u8 = 2;
+pub const SCREEN_TONIGHT: u8 = 3;
 
 /// The screens R1 pages through, in order; the picker is not one of them.
-pub const PAGES: [u8; 2] = [SCREEN_NIGHT, SCREEN_WEEK];
+pub const PAGES: [u8; 3] = [SCREEN_NIGHT, SCREEN_WEEK, SCREEN_TONIGHT];
 
 /// The page R1 goes to from `screen`.
 pub fn page_after(screen: u8) -> u8 {
@@ -65,6 +67,16 @@ pub fn page_after(screen: u8) -> u8 {
 #[no_mangle]
 pub extern "C" fn slumber_page_after(screen: u8) -> u8 {
     page_after(screen)
+}
+
+/// # Safety
+/// `state` must point to a valid `slumber_state` for the duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn slumber_opening_screen(state: *const State) -> u8 {
+    if state.is_null() {
+        return SCREEN_NIGHT;
+    }
+    tonight::opening_screen(&*state)
 }
 
 const DOTS_Y: i32 = 202;
@@ -316,6 +328,7 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {
             return;
         }
         SCREEN_WEEK => week::draw(&mut fb, state),
+        SCREEN_TONIGHT => tonight::draw(&mut fb, state),
         _ => night::draw(&mut fb, state),
     }
     draw_dots(&mut fb, state.screen);
@@ -586,6 +599,27 @@ mod tests {
         ]
     }
 
+    /// The evening screen in every state that changes what it says or draws.
+    fn tonights() -> Vec<(&'static str, State)> {
+        let s = State {
+            screen: SCREEN_TONIGHT,
+            tonight_bed_min: 23 * 60 + 15,
+            tonight_wake_min: 7 * 60 + 5,
+            now_min: 21 * 60 + 5,
+            ..slept()
+        };
+        vec![
+            ("tonight", s),
+            ("tonight-now", State { now_min: 23 * 60 + 20, ..s }),
+            ("tonight-past", State { now_min: 1 * 60 + 40, ..s }),
+            ("tonight-late-owl", State { tonight_bed_min: 2 * 60 + 30, tonight_wake_min: 11 * 60 + 45, now_min: 23 * 60 + 59, ..s }),
+            ("tonight-no-clock", State { now_min: night::UNKNOWN, ..s }),
+            ("tonight-learning", State { tonight_bed_min: night::UNKNOWN, tonight_wake_min: night::UNKNOWN, nights_to_go: 2, ..s }),
+            ("tonight-one-more", State { tonight_bed_min: night::UNKNOWN, tonight_wake_min: night::UNKNOWN, nights_to_go: 1, ..s }),
+            ("tonight-unworn", State { tonight_bed_min: night::UNKNOWN, tonight_wake_min: night::UNKNOWN, nights_to_go: 0, ..s }),
+        ]
+    }
+
     /// Every state that changes a line's text or ink, at its widest.
     fn variants() -> Vec<State> {
         let mut out = vec![State::default(), reported()];
@@ -601,6 +635,7 @@ mod tests {
         out.push(State { mark_ago_min: 7, ..reported() });
         out.extend(nights().into_iter().map(|(_, st)| st));
         out.extend(weeks().into_iter().map(|(_, st)| st));
+        out.extend(tonights().into_iter().map(|(_, st)| st));
         out
     }
 
@@ -827,8 +862,58 @@ mod tests {
     #[test]
     fn r1_pages_round_and_the_picker_is_not_a_page() {
         assert_eq!(page_after(SCREEN_NIGHT), SCREEN_WEEK);
-        assert_eq!(page_after(SCREEN_WEEK), SCREEN_NIGHT);
+        assert_eq!(page_after(SCREEN_WEEK), SCREEN_TONIGHT);
+        assert_eq!(page_after(SCREEN_TONIGHT), SCREEN_NIGHT);
         assert!(!PAGES.contains(&SCREEN_PICKER));
+    }
+
+    /// Every line of the evening screen sits inside the dial, at the rows it is drawn on.
+    #[test]
+    fn tonight_text_clears_the_dial() {
+        let r = night::TEXT_RADIUS;
+        for (name, st) in tonights() {
+            let w = tonight::words(&st);
+            for (face, line, y) in [
+                (night::TITLE_FACE, &w.title, night::TITLE_Y),
+                (night::REST_FACE, &w.bed, night::REST_Y),
+                (night::DETAIL_FACE, &w.wake, night::TIMES_Y),
+                (night::DETAIL_FACE, &w.countdown, night::RHYTHM_Y),
+            ] {
+                assert!(face.covers(line.as_str()), "{name}: {:?}", line.as_str());
+                let m = face.measure(line.as_str());
+                let half = (m.ink_right - m.ink_left) as f32 / 2.0 + 1.0;
+                for row in [y - face.ascent as i32, y + face.descent as i32] {
+                    let d = row as f32 - 119.5;
+                    let room = (r * r - d * d).max(0.0).sqrt();
+                    assert!(half <= room, "{name}: {:?} needs {half} at row {row}, has {room}", line.as_str());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tonight_says_the_usual_and_how_far_off_it_is() {
+        let t = tonights();
+        let w = tonight::words(&t[0].1);
+        assert_eq!((w.bed.as_str(), w.wake.as_str(), w.countdown.as_str()), ("23:15", "wake 07:05", "in 2h10"));
+        assert_eq!(tonight::words(&t[5].1).wake.as_str(), "2 more nights");
+        assert_eq!(tonight::words(&t[6].1).wake.as_str(), "1 more night");
+        assert_eq!(tonight::words(&t[4].1).countdown.as_str(), "");
+    }
+
+    #[test]
+    fn the_app_opens_on_tonight_only_around_the_usual_bedtime() {
+        let t = tonights()[0].1;
+        let at = |now: u16| tonight::opening_screen(&State { now_min: now, ..t });
+        assert_eq!(at(19 * 60 + 15), SCREEN_TONIGHT);
+        assert_eq!(at(19 * 60 + 14), SCREEN_NIGHT);
+        assert_eq!(at(1 * 60 + 15), SCREEN_TONIGHT);
+        assert_eq!(at(1 * 60 + 16), SCREEN_NIGHT);
+        assert_eq!(at(9 * 60), SCREEN_NIGHT);
+        assert_eq!(tonight::opening_screen(&State { night_kind: night::KIND_SO_FAR, now_min: 23 * 60, ..t }), SCREEN_NIGHT);
+        assert_eq!(tonight::opening_screen(&State { now_min: night::UNKNOWN, ..t }), SCREEN_NIGHT);
+        assert_eq!(tonight::opening_screen(&tonights()[5].1), SCREEN_NIGHT);
+        assert_eq!(tonight::opening_screen(&State::default()), SCREEN_NIGHT);
     }
 
     #[test]
@@ -849,7 +934,7 @@ mod tests {
             return;
         };
         let opts = inscribed_disc::preview::Options { scale: 2, ..Default::default() };
-        for (name, st) in nights().into_iter().chain(weeks()).chain([("picker", reported())]) {
+        for (name, st) in nights().into_iter().chain(weeks()).chain(tonights()).chain([("picker", reported())]) {
             let rgba = inscribed_disc::preview::to_rgba(&frame(&st), W, H, opts);
             inscribed_disc::preview::write_png(format!("{dir}/{name}.png"), &rgba, W * 2, H * 2).unwrap();
         }

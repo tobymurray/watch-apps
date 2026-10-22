@@ -40,6 +40,7 @@ private:
     bool    mDirty         = true;
 
     bool mMarkPending = false;
+    bool mOpened      = false;  ///< the first status has chosen the screen
 
     uint8_t  mSequence    = 0;  ///< presses of the picker's sequence made so far
     uint32_t mLastPressMs = 0;

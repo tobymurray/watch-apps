@@ -18,12 +18,12 @@ pub(crate) const ON_TIME_MIN: i32 = 30;
 
 const CENTRE: f32 = 119.5;
 /// Ring bands as pixel-centre radii, 2 px in from the glass edge.
-const REST_IN: f32 = 104.5;
-const REST_OUT: f32 = 116.5;
-const RHYTHM_IN: f32 = 90.5;
-const RHYTHM_OUT: f32 = 102.5;
+pub(crate) const REST_IN: f32 = 104.5;
+pub(crate) const REST_OUT: f32 = 116.5;
+pub(crate) const RHYTHM_IN: f32 = 90.5;
+pub(crate) const RHYTHM_OUT: f32 = 102.5;
 /// The unfilled part of a ring is a line this wide, since the panel has no dim purple.
-const TRACK_W: f32 = 3.0;
+pub(crate) const TRACK_W: f32 = 3.0;
 /// Text stays inside this radius, clear of the Rhythm ring.
 pub const TEXT_RADIUS: f32 = 88.0;
 
@@ -34,7 +34,7 @@ const PURPLE: Rgb = [2.0, 0.0, 3.0];
 const MAGENTA: Rgb = [3.0, 0.0, 3.0];
 const CYAN_DEEP: Rgb = [0.0, 2.0, 3.0];
 const CYAN: Rgb = [0.0, 3.0, 3.0];
-const REST_TRACK: Rgb = [1.0, 0.0, 2.0];
+pub(crate) const REST_TRACK: Rgb = [1.0, 0.0, 2.0];
 const RHYTHM_TRACK: Rgb = [0.0, 1.0, 2.0];
 /// What the ring under a second lap's tip is dimmed to, at the tip.
 const SHADOW: f32 = 0.3;
@@ -134,7 +134,7 @@ fn sin_turns(t: f32) -> f32 {
 }
 
 /// The ring's centreline point at `t` turns, as an offset from the centre.
-fn on_ring(radius: f32, t: f32) -> (f32, f32) {
+pub(crate) fn on_ring(radius: f32, t: f32) -> (f32, f32) {
     (radius * sin_turns(t), -radius * sin_turns(t + 0.25))
 }
 
@@ -216,9 +216,12 @@ pub(crate) fn dither(c: Rgb, x: i32, y: i32) -> Abgr2222 {
 const SUB: [f32; 2] = [-0.25, 0.25];
 
 fn draw_rings(fb: &mut Surface<Abgr2222>, rings: &[Ring]) {
+    draw_band(fb, RHYTHM_IN - 1.0, REST_OUT + 1.0, |dx, dy, t| rings.iter().find_map(|ring| ring.sample(dx, dy, t)));
+}
+
+/// Paints the annulus `lo..hi` from `sample(dx, dy, turns)`, four samples a pixel, dithered.
+pub(crate) fn draw_band(fb: &mut Surface<Abgr2222>, lo: f32, hi: f32, sample: impl Fn(f32, f32, f32) -> Option<Rgb>) {
     let (w, h) = (fb.width(), fb.height());
-    let lo = RHYTHM_IN - 1.0;
-    let hi = REST_OUT + 1.0;
     for y in 0..h {
         let dy = y as f32 - CENTRE;
         if dy * dy > hi * hi {
@@ -234,11 +237,8 @@ fn draw_rings(fb: &mut Surface<Abgr2222>, rings: &[Ring]) {
             let mut sum = [0.0f32; 3];
             for sy in SUB {
                 for sx in SUB {
-                    for ring in rings {
-                        if let Some(c) = ring.sample(dx + sx, dy + sy, t) {
-                            sum = [sum[0] + c[0], sum[1] + c[1], sum[2] + c[2]];
-                            break;
-                        }
+                    if let Some(c) = sample(dx + sx, dy + sy, t) {
+                        sum = [sum[0] + c[0], sum[1] + c[1], sum[2] + c[2]];
                     }
                 }
             }

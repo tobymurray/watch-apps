@@ -213,6 +213,12 @@ void Gui::run()
                 mState.tonight_wake_min    = st->tonight.wakeMin;
                 mState.now_min             = st->tonight.nowMin;
                 mState.nights_to_go        = st->tonight.nightsToGo;
+                if (!mOpened) {
+                    mOpened = true;
+                    if (mState.screen == SLUMBER_SCREEN_NIGHT) {
+                        mState.screen = slumber_opening_screen(&mState);
+                    }
+                }
                 if (mMarkPending) {
                     mMarkPending       = false;
                     mState.just_logged = st->lastMark == slumber_mark_code(mState.selected) ? 1 : 0;

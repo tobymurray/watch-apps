@@ -14,9 +14,10 @@ extern "C" {
 #define SLUMBER_NO_BAR      (-1)
 #define SLUMBER_WEEK_NIGHTS 7
 
-#define SLUMBER_SCREEN_NIGHT  0u
-#define SLUMBER_SCREEN_PICKER 1u
-#define SLUMBER_SCREEN_WEEK   2u
+#define SLUMBER_SCREEN_NIGHT   0u
+#define SLUMBER_SCREEN_PICKER  1u
+#define SLUMBER_SCREEN_WEEK    2u
+#define SLUMBER_SCREEN_TONIGHT 3u
 
 #define SLUMBER_BUTTON_L1    0u
 #define SLUMBER_BUTTON_L2    1u
@@ -83,6 +84,9 @@ uint8_t slumber_sequence_len(void);
 
 /* The screen R1 pages to from `screen`. */
 uint8_t slumber_page_after(uint8_t screen);
+
+/* The screen to open on, once the first status is in. */
+uint8_t slumber_opening_screen(const slumber_state* state);
 
 #ifdef __cplusplus
 } // extern "C"
