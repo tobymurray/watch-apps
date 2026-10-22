@@ -443,7 +443,8 @@ jobs:
       # image carries the pinned freetype-py, fonttools and numpy the tool
       # needs (toolchain/Dockerfile). The crate's own tests hold every atlas
       # glyph to the TouchGFX-generated tables in Squash, which is the parity
-      # claim this repository makes about them.
+      # claim this repository makes about them. The Atkinson faces compile
+      # only with the `atkinson` feature, so their tests need it named.
       - name: TextKit atlases are current and match TouchGFX
         if: steps.app.outputs.textkit == 'yes'
         shell: bash
@@ -451,7 +452,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 Tools/atlas.py --check
-          cargo test --features std
+          cargo test
+          cargo test --features atkinson
+          cargo test --no-default-features
 
       # inscribed-disc.yml covers the crate on its own; this is what says an
       # adopting app's build still agrees with it.
