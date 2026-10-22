@@ -367,7 +367,9 @@ clock, keeps it on last night. Both windows are design choices, not
 measurements.
 
 Last night and Tonight are drawn on one 24-hour dial (`dial.rs`): midnight at
-the top, a tick each hour and a longer one every six. Purple is what you did and
+the top, a tick each hour and a longer one every six, numbered `00`, `06` and
+`18`. Noon has no numeral because the page dots sit there, as far below the
+middle as `00` is above it, so the screen balances. Purple is what you did and
 cyan is your usual. A night is a band on the dial, cut at every hour it crosses,
 so its length can be counted in blocks.
 

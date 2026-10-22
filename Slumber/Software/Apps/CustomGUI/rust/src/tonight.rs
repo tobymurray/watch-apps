@@ -98,6 +98,7 @@ pub fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
         rhythm_ink as fn(f32) -> Rgb,
     ));
     dial::draw(fb, usual, None);
+    dial::numerals(fb, GROUND);
     if state.now_min != UNKNOWN {
         dial::mark(fb, state.now_min, NOW_R, MAIN_INK, GROUND);
     }

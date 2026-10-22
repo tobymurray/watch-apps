@@ -82,7 +82,8 @@ pub unsafe extern "C" fn slumber_opening_screen(state: *const State) -> u8 {
     tonight::opening_screen(&*state)
 }
 
-const DOTS_Y: i32 = 202;
+/// As far below the middle as the top numeral is above it.
+const DOTS_Y: i32 = 205;
 const DOT_STEP: i32 = 12;
 const DOT_R: i32 = 2;
 const DOT_INK: Abgr2222 = Abgr2222::from_levels(1, 1, 1);
@@ -953,6 +954,96 @@ mod tests {
         assert_eq!(tonight::opening_screen(&State { now_min: night::UNKNOWN, ..t }), SCREEN_NIGHT);
         assert_eq!(tonight::opening_screen(&tonights()[5].1), SCREEN_NIGHT);
         assert_eq!(tonight::opening_screen(&State::default()), SCREEN_NIGHT);
+    }
+
+    /// Each numeral's ink is centred on its place on the dial, to the pixel, and clear of the usual arc.
+    #[test]
+    fn numerals_sit_centred_inside_the_usual_arc() {
+        for (label, minute) in dial::NUMERALS {
+            let mut buf = vec![0u8; (W * H) as usize];
+            let mut fb = Surface::<Abgr2222>::round(&mut buf, W, H).unwrap();
+            fb.clear(GROUND);
+            let (x, baseline) = dial::numeral_at(minute);
+            dial::NUMERAL_FACE.draw(&mut fb, label, x, baseline, Style::centered(Abgr2222::WHITE, GROUND)).ok();
+            let lit: Vec<(i32, i32)> = (0..H as i32)
+                .flat_map(|y| (0..W as i32).map(move |x| (x, y)))
+                .filter(|&(x, y)| buf[(y * W as i32 + x) as usize] != GROUND.0)
+                .collect();
+            let (x0, x1) = (lit.iter().map(|p| p.0).min().unwrap(), lit.iter().map(|p| p.0).max().unwrap());
+            let (y0, y1) = (lit.iter().map(|p| p.1).min().unwrap(), lit.iter().map(|p| p.1).max().unwrap());
+            let t = minute as f32 / 1440.0 * core::f32::consts::TAU;
+            let (cx, cy) = (119.5 + dial::NUMERAL_RADIUS * t.sin(), 119.5 - dial::NUMERAL_RADIUS * t.cos());
+            assert!(((x0 + x1) as f32 / 2.0 - cx).abs() <= 1.0, "{label} centred at x {} not {cx}", (x0 + x1) as f32 / 2.0);
+            assert!(((y0 + y1) as f32 / 2.0 - cy).abs() <= 1.0, "{label} centred at y {} not {cy}", (y0 + y1) as f32 / 2.0);
+            for &(x, y) in &lit {
+                let (dx, dy) = (x as f32 - 119.5, y as f32 - 119.5);
+                assert!(dx * dx + dy * dy < 98.0 * 98.0, "{label} reaches the usual arc at ({x},{y})");
+            }
+        }
+    }
+
+    /// No numeral shares a pixel box with any line of the night or evening screen, in any state.
+    #[test]
+    fn numerals_never_touch_the_text() {
+        let line_box = |face: &Face, s: &str, y: i32| {
+            let m = face.measure(s);
+            let half = (m.ink_right - m.ink_left + 1) / 2 + 1;
+            (120 - half, 120 + half, y - face.ascent as i32, y + face.descent as i32)
+        };
+        let numeral_boxes: Vec<_> = dial::NUMERALS
+            .iter()
+            .map(|&(label, minute)| {
+                let (x, baseline) = dial::numeral_at(minute);
+                let m = dial::NUMERAL_FACE.measure(label);
+                let half = (m.ink_right - m.ink_left + 1) / 2 + 1;
+                (x - half, x + half, baseline - 14, baseline)
+            })
+            .collect();
+        let mut lines: Vec<(String, (i32, i32, i32, i32))> = Vec::new();
+        for (name, st) in nights() {
+            let w = night::words(&st);
+            for (face, l, y) in [
+                (night::TITLE_FACE, &w.title, night::TITLE_Y),
+                (night::REST_FACE, &w.rest, night::REST_Y),
+                (night::DETAIL_FACE, &w.times, night::TIMES_Y),
+                (night::DETAIL_FACE, &w.rhythm, night::RHYTHM_Y),
+            ] {
+                if !l.as_str().is_empty() {
+                    lines.push((format!("{name}: {:?}", l.as_str()), line_box(face, l.as_str(), y)));
+                }
+            }
+        }
+        for (name, st) in tonights() {
+            let w = tonight::words(&st);
+            for (face, l, y) in [
+                (night::TITLE_FACE, &w.title, night::TITLE_Y),
+                (night::REST_FACE, &w.bed, night::REST_Y),
+                (night::DETAIL_FACE, &w.wake, night::TIMES_Y),
+                (night::DETAIL_FACE, &w.countdown, night::RHYTHM_Y),
+            ] {
+                if !l.as_str().is_empty() {
+                    lines.push((format!("{name}: {:?}", l.as_str()), line_box(face, l.as_str(), y)));
+                }
+            }
+        }
+        for (what, (l0, l1, t0, t1)) in &lines {
+            for (n0, n1, m0, m1) in &numeral_boxes {
+                let apart = l1 < n0 || n1 < l0 || t1 < m0 || m1 < t0;
+                assert!(apart, "{what} touches a numeral at x {n0}..{n1}, rows {m0}..{m1}");
+            }
+        }
+    }
+
+    /// The text block of the night screen is centred on the panel, to within a pixel.
+    #[test]
+    fn the_night_text_is_centred_on_the_panel() {
+        let top = night::TITLE_Y - 14;
+        let buf = frame(&slept());
+        let rows: Vec<i32> = (top - 4..=night::RHYTHM_Y + 8)
+            .filter(|&y| (60..180).any(|x| buf[(y * W as i32 + x) as usize] != GROUND.0))
+            .collect();
+        let middle = (rows[0] + rows[rows.len() - 1]) as f32 / 2.0;
+        assert!((middle - 119.5).abs() <= 1.0, "text rows {}..{} centre on {middle}", rows[0], rows[rows.len() - 1]);
     }
 
     #[test]

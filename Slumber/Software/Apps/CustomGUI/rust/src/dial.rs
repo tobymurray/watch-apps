@@ -1,6 +1,7 @@
 //! The 24-hour dial Last night and Tonight are drawn on: midnight at the top, a tick each hour,
 //! and a night as an arc notched at every hour it crosses.
 
+use incised_text::{faces, Face, Style};
 use inscribed_disc::{Abgr2222, Surface};
 
 use crate::night::{draw_band, on_ring, Rgb};
@@ -23,6 +24,15 @@ const NOTCH_HALF: f32 = 0.8;
 const TICK_REACH: f32 = 4.0;
 
 const DAY_MIN: i32 = 1440;
+
+pub static NUMERAL_FACE: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
+const NUMERAL_INK: Abgr2222 = Abgr2222::from_levels(2, 2, 2);
+/// Numerals are centred this far from the middle, inside the usual arc; the page dots sit as far below it.
+pub const NUMERAL_RADIUS: f32 = 86.0;
+/// In NUMERAL_FACE a digit's ink spans the 13 rows above the baseline, so its middle row is 7 above it.
+const DIGIT_MIDDLE_ABOVE_BASELINE: f32 = 7.0;
+/// Noon is left to the page dots.
+pub const NUMERALS: [(&str, u16); 3] = [("00", 0), ("06", 6 * 60), ("18", 18 * 60)];
 
 /// From one minute of the day to another, clockwise, across midnight if need be.
 #[derive(Clone, Copy)]
@@ -115,6 +125,19 @@ pub fn draw(fb: &mut Surface<Abgr2222>, night: Option<(Span, fn(f32) -> Rgb)>, u
         }
         on_tick(t, r2).then_some(TICK_INK)
     });
+}
+
+/// The pixel row and column the numeral for `minute` is centred on, and the baseline that centres it.
+pub fn numeral_at(minute: u16) -> (i32, i32) {
+    let (x, y) = on_ring(NUMERAL_RADIUS, turn(minute));
+    ((119.5 + x + 0.5) as i32, (119.5 + y + DIGIT_MIDDLE_ABOVE_BASELINE + 0.5) as i32)
+}
+
+pub fn numerals(fb: &mut Surface<Abgr2222>, ground: Abgr2222) {
+    for (label, minute) in NUMERALS {
+        let (x, baseline) = numeral_at(minute);
+        NUMERAL_FACE.draw(fb, label, x, baseline, Style::centered(NUMERAL_INK, ground)).ok();
+    }
 }
 
 /// A filled disc centred on the band at `minute`, ringed in the ground colour so it reads over an arc.

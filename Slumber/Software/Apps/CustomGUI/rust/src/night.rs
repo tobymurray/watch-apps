@@ -39,10 +39,10 @@ pub static TITLE_FACE: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
 pub static REST_FACE: &Face = &atlas::POPPINS_SEMIBOLD_24_ASCII;
 pub static DETAIL_FACE: &Face = &faces::POPPINS_SEMIBOLD_20_ASCII;
 
-pub const TITLE_Y: i32 = 84;
-pub const REST_Y: i32 = 120;
-pub const TIMES_Y: i32 = 150;
-pub const RHYTHM_Y: i32 = 178;
+pub const TITLE_Y: i32 = 80;
+pub const REST_Y: i32 = 116;
+pub const TIMES_Y: i32 = 146;
+pub const RHYTHM_Y: i32 = 174;
 
 const BAYER: [[f32; 4]; 4] = [
     [0.5 / 16.0, 8.5 / 16.0, 2.5 / 16.0, 10.5 / 16.0],
@@ -274,6 +274,7 @@ pub fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
         && (state.night_kind == KIND_SETTLED || state.night_kind == KIND_SO_FAR);
     let slept = night.then_some((Span { from_min: state.onset_min, to_min: state.wake_min }, rest_ink as fn(f32) -> Rgb));
     dial::draw(fb, slept, if state.have_status != 0 { usual(state, night) } else { None });
+    dial::numerals(fb, GROUND);
 
     let w = words(state);
     text(fb, TITLE_FACE, &w.title, TITLE_Y, TITLE_INK);
