@@ -13,8 +13,8 @@ categories = ["embedded", "no-std", "text-processing"]
 keywords = ["embedded-graphics", "no-std", "font", "bitmap-font", "text"]
 # The published crate is the crate. The .ttf blobs, the generator and the
 # TouchGFX oracle are how this repository builds atlases, not what anyone
-# installs -- but FONTS.md ships, because `src/faces.rs` is glyph data derived
-# from Poppins and the OFL attribution has to travel with it.
+# installs -- but FONTS.md and the OFL texts ship, because `src/faces.rs` is
+# glyph data derived from the fonts and the OFL has to travel with it.
 # `cargo package --list` silently drops a name that matches nothing, so every
 # entry here is one that exists.
 include = [
@@ -23,6 +23,7 @@ include = [
     "README.md",
     "Docs/2026-09-10-drawtarget-footprint.md",
     "Fonts/FONTS.md",
+    "Fonts/OFL-Poppins.txt",
 ]
 
 [features]
