@@ -358,9 +358,10 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {
 pub const BUTTON_L1: u8 = 0;
 pub const BUTTON_L2: u8 = 1;
 pub const BUTTON_OTHER: u8 = 2;
+pub const BUTTON_R1: u8 = 3;
 
-/// The presses that open the picker from any page.
-pub const SEQUENCE: [u8; 4] = [BUTTON_L1, BUTTON_L1, BUTTON_L2, BUTTON_L2];
+/// The presses that open the picker from any page: R1, which does nothing else there, so paging never opens it.
+pub const SEQUENCE: [u8; 3] = [BUTTON_R1, BUTTON_R1, BUTTON_R1];
 /// A longer pause between presses starts the sequence again.
 pub const SEQUENCE_GAP_MS: u32 = 1500;
 
@@ -1069,11 +1070,25 @@ mod tests {
     fn the_sequence_opens_only_in_order_and_in_time() {
         let run = |presses: &[(u8, u32)]| presses.iter().fold(0u8, |p, &(b, gap)| sequence_step(p, b, gap));
         let n = SEQUENCE.len() as u8;
-        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L1, 400), (BUTTON_L2, 400), (BUTTON_L2, 400)]), n);
-        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L1, 400), (BUTTON_L1, 400), (BUTTON_L2, 400), (BUTTON_L2, 400)]), n);
-        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L2, 400), (BUTTON_L2, 400)]), 0);
-        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L1, 400), (BUTTON_L2, 400), (BUTTON_L2, 2000)]), 0);
-        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L1, 400), (BUTTON_OTHER, 400), (BUTTON_L2, 400)]), 0);
+        assert_eq!(run(&[(BUTTON_R1, 0), (BUTTON_R1, 400), (BUTTON_R1, 400)]), n);
+        assert_eq!(run(&[(BUTTON_L2, 0), (BUTTON_R1, 300), (BUTTON_R1, 400), (BUTTON_R1, 400)]), n);
+        assert_eq!(run(&[(BUTTON_R1, 0), (BUTTON_R1, 400)]), 2);
+        assert_eq!(run(&[(BUTTON_R1, 0), (BUTTON_R1, 400), (BUTTON_R1, 2000)]), 1);
+        assert_eq!(run(&[(BUTTON_R1, 0), (BUTTON_L1, 400), (BUTTON_R1, 400)]), 1);
+    }
+
+    /// Paging, however fast and in whatever order, never opens the picker.
+    #[test]
+    fn paging_never_opens_the_picker() {
+        for presses in 0u32..(1 << 10) {
+            let p = (0..10).fold(0u8, |p, i| {
+                let b = if presses >> i & 1 == 0 { BUTTON_L1 } else { BUTTON_L2 };
+                let q = sequence_step(p, b, 100);
+                assert_ne!(q, SEQUENCE.len() as u8);
+                q
+            });
+            assert_eq!(p, 0);
+        }
     }
 
     /// Writes each night state as a PNG when SLUMBER_PREVIEW_DIR is set.

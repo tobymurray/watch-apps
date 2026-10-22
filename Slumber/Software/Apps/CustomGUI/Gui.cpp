@@ -110,7 +110,7 @@ void Gui::turnTo(uint8_t page)
     mDirty        = true;
 }
 
-/// L1 and L2 page back and on, as the stock apps' faces do; L1 L1 L2 L2 opens the picker; R2 leaves.
+/// L1 and L2 page back and on, as the stock apps' faces do; R1 R1 R1 opens the picker; R2 leaves.
 void Gui::onButton(SDK::Message::EventButton::Id id)
 {
     using Id = SDK::Message::EventButton::Id;
@@ -129,6 +129,7 @@ void Gui::onButton(SDK::Message::EventButton::Id id)
     const uint32_t now    = mKernel.sys.getTimeMs();
     const uint8_t  button = id == Id::SW1   ? SLUMBER_BUTTON_L1
                             : id == Id::SW3 ? SLUMBER_BUTTON_L2
+                            : id == Id::SW2 ? SLUMBER_BUTTON_R1
                                             : SLUMBER_BUTTON_OTHER;
     mSequence    = slumber_sequence_step(mSequence, button, now - mLastPressMs);
     mLastPressMs = now;

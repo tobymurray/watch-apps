@@ -22,6 +22,7 @@ extern "C" {
 #define SLUMBER_BUTTON_L1    0u
 #define SLUMBER_BUTTON_L2    1u
 #define SLUMBER_BUTTON_OTHER 2u
+#define SLUMBER_BUTTON_R1    3u
 
 /* `have_status` is 0 until the service first replies. */
 typedef struct {

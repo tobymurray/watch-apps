@@ -361,7 +361,7 @@ Three pages, in order: last night, the past week, and tonight. L2 goes to the
 next and L1 to the one before, wrapping both ways, and R2 leaves from any of
 them. That is the SDK's own reading of the buttons (`EventButton::Id`: L1 up,
 L2 down, R1 select, R2 back) and what the stock apps' faces do: Cycling's
-`TrackView` pages L1/L2 with wrap-around. R1 does nothing on the pages. Dots
+`TrackView` pages L1/L2 with wrap-around. R1 only opens the marks picker. Dots
 under each page say which one is up.
 
 Slumber opens on last night, except from 4 h before tonight's usual bedtime to
@@ -405,9 +405,9 @@ every line fits inside the dial or the glass at the rows it is drawn on, and
 `SLUMBER_PREVIEW_DIR=<dir> cargo test --features std previews` writes each
 state as a PNG.
 
-**The marks picker is behind L1 L1 L2 L2**, pressed with no more than 1.5 s
-between presses on any page; the pages turn as they are pressed, and R2 goes
-back to last night. Long presses are not used: a hold
+**The marks picker is behind R1 R1 R1**, pressed with no more than 1.5 s
+between presses on any page; R2 goes back to last night. R1 does nothing else
+on the pages, so paging with L1 and L2 never opens it. Long presses are not used: a hold
 never reached Spin's screens.
 
 In the picker, L1 and L2 pick what you are doing from now on; R1 logs it, and the label
