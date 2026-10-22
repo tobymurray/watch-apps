@@ -30,20 +30,20 @@ fn check(face: &Face, oracle: &[Oracle], name: &str) {
 
 #[test]
 fn semibold_18_matches_touchgfx() {
-    check(&faces::SEMIBOLD_18_ASCII, touchgfx::SEMIBOLD_18_ASCII, "SemiBold 18");
+    check(&faces::POPPINS_SEMIBOLD_18_ASCII, touchgfx::POPPINS_SEMIBOLD_18_ASCII, "SemiBold 18");
 }
 
 #[test]
 fn regular_14_matches_touchgfx() {
-    check(&faces::REGULAR_14_ASCII, touchgfx::REGULAR_14_ASCII, "Regular 14");
+    check(&faces::POPPINS_REGULAR_14_ASCII, touchgfx::POPPINS_REGULAR_14_ASCII, "Regular 14");
 }
 
 #[test]
 fn semibold_20_matches_touchgfx() {
-    check(&faces::SEMIBOLD_20_ASCII, touchgfx::SEMIBOLD_20_ASCII, "SemiBold 20");
+    check(&faces::POPPINS_SEMIBOLD_20_ASCII, touchgfx::POPPINS_SEMIBOLD_20_ASCII, "SemiBold 20");
 }
 
 #[test]
 fn regular_18_matches_touchgfx() {
-    check(&faces::REGULAR_18_LATIN, touchgfx::REGULAR_18_LATIN, "Regular 18");
+    check(&faces::POPPINS_REGULAR_18_LATIN, touchgfx::POPPINS_REGULAR_18_LATIN, "Regular 18");
 }

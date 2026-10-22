@@ -181,10 +181,10 @@ const DIM: Abgr2222 = Abgr2222::rgb(170, 170, 170);
 
 /// The preferred id face: the TouchGFX build's SemiBold 20, whose bezel fit the
 /// README measured string by string.
-static LARGE: &Face = &faces::SEMIBOLD_20_ASCII;
+static LARGE: &Face = &faces::POPPINS_SEMIBOLD_20_ASCII;
 /// Split id lines, the caption and every prompt line: the TouchGFX build's
 /// Regular 18, with Latin-1 and Latin Extended-A for a name with a diacritic.
-static SMALL: &Face = &faces::REGULAR_18_LATIN;
+static SMALL: &Face = &faces::POPPINS_REGULAR_18_LATIN;
 
 /// Widest a one-line id may be in the preferred face; wider steps down.
 const ID_LARGE_MAX: i32 = 186;

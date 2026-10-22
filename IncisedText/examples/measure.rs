@@ -1,21 +1,19 @@
-//! Prints a string's advance and ink bounds in one face: `cargo run --example measure SEMIBOLD_18_ASCII "NOTIFICATIONS"`.
+//! Prints a string's advance and ink bounds in one face: `cargo run --example measure POPPINS_SEMIBOLD_18_ASCII "NOTIFICATIONS"`.
 use incised_text::faces::*;
 use incised_text::Face;
 
 fn face(name: &str) -> &'static Face {
     match name {
-        "SEMIBOLD_18_ASCII" => &SEMIBOLD_18_ASCII,
-        "REGULAR_14_ASCII" => &REGULAR_14_ASCII,
-        "REGULAR_12_ASCII" => &REGULAR_12_ASCII,
-        "SEMIBOLD_20_ASCII" => &SEMIBOLD_20_ASCII,
-        "REGULAR_18_LATIN" => &REGULAR_18_LATIN,
-        "REGULAR_16_LATIN" => &REGULAR_16_LATIN,
-        "SEMIBOLD_24_ANSWERS" => &SEMIBOLD_24_ANSWERS,
-        "SEMIBOLD_32_TITLE" => &SEMIBOLD_32_TITLE,
-        "SEMIBOLD_27_CLOCK" => &SEMIBOLD_27_CLOCK,
-        "SEMIBOLD_36_CLOCK" => &SEMIBOLD_36_CLOCK,
-        "SEMIBOLD_49_CLOCK" => &SEMIBOLD_49_CLOCK,
-        "SEMIBOLD_60_CLOCK" => &SEMIBOLD_60_CLOCK,
+        "POPPINS_SEMIBOLD_18_ASCII" => &POPPINS_SEMIBOLD_18_ASCII,
+        "POPPINS_REGULAR_14_ASCII" => &POPPINS_REGULAR_14_ASCII,
+        "POPPINS_REGULAR_12_ASCII" => &POPPINS_REGULAR_12_ASCII,
+        "POPPINS_SEMIBOLD_20_ASCII" => &POPPINS_SEMIBOLD_20_ASCII,
+        "POPPINS_REGULAR_18_LATIN" => &POPPINS_REGULAR_18_LATIN,
+        "POPPINS_REGULAR_16_LATIN" => &POPPINS_REGULAR_16_LATIN,
+        "POPPINS_SEMIBOLD_27_CLOCK" => &POPPINS_SEMIBOLD_27_CLOCK,
+        "POPPINS_SEMIBOLD_36_CLOCK" => &POPPINS_SEMIBOLD_36_CLOCK,
+        "POPPINS_SEMIBOLD_49_CLOCK" => &POPPINS_SEMIBOLD_49_CLOCK,
+        "POPPINS_SEMIBOLD_60_CLOCK" => &POPPINS_SEMIBOLD_60_CLOCK,
         #[cfg(feature = "atkinson")]
         "ATKINSON_BOLD_16_ASCII" => &ATKINSON_BOLD_16_ASCII,
         #[cfg(feature = "atkinson")]

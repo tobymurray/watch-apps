@@ -16,12 +16,12 @@ pub extern "C" fn probe(buf: *mut u8, len: usize, text: *const u8, tlen: usize) 
     let Some(mut c) = Surface::<Abgr2222>::round(s, 240, 240) else {
         return 0;
     };
-    let f: &Face = &faces::SEMIBOLD_18_ASCII;
+    let f: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
     let white = Style::centered(Abgr2222::WHITE, Abgr2222::BLACK);
     let _ = f.draw(&mut c, t, 120, 100, white);
     let _ = f.draw_top(&mut c, t, 10, 140, Style::left(Abgr2222::WHITE, Abgr2222::BLACK));
     let mut lines = [""; 4];
     let n = f.wrap(t, 200, &mut lines);
-    let picked = incised_text::pick(&[&faces::REGULAR_12_ASCII, &faces::SEMIBOLD_18_ASCII], t, 100);
+    let picked = incised_text::pick(&[&faces::POPPINS_REGULAR_12_ASCII, &faces::POPPINS_SEMIBOLD_18_ASCII], t, 100);
     n as i32 + f.measure(t).advance + picked.map_or(0, |p| p.px as i32)
 }

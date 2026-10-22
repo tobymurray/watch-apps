@@ -12,10 +12,10 @@ SQUASH = os.path.join(ROOT, "..", "Squash", "Software", "Apps", "TouchGFX-GUI", 
 
 # (TouchGFX face, IncisedText face, sample glyphs)
 FACES = [
-    ("SemiBold_18", "SEMIBOLD_18_ASCII", "NOTIFICATIONS?"),
-    ("Regular_14", "REGULAR_14_ASCII", "R1TOGGLEBACK"),
-    ("SemiBold_20", "SEMIBOLD_20_ASCII", "0123456789ABCDW"),
-    ("Regular_18", "REGULAR_18_LATIN", "GYMWORLD12345678abcdefghijklmnopqrstuvwxyz.,"),
+    ("SemiBold_18", "POPPINS_SEMIBOLD_18_ASCII", "NOTIFICATIONS?"),
+    ("Regular_14", "POPPINS_REGULAR_14_ASCII", "R1TOGGLEBACK"),
+    ("SemiBold_20", "POPPINS_SEMIBOLD_20_ASCII", "0123456789ABCDW"),
+    ("Regular_18", "POPPINS_REGULAR_18_LATIN", "GYMWORLD12345678abcdefghijklmnopqrstuvwxyz.,"),
 ]
 
 

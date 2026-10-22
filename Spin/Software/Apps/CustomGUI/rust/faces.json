@@ -1,0 +1,7 @@
+{
+  "_comment": "Spin's own faces, generated into src/atlas.rs by IncisedText/Tools/atlas.py --manifest; fonts are incised-text's. Charsets as IncisedText/Tools/faces.json describes.",
+  "faces": [
+    {"name": "POPPINS_SEMIBOLD_24_ANSWERS", "font": "Poppins-SemiBold.ttf", "px": 24, "charset": "YESNO"},
+    {"name": "POPPINS_SEMIBOLD_32_TITLE", "font": "Poppins-SemiBold.ttf", "px": 32, "charset": "SPIN"}
+  ]
+}

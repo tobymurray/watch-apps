@@ -19,6 +19,7 @@ include = [
     "README.md",
     "LICENSE-MIT",
     "LICENSE-APACHE",
+    "Docs/DESIGN.md",
     "Docs/2026-09-10-drawtarget-footprint.md",
     "Fonts/FONTS.md",
     "Fonts/OFL-Poppins.txt",
@@ -31,8 +32,6 @@ default = ["abgr2222"]
 abgr2222 = ["dep:inscribed-disc"]
 ## The Atkinson Hyperlegible Next faces, `faces::ATKINSON_*`.
 atkinson = []
-## Links `std`. No API depends on it, and the tests and examples have it anyway.
-std = []
 
 [dependencies]
 embedded-graphics = "0.8"

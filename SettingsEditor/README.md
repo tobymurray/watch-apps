@@ -499,7 +499,7 @@ statuses × both editing states and fails on a single lit pixel outside the
 inscribed circle. That is what caught the title row.
 
 **One more thing the frames caught that no test would have.** The number face
-`SEMIBOLD_27_CLOCK` carries `0123456789:` and nothing else, so an unset field
+`POPPINS_SEMIBOLD_27_CLOCK` carries `0123456789:` and nothing else, so an unset field
 drawn as `--` rendered as two hollow missing-glyph boxes. `measure` reports
 `missing 1` for `-` in that face. It says `NOT SET` in the word face instead.
 

@@ -23,6 +23,8 @@ use incised_text::{faces, Align, Face, Style};
 #[cfg(feature = "device")]
 use panickit as _;
 
+mod atlas;
+
 /// The frames worth looking at. Host-only: the watch is handed frames.
 #[cfg(feature = "std")]
 pub mod scenes;
@@ -305,14 +307,14 @@ const PAUSED_BANNER_Y: i32 = 116;
 // IncisedText's pre-rendered Poppins atlases. Which faces and why: Spin/README.md
 // "Text", and Docs/TEXT.md at the repo root for the measurements.
 
-static LABEL: &Face = &faces::REGULAR_16_LATIN;
-static HEADING: &Face = &faces::SEMIBOLD_18_ASCII;
-static ANSWER: &Face = &faces::SEMIBOLD_24_ANSWERS;
-static TITLE: &Face = &faces::SEMIBOLD_32_TITLE;
-static NUMBER: &Face = &faces::SEMIBOLD_27_CLOCK;
-static CLOCK_M: &Face = &faces::SEMIBOLD_36_CLOCK;
-static CLOCK_L: &Face = &faces::SEMIBOLD_49_CLOCK;
-static CLOCK_XL: &Face = &faces::SEMIBOLD_60_CLOCK;
+static LABEL: &Face = &faces::POPPINS_REGULAR_16_LATIN;
+static HEADING: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
+static ANSWER: &Face = &atlas::POPPINS_SEMIBOLD_24_ANSWERS;
+static TITLE: &Face = &atlas::POPPINS_SEMIBOLD_32_TITLE;
+static NUMBER: &Face = &faces::POPPINS_SEMIBOLD_27_CLOCK;
+static CLOCK_M: &Face = &faces::POPPINS_SEMIBOLD_36_CLOCK;
+static CLOCK_L: &Face = &faces::POPPINS_SEMIBOLD_49_CLOCK;
+static CLOCK_XL: &Face = &faces::POPPINS_SEMIBOLD_60_CLOCK;
 
 /// The heights the screens ask for, as the u8g2 build named them; each picks
 /// the Poppins face whose capital height matches, so no layout constant moved.

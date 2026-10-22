@@ -401,12 +401,12 @@ const ARROW_HEIGHT: i32 = 12;
 ///
 /// The number face carries `0123456789:` and nothing else, which is why every
 /// non-numeric value goes through `VALUE_WORD_FACE`.
-static TITLE_FACE: &Face = &faces::SEMIBOLD_18_ASCII;
-static VALUE_WORD_FACE: &Face = &faces::SEMIBOLD_20_ASCII;
-static NUMBER_FACE: &Face = &faces::SEMIBOLD_27_CLOCK;
-static UNIT_FACE: &Face = &faces::REGULAR_14_ASCII;
-static CAPTION_FACE: &Face = &faces::REGULAR_14_ASCII;
-static HINT_FACE: &Face = &faces::REGULAR_12_ASCII;
+static TITLE_FACE: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
+static VALUE_WORD_FACE: &Face = &faces::POPPINS_SEMIBOLD_20_ASCII;
+static NUMBER_FACE: &Face = &faces::POPPINS_SEMIBOLD_27_CLOCK;
+static UNIT_FACE: &Face = &faces::POPPINS_REGULAR_14_ASCII;
+static CAPTION_FACE: &Face = &faces::POPPINS_REGULAR_14_ASCII;
+static HINT_FACE: &Face = &faces::POPPINS_REGULAR_12_ASCII;
 
 /// The footer says what the buttons do and nothing else.
 ///

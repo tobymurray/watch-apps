@@ -125,8 +125,8 @@ const FOOTER_BASELINE_Y: i32 = 220;
 
 /// Poppins SemiBold for every word, Regular for the button hint, from the atlases
 /// IncisedText generates; `Docs/TEXT.md` at the repo root is why these and not others.
-static WORD_FACE: &Face = &faces::SEMIBOLD_18_ASCII;
-static HINT_FACE: &Face = &faces::REGULAR_12_ASCII;
+static WORD_FACE: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
+static HINT_FACE: &Face = &faces::POPPINS_REGULAR_12_ASCII;
 
 fn text(fb: &mut Surface<Abgr2222>, face: &Face, s: &str, x: i32, baseline: i32, color: Abgr2222) {
     face.draw(fb, s, x, baseline, Style::centered(color, GROUND)).ok();

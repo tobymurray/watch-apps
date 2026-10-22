@@ -1,11 +1,7 @@
-//! Text for `embedded-graphics` draw targets: Poppins, and Atkinson Hyperlegible Next behind the
-//! `atkinson` feature, pre-rendered at build time into 2bpp glyph atlases, measured, aligned,
-//! wrapped and blitted. Design record: `README.md`.
-//!
-//! A glyph's coverage is one of four levels, so the ink is blended toward the ground through
-//! [`Ink`]; clipping belongs to the target, not to this crate.
-
-#![cfg_attr(not(any(feature = "std", test)), no_std)]
+// The README's example draws in `Abgr2222`, so it is the crate's page only where that compiles.
+#![cfg_attr(feature = "abgr2222", doc = include_str!("../README.md"))]
+#![cfg_attr(not(feature = "abgr2222"), doc = "Anti-aliased text for `embedded-graphics` draw targets; see the README.")]
+#![cfg_attr(not(test), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 use embedded_graphics::{
@@ -64,6 +60,7 @@ pub struct Face {
 
 /// What a string takes up, in pixels along the baseline from the pen's start.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Measure {
     /// Sum of advances: what alignment and wrapping use.
     pub advance: i32,
@@ -374,18 +371,16 @@ mod tests {
 
     fn all_faces() -> Vec<(&'static str, &'static Face)> {
         vec![
-            ("SEMIBOLD_18_ASCII", &SEMIBOLD_18_ASCII),
-            ("REGULAR_14_ASCII", &REGULAR_14_ASCII),
-            ("REGULAR_12_ASCII", &REGULAR_12_ASCII),
-            ("SEMIBOLD_20_ASCII", &SEMIBOLD_20_ASCII),
-            ("REGULAR_18_LATIN", &REGULAR_18_LATIN),
-            ("REGULAR_16_LATIN", &REGULAR_16_LATIN),
-            ("SEMIBOLD_24_ANSWERS", &SEMIBOLD_24_ANSWERS),
-            ("SEMIBOLD_32_TITLE", &SEMIBOLD_32_TITLE),
-            ("SEMIBOLD_27_CLOCK", &SEMIBOLD_27_CLOCK),
-            ("SEMIBOLD_36_CLOCK", &SEMIBOLD_36_CLOCK),
-            ("SEMIBOLD_49_CLOCK", &SEMIBOLD_49_CLOCK),
-            ("SEMIBOLD_60_CLOCK", &SEMIBOLD_60_CLOCK),
+            ("POPPINS_SEMIBOLD_18_ASCII", &POPPINS_SEMIBOLD_18_ASCII),
+            ("POPPINS_REGULAR_14_ASCII", &POPPINS_REGULAR_14_ASCII),
+            ("POPPINS_REGULAR_12_ASCII", &POPPINS_REGULAR_12_ASCII),
+            ("POPPINS_SEMIBOLD_20_ASCII", &POPPINS_SEMIBOLD_20_ASCII),
+            ("POPPINS_REGULAR_18_LATIN", &POPPINS_REGULAR_18_LATIN),
+            ("POPPINS_REGULAR_16_LATIN", &POPPINS_REGULAR_16_LATIN),
+            ("POPPINS_SEMIBOLD_27_CLOCK", &POPPINS_SEMIBOLD_27_CLOCK),
+            ("POPPINS_SEMIBOLD_36_CLOCK", &POPPINS_SEMIBOLD_36_CLOCK),
+            ("POPPINS_SEMIBOLD_49_CLOCK", &POPPINS_SEMIBOLD_49_CLOCK),
+            ("POPPINS_SEMIBOLD_60_CLOCK", &POPPINS_SEMIBOLD_60_CLOCK),
             #[cfg(feature = "atkinson")]
             ("ATKINSON_BOLD_16_ASCII", &ATKINSON_BOLD_16_ASCII),
             #[cfg(feature = "atkinson")]
@@ -405,7 +400,7 @@ mod tests {
             assert!(f.nodes.windows(2).all(|p| p[0].cp < p[1].cp), "{name}: nodes not sorted by code point");
             for n in f.nodes {
                 let bits = n.w as usize * n.h as usize * 2;
-                assert!(n.off as usize + bits.div_ceil(8) <= f.data.len(), "{name}: U+{:04X} runs past the bitstream", n.cp);
+                assert!(n.off as usize + (bits + 7) / 8 <= f.data.len(), "{name}: U+{:04X} runs past the bitstream", n.cp);
                 assert!(n.h as i32 <= f.line_height() + 2, "{name}: U+{:04X} taller than the line", n.cp);
             }
             assert!(f.glyph(' ').is_some(), "{name}: no space");
@@ -415,39 +410,39 @@ mod tests {
     /// Barcode's README measured these with TouchGFX's own `getStringWidth` on the faces it shipped.
     #[test]
     fn advances_match_the_touchgfx_build_barcode_measured() {
-        assert_eq!(SEMIBOLD_20_ASCII.measure("0123456789ABC").advance, 172);
-        assert_eq!(SEMIBOLD_20_ASCII.measure("0123456789ABCD").advance, 186);
-        assert_eq!(SEMIBOLD_20_ASCII.measure("0123456789ABCDE").advance, 197);
-        assert_eq!(SEMIBOLD_20_ASCII.measure("0123456789ABCDEF").advance, 208);
-        assert_eq!(SEMIBOLD_20_ASCII.measure("GYMWORLD12345678").advance, 222);
-        assert_eq!(SEMIBOLD_20_ASCII.measure("WWWWWWWWWWWW").advance, 240);
-        assert_eq!(REGULAR_18_LATIN.measure("0123456789ABCD").advance, 160);
-        assert_eq!(REGULAR_18_LATIN.measure("0123456789ABCDEF").advance, 178);
-        assert_eq!(REGULAR_18_LATIN.measure("GYMWORLD12345678").advance, 193);
-        assert_eq!(REGULAR_18_LATIN.measure("WWWWWWWWWWWW").advance, 216);
+        assert_eq!(POPPINS_SEMIBOLD_20_ASCII.measure("0123456789ABC").advance, 172);
+        assert_eq!(POPPINS_SEMIBOLD_20_ASCII.measure("0123456789ABCD").advance, 186);
+        assert_eq!(POPPINS_SEMIBOLD_20_ASCII.measure("0123456789ABCDE").advance, 197);
+        assert_eq!(POPPINS_SEMIBOLD_20_ASCII.measure("0123456789ABCDEF").advance, 208);
+        assert_eq!(POPPINS_SEMIBOLD_20_ASCII.measure("GYMWORLD12345678").advance, 222);
+        assert_eq!(POPPINS_SEMIBOLD_20_ASCII.measure("WWWWWWWWWWWW").advance, 240);
+        assert_eq!(POPPINS_REGULAR_18_LATIN.measure("0123456789ABCD").advance, 160);
+        assert_eq!(POPPINS_REGULAR_18_LATIN.measure("0123456789ABCDEF").advance, 178);
+        assert_eq!(POPPINS_REGULAR_18_LATIN.measure("GYMWORLD12345678").advance, 193);
+        assert_eq!(POPPINS_REGULAR_18_LATIN.measure("WWWWWWWWWWWW").advance, 216);
     }
 
     #[test]
     fn latin_faces_cover_tier_one_and_ascii_faces_do_not() {
-        assert!(REGULAR_18_LATIN.covers("José Zoë Müller Søren Łukasz ° µ ± … – — “ ” €"));
-        assert!(!SEMIBOLD_20_ASCII.covers("é"));
-        assert!(!REGULAR_18_LATIN.covers("′"), "Poppins has no prime");
+        assert!(POPPINS_REGULAR_18_LATIN.covers("José Zoë Müller Søren Łukasz ° µ ± … – — “ ” €"));
+        assert!(!POPPINS_SEMIBOLD_20_ASCII.covers("é"));
+        assert!(!POPPINS_REGULAR_18_LATIN.covers("′"), "Poppins has no prime");
     }
 
     #[test]
     fn a_decomposed_accent_is_composed_before_lookup() {
         let composed: Vec<char> = chars("Jose\u{0301}").collect();
         assert_eq!(composed, vec!['J', 'o', 's', 'é']);
-        assert!(REGULAR_18_LATIN.covers("Jose\u{0301}"));
-        assert_eq!(REGULAR_18_LATIN.measure("Jose\u{0301}"), REGULAR_18_LATIN.measure("José"));
+        assert!(POPPINS_REGULAR_18_LATIN.covers("Jose\u{0301}"));
+        assert_eq!(POPPINS_REGULAR_18_LATIN.measure("Jose\u{0301}"), POPPINS_REGULAR_18_LATIN.measure("José"));
     }
 
     #[test]
     fn a_missing_glyph_is_counted_and_drawn_as_a_box() {
-        let m = SEMIBOLD_20_ASCII.measure("aé");
+        let m = POPPINS_SEMIBOLD_20_ASCII.measure("aé");
         assert_eq!(m.missing, 1);
         let buf = on_black(|s| {
-            SEMIBOLD_20_ASCII.draw(s, "é", 100, 100, Style::left(WHITE, BLACK)).unwrap();
+            POPPINS_SEMIBOLD_20_ASCII.draw(s, "é", 100, 100, Style::left(WHITE, BLACK)).unwrap();
         });
         let lit = buf.iter().filter(|&&b| b != 0).count();
         assert!(lit > 20 && lit < 80, "a hollow box, not a filled one or nothing: {lit} lit");
@@ -457,11 +452,11 @@ mod tests {
     #[test]
     fn alignment_places_the_advance_where_it_says() {
         let text = "0123456789ABCD";
-        let adv = SEMIBOLD_20_ASCII.measure(text).advance;
+        let adv = POPPINS_SEMIBOLD_20_ASCII.measure(text).advance;
         for (align, x, expected_left_pen) in [(Align::Left, 30, 30), (Align::Center, 120, 120 - adv / 2), (Align::Right, 200, 200 - adv)] {
             let mut m = Measure::default();
             let buf = on_black(|s| {
-                m = SEMIBOLD_20_ASCII.draw(s, text, x, 120, Style::new(WHITE, BLACK, align)).unwrap();
+                m = POPPINS_SEMIBOLD_20_ASCII.draw(s, text, x, 120, Style::new(WHITE, BLACK, align)).unwrap();
             });
             let first_lit_col = (0..240).find(|&x| (0..240).any(|y| buf[(y * 240 + x) as usize] != 0)).unwrap();
             assert_eq!(first_lit_col, expected_left_pen + m.ink_left, "{align:?}");
@@ -474,7 +469,7 @@ mod tests {
         let mut buf = vec![0u8; (W * H) as usize];
         let mut c = Surface::<Abgr2222>::round(&mut buf, W, H).unwrap();
         for y in [10, 30, 120, 210, 230] {
-            SEMIBOLD_20_ASCII
+            POPPINS_SEMIBOLD_20_ASCII
                 .draw(&mut c, "WWWWWWWWWWWWWWWWWWWWWWWW", 120, y, Style::centered(WHITE, BLACK))
                 .unwrap();
         }
@@ -500,7 +495,7 @@ mod tests {
     #[test]
     fn drawn_text_uses_all_four_levels() {
         let buf = on_black(|s| {
-            REGULAR_18_LATIN.draw(s, "Set it to Code128,", 120, 120, Style::centered(WHITE, BLACK)).unwrap();
+            POPPINS_REGULAR_18_LATIN.draw(s, "Set it to Code128,", 120, 120, Style::centered(WHITE, BLACK)).unwrap();
         });
         for level in 1..=3u8 {
             assert!(buf.contains(&WHITE.shade(BLACK, level).0), "level {level} never drawn");
@@ -511,11 +506,11 @@ mod tests {
     fn wrap_never_exceeds_the_width_never_splits_a_word_and_loses_nothing() {
         let text = "No codes yet. Set one in the UNA app, or write input.json.";
         let mut lines = [""; 4];
-        let n = REGULAR_18_LATIN.wrap(text, 200, &mut lines);
+        let n = POPPINS_REGULAR_18_LATIN.wrap(text, 200, &mut lines);
         assert!(n <= 4, "needs {n} lines");
         let mut words = Vec::new();
         for line in &lines[..n] {
-            assert!(REGULAR_18_LATIN.measure(line).advance <= 200, "{line:?} too wide");
+            assert!(POPPINS_REGULAR_18_LATIN.measure(line).advance <= 200, "{line:?} too wide");
             words.extend(line.split(' '));
         }
         assert_eq!(words, text.split(' ').collect::<Vec<_>>());
@@ -525,7 +520,7 @@ mod tests {
     fn wrap_reports_overflow_instead_of_dropping_lines() {
         let text = "one two three four five six seven eight nine ten eleven twelve";
         let mut lines = [""; 2];
-        let n = REGULAR_18_LATIN.wrap(text, 60, &mut lines);
+        let n = POPPINS_REGULAR_18_LATIN.wrap(text, 60, &mut lines);
         assert!(n > 2);
         assert_eq!(lines[0], "one");
     }
@@ -533,25 +528,25 @@ mod tests {
     #[test]
     fn a_word_wider_than_the_box_sits_alone_rather_than_being_split() {
         let mut lines = [""; 3];
-        let n = REGULAR_18_LATIN.wrap("a WWWWWWWWWWWWWWWWWWWW b", 60, &mut lines);
+        let n = POPPINS_REGULAR_18_LATIN.wrap("a WWWWWWWWWWWWWWWWWWWW b", 60, &mut lines);
         assert_eq!(n, 3);
         assert_eq!(lines[1], "WWWWWWWWWWWWWWWWWWWW");
     }
 
     #[test]
     fn pick_walks_the_ladder() {
-        let ladder = [&SEMIBOLD_20_ASCII, &REGULAR_18_LATIN];
-        assert!(core::ptr::eq(pick(&ladder, "0123456789ABCD", 187).unwrap(), &SEMIBOLD_20_ASCII));
-        assert!(core::ptr::eq(pick(&ladder, "0123456789ABCDE", 187).unwrap(), &REGULAR_18_LATIN));
+        let ladder = [&POPPINS_SEMIBOLD_20_ASCII, &POPPINS_REGULAR_18_LATIN];
+        assert!(core::ptr::eq(pick(&ladder, "0123456789ABCD", 187).unwrap(), &POPPINS_SEMIBOLD_20_ASCII));
+        assert!(core::ptr::eq(pick(&ladder, "0123456789ABCDE", 187).unwrap(), &POPPINS_REGULAR_18_LATIN));
         assert!(pick(&ladder, "GYMWORLD12345678", 187).is_none());
     }
 
     #[test]
     fn draw_top_puts_the_ascent_above_the_top() {
         let buf = on_black(|s| {
-            SEMIBOLD_20_ASCII.draw_top(s, "H", 20, 50, Style::left(WHITE, BLACK)).unwrap();
+            POPPINS_SEMIBOLD_20_ASCII.draw_top(s, "H", 20, 50, Style::left(WHITE, BLACK)).unwrap();
         });
         let first_row = (0..240).find(|&y| (0..240).any(|x| buf[y * 240 + x] != 0)).unwrap();
-        assert!(first_row >= 50 && first_row < 50 + SEMIBOLD_20_ASCII.ascent as usize);
+        assert!(first_row >= 50 && first_row < 50 + POPPINS_SEMIBOLD_20_ASCII.ascent as usize);
     }
 }
