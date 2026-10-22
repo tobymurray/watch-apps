@@ -1,5 +1,5 @@
 {
-  "_comment": "One entry per (weight, px, charset) an app draws or an oracle test holds against; the linker drops what an app does not reference. A face not listed here does not exist; the generator emits src/faces.rs from this file. Charsets: ascii = U+0020-007E; latin = ascii + Latin-1 Supplement + Latin Extended-A + U+2026 U+2013 U+2014 U+2018 U+2019 U+201C U+201D U+20AC U+2022; a string = exactly those characters plus space.",
+  "_comment": "One entry per (weight, px, charset) an app draws or an oracle test holds against; the linker drops what an app does not reference. A face not listed here does not exist; the generator emits src/faces.rs from this file. Charsets: ascii = U+0020-007E; latin = ascii + Latin-1 Supplement + Latin Extended-A + U+2026 U+2013 U+2014 U+2018 U+2019 U+201C U+201D U+20AC U+2022; a string = exactly those characters plus space. Optional keys: wght, the design coordinate on a variable font's wght axis; features, GSUB feature tags (single substitution only, such as tnum) applied when choosing each code point's glyph; feature, the Cargo feature the face is compiled under.",
   "faces": [
     {"name": "SEMIBOLD_18_ASCII", "font": "Poppins-SemiBold.ttf", "px": 18, "charset": "ascii"},
     {"name": "REGULAR_14_ASCII",  "font": "Poppins-Regular.ttf",  "px": 14, "charset": "ascii"},

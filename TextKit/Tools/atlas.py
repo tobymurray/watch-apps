@@ -12,6 +12,7 @@ oracle test in tests/oracle/touchgfx.rs says so.
 import json, math, os, sys, unicodedata
 import freetype
 import numpy as np
+from fontTools.ttLib import TTFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -60,13 +61,68 @@ def pack(lv):
     return bytes(out)
 
 
+def single_substitutions(font, tags):
+    """Glyph name to glyph name for each GSUB feature in `tags`, from the default language system."""
+    gsub = font["GSUB"].table if "GSUB" in font else None
+    scripts = {r.ScriptTag: r.Script for r in gsub.ScriptList.ScriptRecord} if gsub else {}
+    script = scripts.get("DFLT") or scripts.get("latn")
+    langsys = script.DefaultLangSys if script else None
+    found = {}
+    for i in (langsys.FeatureIndex if langsys else []):
+        record = gsub.FeatureList.FeatureRecord[i]
+        if record.FeatureTag in tags:
+            found.setdefault(record.FeatureTag, []).extend(record.Feature.LookupListIndex)
+    steps = []
+    for tag in tags:
+        if tag not in found:
+            sys.exit(f"feature {tag} is not in the font's default language system")
+        for li in sorted(found[tag]):
+            lookup = gsub.LookupList.Lookup[li]
+            mapping = {}
+            for sub in lookup.SubTable:
+                kind = sub.ExtensionLookupType if lookup.LookupType == 7 else lookup.LookupType
+                if kind != 1:
+                    sys.exit(f"feature {tag}: lookup {li} is type {kind}, and only single substitution maps one code point to one glyph")
+                mapping.update(getattr(sub, "ExtSubTable", sub).mapping)
+            steps.append(mapping)
+    return steps
+
+
+def glyph_ids(path, entry):
+    """Code point to glyph index with the entry's features applied, or None to take FreeType's cmap."""
+    if not entry.get("features"):
+        return None
+    font = TTFont(path)
+    cmap = font.getBestCmap()
+    steps = single_substitutions(font, entry["features"])
+    out = {}
+    for cp, name in cmap.items():
+        for mapping in steps:
+            name = mapping.get(name, name)
+        out[cp] = font.getGlyphID(name)
+    return out
+
+
+def open_face(path, entry):
+    face = freetype.Face(path)
+    if "wght" in entry:
+        font = TTFont(path)
+        axes = font["fvar"].axes if "fvar" in font else []
+        if not any(a.axisTag == "wght" for a in axes):
+            sys.exit(f"{entry['name']}: wght given but {entry['font']} has no wght axis")
+        face.set_var_design_coords([entry["wght"] if a.axisTag == "wght" else a.defaultValue for a in axes])
+    return face
+
+
 def build_face(entry):
-    face = freetype.Face(os.path.join(FONTS, entry["font"]))
+    path = os.path.join(FONTS, entry["font"])
+    face = open_face(path, entry)
     face.set_pixel_sizes(0, entry["px"])
+    gids = glyph_ids(path, entry)
     nodes = []
     data = bytearray()
     for cp in charset(entry["charset"]):
-        gi = face.get_char_index(cp)
+        gi = gids.get(cp, 0) if gids is not None else face.get_char_index(cp)
         if gi == 0 and cp != 0x20:
             continue
         face.load_glyph(gi, freetype.FT_LOAD_RENDER | freetype.FT_LOAD_TARGET_LIGHT)
@@ -93,17 +149,31 @@ def build_face(entry):
     return nodes, bytes(data), ascent, descent
 
 
+def settings(entry):
+    """What the face was rendered with beyond the font and size, as the doc line shows it."""
+    parts = []
+    if "wght" in entry:
+        parts.append(f"wght {entry['wght']}")
+    parts += entry.get("features", [])
+    return f" ({', '.join(parts)})" if parts else ""
+
+
 def rust_face(entry, nodes, data, ascent, descent):
     name = entry["name"]
-    lines = [f"/// {entry['font']} at {entry['px']} px, charset `{entry['charset']}`: {len(nodes)} glyphs, {len(data)} glyph bytes.",
+    cfg = f'#[cfg(feature = "{entry["feature"]}")]' if "feature" in entry else None
+    lines = [f"/// {entry['font']}{settings(entry)} at {entry['px']} px, charset `{entry['charset']}`: {len(nodes)} glyphs, {len(data)} glyph bytes.",
+             cfg,
              f"pub static {name}: Face = Face {{ px: {entry['px']}, ascent: {ascent}, descent: {descent}, flags: 0, nodes: &{name}_NODES, data: &{name}_DATA }};",
+             cfg,
              f"static {name}_NODES: [Node; {len(nodes)}] = ["]
     for off, cp, w, h, top, left, adv in nodes:
         lines.append(f"    Node {{ off: {off}, cp: 0x{cp:04X}, w: {w}, h: {h}, top: {top}, left: {left}, adv: {adv}, flags: 0 }},")
     lines.append("];")
     body = ",".join(str(x) for x in data)
+    if cfg:
+        lines.append(cfg)
     lines.append(f"static {name}_DATA: [u8; {len(data)}] = [{body}];")
-    return "\n".join(lines)
+    return "\n".join(line for line in lines if line is not None)
 
 
 def compose_table():
