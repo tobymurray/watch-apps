@@ -8,12 +8,12 @@ Cargo path dependency; it owns no screen, no frame struct, no framebuffer and no
 C ABI.
 
 Clipping is the target's, not this crate's: on the watch that target is
-[`inscribed-disc`](../InscribedDisc)'s `Surface`, which clips to the glass. A
+[`inscribed-disc`](https://crates.io/crates/inscribed-disc)'s `Surface`, which clips to the glass. A
 consumer bringing its own colour implements `Ink`; `Ink for Abgr2222` is
 inscribed-disc's type, behind the default-on `abgr2222` feature.
 
 Why this shape and not the others was decided by measurement in
-[`Docs/TEXT.md`](../Docs/TEXT.md) at the repo root, with the scripts and
+[`Docs/TEXT.md`](https://github.com/tobymurray/watch-apps/blob/main/Docs/TEXT.md) at the repo root, with the scripts and
 contact sheets beside it. This file is the record of what the crate is, what
 was measured while building it, and which numbers would falsify which
 decisions.
@@ -165,11 +165,11 @@ right only least-significant pair first.
 ## Footprint
 
 Measured on `thumbv8m.main-none-eabihf` by
-[`Docs/measurements/drawtarget`](Docs/measurements/drawtarget), a staticlib
+[`Docs/measurements/drawtarget`](https://github.com/tobymurray/watch-apps/tree/main/IncisedText/Docs/measurements/drawtarget), a staticlib
 probe linking `draw`, `draw_top`, `measure`, `wrap` and `pick` against a real
 `Surface`: **2,620 bytes of `.text`** and 7,399 of `.rodata`, of which 6,137
 are the two faces the probe names and 966 the composition table; no `.bss`.
-See [`Docs/2026-09-10-drawtarget-footprint.md`](Docs/2026-09-10-drawtarget-footprint.md)
+See [`Docs/2026-09-10-drawtarget-footprint.md`](https://github.com/tobymurray/watch-apps/blob/main/IncisedText/Docs/2026-09-10-drawtarget-footprint.md)
 for what drawing through a `DrawTarget` cost and what recovered most of it.
 
 The per-app rows below were measured against the previous shape, where this
