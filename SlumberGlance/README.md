@@ -22,3 +22,6 @@ ticks while it stays on screen.
 
 `Software/Libs/Header/CardView.hpp` holds those rules, without the SDK, and
 `Tests/` checks them on the host.
+
+`Resources/icon_store.png` is Slumber's store icon, drawn by
+`python3 Slumber/Resources/make_store_icon.py SlumberGlance/Resources`.

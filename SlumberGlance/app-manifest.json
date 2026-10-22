@@ -4,6 +4,7 @@
     "glance"
   ],
   "name": "Slumber Glance",
+  "icon": "icon.png",
   "binary": "Slumber_Glance_0.1.0.uapp",
   "appVersion": "0.1.0",
   "minKernelVersion": "1.4.0",
