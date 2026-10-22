@@ -55,6 +55,8 @@ typedef struct {
     uint16_t now_min;                         /* minute of day; SLUMBER_UNKNOWN = clock not set */
     uint8_t  nights_to_go;                    /* nights still needed before there is a usual */
     uint8_t  _pad[1];
+    uint16_t scored_bed_min;                  /* minute of day: the usual rhythm_offset_min is against; SLUMBER_UNKNOWN = none */
+    uint16_t scored_wake_min;                 /* minute of day; SLUMBER_UNKNOWN = none */
 } slumber_state;
 
 /* FNV-1a over the layout as the linked Rust core sees it. */
@@ -137,12 +139,14 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(slumber_state, now_min));
     h = fnv1a(h, offsetof(slumber_state, nights_to_go));
     h = fnv1a(h, offsetof(slumber_state, _pad));
+    h = fnv1a(h, offsetof(slumber_state, scored_bed_min));
+    h = fnv1a(h, offsetof(slumber_state, scored_wake_min));
     return h;
 }
 
 } // namespace slumber_abi
 
-static_assert(sizeof(slumber_state) == 80, "slumber_state size changed");
+static_assert(sizeof(slumber_state) == 84, "slumber_state size changed");
 static_assert(alignof(slumber_state) == 4, "slumber_state alignment changed");
 static_assert(offsetof(slumber_state, rows_today) == 4, "rows_today moved");
 static_assert(offsetof(slumber_state, write_fails) == 8, "write_fails moved");
@@ -166,6 +170,8 @@ static_assert(offsetof(slumber_state, week_usual_bed) == 68, "week_usual_bed mov
 static_assert(offsetof(slumber_state, tonight_bed_min) == 72, "tonight_bed_min moved");
 static_assert(offsetof(slumber_state, now_min) == 76, "now_min moved");
 static_assert(offsetof(slumber_state, nights_to_go) == 78, "nights_to_go moved");
+static_assert(offsetof(slumber_state, scored_bed_min) == 80, "scored_bed_min moved");
+static_assert(offsetof(slumber_state, scored_wake_min) == 82, "scored_wake_min moved");
 #endif
 
 #endif // SLUMBER_GUI_H

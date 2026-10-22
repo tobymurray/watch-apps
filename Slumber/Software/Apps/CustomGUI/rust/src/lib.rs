@@ -7,6 +7,7 @@ use incised_text::{faces, Face, Style};
 use panickit as _;
 
 mod atlas;
+mod dial;
 mod night;
 mod tonight;
 mod week;
@@ -45,6 +46,8 @@ pub struct State {
     pub now_min: u16,
     pub nights_to_go: u8,
     pub _pad: [u8; 1],
+    pub scored_bed_min: u16,
+    pub scored_wake_min: u16,
 }
 
 pub const WEEK_NIGHTS: usize = 7;
@@ -136,6 +139,8 @@ impl Default for State {
             now_min: night::UNKNOWN,
             nights_to_go: 0,
             _pad: [0; 1],
+            scored_bed_min: night::UNKNOWN,
+            scored_wake_min: night::UNKNOWN,
         }
     }
 }
@@ -408,7 +413,9 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(State, tonight_wake_min));
     let h = fnv1a(h, core::mem::offset_of!(State, now_min));
     let h = fnv1a(h, core::mem::offset_of!(State, nights_to_go));
-    fnv1a(h, core::mem::offset_of!(State, _pad))
+    let h = fnv1a(h, core::mem::offset_of!(State, _pad));
+    let h = fnv1a(h, core::mem::offset_of!(State, scored_bed_min));
+    fnv1a(h, core::mem::offset_of!(State, scored_wake_min))
 }
 
 #[no_mangle]
@@ -416,7 +423,7 @@ pub extern "C" fn slumber_abi_fingerprint() -> u32 {
     abi_fingerprint()
 }
 
-const _: () = assert!(core::mem::size_of::<State>() == 80);
+const _: () = assert!(core::mem::size_of::<State>() == 84);
 const _: () = assert!(core::mem::align_of::<State>() == 4);
 const _: () = assert!(core::mem::offset_of!(State, rows_today) == 4);
 const _: () = assert!(core::mem::offset_of!(State, write_fails) == 8);
@@ -440,6 +447,8 @@ const _: () = assert!(core::mem::offset_of!(State, week_usual_bed) == 68);
 const _: () = assert!(core::mem::offset_of!(State, tonight_bed_min) == 72);
 const _: () = assert!(core::mem::offset_of!(State, now_min) == 76);
 const _: () = assert!(core::mem::offset_of!(State, nights_to_go) == 78);
+const _: () = assert!(core::mem::offset_of!(State, scored_bed_min) == 80);
+const _: () = assert!(core::mem::offset_of!(State, scored_wake_min) == 82);
 
 #[no_mangle]
 pub extern "C" fn slumber_mark_count() -> u32 {
@@ -533,6 +542,10 @@ mod tests {
             rhythm_fill: 860,
             rhythm_offset_min: 38,
             usual_bed_min: 22 * 60 + 51,
+            scored_bed_min: 22 * 60 + 51,
+            scored_wake_min: 6 * 60 + 55,
+            week_usual_bed: 22 * 60 + 51 - 720,
+            week_usual_wake: 6 * 60 + 55 + 720,
             ..State::default()
         }
     }
@@ -543,13 +556,14 @@ mod tests {
         vec![
             ("starting", State::default()),
             ("settled", s),
-            ("short", State { rest_min: 3 * 60 + 30, rest_fill: 500, rhythm_fill: 1000, rhythm_offset_min: -12, ..s }),
+            ("short", State { rest_min: 3 * 60 + 30, wake_min: 3 * 60 + 5, rest_fill: 500, rhythm_fill: 1000, rhythm_offset_min: -12, ..s }),
             ("full", State { rest_min: 7 * 60, rest_fill: 1000, ..s }),
             ("long", State { rest_min: 13 * 60 + 59, onset_min: 20 * 60 + 59, wake_min: 10 * 60 + 58, rest_fill: 1997, ..s }),
             ("past-two-laps", State { rest_min: 23 * 60 + 59, rest_fill: 3427, ..s }),
             ("late", State { rhythm_fill: 0, rhythm_offset_min: 23 * 60 + 59, ..s }),
             ("early", State { rhythm_fill: 400, rhythm_offset_min: -(2 * 60 + 5), ..s }),
-            ("learning", State { rhythm_fill: night::UNKNOWN, ..s }),
+            ("learning", State { rhythm_fill: night::UNKNOWN, scored_bed_min: night::UNKNOWN, scored_wake_min: night::UNKNOWN, ..s }),
+            ("lie-in", State { rest_min: 9 * 60 + 15, onset_min: 50, wake_min: 10 * 60 + 40, rhythm_offset_min: 119, ..s }),
             ("so-far", State { night_kind: night::KIND_SO_FAR, ..s }),
             ("empty", State { rest_min: 0, rest_fill: 0, rhythm_fill: 0, ..s }),
             ("off-wrist", State { night_kind: night::KIND_OFF_WRIST, ..s }),
@@ -565,7 +579,14 @@ mod tests {
 
     /// A week from (bed, wake) clock pairs, oldest first; `None` is a night not slept on the wrist.
     fn week_of(nights: [Option<((i32, i32), (i32, i32))>; WEEK_NIGHTS], usual: Option<((i32, i32), (i32, i32))>) -> State {
-        let mut st = State { have_status: 1, screen: SCREEN_WEEK, week_newest_weekday: 3, ..slept() };
+        let mut st = State {
+            have_status: 1,
+            screen: SCREEN_WEEK,
+            week_newest_weekday: 3,
+            week_usual_bed: NO_BAR,
+            week_usual_wake: NO_BAR,
+            ..slept()
+        };
         let span = |((bh, bm), (wh, wm)): ((i32, i32), (i32, i32))| {
             let (bed, wake) = (hm(bh, bm), hm(wh, wm));
             (bed, if wake < bed { wake + 1440 } else { wake })
@@ -792,18 +813,36 @@ mod tests {
         assert_eq!(none.times.as_str(), "usually 22:51");
     }
 
+    /// The pixel on the middle of the dial's band at `minute` past midnight, `along` pixels clockwise of it.
+    fn band_pixel(buf: &[u8], minute: u16, along: f32) -> u8 {
+        let t = minute as f32 / 1440.0 * core::f32::consts::TAU + along / 110.5;
+        let (x, y) = (119.5 + 110.5 * t.sin(), 119.5 - 110.5 * t.cos());
+        buf[(y.round() as i32 * W as i32 + x.round() as i32) as usize]
+    }
+
+    fn on_band(buf: &[u8], minute: u16) -> u8 {
+        band_pixel(buf, minute, 0.0)
+    }
+
+    /// Last night 23:29-07:30 lights the band through 03:20, the middle of an hour, and not at 15:20.
     #[test]
-    fn a_night_is_drawn_on_the_rings() {
-        let empty = frame(&State { night_kind: night::KIND_NONE, ..slept() });
-        let full = frame(&slept());
-        let ring_changed = (0..H as i32)
-            .flat_map(|y| (0..W as i32).map(move |x| (x, y)))
-            .filter(|&(x, y)| {
-                let r = (((x as f32 - 119.5).powi(2) + (y as f32 - 119.5).powi(2)) as f32).sqrt();
-                r > 91.0 && empty[(y * W as i32 + x) as usize] != full[(y * W as i32 + x) as usize]
-            })
-            .count();
-        assert!(ring_changed > 5000, "{ring_changed} ring pixels changed");
+    fn a_night_is_drawn_where_it_fell_on_the_clock() {
+        let lit = frame(&slept());
+        let none = frame(&State { night_kind: night::KIND_NONE, ..slept() });
+        assert_ne!(on_band(&lit, 3 * 60 + 20), GROUND.0);
+        assert_eq!(on_band(&lit, 15 * 60 + 20), GROUND.0);
+        assert_eq!(on_band(&none, 3 * 60 + 20), GROUND.0);
+    }
+
+    /// Each hour a night crosses is cut back to the ground colour.
+    #[test]
+    fn a_night_is_notched_at_each_hour() {
+        let lit = frame(&slept());
+        for h in [0u16, 1, 2, 5, 7] {
+            let cut = [-1.0, -0.5, 0.0, 0.5, 1.0].iter().any(|&a| band_pixel(&lit, h * 60, a) == GROUND.0);
+            assert!(cut, "{h}:00 is not notched");
+            assert_ne!(on_band(&lit, h * 60 + 30), GROUND.0, "{h}:30");
+        }
     }
 
     /// Lines on a ringless screen clear the bezel by a pixel at the rows they are drawn on.

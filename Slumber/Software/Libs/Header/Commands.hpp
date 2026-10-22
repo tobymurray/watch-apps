@@ -59,6 +59,8 @@ struct NightView {
     uint16_t rhythmFill      = kUnknown;  ///< per mille; kUnknown = no usual to score against
     int16_t  rhythmOffsetMin = 0;         ///< bedtime against the usual; + is later
     uint16_t usualBedMin     = kUnknown;  ///< minute of day; kUnknown = fewer than three nights
+    uint16_t scoredBedMin    = kUnknown;  ///< minute of day: the usual rhythmOffsetMin is against; kUnknown = none
+    uint16_t scoredWakeMin   = kUnknown;  ///< minute of day; kUnknown = none
 };
 
 constexpr int16_t kNoBar      = -1;

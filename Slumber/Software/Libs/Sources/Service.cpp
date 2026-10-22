@@ -581,6 +581,8 @@ void Service::showNight(LastNight::Kind kind, const SleepPeriods::Period &p, boo
         const int32_t d         = Rhythm::offset(Rhythm::afterNoon(p.startUtc, sleptOff), before);
         mShown.rhythmFill      = Rhythm::rhythmFill(d);
         mShown.rhythmOffsetMin = static_cast<int16_t>(d);
+        mShown.scoredBedMin    = static_cast<uint16_t>(Rhythm::minuteOfDay(before.bed));
+        mShown.scoredWakeMin   = static_cast<uint16_t>(Rhythm::minuteOfDay(before.wake));
     }
 }
 

@@ -202,6 +202,8 @@ void Gui::run()
                 mState.rhythm_fill       = st->night.rhythmFill;
                 mState.rhythm_offset_min = st->night.rhythmOffsetMin;
                 mState.usual_bed_min     = st->night.usualBedMin;
+                mState.scored_bed_min    = st->night.scoredBedMin;
+                mState.scored_wake_min   = st->night.scoredWakeMin;
                 for (size_t i = 0; i < CustomMessage::kWeekNights; ++i) {
                     mState.week_bed[i]  = st->week.bed[i];
                     mState.week_wake[i] = st->week.wake[i];

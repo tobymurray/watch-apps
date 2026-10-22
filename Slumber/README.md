@@ -366,12 +366,19 @@ Slumber opens on last night, except from 4 h before tonight's usual bedtime to
 clock, keeps it on last night. Both windows are design choices, not
 measurements.
 
-**Last night** is Rest and Rhythm as two rings (see "The screens to come" for
-why those two), and inside them the night's rest, its times and its bedtime
-against the usual, such as `7h42`, `23:29-07:30`, `38m late`. Before there is a
-night it says `No night yet` and the usual bedtime once three nights give one;
-a night on a table says `watch was off`. The times are in the offset the night
-was logged with.
+Last night and Tonight are drawn on one 24-hour dial (`dial.rs`): midnight at
+the top, a tick each hour and a longer one every six. Purple is what you did and
+cyan is your usual. A night is a band on the dial, cut at every hour it crosses,
+so its length can be counted in blocks.
+
+**Last night** is the night as a purple band, with the usual it was scored
+against as a thin cyan arc just inside it, so a late bedtime is the band
+starting clockwise of the arc. Inside: the night's rest, its times and its
+bedtime against the usual, such as `7h42`, `23:29-07:30`, `38m late`. The band
+spans the whole period, so it can be longer than the rest it reports. Before
+there is a night it says `No night yet` and shows the usual arc once three
+nights give one; a night on a table says `watch was off`. The times are in the
+offset the night was logged with.
 
 **The past week** is the main night of each of the seven evenings before
 tonight, a floating bar from bedtime to wake in the Rest colours, under dashed
@@ -382,15 +389,14 @@ for. The plot runs in whole hours, at least six, so a single night does not
 fill it.
 
 **Tonight** is the usual night for tonight's weekday (`Schedule::expect`, see
-"Learning the week") as an arc on a 24-hour dial with midnight at the top, and
-a white dot for now. Inside: the usual bedtime, the usual wake, and how far
+"Learning the week") as a cyan band on the dial, and a white dot for now. Inside: the usual bedtime, the usual wake, and how far
 bedtime is, such as `in 2h10`, `about now` or `45m past`. Before there is a
 usual it says how many more nights it needs.
 
 `Software/Apps/CustomGUI/rust/src/` draws them: `night.rs`, `week.rs` and
 `tonight.rs`. The service sends the night, the week and tonight with every
 status, so the screens hold no history of their own. Their tests check that
-every line fits inside the rings or the glass at the rows it is drawn on, and
+every line fits inside the dial or the glass at the rows it is drawn on, and
 `SLUMBER_PREVIEW_DIR=<dir> cargo test --features std previews` writes each
 state as a PNG.
 
@@ -419,8 +425,12 @@ goes back on.
 
 ## The screens to come
 
-The morning rings, the week of bars and the evening screen are built (see "The
-screens"); the themes are not.
+The week of bars and the evening screen are built (see "The screens"); the
+themes are not. The two morning rings below were built and then replaced by the
+dial: on the watch they were hard to read, because a Rhythm ring is full when
+on time and empties either way, so it cannot say early from late. Rest and
+Rhythm remain the two things the screen reports, as the night's length and its
+bedtime against the usual.
 
 **Two rings, not a score.** A 0–100 sleep score is the most criticised thing
 wrist trackers show, and wrist movement cannot score sleep stages: across six

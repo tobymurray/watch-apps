@@ -1,19 +1,16 @@
-//! The evening screen: tonight's usual bedtime, on a 24-hour dial with midnight at the top.
+//! The evening screen: tonight's usual night on the 24-hour dial, and how far off bedtime is.
 
 use inscribed_disc::{Abgr2222, Surface};
 
+use crate::dial::{self, Span};
 use crate::night::{
-    clock, draw_band, duration, on_ring, rest_ink, text, Rgb, DETAIL_FACE, GROUND, KIND_SO_FAR, MAIN_INK,
-    MUTED_INK, ON_TIME_MIN, REST_FACE, REST_IN, REST_OUT, REST_TRACK, REST_Y, RHYTHM_INK, RHYTHM_Y, TIMES_Y,
-    TITLE_FACE, TITLE_INK, TITLE_Y, TRACK_W, UNKNOWN,
+    clock, duration, rhythm_ink, text, Rgb, DETAIL_FACE, GROUND, KIND_SO_FAR, MAIN_INK, MUTED_INK, ON_TIME_MIN,
+    REST_FACE, REST_Y, RHYTHM_INK, RHYTHM_Y, TIMES_Y, TITLE_FACE, TITLE_INK, TITLE_Y, UNKNOWN,
 };
 use crate::{Line, State, SCREEN_NIGHT, SCREEN_TONIGHT};
 
 const DAY_MIN: i32 = 1440;
 const NOW_R: f32 = 5.0;
-const TICK_RADIUS: f32 = 97.0;
-const TICK_R: f32 = 1.5;
-const TICK_INK: Abgr2222 = Abgr2222::from_levels(1, 1, 1);
 
 /// The app opens on this screen from this long before tonight's usual bedtime...
 const OPENS_BEFORE_MIN: i32 = 4 * 60;
@@ -95,63 +92,14 @@ pub fn words(state: &State) -> Words {
     w
 }
 
-fn at(minute: u16) -> f32 {
-    minute as f32 / DAY_MIN as f32
-}
-
-/// The usual night as an arc on the Rest band, capped round at both ends; the rest of the band is its track.
-fn dial(state: &State) -> impl Fn(f32, f32, f32) -> Option<Rgb> {
-    let (from, len) = if known(state) {
-        (at(state.tonight_bed_min), ahead(state.tonight_bed_min, state.tonight_wake_min) as f32 / DAY_MIN as f32)
-    } else {
-        (0.0, 0.0)
-    };
-    let mid = (REST_IN + REST_OUT) / 2.0;
-    let half = (REST_OUT - REST_IN) / 2.0;
-    move |dx, dy, t| {
-        let r2 = dx * dx + dy * dy;
-        if len > 0.0 {
-            let cap = |a: f32| {
-                let (cx, cy) = on_ring(mid, a);
-                (dx - cx) * (dx - cx) + (dy - cy) * (dy - cy) <= half * half
-            };
-            let along = if t >= from { t - from } else { t - from + 1.0 };
-            if r2 >= REST_IN * REST_IN && r2 <= REST_OUT * REST_OUT && along <= len {
-                return Some(rest_ink(along / len));
-            }
-            if cap(from) {
-                return Some(rest_ink(0.0));
-            }
-            if cap(from + len) {
-                return Some(rest_ink(1.0));
-            }
-        }
-        let (lo, hi) = (mid - TRACK_W / 2.0, mid + TRACK_W / 2.0);
-        (r2 >= lo * lo && r2 <= hi * hi).then_some(REST_TRACK)
-    }
-}
-
-fn disc(fb: &mut Surface<Abgr2222>, cx: f32, cy: f32, r: f32, ink: Abgr2222) {
-    for y in (cy - r - 1.0) as i32..=(cy + r + 1.0) as i32 {
-        for x in (cx - r - 1.0) as i32..=(cx + r + 1.0) as i32 {
-            let (ex, ey) = (x as f32 - cx, y as f32 - cy);
-            if ex * ex + ey * ey <= r * r && fb.is_lit(x, y) {
-                fb.fill_rect(x, y, 1, 1, ink);
-            }
-        }
-    }
-}
-
 pub fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
-    draw_band(fb, REST_IN - 1.0, REST_OUT + 1.0, dial(state));
-    for quarter in 0..4 {
-        let (x, y) = on_ring(TICK_RADIUS, quarter as f32 / 4.0);
-        disc(fb, 119.5 + x, 119.5 + y, TICK_R, TICK_INK);
-    }
+    let usual = known(state).then_some((
+        Span { from_min: state.tonight_bed_min, to_min: state.tonight_wake_min },
+        rhythm_ink as fn(f32) -> Rgb,
+    ));
+    dial::draw(fb, usual, None);
     if state.now_min != UNKNOWN {
-        let (x, y) = on_ring((REST_IN + REST_OUT) / 2.0, at(state.now_min));
-        disc(fb, 119.5 + x, 119.5 + y, NOW_R + 1.5, GROUND);
-        disc(fb, 119.5 + x, 119.5 + y, NOW_R, MAIN_INK);
+        dial::mark(fb, state.now_min, NOW_R, MAIN_INK, GROUND);
     }
 
     let w = words(state);
