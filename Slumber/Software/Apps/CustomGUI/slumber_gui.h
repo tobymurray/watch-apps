@@ -16,6 +16,7 @@ extern "C" {
 
 #define SLUMBER_SCREEN_NIGHT  0u
 #define SLUMBER_SCREEN_PICKER 1u
+#define SLUMBER_SCREEN_WEEK   2u
 
 #define SLUMBER_BUTTON_L1    0u
 #define SLUMBER_BUTTON_L2    1u
@@ -79,6 +80,9 @@ uint8_t slumber_sequence_step(uint8_t progress, uint8_t button, uint32_t gap_ms)
 
 /* The press sequence's length: a step returning it opens the picker. */
 uint8_t slumber_sequence_len(void);
+
+/* The screen R1 pages to from `screen`. */
+uint8_t slumber_page_after(uint8_t screen);
 
 #ifdef __cplusplus
 } // extern "C"

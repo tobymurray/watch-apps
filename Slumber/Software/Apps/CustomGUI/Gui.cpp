@@ -103,7 +103,7 @@ void Gui::show(uint8_t screen)
     mDirty             = true;
 }
 
-/// L1 L1 L2 L2 on the night screen opens the picker; R2 leaves the picker, or the app.
+/// R1 pages; L1 L1 L2 L2 on the night screen opens the picker; R2 goes back to the night, or leaves the app.
 void Gui::onButton(SDK::Message::EventButton::Id id)
 {
     using Id = SDK::Message::EventButton::Id;
@@ -116,6 +116,16 @@ void Gui::onButton(SDK::Message::EventButton::Id id)
             move(1);
         } else if (id == Id::SW2) {
             sendMark();
+        }
+        return;
+    }
+    if (id == Id::SW2) {
+        show(slumber_page_after(mState.screen));
+        return;
+    }
+    if (mState.screen != SLUMBER_SCREEN_NIGHT) {
+        if (id == Id::SW4) {
+            show(SLUMBER_SCREEN_NIGHT);
         }
         return;
     }

@@ -14,7 +14,7 @@ pub const UNKNOWN: u16 = 0xFFFF;
 /// One lap of a ring, per mille.
 const LAP: u16 = 1000;
 /// Rhythm's ring is full within this many minutes of the usual bedtime.
-const ON_TIME_MIN: i32 = 30;
+pub(crate) const ON_TIME_MIN: i32 = 30;
 
 const CENTRE: f32 = 119.5;
 /// Ring bands as pixel-centre radii, 2 px in from the glass edge.
@@ -28,7 +28,7 @@ const TRACK_W: f32 = 3.0;
 pub const TEXT_RADIUS: f32 = 88.0;
 
 /// Channel levels, 0 to 3, as floats so they can be blended before dithering.
-type Rgb = [f32; 3];
+pub(crate) type Rgb = [f32; 3];
 const VIOLET: Rgb = [1.0, 0.0, 3.0];
 const PURPLE: Rgb = [2.0, 0.0, 3.0];
 const MAGENTA: Rgb = [3.0, 0.0, 3.0];
@@ -39,11 +39,11 @@ const RHYTHM_TRACK: Rgb = [0.0, 1.0, 2.0];
 /// What the ring under a second lap's tip is dimmed to, at the tip.
 const SHADOW: f32 = 0.3;
 
-const GROUND: Abgr2222 = Abgr2222::BLACK;
-const TITLE_INK: Abgr2222 = Abgr2222::from_levels(2, 2, 2);
-const MAIN_INK: Abgr2222 = Abgr2222::WHITE;
-const RHYTHM_INK: Abgr2222 = Abgr2222::from_levels(0, 3, 3);
-const MUTED_INK: Abgr2222 = Abgr2222::from_levels(2, 2, 2);
+pub(crate) const GROUND: Abgr2222 = Abgr2222::BLACK;
+pub(crate) const TITLE_INK: Abgr2222 = Abgr2222::from_levels(2, 2, 2);
+pub(crate) const MAIN_INK: Abgr2222 = Abgr2222::WHITE;
+pub(crate) const RHYTHM_INK: Abgr2222 = Abgr2222::from_levels(0, 3, 3);
+pub(crate) const MUTED_INK: Abgr2222 = Abgr2222::from_levels(2, 2, 2);
 
 pub static TITLE_FACE: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
 pub static REST_FACE: &Face = &atlas::POPPINS_SEMIBOLD_24_ASCII;
@@ -69,7 +69,7 @@ fn scale(c: Rgb, k: f32) -> Rgb {
     [c[0] * k, c[1] * k, c[2] * k]
 }
 
-fn rest_ink(t: f32) -> Rgb {
+pub(crate) fn rest_ink(t: f32) -> Rgb {
     let t = t.clamp(0.0, 1.0) * 2.0;
     if t < 1.0 {
         lerp(VIOLET, PURPLE, t)
@@ -204,7 +204,7 @@ impl Ring {
 
 /// Ordered dither of continuous levels to the panel's four; README "The screens to come" measured a
 /// checkerboard of neighbouring levels landing halfway between them on the glass.
-fn dither(c: Rgb, x: i32, y: i32) -> Abgr2222 {
+pub(crate) fn dither(c: Rgb, x: i32, y: i32) -> Abgr2222 {
     let d = BAYER[(y & 3) as usize][(x & 3) as usize];
     let q = |v: f32| -> u8 {
         let l = (v + d) as i32;
@@ -331,7 +331,7 @@ pub fn words(state: &State) -> Words {
     w
 }
 
-fn text(fb: &mut Surface<Abgr2222>, face: &Face, line: &Line, baseline: i32, ink: Abgr2222) {
+pub(crate) fn text(fb: &mut Surface<Abgr2222>, face: &Face, line: &Line, baseline: i32, ink: Abgr2222) {
     face.draw(fb, line.as_str(), 120, baseline, Style::centered(ink, GROUND)).ok();
 }
 

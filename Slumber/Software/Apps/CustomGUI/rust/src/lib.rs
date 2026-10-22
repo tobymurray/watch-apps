@@ -8,6 +8,7 @@ use panickit as _;
 
 mod atlas;
 mod night;
+mod week;
 
 /// Mirrors `slumber_state` (`slumber_gui.h`) field for field.
 #[repr(C)]
@@ -50,6 +51,42 @@ pub const NO_BAR: i16 = -1;
 
 pub const SCREEN_NIGHT: u8 = 0;
 pub const SCREEN_PICKER: u8 = 1;
+pub const SCREEN_WEEK: u8 = 2;
+
+/// The screens R1 pages through, in order; the picker is not one of them.
+pub const PAGES: [u8; 2] = [SCREEN_NIGHT, SCREEN_WEEK];
+
+/// The page R1 goes to from `screen`.
+pub fn page_after(screen: u8) -> u8 {
+    let at = PAGES.iter().position(|&p| p == screen).unwrap_or(PAGES.len() - 1);
+    PAGES[(at + 1) % PAGES.len()]
+}
+
+#[no_mangle]
+pub extern "C" fn slumber_page_after(screen: u8) -> u8 {
+    page_after(screen)
+}
+
+const DOTS_Y: i32 = 202;
+const DOT_STEP: i32 = 12;
+const DOT_R: i32 = 2;
+const DOT_INK: Abgr2222 = Abgr2222::from_levels(1, 1, 1);
+
+/// One dot a page, the current one white.
+fn draw_dots(fb: &mut Surface<Abgr2222>, screen: u8) {
+    let first = 120 - (PAGES.len() as i32 - 1) * DOT_STEP / 2;
+    for (i, &page) in PAGES.iter().enumerate() {
+        let cx = first + i as i32 * DOT_STEP;
+        let ink = if page == screen { Abgr2222::WHITE } else { DOT_INK };
+        for dy in -DOT_R..=DOT_R {
+            for dx in -DOT_R..=DOT_R {
+                if dx * dx + dy * dy <= DOT_R * DOT_R + 1 {
+                    fb.fill_rect(cx + dx, DOTS_Y + dy, 1, 1, ink);
+                }
+            }
+        }
+    }
+}
 
 pub const NO_MARK: u8 = 0xFF;
 pub const NO_MARK_AGE: u32 = 0xFFFF_FFFF;
@@ -273,11 +310,15 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {
         return;
     };
     fb.clear(GROUND);
-    if state.screen == SCREEN_PICKER {
-        draw_picker(&mut fb, state);
-    } else {
-        night::draw(&mut fb, state);
+    match state.screen {
+        SCREEN_PICKER => {
+            draw_picker(&mut fb, state);
+            return;
+        }
+        SCREEN_WEEK => week::draw(&mut fb, state),
+        _ => night::draw(&mut fb, state),
     }
+    draw_dots(&mut fb, state.screen);
 }
 
 pub const BUTTON_L1: u8 = 0;
@@ -504,6 +545,47 @@ mod tests {
         ]
     }
 
+    /// Minutes after noon for a local clock time.
+    fn hm(h: i32, m: i32) -> i16 {
+        ((h * 60 + m + 720) % 1440) as i16
+    }
+
+    /// A week from (bed, wake) clock pairs, oldest first; `None` is a night not slept on the wrist.
+    fn week_of(nights: [Option<((i32, i32), (i32, i32))>; WEEK_NIGHTS], usual: Option<((i32, i32), (i32, i32))>) -> State {
+        let mut st = State { have_status: 1, screen: SCREEN_WEEK, week_newest_weekday: 3, ..slept() };
+        let span = |((bh, bm), (wh, wm)): ((i32, i32), (i32, i32))| {
+            let (bed, wake) = (hm(bh, bm), hm(wh, wm));
+            (bed, if wake < bed { wake + 1440 } else { wake })
+        };
+        for (i, n) in nights.into_iter().enumerate() {
+            if let Some(n) = n {
+                (st.week_bed[i], st.week_wake[i]) = span(n);
+            }
+        }
+        if let Some(u) = usual {
+            (st.week_usual_bed, st.week_usual_wake) = span(u);
+        }
+        st
+    }
+
+    /// The week screen in every state that changes what it says or how it scales.
+    fn weeks() -> Vec<(&'static str, State)> {
+        let usual = Some(((23, 10), (7, 5)));
+        vec![
+            ("week", week_of([
+                Some(((23, 0), (7, 0))), Some(((23, 40), (7, 10))), None, Some(((22, 50), (6, 55))),
+                Some(((0, 55), (8, 30))), Some(((1, 30), (10, 15))), Some(((23, 15), (7, 20))),
+            ], usual)),
+            ("week-steady", week_of([Some(((23, 5), (7, 0))); WEEK_NIGHTS], usual)),
+            ("week-noon", week_of([
+                None, None, Some(((4, 0), (13, 30))), Some(((23, 0), (7, 0))),
+                Some(((20, 30), (5, 0))), None, Some(((23, 30), (7, 30))),
+            ], usual)),
+            ("week-learning", week_of([None, None, None, None, None, Some(((23, 0), (7, 0))), Some(((23, 30), (7, 15)))], None)),
+            ("week-empty", week_of([None; WEEK_NIGHTS], None)),
+        ]
+    }
+
     /// Every state that changes a line's text or ink, at its widest.
     fn variants() -> Vec<State> {
         let mut out = vec![State::default(), reported()];
@@ -518,6 +600,7 @@ mod tests {
         out.push(State { acc_ok: 0, hr_ok: 0, rows_today: 4_294_967_295, ..reported() });
         out.push(State { mark_ago_min: 7, ..reported() });
         out.extend(nights().into_iter().map(|(_, st)| st));
+        out.extend(weeks().into_iter().map(|(_, st)| st));
         out
     }
 
@@ -688,6 +771,66 @@ mod tests {
         assert!(ring_changed > 5000, "{ring_changed} ring pixels changed");
     }
 
+    /// Lines on a ringless screen clear the bezel by a pixel at the rows they are drawn on.
+    fn fits_the_glass(face: &Face, s: &str, x: i32, y: i32) -> bool {
+        let m = face.measure(s);
+        let (left, right) = (x as f32 - (m.ink_right - m.ink_left) as f32 / 2.0 - 1.0, x as f32 + (m.ink_right - m.ink_left) as f32 / 2.0 + 1.0);
+        [y - face.ascent as i32, y + face.descent as i32].iter().all(|&row| {
+            let d = row as f32 - 119.5;
+            let room = (118.5f32 * 118.5 - d * d).max(0.0).sqrt();
+            left >= 119.5 - room && right <= 119.5 + room
+        })
+    }
+
+    #[test]
+    fn week_text_fits_the_glass() {
+        for (name, st) in weeks() {
+            let (summary, _) = week::summary(&st);
+            assert!(week::SUMMARY_FACE.covers(summary.as_str()), "{name}");
+            assert!(fits_the_glass(week::SUMMARY_FACE, summary.as_str(), 120, week::SUMMARY_Y), "{name}: {:?}", summary.as_str());
+            assert!(fits_the_glass(week::TITLE_FACE, "Past week", 120, week::TITLE_Y));
+            for i in 0..WEEK_NIGHTS {
+                assert!(fits_the_glass(week::DAY_FACE, week::day(&st, i), week::column_x(i), week::DAY_Y), "{name} day {i}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_week_counts_bedtimes_near_the_usual() {
+        let say = |st: &State| week::summary(st).0.as_str().to_owned();
+        let w = weeks();
+        assert_eq!(say(&w[0].1), "4 of 6 on time");
+        assert_eq!(say(&w[1].1), "7 of 7 on time");
+        assert_eq!(say(&w[3].1), "learning");
+        assert_eq!(say(&w[4].1), "No nights yet");
+    }
+
+    #[test]
+    fn the_week_letters_end_on_the_newest_evening() {
+        let st = State { week_newest_weekday: 3, ..State::default() };
+        let letters: String = (0..WEEK_NIGHTS).map(|i| week::day(&st, i)).collect();
+        assert_eq!(letters, "TFSSMTW");
+    }
+
+    #[test]
+    fn every_bar_lies_inside_the_plot() {
+        for (name, st) in weeks() {
+            let (lo, hi) = week::span(&st);
+            for i in 0..WEEK_NIGHTS {
+                if st.week_bed[i] != NO_BAR {
+                    assert!(lo <= st.week_bed[i] as i32 && st.week_wake[i] as i32 <= hi, "{name} night {i}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn r1_pages_round_and_the_picker_is_not_a_page() {
+        assert_eq!(page_after(SCREEN_NIGHT), SCREEN_WEEK);
+        assert_eq!(page_after(SCREEN_WEEK), SCREEN_NIGHT);
+        assert!(!PAGES.contains(&SCREEN_PICKER));
+    }
+
     #[test]
     fn the_sequence_opens_only_in_order_and_in_time() {
         let run = |presses: &[(u8, u32)]| presses.iter().fold(0u8, |p, &(b, gap)| sequence_step(p, b, gap));
@@ -706,7 +849,7 @@ mod tests {
             return;
         };
         let opts = inscribed_disc::preview::Options { scale: 2, ..Default::default() };
-        for (name, st) in nights().into_iter().chain([("picker", reported())]) {
+        for (name, st) in nights().into_iter().chain(weeks()).chain([("picker", reported())]) {
             let rgba = inscribed_disc::preview::to_rgba(&frame(&st), W, H, opts);
             inscribed_disc::preview::write_png(format!("{dir}/{name}.png"), &rgba, W * 2, H * 2).unwrap();
         }
