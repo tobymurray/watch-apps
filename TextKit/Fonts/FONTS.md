@@ -31,3 +31,27 @@ They are not the files Google Fonts serves today, which hash differently.
 because its copyright line is the one in these fonts' `name` table. The
 upstream repository's `OFL.txt` (`itfoundry/Poppins` at `ade6ff1`) still reads
 "Copyright 2014-2019 Indian Type Foundry", which the fonts no longer say.
+
+## Atkinson Hyperlegible Next
+
+Atkinson Hyperlegible Next, the upright variable font (`wght` 200 to 800),
+version 2.001, copyright 2020-2024 The Atkinson Hyperlegible Next Project
+Authors (https://github.com/googlefonts/atkinson-hyperlegible-next); designers
+Braille Institute, Applied Design Works, Elliott Scott, Megan Eiswerth and
+Letters From Sweden, as Google Fonts' `METADATA.pb` lists them. Licensed under
+the SIL Open Font License, Version 1.1, as the font's own `name` table states;
+text in `OFL-AtkinsonHyperlegibleNext.txt`. No Reserved Font Name is declared.
+
+| file | SHA-256 |
+|---|---|
+| `AtkinsonHyperlegibleNext[wght].ttf` | `5a455d1cfa099b601ab70751bb9673e8fe1854dc4500c80e1a220d0d75e31745` |
+| `OFL-AtkinsonHyperlegibleNext.txt` | `aca6a428580965d2297d1b718042dd427c2a9443ece3b0d02d758e161e0c4030` |
+
+Both are Google Fonts' files, byte for byte: the font under the name Google
+Fonts gives it, the licence renamed from `OFL.txt`. They come from
+`ofl/atkinsonhyperlegiblenext/` at google/fonts
+`95f4904fc8bcf26d3420fe315560c96417c6dec7`,
+<https://raw.githubusercontent.com/google/fonts/95f4904fc8bcf26d3420fe315560c96417c6dec7/ofl/atkinsonhyperlegiblenext/AtkinsonHyperlegibleNext%5Bwght%5D.ttf>
+and `OFL.txt` beside it. Google Fonts' `METADATA.pb` there pins the upstream
+source at `googlefonts/atkinson-hyperlegible-next`
+`7925f50f649b3813257faf2f4c0b381011f434f1`.

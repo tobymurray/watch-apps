@@ -1,7 +1,8 @@
 # TextKit
 
-Text for the UNA Watch's Rust GUIs: Poppins pre-rendered at build time into
-2bpp glyph atlases, blitted onto any `embedded-graphics` `DrawTarget`. `no_std`,
+Text for the UNA Watch's Rust GUIs: Poppins, and Atkinson Hyperlegible Next
+behind the `atkinson` feature, pre-rendered at build time into 2bpp glyph
+atlases and blitted onto any `embedded-graphics` `DrawTarget`. `no_std`,
 no allocator, no scratch buffer. Each app's `CustomGUI` crate takes it as a
 Cargo path dependency; it owns no screen, no frame struct, no framebuffer and no
 C ABI.
@@ -27,6 +28,60 @@ on hardware (`RustGuiPoc/Docs/FINDINGS.md`). Measured on this glass by the
 cartography research: 22 to 26 px em is confirmed readable, 11 to 12 px is
 detection only. Falsified by a different display or a device photograph
 that contradicts either.
+
+## Two typefaces
+
+**Poppins** Regular and SemiBold is the face the wearer already knows: the
+blobs TouchGFX rasterized, held to its shipped tables pixel for pixel (below).
+Its faces are always compiled, under the names the apps use.
+
+**Atkinson Hyperlegible Next** Bold (wght 700 of the variable font) is behind
+the `atkinson` feature, as `faces::ATKINSON_*`. It is here because its
+confusable characters are drawn to differ, and Poppins' are not: in these
+atlases Poppins' `I` and `l` are the same pixels at Regular 12 and Regular 18,
+while `I`, `l`, `1` and `|` are four different bitmaps in every Atkinson ASCII
+face (`tests/atkinson.rs` holds that). For an id, a code or a date read at a
+glance, that difference is the point.
+
+What a caller should know about it:
+
+- **Digits are proportional by default.** `1` is narrower than `8`, so a
+  centred clock would jitter as it ticks. The clock faces are built with the
+  font's `tnum` feature, which swaps each digit for its tabular form, so every
+  digit advances the same (`tests/atkinson.rs`); the ASCII faces keep the
+  proportional digits, which read better in running text such as
+  "Sat 17 Oct". Poppins' digits already share one advance in every face
+  here, so its faces use no feature.
+- **Zero is always slashed.** The font has no plain zero, in either its
+  default or its tabular digits, so `0` never passes for `O`, and there is no
+  way to get an unslashed one.
+- **No on-glass evidence yet.** Every Atkinson face is measured on the host
+  only. The panel claims in this README were made with Poppins; nothing here
+  says how Atkinson's stems or slashed zero look on the glass until a device
+  photograph is filed.
+
+Sizes are matched on capital height, as `Docs/TEXT.md` matched the TouchGFX
+faces: the ink rows of `H` rasterized with the generator's settings. The clock
+faces carry no `H`, so theirs is measured from the same font at the same size.
+
+| face | px | capital | matched against |
+|---|---|---|---|
+| `ATKINSON_BOLD_16_ASCII` | 16 | 11 | `REGULAR_16_LATIN`, 11 |
+| `ATKINSON_BOLD_20_ASCII` | 20 | 13 | `REGULAR_18_LATIN`, 13; `SEMIBOLD_20_ASCII` is 14, which Atkinson reaches at 21 px |
+| `ATKINSON_BOLD_25_ASCII` | 25 | 17 | Poppins SemiBold 24 and 25, both 17: the date and label size |
+| `ATKINSON_BOLD_49_CLOCK` | 49 | 33 | Poppins SemiBold 47 and 48, 33; `SEMIBOLD_49_CLOCK` is 35, which Atkinson reaches at 52 px |
+| `ATKINSON_BOLD_62_CLOCK` | 62 | 42 | `SEMIBOLD_60_CLOCK`, 42 |
+
+Poppins' digits stand taller than its capitals and Atkinson's do not: `1` is
+44 rows in `SEMIBOLD_60_CLOCK` and 42 in `ATKINSON_BOLD_62_CLOCK`, so the
+matched clock reads two rows shorter in its digits.
+
+Atkinson's capital is about 0.68 em at wght 700 against Poppins SemiBold's
+0.70, so it needs one or two more pixels of em for the same capital. At 62 px
+`16:27` is 173 px of advance, against 176 for `SEMIBOLD_60_CLOCK`; `1:23:45`
+is 229 px at 62 and 181 at 49. At 25 px
+"Sat 17 Oct" is 119 px and "100 %" 75. Falsified by rerunning the generator
+with a different FreeType, weight or font revision.
 
 ## What it does
 
@@ -138,6 +193,11 @@ not changed:
 | `SEMIBOLD_36_CLOCK` | 12 | 1,395 |
 | `SEMIBOLD_49_CLOCK` | 12 | 2,454 |
 | `SEMIBOLD_60_CLOCK` | 12 | 3,598 |
+| `ATKINSON_BOLD_16_ASCII` | 95 | 3,098 |
+| `ATKINSON_BOLD_20_ASCII` | 95 | 4,062 |
+| `ATKINSON_BOLD_25_ASCII` | 95 | 5,848 |
+| `ATKINSON_BOLD_49_CLOCK` (`0-9:`, `tnum`) | 12 | 2,398 |
+| `ATKINSON_BOLD_62_CLOCK` | 12 | 3,706 |
 
 Per-app before and after rows are in each app's README under Footprint.
 
@@ -146,6 +206,7 @@ Per-app before and after rows are in each app's README under Footprint.
 ```sh
 cd TextKit
 cargo test                         # unit tests and the TouchGFX parity oracle
+cargo test --features atkinson     # and the Atkinson faces' own tests
 cargo build --release --target thumbv8m.main-none-eabihf
 cargo run --features std --example measure SEMIBOLD_18_ASCII "NOTIFICATIONS"
 ```
@@ -162,8 +223,9 @@ python3 -m venv .venv && .venv/bin/pip install -r Tools/requirements.txt
 The toolchain image carries the same pins, and `app-build.yml` runs
 `--check` and this crate's tests for every app whose renderer depends on it;
 a change under `TextKit/` triggers those apps' builds. The fonts are in
-`Fonts/`, byte-identical to the blobs TouchGFX rasterized; `Fonts/FONTS.md`
-has the licence.
+`Fonts/`: Poppins byte-identical to the blobs TouchGFX rasterized, Atkinson
+Hyperlegible Next as Google Fonts serves it. `Fonts/FONTS.md` has the sources,
+hashes and licences, and the OFL texts beside it ship with the crate.
 
 ## Porting notes
 

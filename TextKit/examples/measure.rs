@@ -16,6 +16,16 @@ fn face(name: &str) -> &'static Face {
         "SEMIBOLD_36_CLOCK" => &SEMIBOLD_36_CLOCK,
         "SEMIBOLD_49_CLOCK" => &SEMIBOLD_49_CLOCK,
         "SEMIBOLD_60_CLOCK" => &SEMIBOLD_60_CLOCK,
+        #[cfg(feature = "atkinson")]
+        "ATKINSON_BOLD_16_ASCII" => &ATKINSON_BOLD_16_ASCII,
+        #[cfg(feature = "atkinson")]
+        "ATKINSON_BOLD_20_ASCII" => &ATKINSON_BOLD_20_ASCII,
+        #[cfg(feature = "atkinson")]
+        "ATKINSON_BOLD_25_ASCII" => &ATKINSON_BOLD_25_ASCII,
+        #[cfg(feature = "atkinson")]
+        "ATKINSON_BOLD_49_CLOCK" => &ATKINSON_BOLD_49_CLOCK,
+        #[cfg(feature = "atkinson")]
+        "ATKINSON_BOLD_62_CLOCK" => &ATKINSON_BOLD_62_CLOCK,
         _ => panic!("no face {name}; see Tools/faces.json"),
     }
 }

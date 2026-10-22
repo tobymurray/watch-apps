@@ -565,7 +565,10 @@ the Windows-only Designer; and there is no kernel font service.
 
 The crate is `TextKit/` (`textkit`), its README the design record. The
 generator reproduces TouchGFX's glyphs and the crate's parity test holds it
-to them. Ports, one commit each, each built in CI's toolchain image:
+to them. The rows and lessons below are Poppins only; a second typeface,
+Atkinson Hyperlegible Next, came later behind the `atkinson` feature, and its
+sizes and reasons are in that README. Ports, one commit each, each built in
+CI's toolchain image:
 
 | app | before `.text` / `.bss` / `.uapp` | after `.text` / `.bss` / `.uapp` | RAM | predicted atlas data | actual TextKit data |
 |---|---|---|---|---|---|

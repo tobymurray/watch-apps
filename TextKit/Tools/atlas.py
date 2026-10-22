@@ -161,7 +161,9 @@ def settings(entry):
 def rust_face(entry, nodes, data, ascent, descent):
     name = entry["name"]
     cfg = f'#[cfg(feature = "{entry["feature"]}")]' if "feature" in entry else None
-    lines = [f"/// {entry['font']}{settings(entry)} at {entry['px']} px, charset `{entry['charset']}`: {len(nodes)} glyphs, {len(data)} glyph bytes.",
+    # Rustdoc would read a variable font's `[wght]` as a link.
+    font = entry["font"].replace("[", "\\[").replace("]", "\\]")
+    lines = [f"/// {font}{settings(entry)} at {entry['px']} px, charset `{entry['charset']}`: {len(nodes)} glyphs, {len(data)} glyph bytes.",
              cfg,
              f"pub static {name}: Face = Face {{ px: {entry['px']}, ascent: {ascent}, descent: {descent}, flags: 0, nodes: &{name}_NODES, data: &{name}_DATA }};",
              cfg,

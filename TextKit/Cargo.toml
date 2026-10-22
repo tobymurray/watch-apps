@@ -24,6 +24,7 @@ include = [
     "Docs/2026-09-10-drawtarget-footprint.md",
     "Fonts/FONTS.md",
     "Fonts/OFL-Poppins.txt",
+    "Fonts/OFL-AtkinsonHyperlegibleNext.txt",
 ]
 
 [features]
@@ -33,6 +34,8 @@ default = ["abgr2222"]
 ## `Ink` for `inscribed-disc`'s `Abgr2222`: two bits a channel, four coverage
 ## levels, which is what the atlases are quantised to.
 abgr2222 = ["dep:inscribed-disc"]
+## The Atkinson Hyperlegible Next faces, `faces::ATKINSON_*`.
+atkinson = []
 ## Links `std`. No API depends on it, and the tests and examples have it anyway.
 std = []
 

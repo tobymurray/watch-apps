@@ -1,11 +1,13 @@
-//! Text for `embedded-graphics` draw targets: Poppins pre-rendered at build time into 2bpp glyph
-//! atlases, measured, aligned, wrapped and blitted. Design record: `README.md`, and `Docs/TEXT.md`
+//! Text for `embedded-graphics` draw targets: Poppins, and Atkinson Hyperlegible Next behind the
+//! `atkinson` feature, pre-rendered at build time into 2bpp glyph atlases, measured, aligned,
+//! wrapped and blitted. Design record: `README.md`, and `Docs/TEXT.md`
 //! at the repo root for the measurements that chose this over the alternatives.
 //!
 //! A glyph's coverage is one of four levels, so the ink is blended toward the ground through
 //! [`Ink`]; clipping belongs to the target, not to this crate.
 
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 use embedded_graphics::{
     prelude::{DrawTarget, Point},
@@ -13,6 +15,15 @@ use embedded_graphics::{
 };
 
 mod compose;
+
+/// One `static` [`Face`] per entry in `Tools/faces.json`. The `ATKINSON_` faces exist only with the
+/// `atkinson` feature:
+///
+#[cfg_attr(feature = "atkinson", doc = "```")]
+#[cfg_attr(not(feature = "atkinson"), doc = "```compile_fail")]
+/// let clock: &textkit::Face = &textkit::faces::ATKINSON_BOLD_62_CLOCK;
+/// assert!(clock.covers("16:27"));
+/// ```
 pub mod faces;
 
 /// One glyph of a [`Face`]: where its pixels start in the face's bitstream and how to place it.
@@ -371,6 +382,16 @@ mod tests {
             ("SEMIBOLD_36_CLOCK", &SEMIBOLD_36_CLOCK),
             ("SEMIBOLD_49_CLOCK", &SEMIBOLD_49_CLOCK),
             ("SEMIBOLD_60_CLOCK", &SEMIBOLD_60_CLOCK),
+            #[cfg(feature = "atkinson")]
+            ("ATKINSON_BOLD_16_ASCII", &ATKINSON_BOLD_16_ASCII),
+            #[cfg(feature = "atkinson")]
+            ("ATKINSON_BOLD_20_ASCII", &ATKINSON_BOLD_20_ASCII),
+            #[cfg(feature = "atkinson")]
+            ("ATKINSON_BOLD_25_ASCII", &ATKINSON_BOLD_25_ASCII),
+            #[cfg(feature = "atkinson")]
+            ("ATKINSON_BOLD_49_CLOCK", &ATKINSON_BOLD_49_CLOCK),
+            #[cfg(feature = "atkinson")]
+            ("ATKINSON_BOLD_62_CLOCK", &ATKINSON_BOLD_62_CLOCK),
         ]
     }
 

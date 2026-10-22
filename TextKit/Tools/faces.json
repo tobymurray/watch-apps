@@ -12,6 +12,11 @@
     {"name": "SEMIBOLD_27_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 27, "charset": "0123456789:"},
     {"name": "SEMIBOLD_36_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 36, "charset": "0123456789:"},
     {"name": "SEMIBOLD_49_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 49, "charset": "0123456789:"},
-    {"name": "SEMIBOLD_60_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 60, "charset": "0123456789:"}
+    {"name": "SEMIBOLD_60_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 60, "charset": "0123456789:"},
+    {"name": "ATKINSON_BOLD_16_ASCII", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 16, "charset": "ascii", "feature": "atkinson"},
+    {"name": "ATKINSON_BOLD_20_ASCII", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 20, "charset": "ascii", "feature": "atkinson"},
+    {"name": "ATKINSON_BOLD_25_ASCII", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 25, "charset": "ascii", "feature": "atkinson"},
+    {"name": "ATKINSON_BOLD_49_CLOCK", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 49, "charset": "0123456789:", "features": ["tnum"], "feature": "atkinson"},
+    {"name": "ATKINSON_BOLD_62_CLOCK", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 62, "charset": "0123456789:", "features": ["tnum"], "feature": "atkinson"}
   ]
 }
