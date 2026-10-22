@@ -355,23 +355,59 @@ alone on the watch.
   09:05 (`Awake in bed` 09:07), once an arm on the sensor stopped splitting it
   (see "Finding a night").
 
-## The screen
+## The screens
 
-Slumber opens on last night: Rest and Rhythm as two rings (see "The screens to
-come" for why those two), and inside them the night's rest, its times and its
-bedtime against the usual, such as `7h42`, `23:29-07:30`, `38m late`. Before
-there is a night it says `No night yet` and the usual bedtime once three nights
-give one; a night on a table says `watch was off`. The times are in the offset
-the night was logged with. R2 leaves.
+Three pages, in order: last night, the past week, and tonight. L2 goes to the
+next and L1 to the one before, wrapping both ways, and R2 leaves from any of
+them. That is the SDK's own reading of the buttons (`EventButton::Id`: L1 up,
+L2 down, R1 select, R2 back) and what the stock apps' faces do: Cycling's
+`TrackView` pages L1/L2 with wrap-around. R1 only opens the marks picker. Dots
+under each page say which one is up.
 
-`Software/Apps/CustomGUI/rust/src/night.rs` draws it. The service sends the
-night with every status, so the screen holds no history of its own. Its tests
-check that every line fits inside the Rhythm ring at the rows it is drawn on,
-and `SLUMBER_PREVIEW_DIR=<dir> cargo test --features std previews` writes each
+Slumber opens on last night, except from 4 h before tonight's usual bedtime to
+2 h after it, when it opens on tonight; a night under way, or a watch with no
+clock, keeps it on last night. Both windows are design choices, not
+measurements.
+
+Last night and Tonight are drawn on one 24-hour dial (`dial.rs`): midnight at
+the top, a tick each hour and a longer one every six, numbered `00`, `06` and
+`18`. Noon has no numeral because the page dots sit there, as far below the
+middle as `00` is above it, so the screen balances. Purple is what you did and
+cyan is your usual. A night is a band on the dial, cut at every hour it crosses,
+so its length can be counted in blocks.
+
+**Last night** is the night as a purple band, with the usual it was scored
+against as a thin cyan arc just inside it, so a late bedtime is the band
+starting clockwise of the arc. Inside: the night's rest, its times and its
+bedtime against the usual, such as `7h42`, `23:29-07:30`, `38m late`. The band
+spans the whole period, so it can be longer than the rest it reports. Before
+there is a night it says `No night yet` and shows the usual arc once three
+nights give one; a night on a table says `watch was off`. The times are in the
+offset the night was logged with.
+
+**The past week** is the main night of each of the seven evenings before
+tonight, a floating bar from bedtime to wake in the Rest colours, under dashed
+cyan lines at the usual bedtime and wake. Each bar is labelled with the weekday
+it began on, the newest in white. Above them, `4 of 6 on time` counts the
+bedtimes within 30 minutes of the usual, the window the Rhythm ring is full
+for. The plot runs in whole hours, at least six, so a single night does not
+fill it.
+
+**Tonight** is the usual night for tonight's weekday (`Schedule::expect`, see
+"Learning the week") as a cyan band on the dial, and a white dot for now. Inside: the usual bedtime, the usual wake, and how far
+bedtime is, such as `in 2h10`, `about now` or `45m past`. Before there is a
+usual it says how many more nights it needs.
+
+`Software/Apps/CustomGUI/rust/src/` draws them: `night.rs`, `week.rs` and
+`tonight.rs`. The service sends the night, the week and tonight with every
+status, so the screens hold no history of their own. Their tests check that
+every line fits inside the dial or the glass at the rows it is drawn on, and
+`SLUMBER_PREVIEW_DIR=<dir> cargo test --features std previews` writes each
 state as a PNG.
 
-**The marks picker is behind L1 L1 L2 L2**, pressed with no more than 1.5 s
-between presses; R2 goes back to the night. Long presses are not used: a hold
+**The marks picker is behind R1 R1 R1**, pressed with no more than 1.5 s
+between presses on any page; R2 goes back to last night. R1 does nothing else
+on the pages, so paging with L1 and L2 never opens it. Long presses are not used: a hold
 never reached Spin's screens.
 
 In the picker, L1 and L2 pick what you are doing from now on; R1 logs it, and the label
@@ -395,8 +431,12 @@ goes back on.
 
 ## The screens to come
 
-The morning rings are built (see "The screen"); the week of bars and the
-evening screen are not.
+The week of bars and the evening screen are built (see "The screens"); the
+themes are not. The two morning rings below were built and then replaced by the
+dial: on the watch they were hard to read, because a Rhythm ring is full when
+on time and empties either way, so it cannot say early from late. Rest and
+Rhythm remain the two things the screen reports, as the night's length and its
+bedtime against the usual.
 
 **Two rings, not a score.** A 0–100 sleep score is the most criticised thing
 wrist trackers show, and wrist movement cannot score sleep stages: across six

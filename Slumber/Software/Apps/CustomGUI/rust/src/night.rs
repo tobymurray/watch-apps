@@ -1,8 +1,9 @@
-//! The night screen, Rest and Rhythm as two goal rings, as README "The screens to come" designs it.
+//! The night screen: last night on the 24-hour dial against the usual night it was scored against.
 
 use inscribed_disc::{Abgr2222, Surface};
 use incised_text::{faces, Face, Style};
 
+use crate::dial::{self, Span};
 use crate::{atlas, Line, State};
 
 pub const KIND_NONE: u8 = 0;
@@ -11,48 +12,37 @@ pub const KIND_SO_FAR: u8 = 2;
 pub const KIND_OFF_WRIST: u8 = 3;
 pub const UNKNOWN: u16 = 0xFFFF;
 
-/// One lap of a ring, per mille.
-const LAP: u16 = 1000;
-/// Rhythm's ring is full within this many minutes of the usual bedtime.
-const ON_TIME_MIN: i32 = 30;
+/// A bedtime this close to the usual is on time.
+pub(crate) const ON_TIME_MIN: i32 = 30;
 
 const CENTRE: f32 = 119.5;
-/// Ring bands as pixel-centre radii, 2 px in from the glass edge.
-const REST_IN: f32 = 104.5;
-const REST_OUT: f32 = 116.5;
-const RHYTHM_IN: f32 = 90.5;
-const RHYTHM_OUT: f32 = 102.5;
-/// The unfilled part of a ring is a line this wide, since the panel has no dim purple.
-const TRACK_W: f32 = 3.0;
-/// Text stays inside this radius, clear of the Rhythm ring.
+/// Text stays inside this radius, clear of the dial.
 pub const TEXT_RADIUS: f32 = 88.0;
 
 /// Channel levels, 0 to 3, as floats so they can be blended before dithering.
-type Rgb = [f32; 3];
+pub(crate) type Rgb = [f32; 3];
 const VIOLET: Rgb = [1.0, 0.0, 3.0];
 const PURPLE: Rgb = [2.0, 0.0, 3.0];
 const MAGENTA: Rgb = [3.0, 0.0, 3.0];
 const CYAN_DEEP: Rgb = [0.0, 2.0, 3.0];
 const CYAN: Rgb = [0.0, 3.0, 3.0];
-const REST_TRACK: Rgb = [1.0, 0.0, 2.0];
-const RHYTHM_TRACK: Rgb = [0.0, 1.0, 2.0];
-/// What the ring under a second lap's tip is dimmed to, at the tip.
-const SHADOW: f32 = 0.3;
 
-const GROUND: Abgr2222 = Abgr2222::BLACK;
-const TITLE_INK: Abgr2222 = Abgr2222::from_levels(2, 2, 2);
-const MAIN_INK: Abgr2222 = Abgr2222::WHITE;
-const RHYTHM_INK: Abgr2222 = Abgr2222::from_levels(0, 3, 3);
-const MUTED_INK: Abgr2222 = Abgr2222::from_levels(2, 2, 2);
+pub(crate) const GROUND: Abgr2222 = Abgr2222::BLACK;
+pub(crate) const TITLE_INK: Abgr2222 = Abgr2222::from_levels(2, 2, 2);
+pub(crate) const MAIN_INK: Abgr2222 = Abgr2222::WHITE;
+pub(crate) const RHYTHM_INK: Abgr2222 = Abgr2222::from_levels(0, 3, 3);
+pub(crate) const MUTED_INK: Abgr2222 = Abgr2222::from_levels(2, 2, 2);
+/// The night's length, in the colour of its arc.
+pub(crate) const REST_INK: Abgr2222 = Abgr2222::from_levels(3, 0, 3);
 
 pub static TITLE_FACE: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
 pub static REST_FACE: &Face = &atlas::POPPINS_SEMIBOLD_24_ASCII;
 pub static DETAIL_FACE: &Face = &faces::POPPINS_SEMIBOLD_20_ASCII;
 
-pub const TITLE_Y: i32 = 84;
-pub const REST_Y: i32 = 120;
-pub const TIMES_Y: i32 = 150;
-pub const RHYTHM_Y: i32 = 178;
+pub const TITLE_Y: i32 = 80;
+pub const REST_Y: i32 = 116;
+pub const TIMES_Y: i32 = 146;
+pub const RHYTHM_Y: i32 = 174;
 
 const BAYER: [[f32; 4]; 4] = [
     [0.5 / 16.0, 8.5 / 16.0, 2.5 / 16.0, 10.5 / 16.0],
@@ -65,11 +55,12 @@ fn lerp(a: Rgb, b: Rgb, t: f32) -> Rgb {
     [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
 }
 
+
 fn scale(c: Rgb, k: f32) -> Rgb {
     [c[0] * k, c[1] * k, c[2] * k]
 }
 
-fn rest_ink(t: f32) -> Rgb {
+pub(crate) fn rest_ink(t: f32) -> Rgb {
     let t = t.clamp(0.0, 1.0) * 2.0;
     if t < 1.0 {
         lerp(VIOLET, PURPLE, t)
@@ -78,7 +69,7 @@ fn rest_ink(t: f32) -> Rgb {
     }
 }
 
-fn rhythm_ink(t: f32) -> Rgb {
+pub(crate) fn rhythm_ink(t: f32) -> Rgb {
     lerp(CYAN_DEEP, CYAN, t.clamp(0.0, 1.0))
 }
 
@@ -134,77 +125,13 @@ fn sin_turns(t: f32) -> f32 {
 }
 
 /// The ring's centreline point at `t` turns, as an offset from the centre.
-fn on_ring(radius: f32, t: f32) -> (f32, f32) {
+pub(crate) fn on_ring(radius: f32, t: f32) -> (f32, f32) {
     (radius * sin_turns(t), -radius * sin_turns(t + 0.25))
-}
-
-/// A ring filled to `fill` per mille from 12 o'clock, clockwise; `None` draws only its track.
-struct Ring {
-    inner: f32,
-    outer: f32,
-    fill: Option<u16>,
-    ink: fn(f32) -> Rgb,
-    track: Rgb,
-}
-
-impl Ring {
-    fn mid(&self) -> f32 {
-        (self.inner + self.outer) / 2.0
-    }
-
-    fn half_width(&self) -> f32 {
-        (self.outer - self.inner) / 2.0
-    }
-
-    /// What the ring puts at (dx, dy), or `None` if the ring does not reach it.
-    fn sample(&self, dx: f32, dy: f32, t: f32) -> Option<Rgb> {
-        let r2 = dx * dx + dy * dy;
-        let in_band = r2 >= self.inner * self.inner && r2 <= self.outer * self.outer;
-        let cap = |at: f32| {
-            let (cx, cy) = on_ring(self.mid(), at);
-            let (ex, ey) = (dx - cx, dy - cy);
-            ex * ex + ey * ey <= self.half_width() * self.half_width()
-        };
-        let fill = match self.fill {
-            Some(f) if f > 0 => f as f32 / LAP as f32,
-            _ => return self.track(r2),
-        };
-        if fill >= 1.0 {
-            let lap2 = (fill - 1.0).min(1.0);
-            if lap2 > 0.0 && (cap(lap2) || (in_band && t <= lap2)) {
-                return Some((self.ink)(if in_band && t <= lap2 { t / lap2 } else { 1.0 }));
-            }
-            if !in_band {
-                return None;
-            }
-            let base = (self.ink)(t);
-            let behind = (t - lap2) * core::f32::consts::TAU * self.mid() / (2.0 * self.half_width());
-            if lap2 > 0.0 && behind < 1.0 {
-                return Some(scale(base, SHADOW + (1.0 - SHADOW) * behind));
-            }
-            return Some(base);
-        }
-        if cap(0.0) {
-            return Some((self.ink)(0.0));
-        }
-        if cap(fill) {
-            return Some((self.ink)(1.0));
-        }
-        if in_band && t <= fill {
-            return Some((self.ink)(t / fill));
-        }
-        self.track(r2)
-    }
-
-    fn track(&self, r2: f32) -> Option<Rgb> {
-        let (lo, hi) = (self.mid() - TRACK_W / 2.0, self.mid() + TRACK_W / 2.0);
-        (r2 >= lo * lo && r2 <= hi * hi).then_some(self.track)
-    }
 }
 
 /// Ordered dither of continuous levels to the panel's four; README "The screens to come" measured a
 /// checkerboard of neighbouring levels landing halfway between them on the glass.
-fn dither(c: Rgb, x: i32, y: i32) -> Abgr2222 {
+pub(crate) fn dither(c: Rgb, x: i32, y: i32) -> Abgr2222 {
     let d = BAYER[(y & 3) as usize][(x & 3) as usize];
     let q = |v: f32| -> u8 {
         let l = (v + d) as i32;
@@ -215,10 +142,9 @@ fn dither(c: Rgb, x: i32, y: i32) -> Abgr2222 {
 
 const SUB: [f32; 2] = [-0.25, 0.25];
 
-fn draw_rings(fb: &mut Surface<Abgr2222>, rings: &[Ring]) {
+/// Paints the annulus `lo..hi` from `sample(dx, dy, turns)`, four samples a pixel, dithered.
+pub(crate) fn draw_band(fb: &mut Surface<Abgr2222>, lo: f32, hi: f32, sample: impl Fn(f32, f32, f32) -> Option<Rgb>) {
     let (w, h) = (fb.width(), fb.height());
-    let lo = RHYTHM_IN - 1.0;
-    let hi = REST_OUT + 1.0;
     for y in 0..h {
         let dy = y as f32 - CENTRE;
         if dy * dy > hi * hi {
@@ -234,11 +160,8 @@ fn draw_rings(fb: &mut Surface<Abgr2222>, rings: &[Ring]) {
             let mut sum = [0.0f32; 3];
             for sy in SUB {
                 for sx in SUB {
-                    for ring in rings {
-                        if let Some(c) = ring.sample(dx + sx, dy + sy, t) {
-                            sum = [sum[0] + c[0], sum[1] + c[1], sum[2] + c[2]];
-                            break;
-                        }
+                    if let Some(c) = sample(dx + sx, dy + sy, t) {
+                        sum = [sum[0] + c[0], sum[1] + c[1], sum[2] + c[2]];
                     }
                 }
             }
@@ -331,32 +254,31 @@ pub fn words(state: &State) -> Words {
     w
 }
 
-fn text(fb: &mut Surface<Abgr2222>, face: &Face, line: &Line, baseline: i32, ink: Abgr2222) {
+pub(crate) fn text(fb: &mut Surface<Abgr2222>, face: &Face, line: &Line, baseline: i32, ink: Abgr2222) {
     face.draw(fb, line.as_str(), 120, baseline, Style::centered(ink, GROUND)).ok();
+}
+
+/// The usual the night was scored against or, before there is a night, the latest usual.
+fn usual(state: &State, night: bool) -> Option<Span> {
+    if night {
+        return (state.scored_bed_min != UNKNOWN && state.scored_wake_min != UNKNOWN)
+            .then_some(Span { from_min: state.scored_bed_min, to_min: state.scored_wake_min });
+    }
+    let wake = state.week_usual_wake;
+    (state.night_kind == KIND_NONE && state.usual_bed_min != UNKNOWN && wake != crate::NO_BAR)
+        .then(|| Span { from_min: state.usual_bed_min, to_min: ((wake as i32 + 720).rem_euclid(1440)) as u16 })
 }
 
 pub fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
     let night = state.have_status != 0
         && (state.night_kind == KIND_SETTLED || state.night_kind == KIND_SO_FAR);
-    let rest = Ring {
-        inner: REST_IN,
-        outer: REST_OUT,
-        fill: night.then_some(state.rest_fill.min(2 * LAP)),
-        ink: rest_ink,
-        track: REST_TRACK,
-    };
-    let rhythm = Ring {
-        inner: RHYTHM_IN,
-        outer: RHYTHM_OUT,
-        fill: (night && state.rhythm_fill != UNKNOWN).then_some(state.rhythm_fill.min(LAP)),
-        ink: rhythm_ink,
-        track: RHYTHM_TRACK,
-    };
-    draw_rings(fb, &[rest, rhythm]);
+    let slept = night.then_some((Span { from_min: state.onset_min, to_min: state.wake_min }, rest_ink as fn(f32) -> Rgb));
+    dial::draw(fb, slept, if state.have_status != 0 { usual(state, night) } else { None });
+    dial::numerals(fb, GROUND);
 
     let w = words(state);
     text(fb, TITLE_FACE, &w.title, TITLE_Y, TITLE_INK);
-    text(fb, REST_FACE, &w.rest, REST_Y, MAIN_INK);
+    text(fb, REST_FACE, &w.rest, REST_Y, REST_INK);
     let times_ink = if w.times_are_usual {
         RHYTHM_INK
     } else if night {

@@ -23,6 +23,7 @@ private:
     void move(int step);
     void onButton(SDK::Message::EventButton::Id id);
     void show(uint8_t screen);
+    void turnTo(uint8_t page);
 
     static constexpr int16_t  kFallbackWidth     = 240;
     static constexpr int16_t  kFallbackHeight    = 240;
@@ -40,6 +41,7 @@ private:
     bool    mDirty         = true;
 
     bool mMarkPending = false;
+    bool mOpened      = false;  ///< the first status has chosen the screen
 
     uint8_t  mSequence    = 0;  ///< presses of the picker's sequence made so far
     uint32_t mLastPressMs = 0;

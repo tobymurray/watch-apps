@@ -581,12 +581,50 @@ void Service::showNight(LastNight::Kind kind, const SleepPeriods::Period &p, boo
         const int32_t d         = Rhythm::offset(Rhythm::afterNoon(p.startUtc, sleptOff), before);
         mShown.rhythmFill      = Rhythm::rhythmFill(d);
         mShown.rhythmOffsetMin = static_cast<int16_t>(d);
+        mShown.scoredBedMin    = static_cast<uint16_t>(Rhythm::minuteOfDay(before.bed));
+        mShown.scoredWakeMin   = static_cast<uint16_t>(Rhythm::minuteOfDay(before.wake));
     }
 }
 
 uint32_t Service::upMinutes() const
 {
     return (mKernel.sys.getTimeMs() - mStartMs) / 60000u;
+}
+
+void Service::fillWeek(CustomMessage::Status &st)
+{
+    const uint32_t utc = nowUtc();
+    std::tm        local{};
+    const int32_t  off = utcOffsetMin(utc, local);
+    if (utc == 0 || off == -1) {
+        return;
+    }
+    st.tonight.nowMin = Slumber::LocalTime::minuteOfDay(utc, off);
+
+    const int32_t            tonight  = Schedule::tonight(utc, off);
+    const Schedule::Learner &schedule = mNights.schedule();
+    const Schedule::Bars     bars     = schedule.before(tonight);
+    static_assert(CustomMessage::kWeekNights == Schedule::kWeekNights, "the week sent is the week learned");
+    for (size_t i = 0; i < CustomMessage::kWeekNights; ++i) {
+        st.week.bed[i]  = bars.bed[i];
+        st.week.wake[i] = bars.wake[i];
+    }
+    st.week.newestWeekday = bars.newestWeekday;
+    const Rhythm::Usual usual = mNights.recent().usualBefore(UINT32_MAX);
+    if (usual.known) {
+        st.week.usualBed  = static_cast<int16_t>(usual.bed);
+        st.week.usualWake = static_cast<int16_t>(usual.wake < usual.bed ? usual.wake + 1440 : usual.wake);
+    }
+
+    const Schedule::Expected e = schedule.expect(tonight);
+    if (e.known) {
+        st.tonight.bedMin  = static_cast<uint16_t>(Rhythm::minuteOfDay(e.bed));
+        st.tonight.wakeMin = static_cast<uint16_t>(Rhythm::minuteOfDay(e.wake));
+    } else {
+        const size_t have     = schedule.size();
+        st.tonight.nightsToGo = static_cast<uint8_t>(
+            have < Rhythm::kMinBaselineNights ? Rhythm::kMinBaselineNights - have : 0);
+    }
 }
 
 void Service::publishStatus()
@@ -605,6 +643,7 @@ void Service::publishStatus()
         st->accOk = mLastAccOk ? 1 : 0;
         st->hrOk  = mLastHrOk ? 1 : 0;
         st->night = mShown;
+        fillWeek(*st);
         st.send();
     }
 }

@@ -84,6 +84,18 @@ struct UsualHeart {
     uint8_t nights    = 0;
 };
 
+constexpr size_t kWeekNights = 7;
+
+/// A day in Bars with no main night.
+constexpr int16_t kNoNight = -1;
+
+/// The main night begun on each of the kWeekNights days before a day, oldest first.
+struct Bars {
+    int16_t bed[kWeekNights];   ///< Rhythm::afterNoon; kNoNight = none that day
+    int16_t wake[kWeekNights];  ///< Rhythm::afterNoon, past 1440 when it wraps noon
+    uint8_t newestWeekday = 0;  ///< the weekday the last one began on
+};
+
 /// Bit `weekday` is set for each weekday that differs that way.
 struct Week {
     uint8_t laterBed    = 0;
@@ -290,6 +302,25 @@ public:
         u.medianBpm = static_cast<uint8_t>(detail::median(med, nm));
         u.lowBpm    = nl > 0 ? static_cast<uint8_t>(detail::median(low, nl)) : 0;
         return u;
+    }
+
+    /// The main nights begun on the kWeekNights days before `day`.
+    Bars before(int32_t day) const
+    {
+        Bars b;
+        for (size_t i = 0; i < kWeekNights; ++i) {
+            b.bed[i]  = kNoNight;
+            b.wake[i] = kNoNight;
+        }
+        b.newestWeekday = weekday(day - 1);
+        for (size_t i = 0; i < mN; ++i) {
+            const int32_t back = day - mMain[i].day;
+            if (back >= 1 && back <= static_cast<int32_t>(kWeekNights)) {
+                b.bed[kWeekNights - static_cast<size_t>(back)]  = mMain[i].bed;
+                b.wake[kWeekNights - static_cast<size_t>(back)] = mMain[i].wake;
+            }
+        }
+        return b;
     }
 
     size_t size() const { return mN; }

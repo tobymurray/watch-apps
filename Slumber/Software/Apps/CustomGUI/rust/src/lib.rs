@@ -7,7 +7,10 @@ use incised_text::{faces, Face, Style};
 use panickit as _;
 
 mod atlas;
+mod dial;
 mod night;
+mod tonight;
+mod week;
 
 /// Mirrors `slumber_state` (`slumber_gui.h`) field for field.
 #[repr(C)]
@@ -33,11 +36,88 @@ pub struct State {
     pub rhythm_offset_min: i16,
     pub usual_bed_min: u16,
     pub restless: u8,
+    pub week_newest_weekday: u8,
+    pub week_bed: [i16; WEEK_NIGHTS],
+    pub week_wake: [i16; WEEK_NIGHTS],
+    pub week_usual_bed: i16,
+    pub week_usual_wake: i16,
+    pub tonight_bed_min: u16,
+    pub tonight_wake_min: u16,
+    pub now_min: u16,
+    pub nights_to_go: u8,
     pub _pad: [u8; 1],
+    pub scored_bed_min: u16,
+    pub scored_wake_min: u16,
 }
+
+pub const WEEK_NIGHTS: usize = 7;
+pub const NO_BAR: i16 = -1;
 
 pub const SCREEN_NIGHT: u8 = 0;
 pub const SCREEN_PICKER: u8 = 1;
+pub const SCREEN_WEEK: u8 = 2;
+pub const SCREEN_TONIGHT: u8 = 3;
+
+/// The screens L1 and L2 page through, in order; the picker is not one of them.
+pub const PAGES: [u8; 3] = [SCREEN_NIGHT, SCREEN_WEEK, SCREEN_TONIGHT];
+
+/// The page `step` pages on from `screen`, wrapping both ways as the stock apps' faces do.
+fn page_from(screen: u8, step: usize) -> u8 {
+    let at = PAGES.iter().position(|&p| p == screen).unwrap_or(0);
+    PAGES[(at + step) % PAGES.len()]
+}
+
+/// The page L2 goes to from `screen`.
+pub fn page_after(screen: u8) -> u8 {
+    page_from(screen, 1)
+}
+
+/// The page L1 goes to from `screen`.
+pub fn page_before(screen: u8) -> u8 {
+    page_from(screen, PAGES.len() - 1)
+}
+
+#[no_mangle]
+pub extern "C" fn slumber_page_after(screen: u8) -> u8 {
+    page_after(screen)
+}
+
+#[no_mangle]
+pub extern "C" fn slumber_page_before(screen: u8) -> u8 {
+    page_before(screen)
+}
+
+/// # Safety
+/// `state` must point to a valid `slumber_state` for the duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn slumber_opening_screen(state: *const State) -> u8 {
+    if state.is_null() {
+        return SCREEN_NIGHT;
+    }
+    tonight::opening_screen(&*state)
+}
+
+/// As far below the middle as the top numeral is above it.
+const DOTS_Y: i32 = 205;
+const DOT_STEP: i32 = 12;
+const DOT_R: i32 = 2;
+const DOT_INK: Abgr2222 = Abgr2222::from_levels(1, 1, 1);
+
+/// One dot a page, the current one white.
+fn draw_dots(fb: &mut Surface<Abgr2222>, screen: u8) {
+    let first = 120 - (PAGES.len() as i32 - 1) * DOT_STEP / 2;
+    for (i, &page) in PAGES.iter().enumerate() {
+        let cx = first + i as i32 * DOT_STEP;
+        let ink = if page == screen { Abgr2222::WHITE } else { DOT_INK };
+        for dy in -DOT_R..=DOT_R {
+            for dx in -DOT_R..=DOT_R {
+                if dx * dx + dy * dy <= DOT_R * DOT_R + 1 {
+                    fb.fill_rect(cx + dx, DOTS_Y + dy, 1, 1, ink);
+                }
+            }
+        }
+    }
+}
 
 pub const NO_MARK: u8 = 0xFF;
 pub const NO_MARK_AGE: u32 = 0xFFFF_FFFF;
@@ -65,7 +145,18 @@ impl Default for State {
             rhythm_offset_min: 0,
             usual_bed_min: night::UNKNOWN,
             restless: 0,
+            week_newest_weekday: 0,
+            week_bed: [NO_BAR; WEEK_NIGHTS],
+            week_wake: [NO_BAR; WEEK_NIGHTS],
+            week_usual_bed: NO_BAR,
+            week_usual_wake: NO_BAR,
+            tonight_bed_min: night::UNKNOWN,
+            tonight_wake_min: night::UNKNOWN,
+            now_min: night::UNKNOWN,
+            nights_to_go: 0,
             _pad: [0; 1],
+            scored_bed_min: night::UNKNOWN,
+            scored_wake_min: night::UNKNOWN,
         }
     }
 }
@@ -252,19 +343,25 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {
         return;
     };
     fb.clear(GROUND);
-    if state.screen == SCREEN_PICKER {
-        draw_picker(&mut fb, state);
-    } else {
-        night::draw(&mut fb, state);
+    match state.screen {
+        SCREEN_PICKER => {
+            draw_picker(&mut fb, state);
+            return;
+        }
+        SCREEN_WEEK => week::draw(&mut fb, state),
+        SCREEN_TONIGHT => tonight::draw(&mut fb, state),
+        _ => night::draw(&mut fb, state),
     }
+    draw_dots(&mut fb, state.screen);
 }
 
 pub const BUTTON_L1: u8 = 0;
 pub const BUTTON_L2: u8 = 1;
 pub const BUTTON_OTHER: u8 = 2;
+pub const BUTTON_R1: u8 = 3;
 
-/// The presses that open the picker from the night screen.
-pub const SEQUENCE: [u8; 4] = [BUTTON_L1, BUTTON_L1, BUTTON_L2, BUTTON_L2];
+/// The presses that open the picker from any page: R1, which does nothing else there, so paging never opens it.
+pub const SEQUENCE: [u8; 3] = [BUTTON_R1, BUTTON_R1, BUTTON_R1];
 /// A longer pause between presses starts the sequence again.
 pub const SEQUENCE_GAP_MS: u32 = 1500;
 
@@ -324,7 +421,18 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(State, rhythm_offset_min));
     let h = fnv1a(h, core::mem::offset_of!(State, usual_bed_min));
     let h = fnv1a(h, core::mem::offset_of!(State, restless));
-    fnv1a(h, core::mem::offset_of!(State, _pad))
+    let h = fnv1a(h, core::mem::offset_of!(State, week_newest_weekday));
+    let h = fnv1a(h, core::mem::offset_of!(State, week_bed));
+    let h = fnv1a(h, core::mem::offset_of!(State, week_wake));
+    let h = fnv1a(h, core::mem::offset_of!(State, week_usual_bed));
+    let h = fnv1a(h, core::mem::offset_of!(State, week_usual_wake));
+    let h = fnv1a(h, core::mem::offset_of!(State, tonight_bed_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, tonight_wake_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, now_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, nights_to_go));
+    let h = fnv1a(h, core::mem::offset_of!(State, _pad));
+    let h = fnv1a(h, core::mem::offset_of!(State, scored_bed_min));
+    fnv1a(h, core::mem::offset_of!(State, scored_wake_min))
 }
 
 #[no_mangle]
@@ -332,7 +440,7 @@ pub extern "C" fn slumber_abi_fingerprint() -> u32 {
     abi_fingerprint()
 }
 
-const _: () = assert!(core::mem::size_of::<State>() == 40);
+const _: () = assert!(core::mem::size_of::<State>() == 84);
 const _: () = assert!(core::mem::align_of::<State>() == 4);
 const _: () = assert!(core::mem::offset_of!(State, rows_today) == 4);
 const _: () = assert!(core::mem::offset_of!(State, write_fails) == 8);
@@ -350,6 +458,14 @@ const _: () = assert!(core::mem::offset_of!(State, rest_fill) == 30);
 const _: () = assert!(core::mem::offset_of!(State, rhythm_offset_min) == 34);
 const _: () = assert!(core::mem::offset_of!(State, usual_bed_min) == 36);
 const _: () = assert!(core::mem::offset_of!(State, restless) == 38);
+const _: () = assert!(core::mem::offset_of!(State, week_bed) == 40);
+const _: () = assert!(core::mem::offset_of!(State, week_wake) == 54);
+const _: () = assert!(core::mem::offset_of!(State, week_usual_bed) == 68);
+const _: () = assert!(core::mem::offset_of!(State, tonight_bed_min) == 72);
+const _: () = assert!(core::mem::offset_of!(State, now_min) == 76);
+const _: () = assert!(core::mem::offset_of!(State, nights_to_go) == 78);
+const _: () = assert!(core::mem::offset_of!(State, scored_bed_min) == 80);
+const _: () = assert!(core::mem::offset_of!(State, scored_wake_min) == 82);
 
 #[no_mangle]
 pub extern "C" fn slumber_mark_count() -> u32 {
@@ -443,6 +559,10 @@ mod tests {
             rhythm_fill: 860,
             rhythm_offset_min: 38,
             usual_bed_min: 22 * 60 + 51,
+            scored_bed_min: 22 * 60 + 51,
+            scored_wake_min: 6 * 60 + 55,
+            week_usual_bed: 22 * 60 + 51 - 720,
+            week_usual_wake: 6 * 60 + 55 + 720,
             ..State::default()
         }
     }
@@ -453,18 +573,88 @@ mod tests {
         vec![
             ("starting", State::default()),
             ("settled", s),
-            ("short", State { rest_min: 3 * 60 + 30, rest_fill: 500, rhythm_fill: 1000, rhythm_offset_min: -12, ..s }),
+            ("short", State { rest_min: 3 * 60 + 30, wake_min: 3 * 60 + 5, rest_fill: 500, rhythm_fill: 1000, rhythm_offset_min: -12, ..s }),
             ("full", State { rest_min: 7 * 60, rest_fill: 1000, ..s }),
             ("long", State { rest_min: 13 * 60 + 59, onset_min: 20 * 60 + 59, wake_min: 10 * 60 + 58, rest_fill: 1997, ..s }),
             ("past-two-laps", State { rest_min: 23 * 60 + 59, rest_fill: 3427, ..s }),
             ("late", State { rhythm_fill: 0, rhythm_offset_min: 23 * 60 + 59, ..s }),
             ("early", State { rhythm_fill: 400, rhythm_offset_min: -(2 * 60 + 5), ..s }),
-            ("learning", State { rhythm_fill: night::UNKNOWN, ..s }),
+            ("learning", State { rhythm_fill: night::UNKNOWN, scored_bed_min: night::UNKNOWN, scored_wake_min: night::UNKNOWN, ..s }),
+            ("lie-in", State { rest_min: 9 * 60 + 15, onset_min: 50, wake_min: 10 * 60 + 40, rhythm_offset_min: 119, ..s }),
             ("so-far", State { night_kind: night::KIND_SO_FAR, ..s }),
             ("empty", State { rest_min: 0, rest_fill: 0, rhythm_fill: 0, ..s }),
             ("off-wrist", State { night_kind: night::KIND_OFF_WRIST, ..s }),
             ("none-usual", State { night_kind: night::KIND_NONE, ..s }),
             ("none", State { night_kind: night::KIND_NONE, usual_bed_min: night::UNKNOWN, ..s }),
+        ]
+    }
+
+    /// Minutes after noon for a local clock time.
+    fn hm(h: i32, m: i32) -> i16 {
+        ((h * 60 + m + 720) % 1440) as i16
+    }
+
+    /// A week from (bed, wake) clock pairs, oldest first; `None` is a night not slept on the wrist.
+    fn week_of(nights: [Option<((i32, i32), (i32, i32))>; WEEK_NIGHTS], usual: Option<((i32, i32), (i32, i32))>) -> State {
+        let mut st = State {
+            have_status: 1,
+            screen: SCREEN_WEEK,
+            week_newest_weekday: 3,
+            week_usual_bed: NO_BAR,
+            week_usual_wake: NO_BAR,
+            ..slept()
+        };
+        let span = |((bh, bm), (wh, wm)): ((i32, i32), (i32, i32))| {
+            let (bed, wake) = (hm(bh, bm), hm(wh, wm));
+            (bed, if wake < bed { wake + 1440 } else { wake })
+        };
+        for (i, n) in nights.into_iter().enumerate() {
+            if let Some(n) = n {
+                (st.week_bed[i], st.week_wake[i]) = span(n);
+            }
+        }
+        if let Some(u) = usual {
+            (st.week_usual_bed, st.week_usual_wake) = span(u);
+        }
+        st
+    }
+
+    /// The week screen in every state that changes what it says or how it scales.
+    fn weeks() -> Vec<(&'static str, State)> {
+        let usual = Some(((23, 10), (7, 5)));
+        vec![
+            ("week", week_of([
+                Some(((23, 0), (7, 0))), Some(((23, 40), (7, 10))), None, Some(((22, 50), (6, 55))),
+                Some(((0, 55), (8, 30))), Some(((1, 30), (10, 15))), Some(((23, 15), (7, 20))),
+            ], usual)),
+            ("week-steady", week_of([Some(((23, 5), (7, 0))); WEEK_NIGHTS], usual)),
+            ("week-noon", week_of([
+                None, None, Some(((4, 0), (13, 30))), Some(((23, 0), (7, 0))),
+                Some(((20, 30), (5, 0))), None, Some(((23, 30), (7, 30))),
+            ], usual)),
+            ("week-learning", week_of([None, None, None, None, None, Some(((23, 0), (7, 0))), Some(((23, 30), (7, 15)))], None)),
+            ("week-empty", week_of([None; WEEK_NIGHTS], None)),
+        ]
+    }
+
+    /// The evening screen in every state that changes what it says or draws.
+    fn tonights() -> Vec<(&'static str, State)> {
+        let s = State {
+            screen: SCREEN_TONIGHT,
+            tonight_bed_min: 23 * 60 + 15,
+            tonight_wake_min: 7 * 60 + 5,
+            now_min: 21 * 60 + 5,
+            ..slept()
+        };
+        vec![
+            ("tonight", s),
+            ("tonight-now", State { now_min: 23 * 60 + 20, ..s }),
+            ("tonight-past", State { now_min: 1 * 60 + 40, ..s }),
+            ("tonight-late-owl", State { tonight_bed_min: 2 * 60 + 30, tonight_wake_min: 11 * 60 + 45, now_min: 23 * 60 + 59, ..s }),
+            ("tonight-no-clock", State { now_min: night::UNKNOWN, ..s }),
+            ("tonight-learning", State { tonight_bed_min: night::UNKNOWN, tonight_wake_min: night::UNKNOWN, nights_to_go: 2, ..s }),
+            ("tonight-one-more", State { tonight_bed_min: night::UNKNOWN, tonight_wake_min: night::UNKNOWN, nights_to_go: 1, ..s }),
+            ("tonight-unworn", State { tonight_bed_min: night::UNKNOWN, tonight_wake_min: night::UNKNOWN, nights_to_go: 0, ..s }),
         ]
     }
 
@@ -482,6 +672,8 @@ mod tests {
         out.push(State { acc_ok: 0, hr_ok: 0, rows_today: 4_294_967_295, ..reported() });
         out.push(State { mark_ago_min: 7, ..reported() });
         out.extend(nights().into_iter().map(|(_, st)| st));
+        out.extend(weeks().into_iter().map(|(_, st)| st));
+        out.extend(tonights().into_iter().map(|(_, st)| st));
         out
     }
 
@@ -638,29 +830,265 @@ mod tests {
         assert_eq!(none.times.as_str(), "usually 22:51");
     }
 
+    /// The pixel on the middle of the dial's band at `minute` past midnight, `along` pixels clockwise of it.
+    fn band_pixel(buf: &[u8], minute: u16, along: f32) -> u8 {
+        let t = minute as f32 / 1440.0 * core::f32::consts::TAU + along / 110.5;
+        let (x, y) = (119.5 + 110.5 * t.sin(), 119.5 - 110.5 * t.cos());
+        buf[(y.round() as i32 * W as i32 + x.round() as i32) as usize]
+    }
+
+    fn on_band(buf: &[u8], minute: u16) -> u8 {
+        band_pixel(buf, minute, 0.0)
+    }
+
+    /// Last night 23:29-07:30 lights the band through 03:20, the middle of an hour, and not at 15:20.
     #[test]
-    fn a_night_is_drawn_on_the_rings() {
-        let empty = frame(&State { night_kind: night::KIND_NONE, ..slept() });
-        let full = frame(&slept());
-        let ring_changed = (0..H as i32)
-            .flat_map(|y| (0..W as i32).map(move |x| (x, y)))
-            .filter(|&(x, y)| {
-                let r = (((x as f32 - 119.5).powi(2) + (y as f32 - 119.5).powi(2)) as f32).sqrt();
-                r > 91.0 && empty[(y * W as i32 + x) as usize] != full[(y * W as i32 + x) as usize]
+    fn a_night_is_drawn_where_it_fell_on_the_clock() {
+        let lit = frame(&slept());
+        let none = frame(&State { night_kind: night::KIND_NONE, ..slept() });
+        assert_ne!(on_band(&lit, 3 * 60 + 20), GROUND.0);
+        assert_eq!(on_band(&lit, 15 * 60 + 20), GROUND.0);
+        assert_eq!(on_band(&none, 3 * 60 + 20), GROUND.0);
+    }
+
+    /// Each hour a night crosses is cut back to the ground colour.
+    #[test]
+    fn a_night_is_notched_at_each_hour() {
+        let lit = frame(&slept());
+        for h in [0u16, 1, 2, 5, 7] {
+            let cut = [-1.0, -0.5, 0.0, 0.5, 1.0].iter().any(|&a| band_pixel(&lit, h * 60, a) == GROUND.0);
+            assert!(cut, "{h}:00 is not notched");
+            assert_ne!(on_band(&lit, h * 60 + 30), GROUND.0, "{h}:30");
+        }
+    }
+
+    /// Lines on a ringless screen clear the bezel by a pixel at the rows they are drawn on.
+    fn fits_the_glass(face: &Face, s: &str, x: i32, y: i32) -> bool {
+        let m = face.measure(s);
+        let (left, right) = (x as f32 - (m.ink_right - m.ink_left) as f32 / 2.0 - 1.0, x as f32 + (m.ink_right - m.ink_left) as f32 / 2.0 + 1.0);
+        [y - face.ascent as i32, y + face.descent as i32].iter().all(|&row| {
+            let d = row as f32 - 119.5;
+            let room = (118.5f32 * 118.5 - d * d).max(0.0).sqrt();
+            left >= 119.5 - room && right <= 119.5 + room
+        })
+    }
+
+    #[test]
+    fn week_text_fits_the_glass() {
+        for (name, st) in weeks() {
+            let (summary, _) = week::summary(&st);
+            assert!(week::SUMMARY_FACE.covers(summary.as_str()), "{name}");
+            assert!(fits_the_glass(week::SUMMARY_FACE, summary.as_str(), 120, week::SUMMARY_Y), "{name}: {:?}", summary.as_str());
+            assert!(fits_the_glass(week::TITLE_FACE, "Past week", 120, week::TITLE_Y));
+            for i in 0..WEEK_NIGHTS {
+                assert!(fits_the_glass(week::DAY_FACE, week::day(&st, i), week::column_x(i), week::DAY_Y), "{name} day {i}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_week_counts_bedtimes_near_the_usual() {
+        let say = |st: &State| week::summary(st).0.as_str().to_owned();
+        let w = weeks();
+        assert_eq!(say(&w[0].1), "4 of 6 on time");
+        assert_eq!(say(&w[1].1), "7 of 7 on time");
+        assert_eq!(say(&w[3].1), "learning");
+        assert_eq!(say(&w[4].1), "No nights yet");
+    }
+
+    #[test]
+    fn the_week_letters_end_on_the_newest_evening() {
+        let st = State { week_newest_weekday: 3, ..State::default() };
+        let letters: String = (0..WEEK_NIGHTS).map(|i| week::day(&st, i)).collect();
+        assert_eq!(letters, "TFSSMTW");
+    }
+
+    #[test]
+    fn every_bar_lies_inside_the_plot() {
+        for (name, st) in weeks() {
+            let (lo, hi) = week::span(&st);
+            for i in 0..WEEK_NIGHTS {
+                if st.week_bed[i] != NO_BAR {
+                    assert!(lo <= st.week_bed[i] as i32 && st.week_wake[i] as i32 <= hi, "{name} night {i}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn l1_and_l2_page_both_ways_and_wrap() {
+        assert_eq!(page_after(SCREEN_NIGHT), SCREEN_WEEK);
+        assert_eq!(page_after(SCREEN_WEEK), SCREEN_TONIGHT);
+        assert_eq!(page_after(SCREEN_TONIGHT), SCREEN_NIGHT);
+        for &p in &PAGES {
+            assert_eq!(page_before(page_after(p)), p);
+        }
+        assert_eq!(page_before(SCREEN_NIGHT), SCREEN_TONIGHT);
+        assert!(!PAGES.contains(&SCREEN_PICKER));
+    }
+
+    /// Every line of the evening screen sits inside the dial, at the rows it is drawn on.
+    #[test]
+    fn tonight_text_clears_the_dial() {
+        let r = night::TEXT_RADIUS;
+        for (name, st) in tonights() {
+            let w = tonight::words(&st);
+            for (face, line, y) in [
+                (night::TITLE_FACE, &w.title, night::TITLE_Y),
+                (night::REST_FACE, &w.bed, night::REST_Y),
+                (night::DETAIL_FACE, &w.wake, night::TIMES_Y),
+                (night::DETAIL_FACE, &w.countdown, night::RHYTHM_Y),
+            ] {
+                assert!(face.covers(line.as_str()), "{name}: {:?}", line.as_str());
+                let m = face.measure(line.as_str());
+                let half = (m.ink_right - m.ink_left) as f32 / 2.0 + 1.0;
+                for row in [y - face.ascent as i32, y + face.descent as i32] {
+                    let d = row as f32 - 119.5;
+                    let room = (r * r - d * d).max(0.0).sqrt();
+                    assert!(half <= room, "{name}: {:?} needs {half} at row {row}, has {room}", line.as_str());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tonight_says_the_usual_and_how_far_off_it_is() {
+        let t = tonights();
+        let w = tonight::words(&t[0].1);
+        assert_eq!((w.bed.as_str(), w.wake.as_str(), w.countdown.as_str()), ("23:15", "wake 07:05", "in 2h10"));
+        assert_eq!(tonight::words(&t[5].1).wake.as_str(), "2 more nights");
+        assert_eq!(tonight::words(&t[6].1).wake.as_str(), "1 more night");
+        assert_eq!(tonight::words(&t[4].1).countdown.as_str(), "");
+    }
+
+    #[test]
+    fn the_app_opens_on_tonight_only_around_the_usual_bedtime() {
+        let t = tonights()[0].1;
+        let at = |now: u16| tonight::opening_screen(&State { now_min: now, ..t });
+        assert_eq!(at(19 * 60 + 15), SCREEN_TONIGHT);
+        assert_eq!(at(19 * 60 + 14), SCREEN_NIGHT);
+        assert_eq!(at(1 * 60 + 15), SCREEN_TONIGHT);
+        assert_eq!(at(1 * 60 + 16), SCREEN_NIGHT);
+        assert_eq!(at(9 * 60), SCREEN_NIGHT);
+        assert_eq!(tonight::opening_screen(&State { night_kind: night::KIND_SO_FAR, now_min: 23 * 60, ..t }), SCREEN_NIGHT);
+        assert_eq!(tonight::opening_screen(&State { now_min: night::UNKNOWN, ..t }), SCREEN_NIGHT);
+        assert_eq!(tonight::opening_screen(&tonights()[5].1), SCREEN_NIGHT);
+        assert_eq!(tonight::opening_screen(&State::default()), SCREEN_NIGHT);
+    }
+
+    /// Each numeral's ink is centred on its place on the dial, to the pixel, and clear of the usual arc.
+    #[test]
+    fn numerals_sit_centred_inside_the_usual_arc() {
+        for (label, minute) in dial::NUMERALS {
+            let mut buf = vec![0u8; (W * H) as usize];
+            let mut fb = Surface::<Abgr2222>::round(&mut buf, W, H).unwrap();
+            fb.clear(GROUND);
+            let (x, baseline) = dial::numeral_at(minute);
+            dial::NUMERAL_FACE.draw(&mut fb, label, x, baseline, Style::centered(Abgr2222::WHITE, GROUND)).ok();
+            let lit: Vec<(i32, i32)> = (0..H as i32)
+                .flat_map(|y| (0..W as i32).map(move |x| (x, y)))
+                .filter(|&(x, y)| buf[(y * W as i32 + x) as usize] != GROUND.0)
+                .collect();
+            let (x0, x1) = (lit.iter().map(|p| p.0).min().unwrap(), lit.iter().map(|p| p.0).max().unwrap());
+            let (y0, y1) = (lit.iter().map(|p| p.1).min().unwrap(), lit.iter().map(|p| p.1).max().unwrap());
+            let t = minute as f32 / 1440.0 * core::f32::consts::TAU;
+            let (cx, cy) = (119.5 + dial::NUMERAL_RADIUS * t.sin(), 119.5 - dial::NUMERAL_RADIUS * t.cos());
+            assert!(((x0 + x1) as f32 / 2.0 - cx).abs() <= 1.0, "{label} centred at x {} not {cx}", (x0 + x1) as f32 / 2.0);
+            assert!(((y0 + y1) as f32 / 2.0 - cy).abs() <= 1.0, "{label} centred at y {} not {cy}", (y0 + y1) as f32 / 2.0);
+            for &(x, y) in &lit {
+                let (dx, dy) = (x as f32 - 119.5, y as f32 - 119.5);
+                assert!(dx * dx + dy * dy < 98.0 * 98.0, "{label} reaches the usual arc at ({x},{y})");
+            }
+        }
+    }
+
+    /// No numeral shares a pixel box with any line of the night or evening screen, in any state.
+    #[test]
+    fn numerals_never_touch_the_text() {
+        let line_box = |face: &Face, s: &str, y: i32| {
+            let m = face.measure(s);
+            let half = (m.ink_right - m.ink_left + 1) / 2 + 1;
+            (120 - half, 120 + half, y - face.ascent as i32, y + face.descent as i32)
+        };
+        let numeral_boxes: Vec<_> = dial::NUMERALS
+            .iter()
+            .map(|&(label, minute)| {
+                let (x, baseline) = dial::numeral_at(minute);
+                let m = dial::NUMERAL_FACE.measure(label);
+                let half = (m.ink_right - m.ink_left + 1) / 2 + 1;
+                (x - half, x + half, baseline - 14, baseline)
             })
-            .count();
-        assert!(ring_changed > 5000, "{ring_changed} ring pixels changed");
+            .collect();
+        let mut lines: Vec<(String, (i32, i32, i32, i32))> = Vec::new();
+        for (name, st) in nights() {
+            let w = night::words(&st);
+            for (face, l, y) in [
+                (night::TITLE_FACE, &w.title, night::TITLE_Y),
+                (night::REST_FACE, &w.rest, night::REST_Y),
+                (night::DETAIL_FACE, &w.times, night::TIMES_Y),
+                (night::DETAIL_FACE, &w.rhythm, night::RHYTHM_Y),
+            ] {
+                if !l.as_str().is_empty() {
+                    lines.push((format!("{name}: {:?}", l.as_str()), line_box(face, l.as_str(), y)));
+                }
+            }
+        }
+        for (name, st) in tonights() {
+            let w = tonight::words(&st);
+            for (face, l, y) in [
+                (night::TITLE_FACE, &w.title, night::TITLE_Y),
+                (night::REST_FACE, &w.bed, night::REST_Y),
+                (night::DETAIL_FACE, &w.wake, night::TIMES_Y),
+                (night::DETAIL_FACE, &w.countdown, night::RHYTHM_Y),
+            ] {
+                if !l.as_str().is_empty() {
+                    lines.push((format!("{name}: {:?}", l.as_str()), line_box(face, l.as_str(), y)));
+                }
+            }
+        }
+        for (what, (l0, l1, t0, t1)) in &lines {
+            for (n0, n1, m0, m1) in &numeral_boxes {
+                let apart = l1 < n0 || n1 < l0 || t1 < m0 || m1 < t0;
+                assert!(apart, "{what} touches a numeral at x {n0}..{n1}, rows {m0}..{m1}");
+            }
+        }
+    }
+
+    /// The text block of the night screen is centred on the panel, to within a pixel.
+    #[test]
+    fn the_night_text_is_centred_on_the_panel() {
+        let top = night::TITLE_Y - 14;
+        let buf = frame(&slept());
+        let rows: Vec<i32> = (top - 4..=night::RHYTHM_Y + 8)
+            .filter(|&y| (60..180).any(|x| buf[(y * W as i32 + x) as usize] != GROUND.0))
+            .collect();
+        let middle = (rows[0] + rows[rows.len() - 1]) as f32 / 2.0;
+        assert!((middle - 119.5).abs() <= 1.0, "text rows {}..{} centre on {middle}", rows[0], rows[rows.len() - 1]);
     }
 
     #[test]
     fn the_sequence_opens_only_in_order_and_in_time() {
         let run = |presses: &[(u8, u32)]| presses.iter().fold(0u8, |p, &(b, gap)| sequence_step(p, b, gap));
         let n = SEQUENCE.len() as u8;
-        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L1, 400), (BUTTON_L2, 400), (BUTTON_L2, 400)]), n);
-        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L1, 400), (BUTTON_L1, 400), (BUTTON_L2, 400), (BUTTON_L2, 400)]), n);
-        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L2, 400), (BUTTON_L2, 400)]), 0);
-        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L1, 400), (BUTTON_L2, 400), (BUTTON_L2, 2000)]), 0);
-        assert_eq!(run(&[(BUTTON_L1, 0), (BUTTON_L1, 400), (BUTTON_OTHER, 400), (BUTTON_L2, 400)]), 0);
+        assert_eq!(run(&[(BUTTON_R1, 0), (BUTTON_R1, 400), (BUTTON_R1, 400)]), n);
+        assert_eq!(run(&[(BUTTON_L2, 0), (BUTTON_R1, 300), (BUTTON_R1, 400), (BUTTON_R1, 400)]), n);
+        assert_eq!(run(&[(BUTTON_R1, 0), (BUTTON_R1, 400)]), 2);
+        assert_eq!(run(&[(BUTTON_R1, 0), (BUTTON_R1, 400), (BUTTON_R1, 2000)]), 1);
+        assert_eq!(run(&[(BUTTON_R1, 0), (BUTTON_L1, 400), (BUTTON_R1, 400)]), 1);
+    }
+
+    /// Paging, however fast and in whatever order, never opens the picker.
+    #[test]
+    fn paging_never_opens_the_picker() {
+        for presses in 0u32..(1 << 10) {
+            let p = (0..10).fold(0u8, |p, i| {
+                let b = if presses >> i & 1 == 0 { BUTTON_L1 } else { BUTTON_L2 };
+                let q = sequence_step(p, b, 100);
+                assert_ne!(q, SEQUENCE.len() as u8);
+                q
+            });
+            assert_eq!(p, 0);
+        }
     }
 
     /// Writes each night state as a PNG when SLUMBER_PREVIEW_DIR is set.
@@ -670,7 +1098,7 @@ mod tests {
             return;
         };
         let opts = inscribed_disc::preview::Options { scale: 2, ..Default::default() };
-        for (name, st) in nights().into_iter().chain([("picker", reported())]) {
+        for (name, st) in nights().into_iter().chain(weeks()).chain(tonights()).chain([("picker", reported())]) {
             let rgba = inscribed_disc::preview::to_rgba(&frame(&st), W, H, opts);
             inscribed_disc::preview::write_png(format!("{dir}/{name}.png"), &rgba, W * 2, H * 2).unwrap();
         }

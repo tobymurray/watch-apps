@@ -65,6 +65,7 @@ private:
     void publishNow(uint32_t utc);
     void logNights(size_t n, int32_t offsetMin);
     void publishStatus();
+    void fillWeek(CustomMessage::Status &st);
     uint32_t upMinutes() const;
 
     static constexpr uint32_t kEpochMs = 30000;
