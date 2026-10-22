@@ -102,7 +102,7 @@ the event arrives.
   shape.
 - TouchGFX or a Rust `no_std` renderer behind CustomGUI are both established here. This
   app draws text and a few boxes, so pick whichever you can get building fastest and say
-  which you picked. `Docs/TEXT.md` and `IncisedText/README.md` own the typeface decision;
+  which you picked. `Docs/TEXT.md` and `IncisedText/Docs/DESIGN.md` own the typeface decision;
   do not re-litigate it.
 - Files are sandbox-relative. No absolute `N:/` path resolves on the device.
 - Nothing reaches a running app from the phone. Session configuration comes from a JSON
@@ -213,7 +213,7 @@ for anything small or anything that must survive daylight.**
 
 ### Use IncisedText's machinery rather than hand-placing text
 
-`IncisedText/README.md` is the crate's record; the parts that matter here:
+`IncisedText/Docs/DESIGN.md` is the crate's record; the parts that matter here:
 
 - **`wrap`** is greedy by word into caller-owned line slots, never splits a word, and
   **reports how many lines the text needed**. Treat that count as a value you check, so an

@@ -1,332 +1,50 @@
 # incised-text
 
-Text for the UNA Watch's Rust GUIs: Poppins, and Atkinson Hyperlegible Next
-behind the `atkinson` feature, pre-rendered at build time into 2bpp glyph
-atlases and blitted onto any `embedded-graphics` `DrawTarget`. `no_std`,
-no allocator, no scratch buffer. Each app's `CustomGUI` crate takes it as a
-Cargo path dependency; it owns no screen, no frame struct, no framebuffer and no
-C ABI.
+Anti-aliased text for [`embedded-graphics`](https://crates.io/crates/embedded-graphics)
+draw targets, `no_std` and allocation-free. Fonts are rendered at build time into
+2-bit (four-level) glyph atlases; at run time the crate measures, aligns, wraps and
+draws them.
 
-Clipping is the target's, not this crate's: on the watch that target is
-[`inscribed-disc`](https://crates.io/crates/inscribed-disc)'s `Surface`, which clips to the glass. A
-consumer bringing its own colour implements `Ink`; `Ink for Abgr2222` is
-inscribed-disc's type, behind the default-on `abgr2222` feature.
+```rust
+use incised_text::{faces, Style};
+use inscribed_disc::{Abgr2222, Surface};
 
-Why this shape and not the others was decided by measurement in
-[`Docs/TEXT.md`](https://github.com/tobymurray/watch-apps/blob/main/Docs/TEXT.md) at the repo root, with the scripts and
-contact sheets beside it. This file is the record of what the crate is, what
-was measured while building it, and which numbers would falsify which
-decisions.
+let mut frame = vec![0u8; 240 * 240];
+let mut screen = Surface::<Abgr2222>::round(&mut frame, 240, 240).unwrap();
+let style = Style::centered(Abgr2222::WHITE, Abgr2222::BLACK);
+let drawn = faces::POPPINS_SEMIBOLD_20_ASCII.draw(&mut screen, "16:27", 120, 120, style).unwrap();
+assert_eq!(drawn.missing, 0);
+```
 
-## The panel, as far as text is concerned
+Any `DrawTarget` works whose colour implements `Ink`; the default `abgr2222` feature
+implements it for [`inscribed-disc`](https://crates.io/crates/inscribed-disc)'s
+`Abgr2222`.
 
-Sharp LS012B7DD06: 240×240 at 0.126 mm, round, two bits a channel, so a
-glyph's anti-aliasing is a choice among 85, 170 and 255, and only the
-inscribed disc is glass. Bright text on a dark ground is the only kind
-proven to render; a black-on-white readout came back as a blank white band
-on hardware (`RustGuiPoc/Docs/FINDINGS.md`). Measured on this glass by the
-cartography research: 22 to 26 px em is confirmed readable, 11 to 12 px is
-detection only. Falsified by a different display or a device photograph
-that contradicts either.
+## Faces
 
-## Two typefaces
+Each face is one font at one pixel size over one character set, in `faces`:
 
-**Poppins** Regular and SemiBold is the face the wearer already knows: the
-blobs TouchGFX rasterized, held to its shipped tables pixel for pixel (below).
-Its faces are always compiled, under the names the apps use.
-
-**Atkinson Hyperlegible Next** Bold (wght 700 of the variable font) is behind
-the `atkinson` feature, as `faces::ATKINSON_*`. It is here because its
-confusable characters are drawn to differ, and Poppins' are not: in these
-atlases Poppins' `I` and `l` are the same pixels at Regular 12 and Regular 18,
-while `I`, `l`, `1` and `|` are four different bitmaps in every Atkinson ASCII
-face (`tests/atkinson.rs` holds that). For an id, a code or a date read at a
-glance, that difference is the point.
-
-What a caller should know about it:
-
-- **Digits are proportional by default.** `1` is narrower than `8`, so a
-  centred clock would jitter as it ticks. The clock faces are built with the
-  font's `tnum` feature, which swaps each digit for its tabular form, so every
-  digit advances the same (`tests/atkinson.rs`); the ASCII faces keep the
-  proportional digits, which read better in running text such as
-  "Sat 17 Oct". Poppins' digits already share one advance in every face
-  here, so its faces use no feature.
-- **Zero is always slashed.** The font has no plain zero, in either its
-  default or its tabular digits, so `0` never passes for `O`, and there is no
-  way to get an unslashed one.
-- **No on-glass evidence yet.** Every Atkinson face is measured on the host
-  only. The panel claims in this README were made with Poppins; nothing here
-  says how Atkinson's stems or slashed zero look on the glass until a device
-  photograph is filed.
-
-Sizes are matched on capital height, as `Docs/TEXT.md` matched the TouchGFX
-faces: the ink rows of `H` rasterized with the generator's settings. The clock
-faces carry no `H`, so theirs is measured from the same font at the same size.
-
-| face | px | capital | matched against |
+| Faces | Font | Sizes (px) | Characters |
 |---|---|---|---|
-| `ATKINSON_BOLD_16_ASCII` | 16 | 11 | `REGULAR_16_LATIN`, 11 |
-| `ATKINSON_BOLD_20_ASCII` | 20 | 13 | `REGULAR_18_LATIN`, 13; `SEMIBOLD_20_ASCII` is 14, which Atkinson reaches at 21 px |
-| `ATKINSON_BOLD_25_ASCII` | 25 | 17 | Poppins SemiBold 24 and 25, both 17: the date and label size |
-| `ATKINSON_BOLD_49_CLOCK` | 49 | 33 | Poppins SemiBold 47 and 48, 33; `SEMIBOLD_49_CLOCK` is 35, which Atkinson reaches at 52 px |
-| `ATKINSON_BOLD_62_CLOCK` | 62 | 42 | `SEMIBOLD_60_CLOCK`, 42 |
+| `POPPINS_REGULAR_{12,14}_ASCII` | Poppins Regular | 12, 14 | ASCII |
+| `POPPINS_REGULAR_{16,18}_LATIN` | Poppins Regular | 16, 18 | ASCII, Latin-1, Latin Extended-A |
+| `POPPINS_SEMIBOLD_{18,20}_ASCII` | Poppins SemiBold | 18, 20 | ASCII |
+| `POPPINS_SEMIBOLD_{27,36,49,60}_CLOCK` | Poppins SemiBold | 27, 36, 49, 60 | `0123456789:` |
+| `ATKINSON_BOLD_{16,20,25}_ASCII` | Atkinson Hyperlegible Next Bold | 16, 20, 25 | ASCII |
+| `ATKINSON_BOLD_{49,62}_CLOCK` | Atkinson Hyperlegible Next Bold | 49, 62 | `0123456789:`, tabular |
 
-Poppins' digits stand taller than its capitals and Atkinson's do not: `1` is
-44 rows in `SEMIBOLD_60_CLOCK` and 42 in `ATKINSON_BOLD_62_CLOCK`, so the
-matched clock reads two rows shorter in its digits.
+The `ATKINSON_*` faces need the `atkinson` feature. Atkinson Hyperlegible Next draws
+`I`, `l`, `1` and `|` differently, and its zero is always slashed.
 
-Atkinson's capital is about 0.68 em at wght 700 against Poppins SemiBold's
-0.70, so it needs one or two more pixels of em for the same capital. At 62 px
-`16:27` is 173 px of advance, against 176 for `SEMIBOLD_60_CLOCK`; `1:23:45`
-is 229 px at 62 and 181 at 49. At 25 px
-"Sat 17 Oct" is 119 px and "100 %" 75. Falsified by rerunning the generator
-with a different FreeType, weight or font revision.
+A character a face lacks draws as a hollow box and is counted in `Measure::missing`.
+Faces of your own come from `Tools/atlas.py` in the
+[repository](https://github.com/tobymurray/watch-apps/tree/main/IncisedText).
 
-## What it does
-
-- **Faces** are `static`s in `src/faces.rs`, one per (weight, pixel size,
-  character set) listed in `Tools/faces.json`. A face not listed does not
-  exist, and a screen that names one fails to compile. The linker drops the
-  faces an app does not reference: NotifyToggle names two of twelve and
-  carries two.
-- **Measure**: sum of advances, ink bounds, and how many characters had no
-  glyph. Alignment and wrapping use the advance, as TouchGFX's
-  `getStringWidth` did, so Barcode's measured bezel table transfers.
-- **Draw** at a baseline or a top, left, centre or right, in any ink over a
-  declared ground, both carried by a `Style`. Partial coverage is blended
-  through `Ink::shade`; where the pixels are allowed to land is the target's
-  business.
-- **Wrap**: greedy by word into caller-owned line slots, never splitting a
-  word, reporting how many lines the text needed so overflow is a number
-  the caller sees rather than a line that vanished.
-- **Ladder**: `pick` returns the first face whose advance fits.
-- **Missing glyph**: a one-pixel hollow box, capital height by 0.6 em, never
-  `?` and never nothing; `Measure::missing` counts them so a caller with
-  Barcode's refuse-rather-than-guess rule can refuse.
-- **Composition**: a base letter followed by a combining mark becomes its
-  precomposed Latin form when one exists (`src/compose.rs`, 161 pairs);
-  anything else combining draws as missing on its own. Code points above
-  U+FFFF draw as missing; that is emoji, and it is deliberate.
-
-Coverage today is tier 0 (ASCII) and tier 1 (Latin-1 Supplement, Latin
-Extended-A, … – — ‘ ’ “ ” € •) per face as the manifest says. Poppins has
-one Greek code point and no Cyrillic, so tier 2 is a second face whatever
-the mechanism; tier 3 (CJK) is a file, and the format has a header for that
-day. Neither is built. `Docs/TEXT.md` costs both.
-
-## The bar, and the test that holds it
-
-TouchGFX Designer's font converter, the only pipeline this platform ever
-had, turns out to be **FreeType's light autohinter, coverage rounded to the
-nearest third (thresholds 43 / 128 / 213 of 255), blank edge rows and
-columns cropped**. `Tools/atlas.py` does exactly that, and
-`tests/touchgfx_parity.rs` holds it: every glyph the oracle carries from
-Squash's shipped `Font_Poppins_*_2bpp` tables (SemiBold 18, Regular 14,
-SemiBold 20, Regular 18) must match ours in width, height, bearings, advance
-and every pixel. Across the four faces and 94 non-space ASCII glyphs each,
-376 of 376 do. The glyph byte totals match too: SemiBold 18 2,638, Regular
-14 1,583, SemiBold 20 3,331, exactly what the TouchGFX tables hold.
-
-Falsified by a FreeType whose autohinter renders differently; the generator
-writes the version it ran with into `src/faces.rs` (2.13.2, from
-`freetype-py 2.5.1`, pinned in `Tools/requirements.txt` and in the toolchain
-image), and the parity test is what notices.
-
-Light autohinting snaps vertically only. Measured on the host
-(`Docs/text-design/04_stems.png`): Regular's stems at 16 to 20 px are about
-1.5 px wide and land as an 85 + 170 column pair hinted or not; SemiBold's at
-20 and 24 px are two solid columns. For anything small that must read as
-crisp, prefer SemiBold. Horizontal stem snapping is possible in the
-generator and waits on a photograph saying stems are the problem.
-
-## The format
-
-Frozen once shipped. Little-endian. In `.rodata` it is a Rust `Face` whose
-`nodes` and `data` are these two arrays; in a file it would be this header,
-the nodes and the bitstream, in that order.
-
-| field | type | meaning |
-|---|---|---|
-| `magic` | u32 | `"TXA1"` |
-| `version` | u16 | 1 |
-| `px` | u8 | em size the glyphs were rendered at |
-| `ascent`, `descent` | u8, u8 | pixels the face may use above and below the baseline |
-| `flags` | u8 | bit 0: hard-aliased build, levels are 0 or 3 only |
-| `count` | u16 | nodes, sorted by code point |
-| `data_len` | u32 | bytes of bitstream |
-| node × `count` | 12 bytes | `off` u32, `cp` u16, `w` u8, `h` u8, `top` i8, `left` i8, `adv` u8, `flags` u8 |
-| bitstream | | row-major, two bits a pixel, least-significant pair first, no row padding, glyph `n` starting at byte `off` |
-
-The bit order is TouchGFX's own, established by decoding its tables: the 3×11
-`!` is 9 bytes, which only unpadded packing gives, and the pixels come out
-right only least-significant pair first.
-
-## Footprint
-
-Measured on `thumbv8m.main-none-eabihf` by
-[`Docs/measurements/drawtarget`](https://github.com/tobymurray/watch-apps/tree/main/IncisedText/Docs/measurements/drawtarget), a staticlib
-probe linking `draw`, `draw_top`, `measure`, `wrap` and `pick` against a real
-`Surface`: **2,620 bytes of `.text`** and 7,399 of `.rodata`, of which 6,137
-are the two faces the probe names and 966 the composition table; no `.bss`.
-See [`Docs/2026-09-10-drawtarget-footprint.md`](https://github.com/tobymurray/watch-apps/blob/main/IncisedText/Docs/2026-09-10-drawtarget-footprint.md)
-for what drawing through a `DrawTarget` cost and what recovered most of it.
-
-The per-app rows below were measured against the previous shape, where this
-crate owned a framebuffer of its own. **They are stale**: each app has since
-deleted its private framebuffer as well, so both sides of the comparison
-moved. Re-measuring them wants the toolchain image, which is where `.uapp`
-numbers come from. Per face, bytes of glyph data plus 12 per node, which has
-not changed:
-
-| face | glyphs | bytes |
-|---|---|---|
-| `SEMIBOLD_18_ASCII` | 95 | 3,778 |
-| `REGULAR_14_ASCII` | 95 | 2,723 |
-| `REGULAR_12_ASCII` | 95 | 2,359 |
-| `SEMIBOLD_20_ASCII` | 95 | 4,471 |
-| `REGULAR_18_LATIN` | 307 | 13,090 |
-| `REGULAR_16_LATIN` | 307 | 11,119 |
-| `SEMIBOLD_24_ANSWERS` (`YESNO`) | 6 | 376 |
-| `SEMIBOLD_32_TITLE` (`SPIN`) | 5 | 386 |
-| `SEMIBOLD_27_CLOCK` (`0-9:`) | 12 | 841 |
-| `SEMIBOLD_36_CLOCK` | 12 | 1,395 |
-| `SEMIBOLD_49_CLOCK` | 12 | 2,454 |
-| `SEMIBOLD_60_CLOCK` | 12 | 3,598 |
-| `ATKINSON_BOLD_16_ASCII` | 95 | 3,098 |
-| `ATKINSON_BOLD_20_ASCII` | 95 | 4,062 |
-| `ATKINSON_BOLD_25_ASCII` | 95 | 5,848 |
-| `ATKINSON_BOLD_49_CLOCK` (`0-9:`, `tnum`) | 12 | 2,398 |
-| `ATKINSON_BOLD_62_CLOCK` | 12 | 3,706 |
-
-Per-app before and after rows are in each app's README under Footprint.
-
-## Building and testing
-
-```sh
-cd IncisedText
-cargo test                         # unit tests and the TouchGFX parity oracle
-cargo test --features atkinson     # and the Atkinson faces' own tests
-cargo build --release --target thumbv8m.main-none-eabihf
-cargo run --features std --example measure SEMIBOLD_18_ASCII "NOTIFICATIONS"
-```
-
-Regenerating the atlases needs the pinned tools:
-
-```sh
-python3 -m venv .venv && .venv/bin/pip install -r Tools/requirements.txt
-.venv/bin/python Tools/atlas.py            # rewrites src/faces.rs and src/compose.rs
-.venv/bin/python Tools/atlas.py --check    # what CI should run: fails if either is stale
-.venv/bin/python Tools/touchgfx_oracle.py  # refreshes tests/oracle/touchgfx.rs from Squash
-```
-
-The toolchain image carries the same pins, and `app-build.yml` runs
-`--check` and this crate's tests for every app whose renderer depends on it;
-a change under `IncisedText/` triggers those apps' builds. The fonts are in
-`Fonts/`: Poppins byte-identical to the blobs TouchGFX rasterized, Atkinson
-Hyperlegible Next as Google Fonts serves it. `Fonts/FONTS.md` has the sources,
-hashes and licences, and the OFL texts beside it ship with the crate.
-
-## Porting notes
-
-What each port taught, so the next one starts further along. The footprint
-numbers in each are as they were measured at that port, when this crate still
-owned a framebuffer and the app owned a second one.
-
-### NotifyToggle
-
-The smallest app, two words and a hint, on `embedded-graphics`'s fixed-width
-`MonoTextStyle`. Ported to `SEMIBOLD_18_ASCII` for the words and
-`REGULAR_12_ASCII` for the hint.
-
-- **The bezel found the footer.** `R1 TOGGLE  R2 BACK` is 117 px in Regular 12
-  against a 122 px chord at its old baseline of 222; moved to 220 where the
-  chord is 129. Regular 14 would have been 143 px, wider than any row that
-  low. The chord arithmetic is one line of Python
-  (`sqrt(119.5² − (y − 119.5)²)`), and the bezel test now runs on every state,
-  which is what caught it before a wrist did.
-- **The linker does drop unreferenced faces.** Twelve faces in `faces.rs`,
-  two named by the app; the map shows only those two.
-- **Cost of joining.** `.text` 31,980 → 33,608, `.bss` unchanged at 58,432,
-  `.uapp` 41,188 → 42,820. The 1.6 KB is 1.5 KB of IncisedText code plus 6.1 KB
-  of faces, less the 3.6 KB of `embedded-graphics` text machinery and mono
-  fonts it no longer links. Proportional Poppins for the price of one atlas,
-  and every string it draws now sits on the same face Barcode's and Spin's
-  will.
-- **The prototype's 610 bytes was the blit alone.** The crate an app actually
-  links carries `measure`, `covers` and composition too. Still a fraction of
-  the u8g2 renderer, and there is no scratch buffer to add.
-- **A face constant per role** (`WORD_FACE`, `HINT_FACE`) rather than a face
-  name at each call site: the port was two edits to change a face and the
-  coverage test checks each role's strings against its own face.
-
-### Barcode
-
-The first supersample-and-shrink app: two u8g2 faces, a 15,360-byte scratch
-buffer, widths scaled by a height ratio. Ported to `SEMIBOLD_20_ASCII` for
-the preferred id tier and `REGULAR_18_LATIN` for the rest.
-
-- **The measured table came back.** Barcode's README measured the TouchGFX
-  build's id widths with `getStringWidth` and never re-measured the u8g2
-  build. Poppins' advances are those numbers again, so the 186 / 187 tier
-  thresholds hold by construction and the `0123456789ABCD` id, which the
-  u8g2 build had demoted to the small face because its bold face was
-  wider, is bold again.
-- **Baselines, not tops.** u8g2 placed text by the top of its ascent box;
-  the atlases place by baseline. Keeping the picture still meant computing
-  each old baseline once (box top plus the scaled ascent, 19 and 14) and
-  naming it, rather than reusing the box tops with a face whose ascent
-  differs.
-- **Poppins is wider than Helvetica shrunk.** The same prompt wraps into
-  three lines at Regular 18 where the shrink drew it in three narrower
-  ones; nothing needed a fourth, and the wrap test asserts every literal
-  fits four.
-- **Footprint.** `.text` 42,176 → 46,780, `.bss` 73,712 → 58,352, `.uapp`
-  72,004 → 76,176: 17,561 bytes of two atlases in, 6,125 of faces and
-  15,360 of scratch out, so 10.8 KB less RAM and 4.2 KB more file. IncisedText
-  in situ: 2,248 bytes of code with `wrap` linked, 18,743 of data.
-- **Bars are not text.** The Code128 sub-pixel coverage path has its own
-  four-level shading for dark bars on the white backing and stayed exactly
-  as it was; only the glyph path changed.
-- **A caption of twelve `W`s still overflows its 160 px box**, at 216 px in
-  Regular 18 as it did in every build before; the crate clips it to the
-  disc rather than to the box. Not new, not fixed here, and worth a ladder
-  or an ellipsis if a real name ever does it.
-
-### Spin
-
-The most faces of the three: seven on-screen sizes from three u8g2 sources,
-a 26,880-byte scratch buffer, and a `Face` type of its own (source plus
-destination height). Ported to eight atlases, four of them thirteen glyphs
-each for the clock.
-
-- **Per-size character sets are where the savings are.** A SemiBold 60 face
-  over ASCII would be 30 KB; over `0123456789:` it is 3.6 KB. The whole
-  clock ladder, 27 / 36 / 49 / 60, is 8.3 KB. The manifest makes that a
-  one-word choice per face, and the coverage test is what keeps a screen
-  from asking a digit face for a letter, which u8g2's `_tn` faces used to
-  answer by silently drawing nothing.
-- **Keep the app's own names.** The screens asked for text by the heights
-  the u8g2 build drew at (`CLOCK_XL_H`, `LABEL_H`, …). Rather than rewrite
-  forty call sites, each height now selects the Poppins face whose capital
-  matches, and the draw call places the capitals where the old top was
-  (top + 0.7 em). Every layout constant stayed; the sheet shows nothing
-  moving more than a pixel.
-- **`&'static Face` through the old helpers.** `label_face()`,
-  `bold_face(h)` and `number_face(h)` kept their signatures and return
-  references into the atlases; `&label` at a call site coerces from
-  `&&Face`, so the port touched the fonts section and one test.
-- **Footprint.** `.text` 36,984 → 44,804, `.bss` 85,200 → 58,320, `.uapp`
-  113,612 → 121,060: 25,201 bytes of atlases in, 7,266 of faces and 26,880
-  of scratch out, 19 KB less RAM. IncisedText in situ 1,530 bytes of code,
-  since nothing here wraps.
-- **The one test that knew the renderer** asserted part-covered red on the
-  discard screen through the old `shade`; it asks inscribed-disc's `shade` for
-  the same two levels and passes unchanged in intent.
+The design, the format and the measurements behind it are in
+[`Docs/DESIGN.md`](https://github.com/tobymurray/watch-apps/blob/main/IncisedText/Docs/DESIGN.md).
 
 ## Licence
 
-The code is MIT (`LICENSE-MIT`) or Apache-2.0 (`LICENSE-APACHE`), at your
-option. `src/faces.rs` is glyph data rasterized from Poppins and Atkinson
-Hyperlegible Next and is under the SIL Open Font License 1.1, as the fonts
-are; `Fonts/FONTS.md` has the sources and `Fonts/OFL-*.txt` the texts.
+The code is MIT or Apache-2.0, at your option. The glyph data in `src/faces.rs` is
+rendered from Poppins and Atkinson Hyperlegible Next and is under the SIL Open Font
+License 1.1; `Fonts/FONTS.md` names the sources and `Fonts/OFL-*.txt` are the texts.

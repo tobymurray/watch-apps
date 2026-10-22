@@ -563,7 +563,7 @@ the Windows-only Designer; and there is no kernel font service.
 
 ## As built
 
-The crate is `IncisedText/` (`incised-text`), its README the design record. The
+The crate is `IncisedText/` (`incised-text`), its `Docs/DESIGN.md` the design record. The
 generator reproduces TouchGFX's glyphs and the crate's parity test holds it
 to them. The rows and lessons below are Poppins only; a second typeface,
 Atkinson Hyperlegible Next, came later behind the `atkinson` feature, and its
@@ -585,7 +585,7 @@ row. Every `.uapp` grew, by the atlas data; every GUI that had a scratch
 buffer shrank in RAM by more than it gained in glyphs.
 
 What the ports taught, in the order it was learned (each app's entry in
-`IncisedText/README.md` has the detail):
+`IncisedText/Docs/DESIGN.md` has the detail):
 
 - **Per-size character sets are the lever.** SemiBold 60 over ASCII is 30 KB;
   over the eleven characters a clock draws it is 3.6 KB. The manifest makes
