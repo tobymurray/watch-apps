@@ -84,8 +84,11 @@ uint8_t slumber_sequence_step(uint8_t progress, uint8_t button, uint32_t gap_ms)
 /* The press sequence's length: a step returning it opens the picker. */
 uint8_t slumber_sequence_len(void);
 
-/* The screen R1 pages to from `screen`. */
+/* The page L2 goes to from `screen`. */
 uint8_t slumber_page_after(uint8_t screen);
+
+/* The page L1 goes to from `screen`. */
+uint8_t slumber_page_before(uint8_t screen);
 
 /* The screen to open on, once the first status is in. */
 uint8_t slumber_opening_screen(const slumber_state* state);

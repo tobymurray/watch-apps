@@ -58,18 +58,33 @@ pub const SCREEN_PICKER: u8 = 1;
 pub const SCREEN_WEEK: u8 = 2;
 pub const SCREEN_TONIGHT: u8 = 3;
 
-/// The screens R1 pages through, in order; the picker is not one of them.
+/// The screens L1 and L2 page through, in order; the picker is not one of them.
 pub const PAGES: [u8; 3] = [SCREEN_NIGHT, SCREEN_WEEK, SCREEN_TONIGHT];
 
-/// The page R1 goes to from `screen`.
+/// The page `step` pages on from `screen`, wrapping both ways as the stock apps' faces do.
+fn page_from(screen: u8, step: usize) -> u8 {
+    let at = PAGES.iter().position(|&p| p == screen).unwrap_or(0);
+    PAGES[(at + step) % PAGES.len()]
+}
+
+/// The page L2 goes to from `screen`.
 pub fn page_after(screen: u8) -> u8 {
-    let at = PAGES.iter().position(|&p| p == screen).unwrap_or(PAGES.len() - 1);
-    PAGES[(at + 1) % PAGES.len()]
+    page_from(screen, 1)
+}
+
+/// The page L1 goes to from `screen`.
+pub fn page_before(screen: u8) -> u8 {
+    page_from(screen, PAGES.len() - 1)
 }
 
 #[no_mangle]
 pub extern "C" fn slumber_page_after(screen: u8) -> u8 {
     page_after(screen)
+}
+
+#[no_mangle]
+pub extern "C" fn slumber_page_before(screen: u8) -> u8 {
+    page_before(screen)
 }
 
 /// # Safety
@@ -344,7 +359,7 @@ pub const BUTTON_L1: u8 = 0;
 pub const BUTTON_L2: u8 = 1;
 pub const BUTTON_OTHER: u8 = 2;
 
-/// The presses that open the picker from the night screen.
+/// The presses that open the picker from any page.
 pub const SEQUENCE: [u8; 4] = [BUTTON_L1, BUTTON_L1, BUTTON_L2, BUTTON_L2];
 /// A longer pause between presses starts the sequence again.
 pub const SEQUENCE_GAP_MS: u32 = 1500;
@@ -900,10 +915,14 @@ mod tests {
     }
 
     #[test]
-    fn r1_pages_round_and_the_picker_is_not_a_page() {
+    fn l1_and_l2_page_both_ways_and_wrap() {
         assert_eq!(page_after(SCREEN_NIGHT), SCREEN_WEEK);
         assert_eq!(page_after(SCREEN_WEEK), SCREEN_TONIGHT);
         assert_eq!(page_after(SCREEN_TONIGHT), SCREEN_NIGHT);
+        for &p in &PAGES {
+            assert_eq!(page_before(page_after(p)), p);
+        }
+        assert_eq!(page_before(SCREEN_NIGHT), SCREEN_TONIGHT);
         assert!(!PAGES.contains(&SCREEN_PICKER));
     }
 

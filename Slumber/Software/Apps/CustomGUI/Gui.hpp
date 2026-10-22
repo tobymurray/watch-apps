@@ -23,6 +23,7 @@ private:
     void move(int step);
     void onButton(SDK::Message::EventButton::Id id);
     void show(uint8_t screen);
+    void turnTo(uint8_t page);
 
     static constexpr int16_t  kFallbackWidth     = 240;
     static constexpr int16_t  kFallbackHeight    = 240;

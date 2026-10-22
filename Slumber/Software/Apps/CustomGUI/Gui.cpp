@@ -103,7 +103,14 @@ void Gui::show(uint8_t screen)
     mDirty             = true;
 }
 
-/// R1 pages; L1 L1 L2 L2 on the night screen opens the picker; R2 goes back to the night, or leaves the app.
+/// Pages without resetting the picker's sequence, whose presses are page turns too.
+void Gui::turnTo(uint8_t page)
+{
+    mState.screen = page;
+    mDirty        = true;
+}
+
+/// L1 and L2 page back and on, as the stock apps' faces do; L1 L1 L2 L2 opens the picker; R2 leaves.
 void Gui::onButton(SDK::Message::EventButton::Id id)
 {
     using Id = SDK::Message::EventButton::Id;
@@ -119,16 +126,6 @@ void Gui::onButton(SDK::Message::EventButton::Id id)
         }
         return;
     }
-    if (id == Id::SW2) {
-        show(slumber_page_after(mState.screen));
-        return;
-    }
-    if (mState.screen != SLUMBER_SCREEN_NIGHT) {
-        if (id == Id::SW4) {
-            show(SLUMBER_SCREEN_NIGHT);
-        }
-        return;
-    }
     const uint32_t now    = mKernel.sys.getTimeMs();
     const uint8_t  button = id == Id::SW1   ? SLUMBER_BUTTON_L1
                             : id == Id::SW3 ? SLUMBER_BUTTON_L2
@@ -137,6 +134,10 @@ void Gui::onButton(SDK::Message::EventButton::Id id)
     mLastPressMs = now;
     if (mSequence == slumber_sequence_len()) {
         show(SLUMBER_SCREEN_PICKER);
+    } else if (id == Id::SW1) {
+        turnTo(slumber_page_before(mState.screen));
+    } else if (id == Id::SW3) {
+        turnTo(slumber_page_after(mState.screen));
     }
 }
 
@@ -235,7 +236,7 @@ void Gui::run()
                 using Event = SDK::Message::EventButton::Event;
 
                 if (btn->event == Event::CLICK && btn->id == Id::SW4 &&
-                    mState.screen == SLUMBER_SCREEN_NIGHT) {
+                    mState.screen != SLUMBER_SCREEN_PICKER) {
                     msg->setResult(SDK::MessageResult::SUCCESS);
                     mKernel.comm.releaseMessage(msg);
                     mKernel.sys.exit(0);

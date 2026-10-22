@@ -357,9 +357,12 @@ alone on the watch.
 
 ## The screens
 
-Three pages, in order: last night, the past week, and tonight. R1 goes to the
-next, R2 goes back to last night, and R2 on last night leaves. Dots under each
-page say which one is up.
+Three pages, in order: last night, the past week, and tonight. L2 goes to the
+next and L1 to the one before, wrapping both ways, and R2 leaves from any of
+them. That is the SDK's own reading of the buttons (`EventButton::Id`: L1 up,
+L2 down, R1 select, R2 back) and what the stock apps' faces do: Cycling's
+`TrackView` pages L1/L2 with wrap-around. R1 does nothing on the pages. Dots
+under each page say which one is up.
 
 Slumber opens on last night, except from 4 h before tonight's usual bedtime to
 2 h after it, when it opens on tonight; a night under way, or a watch with no
@@ -403,7 +406,8 @@ every line fits inside the dial or the glass at the rows it is drawn on, and
 state as a PNG.
 
 **The marks picker is behind L1 L1 L2 L2**, pressed with no more than 1.5 s
-between presses on last night; R2 goes back to it. Long presses are not used: a hold
+between presses on any page; the pages turn as they are pressed, and R2 goes
+back to last night. Long presses are not used: a hold
 never reached Spin's screens.
 
 In the picker, L1 and L2 pick what you are doing from now on; R1 logs it, and the label
