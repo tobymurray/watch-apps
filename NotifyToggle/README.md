@@ -184,11 +184,11 @@ test `not_saved_is_visually_distinct_from_a_saved_on` is what holds that line.
 An unsupported firmware draws no switch, because R1 cannot move one.
 
 The words are Poppins SemiBold 18 and the hint Poppins Regular 12, drawn from
-[`TextKit`](../TextKit)'s pre-rendered atlases rather than
+[`IncisedText`](../IncisedText)'s pre-rendered atlases rather than
 `embedded-graphics`' fixed-width bitmap fonts. Before and after, through the
 bezel mask the watch applies:
 
-![Before and after the TextKit port](Docs/text-before-after.png)
+![Before and after the IncisedText port](Docs/text-before-after.png)
 
 The hint sits two rows higher than it did: at Regular 12 it is 117 px wide,
 and the lit chord is 122 px at row 222 against 129 at row 220. The bezel test

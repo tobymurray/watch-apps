@@ -100,6 +100,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "incised-text"
+version = "0.1.0"
+dependencies = [
+ "embedded-graphics",
+ "inscribed-disc",
+]
+
+[[package]]
 name = "inscribed-disc"
 version = "0.2.1"
 dependencies = [
@@ -170,17 +178,9 @@ name = "slumber_gui"
 version = "0.1.0"
 dependencies = [
  "embedded-graphics",
+ "incised-text",
  "inscribed-disc",
  "panickit",
- "textkit",
-]
-
-[[package]]
-name = "textkit"
-version = "0.1.0"
-dependencies = [
- "embedded-graphics",
- "inscribed-disc",
 ]
 
 [[package]]

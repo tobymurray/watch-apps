@@ -16,7 +16,7 @@ on:
       - 'Slumber/**'
       # The renderer's text comes from the shared crate; a change there is a
       # change to this app's binary.
-      - 'TextKit/**'
+      - 'IncisedText/**'
       - 'PanicKit/**'
       - 'InscribedDisc/**'
       - '.github/workflows/slumber.yml'
@@ -27,7 +27,7 @@ on:
       - 'Slumber/**'
       # The renderer's text comes from the shared crate; a change there is a
       # change to this app's binary.
-      - 'TextKit/**'
+      - 'IncisedText/**'
       - 'PanicKit/**'
       - 'InscribedDisc/**'
       - '.github/workflows/slumber.yml'
@@ -51,7 +51,7 @@ jobs:
     uses: ./.github/workflows/app-build.yml
     with:
       app: Slumber
-      links: TextKit InscribedDisc PanicKit
+      links: IncisedText InscribedDisc PanicKit
       version: ${{ inputs.version || '' }}
     permissions:
       # write, not read: a caller's grant caps what the called workflow can

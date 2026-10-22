@@ -450,8 +450,8 @@ Rerun: photograph the same ramp page and normalise each row's four solid cells.
 **Text.** SemiBold only, because Regular's 1.5 px stems go soft at 16–20 px
 (`Docs/TEXT.md`). Main lines are 22–24 px, the size confirmed readable on the
 glass, and 18 px is the floor. Every string is checked against the chord inside
-the ring at its own rows. TextKit carries `SEMIBOLD_22_ASCII` and
-`SEMIBOLD_24_ASCII` for this.
+the ring at its own rows. `POPPINS_SEMIBOLD_24_ASCII` is Slumber's own face,
+listed in the renderer's `faces.json` and generated into `src/atlas.rs`.
 
 **Themes.** The colours are a setting, one of four. Ring geometry, thin
 tracks, the same-colour second lap and the text rules are shared by all four.

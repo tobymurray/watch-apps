@@ -1,0 +1,55 @@
+[package]
+name = "incised-text"
+version = "0.1.0"
+edition = "2021"
+# MEASURED, not inherited: `cargo +1.71.1 build` succeeds with no features and
+# with `abgr2222`; 1.70 fails on `div_ceil`. `std` needs nothing further.
+rust-version = "1.71.1"
+# The code is MIT or Apache-2.0. `src/faces.rs` is glyph data rasterized from
+# OFL fonts, a Modified Version of each, so it is OFL-1.1 (Fonts/FONTS.md).
+license = "(MIT OR Apache-2.0) AND OFL-1.1"
+description = "Text for embedded-graphics draw targets from pre-rendered 2bpp glyph atlases of Poppins and Atkinson Hyperlegible Next: measurement, alignment, word wrap and a size ladder, no_std and allocation-free."
+repository = "https://github.com/tobymurray/watch-apps/tree/main/IncisedText"
+categories = ["embedded", "no-std", "text-processing"]
+keywords = ["embedded-graphics", "no-std", "font", "bitmap-font", "text"]
+# The OFL texts ship because `src/faces.rs` is derived from the fonts; the fonts and the generator do not.
+include = [
+    "src/**/*.rs",
+    "examples/*.rs",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "Docs/DESIGN.md",
+    "Docs/2026-09-10-drawtarget-footprint.md",
+    "Fonts/FONTS.md",
+    "Fonts/OFL-Poppins.txt",
+    "Fonts/OFL-AtkinsonHyperlegibleNext.txt",
+]
+
+[features]
+default = ["abgr2222"]
+## `Ink` for `inscribed-disc`'s `Abgr2222`. Without it, a consumer implements `Ink` for its own colour.
+abgr2222 = ["dep:inscribed-disc"]
+## The Atkinson Hyperlegible Next faces, `faces::ATKINSON_*`.
+atkinson = []
+
+[dependencies]
+embedded-graphics = "0.8"
+inscribed-disc = { version = "0.2", path = "../InscribedDisc", default-features = false, features = [
+    "abgr2222",
+], optional = true }
+
+[dev-dependencies]
+inscribed-disc = { version = "0.2", path = "../InscribedDisc", default-features = false, features = [
+    "abgr2222",
+    "std",
+] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1

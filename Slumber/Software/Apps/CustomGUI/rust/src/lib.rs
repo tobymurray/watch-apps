@@ -1,11 +1,12 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use inscribed_disc::{Abgr2222, Surface};
-use textkit::{faces, Face, Style};
+use incised_text::{faces, Face, Style};
 
 #[cfg(feature = "device")]
 use panickit as _;
 
+mod atlas;
 mod night;
 
 /// Mirrors `slumber_state` (`slumber_gui.h`) field for field.
@@ -105,11 +106,11 @@ const MARK_BASELINE_Y: i32 = 170;
 const RECORDER_BASELINE_Y: i32 = 190;
 const HINT_BASELINE_Y: i32 = 210;
 
-static TITLE_FACE: &Face = &faces::SEMIBOLD_18_ASCII;
-static PICK_FACE: &Face = &faces::SEMIBOLD_20_ASCII;
-static NEIGHBOUR_FACE: &Face = &faces::REGULAR_14_ASCII;
-static STATUS_FACE: &Face = &faces::REGULAR_14_ASCII;
-static HINT_FACE: &Face = &faces::REGULAR_12_ASCII;
+static TITLE_FACE: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
+static PICK_FACE: &Face = &faces::POPPINS_SEMIBOLD_20_ASCII;
+static NEIGHBOUR_FACE: &Face = &faces::POPPINS_REGULAR_14_ASCII;
+static STATUS_FACE: &Face = &faces::POPPINS_REGULAR_14_ASCII;
+static HINT_FACE: &Face = &faces::POPPINS_REGULAR_12_ASCII;
 
 const TITLE: &str = "SLUMBER";
 const WAITING: &str = "waiting for service";

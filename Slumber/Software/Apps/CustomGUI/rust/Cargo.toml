@@ -16,7 +16,7 @@ device = ["panickit/panic-message"]
 # Dependencies, never second staticlibs: two archives each carrying a
 # #[panic_handler] collide at link time.
 panickit = { path = "../../../../../PanicKit", default-features = false }
-textkit = { path = "../../../../../TextKit" }
+incised-text = { path = "../../../../../IncisedText" }
 embedded-graphics = "0.8"
 inscribed-disc = { path = "../../../../../InscribedDisc", default-features = false, features = [
     "abgr2222",

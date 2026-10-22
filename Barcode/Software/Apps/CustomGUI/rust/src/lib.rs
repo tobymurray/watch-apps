@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use inscribed_disc::{Abgr2222, Surface};
-use textkit::{faces, Face, Style};
+use incised_text::{faces, Face, Style};
 
 // PanicKit owns this app's `#[panic_handler]`. A lang item is only linked if
 // something references the crate, and nothing here calls it by name, so this
@@ -176,15 +176,15 @@ const WHITE: Abgr2222 = Abgr2222::WHITE;
 const BLACK: Abgr2222 = Abgr2222::BLACK;
 const DIM: Abgr2222 = Abgr2222::rgb(170, 170, 170);
 
-// -- Text: TextKit's pre-rendered Poppins atlases. Why these faces and not
+// -- Text: IncisedText's pre-rendered Poppins atlases. Why these faces and not
 // others, and what the port replaced, is in Barcode/README.md and Docs/TEXT.md.
 
 /// The preferred id face: the TouchGFX build's SemiBold 20, whose bezel fit the
 /// README measured string by string.
-static LARGE: &Face = &faces::SEMIBOLD_20_ASCII;
+static LARGE: &Face = &faces::POPPINS_SEMIBOLD_20_ASCII;
 /// Split id lines, the caption and every prompt line: the TouchGFX build's
 /// Regular 18, with Latin-1 and Latin Extended-A for a name with a diacritic.
-static SMALL: &Face = &faces::REGULAR_18_LATIN;
+static SMALL: &Face = &faces::POPPINS_REGULAR_18_LATIN;
 
 /// Widest a one-line id may be in the preferred face; wider steps down.
 const ID_LARGE_MAX: i32 = 186;

@@ -162,8 +162,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "incised-text"
+version = "0.1.0"
+dependencies = [
+ "embedded-graphics",
+ "inscribed-disc",
+]
+
+[[package]]
 name = "inscribed-disc"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "embedded-graphics",
 ]
@@ -222,9 +230,9 @@ version = "0.1.0"
 dependencies = [
  "embedded-graphics",
  "embedded-graphics-simulator",
+ "incised-text",
  "inscribed-disc",
  "panickit",
- "textkit",
 ]
 
 [[package]]
@@ -358,14 +366,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "textkit"
-version = "0.1.0"
-dependencies = [
- "embedded-graphics",
- "inscribed-disc",
 ]
 
 [[package]]

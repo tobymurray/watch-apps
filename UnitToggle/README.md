@@ -177,7 +177,7 @@ unit is "off" — so the control is segmented and both sides are always legible.
 `METRIC` is 67 px and `IMPERIAL` 80 px in Poppins SemiBold 18, so equal halves
 of 102 px leave the wider label 22 px of padding; the control spans x 18..222,
 and the round mask's chord at its corner rows is 233 px. The footer is 118 px at
-Regular 12 against a 129 px chord at row 220. Measured with `textkit`'s
+Regular 12 against a 129 px chord at row 220. Measured with `incised-text`'s
 `measure` example, not estimated.
 
 The launcher icon names the two units rather than drawing one. Pictures of

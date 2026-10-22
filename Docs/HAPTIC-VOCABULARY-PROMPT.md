@@ -102,7 +102,7 @@ the event arrives.
   shape.
 - TouchGFX or a Rust `no_std` renderer behind CustomGUI are both established here. This
   app draws text and a few boxes, so pick whichever you can get building fastest and say
-  which you picked. `Docs/TEXT.md` and `TextKit/README.md` own the typeface decision;
+  which you picked. `Docs/TEXT.md` and `IncisedText/Docs/DESIGN.md` own the typeface decision;
   do not re-litigate it.
 - Files are sandbox-relative. No absolute `N:/` path resolves on the device.
 - Nothing reaches a running app from the phone. Session configuration comes from a JSON
@@ -130,7 +130,7 @@ negotiable and none of it is visible in the simulator.
 ### Only the inscribed disc is glass
 
 The panel is a Sharp LS012B7DD06, 240x240 at 0.126 mm pitch, and the corners are behind
-the bezel. `TextKit` clips to `BarcodeLayout::pixelIsLit`'s rule: **a pixel counts as lit
+the bezel. `IncisedText` clips to `BarcodeLayout::pixelIsLit`'s rule: **a pixel counts as lit
 only if its centre is within 119.5 dot pitches of the centre**, half a pitch inside the
 datasheet's active area, deliberately. Reuse that rule; do not invent a second one.
 
@@ -211,9 +211,9 @@ autohinting snaps vertically only, so Regular's stems at 16 to 20 px land as an 
 170 column pair while SemiBold's at 20 and 24 px are two solid columns: **prefer SemiBold
 for anything small or anything that must survive daylight.**
 
-### Use TextKit's machinery rather than hand-placing text
+### Use IncisedText's machinery rather than hand-placing text
 
-`TextKit/README.md` is the crate's record; the parts that matter here:
+`IncisedText/Docs/DESIGN.md` is the crate's record; the parts that matter here:
 
 - **`wrap`** is greedy by word into caller-owned line slots, never splits a word, and
   **reports how many lines the text needed**. Treat that count as a value you check, so an

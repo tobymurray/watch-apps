@@ -854,7 +854,7 @@ than padding an hour field nobody is riding into.
 ## Text
 
 Every word and digit is Poppins, pre-rendered at build time into 2bpp atlases
-by [`TextKit`](../TextKit) and blitted through the bezel: SemiBold 60, 49 and
+by [`IncisedText`](../IncisedText) and blitted through the bezel: SemiBold 60, 49 and
 36 for the clock's three sizes, SemiBold 27 for the heart rate, SemiBold 32
 for `SPIN`, 24 for the discard answers and 18 for headings, and Regular 16
 with Latin-1 and Latin Extended-A for every label. The clock and title faces
@@ -862,7 +862,7 @@ carry only the characters they draw (thirteen glyphs a clock size, five for
 the title), so seven sizes cost 25 KB of glyph data in all. Before and after
 the port, through the bezel mask the preview applies:
 
-![Before and after the TextKit port](Docs/text-before-after.png)
+![Before and after the IncisedText port](Docs/text-before-after.png)
 
 The first Rust build drew from u8g2's 1bpp Helvetica faces one size class
 up and area-averaged them down to the panel's four levels, through a
@@ -880,7 +880,7 @@ rasterizer is measured in [`Docs/TEXT.md`](../Docs/TEXT.md).
 Footprint of the GUI, from CI's toolchain image:
 
 ```
-TextKit  .text 44,804   .bss 58,320   .stack 10,240   .uapp 121,060
+IncisedText  .text 44,804   .bss 58,320   .stack 10,240   .uapp 121,060
 u8g2     .text 36,984   .bss 85,200   .stack 10,240   .uapp 113,612
 ```
 

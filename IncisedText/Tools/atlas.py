@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+"""Turns the faces in faces.json into src/faces.rs, the composition table into src/compose.rs, and an
+app's own faces.json into a module of that app.
+
+Rasterization is FreeType's light autohinter, coverage rounded to the nearest third, blank edge
+rows and columns cropped. Those three choices reproduce the 2bpp Poppins glyphs TouchGFX shipped
+pixel for pixel (Docs/TEXT.md, "What this corrects in the record"); change any of them and the
+oracle test in tests/oracle/touchgfx.rs says so.
+
+    python3 Tools/atlas.py            # rewrite src/faces.rs and src/compose.rs
+    python3 Tools/atlas.py --check    # exit 1 if a rewrite would change either file
+    python3 Tools/atlas.py --manifest APP/faces.json --out APP/src/atlas.rs [--check]
+"""
+import argparse, json, math, os, sys, unicodedata
+import freetype
+import numpy as np
+from fontTools.ttLib import TTFont
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+FONTS = os.path.join(ROOT, "Fonts")
+
+ASCII = list(range(0x20, 0x7F))
+LATIN = sorted(set(ASCII + list(range(0xA0, 0x180))
+                   + [0x2026, 0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x20AC, 0x2022]))
+CHARSETS = {"ascii": ASCII, "latin": LATIN}
+
+LEVEL_THRESHOLDS = (43, 128, 213)  # round(v * 3 / 255) for v in 0..=255
+
+
+def charset(spec):
+    if spec in CHARSETS:
+        return CHARSETS[spec]
+    return sorted(set([0x20] + [ord(c) for c in spec]))
+
+
+def quantise(cov):
+    lv = np.zeros(cov.shape, dtype=np.uint8)
+    for i, t in enumerate(LEVEL_THRESHOLDS):
+        lv[cov >= t] = i + 1
+    return lv
+
+
+def crop(lv):
+    ys, xs = np.nonzero(lv)
+    if len(ys) == 0:
+        return lv[:0, :0], 0, 0
+    return lv[ys.min():ys.max() + 1, xs.min():xs.max() + 1], int(ys.min()), int(xs.min())
+
+
+def pack(lv):
+    out = bytearray()
+    acc = 0
+    n = 0
+    for v in lv.flatten():
+        acc |= int(v) << (2 * (n % 4))
+        n += 1
+        if n % 4 == 0:
+            out.append(acc)
+            acc = 0
+    if n % 4:
+        out.append(acc)
+    return bytes(out)
+
+
+def single_substitutions(font, tags):
+    """Glyph name to glyph name for each GSUB feature in `tags`, from the default language system."""
+    gsub = font["GSUB"].table if "GSUB" in font else None
+    scripts = {r.ScriptTag: r.Script for r in gsub.ScriptList.ScriptRecord} if gsub else {}
+    script = scripts.get("DFLT") or scripts.get("latn")
+    langsys = script.DefaultLangSys if script else None
+    found = {}
+    for i in (langsys.FeatureIndex if langsys else []):
+        record = gsub.FeatureList.FeatureRecord[i]
+        if record.FeatureTag in tags:
+            found.setdefault(record.FeatureTag, []).extend(record.Feature.LookupListIndex)
+    steps = []
+    for tag in tags:
+        if tag not in found:
+            sys.exit(f"feature {tag} is not in the font's default language system")
+        for li in sorted(found[tag]):
+            lookup = gsub.LookupList.Lookup[li]
+            mapping = {}
+            for sub in lookup.SubTable:
+                kind = sub.ExtensionLookupType if lookup.LookupType == 7 else lookup.LookupType
+                if kind != 1:
+                    sys.exit(f"feature {tag}: lookup {li} is type {kind}, and only single substitution maps one code point to one glyph")
+                mapping.update(getattr(sub, "ExtSubTable", sub).mapping)
+            steps.append(mapping)
+    return steps
+
+
+def glyph_ids(path, entry):
+    """Code point to glyph index with the entry's features applied, or None to take FreeType's cmap."""
+    if not entry.get("features"):
+        return None
+    font = TTFont(path)
+    cmap = font.getBestCmap()
+    steps = single_substitutions(font, entry["features"])
+    out = {}
+    for cp, name in cmap.items():
+        for mapping in steps:
+            name = mapping.get(name, name)
+        out[cp] = font.getGlyphID(name)
+    return out
+
+
+def open_face(path, entry):
+    face = freetype.Face(path)
+    if "wght" in entry:
+        font = TTFont(path)
+        axes = font["fvar"].axes if "fvar" in font else []
+        if not any(a.axisTag == "wght" for a in axes):
+            sys.exit(f"{entry['name']}: wght given but {entry['font']} has no wght axis")
+        face.set_var_design_coords([entry["wght"] if a.axisTag == "wght" else a.defaultValue for a in axes])
+    return face
+
+
+def build_face(entry):
+    path = os.path.join(FONTS, entry["font"])
+    face = open_face(path, entry)
+    face.set_pixel_sizes(0, entry["px"])
+    gids = glyph_ids(path, entry)
+    nodes = []
+    data = bytearray()
+    for cp in charset(entry["charset"]):
+        gi = gids.get(cp, 0) if gids is not None else face.get_char_index(cp)
+        if gi == 0 and cp != 0x20:
+            continue
+        face.load_glyph(gi, freetype.FT_LOAD_RENDER | freetype.FT_LOAD_TARGET_LIGHT)
+        g = face.glyph
+        b = g.bitmap
+        if b.rows and b.width:
+            cov = np.frombuffer(bytes(b.buffer), dtype=np.uint8).reshape(b.rows, b.pitch)[:, :b.width]
+            lv, dy, dx = crop(quantise(cov))
+        else:
+            lv, dy, dx = np.zeros((0, 0), dtype=np.uint8), 0, 0
+        h, w = lv.shape
+        top = g.bitmap_top - dy
+        left = g.bitmap_left + dx
+        adv = g.advance.x // 64
+        for value, limit, what in [(w, 255, "width"), (h, 255, "height"), (adv, 255, "advance")]:
+            if value > limit:
+                sys.exit(f"{entry['name']} U+{cp:04X}: {what} {value} does not fit a byte")
+        if not -128 <= top <= 127 or not -128 <= left <= 127:
+            sys.exit(f"{entry['name']} U+{cp:04X}: bearing out of range")
+        nodes.append((len(data), cp, w, h, top, left, adv))
+        data += pack(lv)
+    ascent = math.ceil(face.size.ascender / 64)
+    descent = math.ceil(-face.size.descender / 64)
+    return nodes, bytes(data), ascent, descent
+
+
+def settings(entry):
+    """What the face was rendered with beyond the font and size, as the doc line shows it."""
+    parts = []
+    if "wght" in entry:
+        parts.append(f"wght {entry['wght']}")
+    parts += entry.get("features", [])
+    return f" ({', '.join(parts)})" if parts else ""
+
+
+def rust_face(entry, nodes, data, ascent, descent):
+    name = entry["name"]
+    cfg = f'#[cfg(feature = "{entry["feature"]}")]' if "feature" in entry else None
+    # Rustdoc would read a variable font's `[wght]` as a link.
+    font = entry["font"].replace("[", "\\[").replace("]", "\\]")
+    lines = [f"/// {font}{settings(entry)} at {entry['px']} px, charset `{entry['charset']}`: {len(nodes)} glyphs, {len(data)} glyph bytes.",
+             cfg,
+             f"pub static {name}: Face = Face {{ px: {entry['px']}, ascent: {ascent}, descent: {descent}, flags: 0, nodes: &{name}_NODES, data: &{name}_DATA }};",
+             cfg,
+             f"static {name}_NODES: [Node; {len(nodes)}] = ["]
+    for off, cp, w, h, top, left, adv in nodes:
+        lines.append(f"    Node {{ off: {off}, cp: 0x{cp:04X}, w: {w}, h: {h}, top: {top}, left: {left}, adv: {adv}, flags: 0 }},")
+    lines.append("];")
+    body = ",".join(str(x) for x in data)
+    if cfg:
+        lines.append(cfg)
+    lines.append(f"static {name}_DATA: [u8; {len(data)}] = [{body}];")
+    return "\n".join(line for line in lines if line is not None)
+
+
+def compose_table():
+    """(base, combining mark) pairs whose canonical composition is a code point in `latin`."""
+    rows = []
+    for cp in LATIN:
+        nfd = unicodedata.normalize("NFD", chr(cp))
+        if len(nfd) == 2 and unicodedata.combining(nfd[1]):
+            rows.append((ord(nfd[0]), ord(nfd[1]), cp))
+    rows.sort()
+    return rows
+
+
+def notice(entries):
+    """The OFL notice for the fonts `entries` rasterize, each with the copyright its `name` table states."""
+    lines = ["// SPDX-License-Identifier: OFL-1.1",
+             "// Glyph data rasterized from these fonts under the SIL Open Font License 1.1, whose text",
+             "// ships in incised-text's Fonts/:"]
+    for font in dict.fromkeys(e["font"] for e in entries):
+        lines.append(f"// {font}: {TTFont(os.path.join(FONTS, font))['name'].getDebugName(0)}")
+    return "\n".join(lines) + "\n"
+
+
+def faces_rs(manifest_path, use):
+    manifest = json.load(open(manifest_path))
+    source = os.path.relpath(manifest_path, os.path.dirname(ROOT))
+    ft = ".".join(str(x) for x in freetype.version())
+    header = (f"// Generated by IncisedText/Tools/atlas.py from {source} with FreeType {ft}. Do not edit;\n"
+              f"// rerun the tool. Format: IncisedText/Docs/DESIGN.md, \"The format\".\n"
+              + notice(manifest["faces"]) + use)
+    parts = [header]
+    for entry in manifest["faces"]:
+        nodes, data, ascent, descent = build_face(entry)
+        parts.append(rust_face(entry, nodes, data, ascent, descent))
+        print(f"{entry['name']:26s} {len(nodes):3d} glyphs {len(data):6d} glyph bytes {len(nodes) * 12:5d} node bytes", file=sys.stderr)
+    return "\n\n".join(parts) + "\n"
+
+
+def generate():
+    rows = compose_table()
+    compose_rs = ("// Generated by Tools/atlas.py. (base, combining mark, composed) for every `latin` code point\n"
+                  "// whose NFD is a base letter plus one mark; sorted by (base, mark) for a binary search.\n"
+                  f"pub static COMPOSE: [(u16, u16, u16); {len(rows)}] = [\n"
+                  + "\n".join(f"    (0x{b:04X}, 0x{m:04X}, 0x{c:04X})," for b, m, c in rows) + "\n];\n")
+    return {os.path.join(ROOT, "src", "faces.rs"): faces_rs(os.path.join(HERE, "faces.json"), "use crate::{Face, Node};\n"),
+            os.path.join(ROOT, "src", "compose.rs"): compose_rs}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--check", action="store_true", help="exit 1 if a rewrite would change any output")
+    parser.add_argument("--manifest", help="an app's faces.json, generated against the crate as a dependency")
+    parser.add_argument("--out", help="the .rs file --manifest generates")
+    args = parser.parse_args()
+    if bool(args.manifest) != bool(args.out):
+        parser.error("--manifest and --out go together")
+    if args.manifest:
+        out = {os.path.abspath(args.out): faces_rs(os.path.abspath(args.manifest), "use incised_text::{Face, Node};\n")}
+    else:
+        out = generate()
+    check = args.check
+    changed = False
+    for path, text in out.items():
+        rel = os.path.relpath(path)
+        current = open(path).read() if os.path.exists(path) else None
+        if current != text:
+            changed = True
+            if check:
+                print(f"{rel} is stale", file=sys.stderr)
+            else:
+                open(path, "w").write(text)
+                print(f"wrote {rel}", file=sys.stderr)
+    if check and changed:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

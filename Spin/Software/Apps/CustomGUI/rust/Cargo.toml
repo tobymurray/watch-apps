@@ -40,9 +40,9 @@ embedded-graphics = "0.8"
 embedded-graphics-simulator = { version = "0.7", optional = true }
 # A dependency, never a second staticlib: two archives each carrying a
 # #[panic_handler] collide at link time.
-textkit = { path = "../../../../../TextKit" }
+incised-text = { path = "../../../../../IncisedText" }
 # The surface and its clip, the colour, and the panic handler. A dependency,
-# never a second staticlib, for the same reason as TextKit above.
+# never a second staticlib, for the same reason as IncisedText above.
 # The panic handler, which draws nothing and so is not the graphics
 # crate's. A dependency, never a second staticlib.
 panickit = { path = "../../../../../PanicKit", default-features = false }

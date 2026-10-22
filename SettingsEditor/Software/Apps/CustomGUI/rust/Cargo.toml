@@ -28,7 +28,7 @@ sim = ["std", "dep:embedded-graphics-simulator"]
 embedded-graphics = "0.8"
 # A dependency, never a second staticlib: two archives each carrying a
 # #[panic_handler] collide at link time.
-textkit = { path = "../../../../../TextKit" }
+incised-text = { path = "../../../../../IncisedText" }
 # The surface, the colour, the panic handler and the page indicator. A path
 # dependency and never a second staticlib: two archives each carrying a
 # #[panic_handler] collide at link time.

@@ -178,13 +178,13 @@ Found while locating the build command, and it compounds the merge.
 - 'Spin/**'
 # The renderer's text comes from the shared crate; a change there is a
 # change to this app's binary.
-- 'TextKit/**'
+- 'IncisedText/**'
 ```
 
 `TrainKit/**` is absent — although `app-build.yml` already detects TrainKit
 (`grep -rq 'TrainKit' "$cmake"`) and runs its `cargo test`, and although §0.6
 just demonstrated that a TrainKit change moves `SpinService.elf`'s `.text`. The
-comment justifying `TextKit/**` applies to TrainKit word for word.
+comment justifying `IncisedText/**` applies to TrainKit word for word.
 
 So today a TrainKit-only commit ships without Spin being built or its host suite
 run. **After the merge this gets worse, not better**: one crate would back two

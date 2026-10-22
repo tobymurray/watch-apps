@@ -162,8 +162,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "incised-text"
+version = "0.1.0"
+dependencies = [
+ "embedded-graphics",
+ "inscribed-disc",
+]
+
+[[package]]
 name = "inscribed-disc"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "embedded-graphics",
 ]
@@ -350,14 +358,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "textkit"
-version = "0.1.0"
-dependencies = [
- "embedded-graphics",
- "inscribed-disc",
-]
-
-[[package]]
 name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -369,9 +369,9 @@ version = "0.1.0"
 dependencies = [
  "embedded-graphics",
  "embedded-graphics-simulator",
+ "incised-text",
  "inscribed-disc",
  "panickit",
- "textkit",
 ]
 
 [[package]]

@@ -1,9 +1,9 @@
 //! The night screen, Rest and Rhythm as two goal rings, as README "The screens to come" designs it.
 
 use inscribed_disc::{Abgr2222, Surface};
-use textkit::{faces, Face, Style};
+use incised_text::{faces, Face, Style};
 
-use crate::{Line, State};
+use crate::{atlas, Line, State};
 
 pub const KIND_NONE: u8 = 0;
 pub const KIND_SETTLED: u8 = 1;
@@ -45,9 +45,9 @@ const MAIN_INK: Abgr2222 = Abgr2222::WHITE;
 const RHYTHM_INK: Abgr2222 = Abgr2222::from_levels(0, 3, 3);
 const MUTED_INK: Abgr2222 = Abgr2222::from_levels(2, 2, 2);
 
-pub static TITLE_FACE: &Face = &faces::SEMIBOLD_18_ASCII;
-pub static REST_FACE: &Face = &faces::SEMIBOLD_24_ASCII;
-pub static DETAIL_FACE: &Face = &faces::SEMIBOLD_20_ASCII;
+pub static TITLE_FACE: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
+pub static REST_FACE: &Face = &atlas::POPPINS_SEMIBOLD_24_ASCII;
+pub static DETAIL_FACE: &Face = &faces::POPPINS_SEMIBOLD_20_ASCII;
 
 pub const TITLE_Y: i32 = 84;
 pub const REST_Y: i32 = 120;

@@ -22,7 +22,7 @@ business claiming which unit is set anyway -- the setting changes, the icon
 does not. The 60px size adds a divider rule between them, which is the one
 piece of detail that size can carry and this one cannot.
 
-Poppins SemiBold is the app's own face, from TextKit/Fonts.
+Poppins SemiBold is the app's own face, from IncisedText/Fonts.
 """
 from PIL import Image, ImageDraw, ImageFont
 import os
@@ -36,7 +36,7 @@ BOTTOM = (255, 255, 255, 255)
 RULE = (85, 85, 85, 255)
 
 FONT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                    "..", "..", "TextKit", "Fonts", "Poppins-SemiBold.ttf")
+                    "..", "..", "IncisedText", "Fonts", "Poppins-SemiBold.ttf")
 
 TOP_WORD = "KM"
 BOTTOM_WORD = "MI"
