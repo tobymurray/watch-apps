@@ -1,6 +1,5 @@
-//! Every atlas glyph TouchGFX also shipped must be the same pixels, metrics and advance. This is
-//! what makes "the bar the wearer saw" a test rather than a claim; it fails if `Tools/atlas.py`'s
-//! hinting, thresholds or cropping change, or if FreeType's autohinter does between versions.
+//! Every atlas glyph TouchGFX also shipped must be the same pixels, metrics and advance; this fails
+//! if `Tools/atlas.py`'s hinting, thresholds or cropping change, or FreeType's autohinter does.
 
 #[path = "oracle/touchgfx.rs"]
 mod touchgfx;

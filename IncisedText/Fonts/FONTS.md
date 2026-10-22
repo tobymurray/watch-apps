@@ -22,9 +22,7 @@ Name is declared.
 
 The two fonts are the blobs TouchGFX rasterized for every app in this repo; they
 were removed from `Barcode` in `b0cf873` and are byte-identical to
-`b0cf873^:Barcode/Software/Apps/TouchGFX-GUI/assets/fonts/`. Medium, Light and
-the italics are in `aedd9a6` under `BikeMap/`, unused until a screen wants them.
-They are not the files Google Fonts serves today, which hash differently.
+`b0cf873^:Barcode/Software/Apps/TouchGFX-GUI/assets/fonts/`. They are not the files Google Fonts serves today, which hash differently.
 
 `OFL-Poppins.txt` is Google Fonts' copy, byte for byte, from
 <https://raw.githubusercontent.com/google/fonts/7dc16b7de42db624b902f2292b68ed9e489e5053/ofl/poppins/OFL.txt>,
