@@ -1,0 +1,24 @@
+{
+  "manifest_version": 1,
+  "type": [
+    "utility"
+  ],
+  "name": "Slumber",
+  "icon": "icon.png",
+  "binary": "Slumber_0.1.0.uapp",
+  "appVersion": "0.1.0",
+  "minKernelVersion": "1.4.0",
+  "requiredHardware": [],
+  "description": "Sleep tracking with nothing to start at bedtime. Slumber runs in the background and finds your sleep from wrist movement and heart rate, whenever you sleep. Open it to see last night: how long you rested, when, and your bedtime against your usual. It does not guess at sleep stages, and everything stays on the watch. Add Slumber Glance to see last night in the carousel.",
+  "id": "B4E825F662FAD77B",
+  "stravaExport": false,
+  "supportsLaps": false,
+  "supportsDistance": false,
+  "supportsTrack": false,
+  "supportsHeartbeat": false,
+  "supportsElevation": false,
+  "supportsStep": false,
+  "supportsSpeed": "none",
+  "customMeasures": [],
+  "configFields": []
+}
