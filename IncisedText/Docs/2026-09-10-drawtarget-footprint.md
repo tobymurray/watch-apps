@@ -17,12 +17,12 @@ with the crate's release profile -- `opt-level = "z"`, `lto = true`,
 `codegen-units = 1`, `panic = "abort"`.
 
 Because LTO inlines this crate into the probe's own codegen unit, there is no
-`textkit-*` archive member to measure; the `textprobe-*` member is the sum of
+`incised_text-*` archive member to measure; the `textprobe-*` member is the sum of
 the probe's glue and everything it pulled in, and the glue is the same in every
 variant.
 
 ```sh
-cd TextKit/Docs/measurements/drawtarget
+cd IncisedText/Docs/measurements/drawtarget
 cargo build --release --target thumbv8m.main-none-eabihf
 llvm-size --format=sysv target/thumbv8m.main-none-eabihf/release/libtextprobe.a \
   | awk -v crate='^textprobe-' -f ../../../../InscribedDisc/Docs/measurements/textsize.awk

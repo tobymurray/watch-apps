@@ -16,7 +16,7 @@ on:
       - 'Spin/**'
       # The renderer's text comes from the shared crate; a change there is a
       # change to this app's binary.
-      - 'TextKit/**'
+      - 'IncisedText/**'
       - 'InscribedDisc/**'
       - 'PanicKit/**'
       # So is the recovery detector and the shared session log.
@@ -29,7 +29,7 @@ on:
       - 'Spin/**'
       # The renderer's text comes from the shared crate; a change there is a
       # change to this app's binary.
-      - 'TextKit/**'
+      - 'IncisedText/**'
       - 'InscribedDisc/**'
       - 'PanicKit/**'
       # So is the recovery detector and the shared session log.
@@ -55,7 +55,7 @@ jobs:
     uses: ./.github/workflows/app-build.yml
     with:
       app: Spin
-      links: TextKit EffortKit InscribedDisc PanicKit
+      links: IncisedText EffortKit InscribedDisc PanicKit
       version: ${{ inputs.version || '' }}
     permissions:
       # write, not read: a caller's grant caps what the called workflow can

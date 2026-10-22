@@ -8,7 +8,7 @@ the scripts that produced them and the contact sheets are in
 watch was available to this pass, and the section "What only the watch can
 settle" lists what that leaves open.
 
-**Status: agreed and built.** The crate is [`TextKit/`](../TextKit), and
+**Status: agreed and built.** The crate is [`IncisedText/`](../IncisedText), and
 NotifyToggle, Barcode and Spin draw with it; "As built" at the end has the
 measured rows against the ones predicted here, and what the ports taught.
 The body below is the proposal as agreed, left as written.
@@ -29,7 +29,7 @@ The body below is the proposal as agreed, left as written.
    Latin Extended-A; Spin's goes from about 38 KB to about 25 KB with the same
    gain on its label face. NotifyToggle can join for about 7 KB or stay on its
    fixed-width floor.
-3. **One shared crate, `TextKit`**, a Cargo dependency of each app's crate in the
+3. **One shared crate, `IncisedText`**, a Cargo dependency of each app's crate in the
    way MapKit is a shared directory: the atlas format and its decoder,
    measurement, alignment, greedy wrap, the size ladder, the lit-disc clip, the
    missing-glyph rule and the host tests. It owns no screen, no frame struct and
@@ -432,8 +432,8 @@ In order of how much they could change the decision:
 
 ## Design decisions
 
-**One crate.** `TextKit/` at the top level, beside `MapKit/`, crate name
-`textkit`, `no_std`, no `alloc`, a `path` dependency of each app's crate (never
+**One crate.** `IncisedText/` at the top level, beside `MapKit/`, crate name
+`incised-text`, `no_std`, no `alloc`, a `path` dependency of each app's crate (never
 a second staticlib, which would collide on `#[panic_handler]`). It owns the
 atlas format and decoder, face metrics, measurement (advance and ink bounds),
 drawing with left, centre and right alignment at a baseline or a top, greedy
@@ -443,7 +443,7 @@ rule, normalisation, and a host `std` feature with the reference-diff tests
 and a preview path like Spin's. It does not own screens, frame structs, the C
 ABI, or `embedded-graphics` (an optional adapter at most; the apps' `FrameBuf`
 is a `&mut [u8]` with a width, and so is the crate's target). The generator
-lives at `TextKit/Tools/atlas.py` with FreeType and fontTools pinned in the
+lives at `IncisedText/Tools/atlas.py` with FreeType and fontTools pinned in the
 toolchain image, its output checked in, and a CI step that regenerates and
 diffs to zero.
 
@@ -563,14 +563,14 @@ the Windows-only Designer; and there is no kernel font service.
 
 ## As built
 
-The crate is `TextKit/` (`textkit`), its README the design record. The
+The crate is `IncisedText/` (`incised-text`), its README the design record. The
 generator reproduces TouchGFX's glyphs and the crate's parity test holds it
 to them. The rows and lessons below are Poppins only; a second typeface,
 Atkinson Hyperlegible Next, came later behind the `atkinson` feature, and its
 sizes and reasons are in that README. Ports, one commit each, each built in
 CI's toolchain image:
 
-| app | before `.text` / `.bss` / `.uapp` | after `.text` / `.bss` / `.uapp` | RAM | predicted atlas data | actual TextKit data |
+| app | before `.text` / `.bss` / `.uapp` | after `.text` / `.bss` / `.uapp` | RAM | predicted atlas data | actual IncisedText data |
 |---|---|---|---|---|---|
 | NotifyToggle | 31,980 / 58,432 / 41,188 | 33,608 / 58,432 / 42,820 | +1.6 KB | 5,500 or 7,100 | 7,271 (SemiBold 18 + Regular 12 + composition) |
 | Barcode | 42,176 / 73,712 / 72,004 | 46,780 / 58,352 / 76,176 | −10.8 KB | ≈ 18,200 | 18,743 |
@@ -585,7 +585,7 @@ row. Every `.uapp` grew, by the atlas data; every GUI that had a scratch
 buffer shrank in RAM by more than it gained in glyphs.
 
 What the ports taught, in the order it was learned (each app's entry in
-`TextKit/README.md` has the detail):
+`IncisedText/README.md` has the detail):
 
 - **Per-size character sets are the lever.** SemiBold 60 over ASCII is 30 KB;
   over the eleven characters a clock draws it is 3.6 KB. The manifest makes
@@ -601,7 +601,7 @@ What the ports taught, in the order it was learned (each app's entry in
   faces; each map shows only the faces that app names.
 - **The toolchain image needed the font tools.** Added and pinned, and
   `app-build.yml` runs `atlas.py --check` plus the crate's tests for every app
-  that depends on TextKit. Until `toolchain.yml` has published the image with
+  that depends on IncisedText. Until `toolchain.yml` has published the image with
   the tools and repinned `app-build.yml` to it, that step fails on the old
   image; the repin is automatic on the push that changes the Dockerfile.
 - **Every app should have a preview binary.** Spin's `preview` wrote its

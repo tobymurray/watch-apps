@@ -117,7 +117,7 @@ ever lands, it supersedes much of this.
 
 Spin is a **Service** (C++, `Spin/Software/Libs/`) plus a **GUI**
 (`Spin/Software/Apps/CustomGUI/`, a C++ shell around a Rust `no_std` renderer,
-drawing text through the shared `TextKit` crate).
+drawing text through the shared `IncisedText` crate).
 
 - The **Service** owns the clock, the sensors, the config and the filesystem.
   Everything here is Service work.

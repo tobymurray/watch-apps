@@ -5,11 +5,11 @@
 #[path = "oracle/touchgfx.rs"]
 mod touchgfx;
 
-use textkit::faces;
-use textkit::Face;
+use incised_text::faces;
+use incised_text::Face;
 use touchgfx::Oracle;
 
-fn levels(face: &Face, cp: u32) -> (Vec<u8>, &textkit::Node) {
+fn levels(face: &Face, cp: u32) -> (Vec<u8>, &incised_text::Node) {
     let node = face.glyph(char::from_u32(cp).unwrap()).expect("glyph present");
     let n = node.w as usize * node.h as usize;
     let mut out = Vec::with_capacity(n);

@@ -1,4 +1,4 @@
-# TextKit
+# incised-text
 
 Text for the UNA Watch's Rust GUIs: Poppins, and Atkinson Hyperlegible Next
 behind the `atkinson` feature, pre-rendered at build time into 2bpp glyph
@@ -204,7 +204,7 @@ Per-app before and after rows are in each app's README under Footprint.
 ## Building and testing
 
 ```sh
-cd TextKit
+cd IncisedText
 cargo test                         # unit tests and the TouchGFX parity oracle
 cargo test --features atkinson     # and the Atkinson faces' own tests
 cargo build --release --target thumbv8m.main-none-eabihf
@@ -222,7 +222,7 @@ python3 -m venv .venv && .venv/bin/pip install -r Tools/requirements.txt
 
 The toolchain image carries the same pins, and `app-build.yml` runs
 `--check` and this crate's tests for every app whose renderer depends on it;
-a change under `TextKit/` triggers those apps' builds. The fonts are in
+a change under `IncisedText/` triggers those apps' builds. The fonts are in
 `Fonts/`: Poppins byte-identical to the blobs TouchGFX rasterized, Atkinson
 Hyperlegible Next as Google Fonts serves it. `Fonts/FONTS.md` has the sources,
 hashes and licences, and the OFL texts beside it ship with the crate.
@@ -248,7 +248,7 @@ The smallest app, two words and a hint, on `embedded-graphics`'s fixed-width
 - **The linker does drop unreferenced faces.** Twelve faces in `faces.rs`,
   two named by the app; the map shows only those two.
 - **Cost of joining.** `.text` 31,980 → 33,608, `.bss` unchanged at 58,432,
-  `.uapp` 41,188 → 42,820. The 1.6 KB is 1.5 KB of TextKit code plus 6.1 KB
+  `.uapp` 41,188 → 42,820. The 1.6 KB is 1.5 KB of IncisedText code plus 6.1 KB
   of faces, less the 3.6 KB of `embedded-graphics` text machinery and mono
   fonts it no longer links. Proportional Poppins for the price of one atlas,
   and every string it draws now sits on the same face Barcode's and Spin's
@@ -283,7 +283,7 @@ the preferred id tier and `REGULAR_18_LATIN` for the rest.
   fits four.
 - **Footprint.** `.text` 42,176 → 46,780, `.bss` 73,712 → 58,352, `.uapp`
   72,004 → 76,176: 17,561 bytes of two atlases in, 6,125 of faces and
-  15,360 of scratch out, so 10.8 KB less RAM and 4.2 KB more file. TextKit
+  15,360 of scratch out, so 10.8 KB less RAM and 4.2 KB more file. IncisedText
   in situ: 2,248 bytes of code with `wrap` linked, 18,743 of data.
 - **Bars are not text.** The Code128 sub-pixel coverage path has its own
   four-level shading for dark bars on the white backing and stayed exactly
@@ -318,7 +318,7 @@ each for the clock.
   `&&Face`, so the port touched the fonts section and one test.
 - **Footprint.** `.text` 36,984 → 44,804, `.bss` 85,200 → 58,320, `.uapp`
   113,612 → 121,060: 25,201 bytes of atlases in, 7,266 of faces and 26,880
-  of scratch out, 19 KB less RAM. TextKit in situ 1,530 bytes of code,
+  of scratch out, 19 KB less RAM. IncisedText in situ 1,530 bytes of code,
   since nothing here wraps.
 - **The one test that knew the renderer** asserted part-covered red on the
   discard screen through the old `shade`; it asks inscribed-disc's `shade` for

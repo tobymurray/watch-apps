@@ -1,6 +1,6 @@
 //! Prints a string's advance and ink bounds in one face: `cargo run --example measure SEMIBOLD_18_ASCII "NOTIFICATIONS"`.
-use textkit::faces::*;
-use textkit::Face;
+use incised_text::faces::*;
+use incised_text::Face;
 
 fn face(name: &str) -> &'static Face {
     match name {

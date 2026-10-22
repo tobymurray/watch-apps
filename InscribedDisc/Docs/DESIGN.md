@@ -103,7 +103,7 @@ trampoline, which live outside `run()`.
 
 **`SettingsEditor` did not compile for the watch at all.** Its panic handler
 references `Buf::<192>`, which is defined nowhere in the crate and is not
-exported by `TextKit`. Because the handler is `#[cfg(not(feature = "std"))]`,
+exported by `IncisedText`. Because the handler is `#[cfg(not(feature = "std"))]`,
 only a device build reaches it, and nothing had ever done one — the app has no
 C++ shell, no CMake target and no app id. It fails with:
 
@@ -304,7 +304,7 @@ here, because a falsifier this file names must be one a reader can run.
 
 **The lit disc.** A pixel centre within 119.5 pitches, doubled so the half-pitch
 is exact in integers — `BarcodeLayout::pixelIsLit`'s rule and
-`TextKit::Canvas::is_lit`'s, which agree. Consequences held as tests: the widest
+`incised_text::Canvas::is_lit`'s, which agree. Consequences held as tests: the widest
 row is **238**, every chord is **even**, rows 70 and 168 hold **218**, row 220
 holds **130** and row 222 **122**, and the largest centred square is **168**.
 Falsified by a panel of a different size or a display whose glass is not the
@@ -351,7 +351,7 @@ override — measured at 16 bytes cheaper than the default (§2).
 ## 7. The seam this kit exists to close
 
 In the seven apps, `FrameBuf` clipped to the **rectangle** and
-`TextKit::Canvas`, built over *the same buffer* on every text call, clipped to
+`incised_text::Canvas`, built over *the same buffer* on every text call, clipped to
 the **disc**. Two views of one framebuffer with two clip policies, and which one
 applied depended on which API had drawn. Nothing was visibly wrong because the
 layout constants kept the shapes inside the glass by hand — which is exactly the
@@ -463,7 +463,7 @@ answered rather than built, it says so.
 12. **A string that is not ASCII.** `text::Measure::missing` counts characters
     with no glyph, and the kit takes no view on what to do about it, because the
     two precedents genuinely differ: `Barcode` refuses rather than draw a code
-    it cannot promise, `TextKit` draws a hollow box. A widget that cannot refuse
+    it cannot promise, `IncisedText` draws a hollow box. A widget that cannot refuse
     should at least be able to see the count, and `missing` is on the return of
     every measure and draw so a caller can branch on it.
 
@@ -623,8 +623,8 @@ only packaged file that does — and it ships no font.
 **Text is not in the crate at all.** It ships no font and no text interface. The
 trait that was here — four questions a widget needs answered — is parked,
 because the adopter routes around it: it takes `Surface::bytes_mut()` and hands
-the raw buffer to `TextKit`'s own rasteriser. The orphan rule is why — an app
-owns neither the trait nor `textkit::Face`, so it cannot write the impl without
+the raw buffer to `IncisedText`'s own rasteriser. The orphan rule is why — an app
+owns neither the trait nor `incised_text::Face`, so it cannot write the impl without
 a newtype, which was built and measured at 47 lines and 112 bytes of `.text` to
 convert between two spellings of the same thing. That escape hatch is the honest
 current state of the seam, and it is documented on the method rather than
@@ -651,7 +651,7 @@ is where the two tests that prove that composition run.
 
 `embedded-layout`'s alignment vocabulary is worth stealing
 rather than re-coining — `text::Align` uses `Left/Center/Right`, the same three
-it, `embedded-text` and `TextKit` all use. `embedded-text` overlaps `wrap`,
+it, `embedded-text` and `IncisedText` all use. `embedded-text` overlaps `wrap`,
 which is 45 lines here against a dependency; the kit keeps its own because the
 slot-plus-`needed` contract is what makes overflow visible.
 
@@ -727,7 +727,7 @@ use.
 | module | lines | why it went |
 |---|---|---|
 | `nav` | 405 | Focus ring, screen stack, animation clock. Written against §8's list of screens; **zero callers**. The two-caller rule this file sets for widgets applies to it too. |
-| `text` | 180 | `TextFace`, the trait §10 called the seam that makes publishing possible. **No implementor**, and the orphan rule is why: an app owns neither the trait nor `textkit::Face`. A newtype bridge was built and works — 43 golden frames unchanged — at 47 lines and 112 bytes per app, to convert between two spellings of the same thing. The shape that would earn it is `TextKit` implementing the trait itself, which needs no newtype and would serve every adopter at once. |
+| `text` | 180 | `TextFace`, the trait §10 called the seam that makes publishing possible. **No implementor**, and the orphan rule is why: an app owns neither the trait nor `incised_text::Face`. A newtype bridge was built and works — 43 golden frames unchanged — at 47 lines and 112 bytes per app, to convert between two spellings of the same thing. The shape that would earn it is `IncisedText` implementing the trait itself, which needs no newtype and would serve every adopter at once. |
 | `scene` | 198 | The `Scenes` catalogue trait. **No implementor** — `Spin`'s catalogue returns a `Vec` and kept its own tests, so the checks this was meant to hand an adopter were never inherited by one. |
 | `draw` | 301 | The arc sampler, `fill_circle`, `accumulate_coverage`. **Zero callers**: `Spin` kept its own sampler on `micromath` rather than take this one, because swapping the trig would move pixels. |
 | `dither` | 167 | Ordered dithering. **Zero callers** — no screen in either app draws a gradient. |

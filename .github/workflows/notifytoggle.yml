@@ -16,7 +16,7 @@ on:
       - 'NotifyToggle/**'
       # The renderer's text comes from the shared crate; a change there is a
       # change to this app's binary.
-      - 'TextKit/**'
+      - 'IncisedText/**'
       - 'InscribedDisc/**'
       - 'PanicKit/**'
       # So does the settings mechanism: the addresses, the gate and the commit
@@ -30,7 +30,7 @@ on:
       - 'NotifyToggle/**'
       # The renderer's text comes from the shared crate; a change there is a
       # change to this app's binary.
-      - 'TextKit/**'
+      - 'IncisedText/**'
       - 'InscribedDisc/**'
       - 'PanicKit/**'
       # So does the settings mechanism: the addresses, the gate and the commit
@@ -57,7 +57,7 @@ jobs:
     uses: ./.github/workflows/app-build.yml
     with:
       app: NotifyToggle
-      links: TextKit SettingsKit InscribedDisc PanicKit
+      links: IncisedText SettingsKit InscribedDisc PanicKit
       version: ${{ inputs.version || '' }}
     permissions:
       # write, not read: a caller's grant caps what the called workflow can

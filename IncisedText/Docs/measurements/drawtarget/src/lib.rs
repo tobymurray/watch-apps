@@ -2,7 +2,7 @@
 #![no_std]
 
 use inscribed_disc::{Abgr2222, Surface};
-use textkit::{faces, Face, Style};
+use incised_text::{faces, Face, Style};
 
 #[panic_handler]
 fn p(_: &core::panic::PanicInfo) -> ! {
@@ -22,6 +22,6 @@ pub extern "C" fn probe(buf: *mut u8, len: usize, text: *const u8, tlen: usize) 
     let _ = f.draw_top(&mut c, t, 10, 140, Style::left(Abgr2222::WHITE, Abgr2222::BLACK));
     let mut lines = [""; 4];
     let n = f.wrap(t, 200, &mut lines);
-    let picked = textkit::pick(&[&faces::REGULAR_12_ASCII, &faces::SEMIBOLD_18_ASCII], t, 100);
+    let picked = incised_text::pick(&[&faces::REGULAR_12_ASCII, &faces::SEMIBOLD_18_ASCII], t, 100);
     n as i32 + f.measure(t).advance + picked.map_or(0, |p| p.px as i32)
 }

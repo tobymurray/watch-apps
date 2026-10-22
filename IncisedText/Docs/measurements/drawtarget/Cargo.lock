@@ -53,6 +53,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "incised-text"
+version = "0.1.0"
+dependencies = [
+ "embedded-graphics",
+ "inscribed-disc",
+]
+
+[[package]]
 name = "inscribed-disc"
 version = "0.2.1"
 dependencies = [
@@ -75,9 +83,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "textkit"
-version = "0.1.0"
+name = "textprobe"
+version = "0.0.0"
 dependencies = [
- "embedded-graphics",
+ "incised-text",
  "inscribed-disc",
 ]

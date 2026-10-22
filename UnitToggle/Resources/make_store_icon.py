@@ -26,7 +26,7 @@ BOTTOM = (255, 255, 255, 255)
 RULE = (85, 85, 85, 255)
 
 FONT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                    "..", "..", "TextKit", "Fonts", "Poppins-SemiBold.ttf")
+                    "..", "..", "IncisedText", "Fonts", "Poppins-SemiBold.ttf")
 
 
 def draw_face(size):

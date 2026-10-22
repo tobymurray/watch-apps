@@ -260,7 +260,7 @@ path. Formatting a number means a manual decimal conversion into a `char[12]`.
 
 - Sharp LS012B7DD06, **240×240, round**, `ABGR2222`: one byte a pixel and exactly
   four levels a channel — 0, 85, 170, 255. Only the inscribed disc is glass.
-- `TextKit`, measured on this glass: **22–26 px em is confirmed readable**; 11–12 px
+- `IncisedText`, measured on this glass: **22–26 px em is confirmed readable**; 11–12 px
   is detection only. Bright text on a dark ground is the only kind proven to render.
 - Buttons: `SW1` = UP (L1), `SW2` = SELECT (R1), `SW3` = DOWN (L2), `SW4` = BACK (R2).
   Four, and BACK is spoken for.

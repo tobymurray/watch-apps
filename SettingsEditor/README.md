@@ -467,7 +467,7 @@ it the wearer is; the current one is bright. A twelve-item list would not fit
 this panel legibly at all — the legibility floor is 22–26 px em, and a
 name-and-value row loses width on exactly the rows a round panel is narrowest.
 
-**Measured, not asserted.** The rows and faces come from `textkit`'s `measure`
+**Measured, not asserted.** The rows and faces come from `incised-text`'s `measure`
 example against the round mask's chord at each row:
 
 | Element | Face | Widest string | Rows its caps occupy | Narrowest chord across them |

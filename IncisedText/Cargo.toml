@@ -1,5 +1,5 @@
 [package]
-name = "textkit"
+name = "incised-text"
 version = "0.1.0"
 edition = "2021"
 # MEASURED, not inherited: `cargo +1.71.1 build` succeeds with no features and
@@ -9,7 +9,7 @@ rust-version = "1.71.1"
 # OFL fonts, a Modified Version of each, so it is OFL-1.1 (Fonts/FONTS.md).
 license = "(MIT OR Apache-2.0) AND OFL-1.1"
 description = "Text for embedded-graphics draw targets from pre-rendered 2bpp glyph atlases of Poppins and Atkinson Hyperlegible Next: measurement, alignment, word wrap and a size ladder, no_std and allocation-free."
-repository = "https://github.com/tobymurray/watch-apps/tree/main/TextKit"
+repository = "https://github.com/tobymurray/watch-apps/tree/main/IncisedText"
 categories = ["embedded", "no-std", "text-processing"]
 # The discovery channel is search over the description and these, not the name.
 keywords = ["embedded-graphics", "no-std", "font", "bitmap-font", "text"]

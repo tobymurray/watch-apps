@@ -29,7 +29,7 @@ embedded-graphics-simulator = { version = "0.7", optional = true }
 png = { version = "0.17", optional = true }
 # A dependency, never a second staticlib: two archives each carrying a
 # #[panic_handler] collide at link time.
-textkit = { path = "../../../../../TextKit" }
+incised-text = { path = "../../../../../IncisedText" }
 inscribed-disc = { path = "../../../../../InscribedDisc", default-features = false, features = [
     "abgr2222",
 ] }

@@ -2,8 +2,8 @@
 //! confusable characters that never draw alike.
 #![cfg(feature = "atkinson")]
 
-use textkit::faces::*;
-use textkit::Face;
+use incised_text::faces::*;
+use incised_text::Face;
 
 fn clocks() -> [(&'static str, &'static Face); 2] {
     [("ATKINSON_BOLD_49_CLOCK", &ATKINSON_BOLD_49_CLOCK), ("ATKINSON_BOLD_62_CLOCK", &ATKINSON_BOLD_62_CLOCK)]

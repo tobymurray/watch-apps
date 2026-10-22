@@ -10,7 +10,7 @@
 use embedded_graphics::{prelude::*, primitives::{PrimitiveStyle, Triangle}};
 use inscribed_disc::color::Abgr2222;
 use inscribed_disc::surface::Surface;
-use textkit::{faces, Align, Face, Style};
+use incised_text::{faces, Align, Face, Style};
 
 // PanicKit owns this app's `#[panic_handler]`. A lang item is only linked if
 // something references the crate, and nothing here calls it by name, so this
@@ -360,7 +360,7 @@ const WARN_ACCENT: Abgr2222 = Abgr2222::AMBER;
 
 const PANEL_CX: i32 = 120;
 
-/// MEASURED with `textkit`'s `measure` example, against the round mask's chord
+/// MEASURED with `incised_text`'s `measure` example, against the round mask's chord
 /// at each row: the widest field name is `MAX HEART RATE` at 152 px in the title
 /// face, whose caps then stand from row 40, where the lit chord is 180 px. The
 /// 27 px title row UnitToggle uses has only 153 px of glass and would clip it.
@@ -394,7 +394,7 @@ const DOWN_ARROW_TIP_Y: i32 = 172;
 const ARROW_HALF_W: i32 = 11;
 const ARROW_HEIGHT: i32 = 12;
 
-/// Poppins, from the atlases TextKit generates; `Docs/TEXT.md` at the repo root
+/// Poppins, from the atlases IncisedText generates; `Docs/TEXT.md` at the repo root
 /// is why these and not others. `TITLE_FACE` names the field, `VALUE_WORD_FACE`
 /// and `NUMBER_FACE` are the value itself, `CAPTION_FACE` is what may be
 /// claimed about it and `HINT_FACE` the buttons.
@@ -423,7 +423,7 @@ const FOOTER_EDITING: &str = "R1 SAVE  R2 CANCEL";
 
 /// A field that has never been set says so where its value would be. The
 /// number face carries `0123456789:` and nothing else, so a dash there draws
-/// TextKit's missing-glyph box -- `measure` reports `missing 1` for it.
+/// IncisedText's missing-glyph box -- `measure` reports `missing 1` for it.
 const VALUE_UNSET: &str = "NOT SET";
 
 /// Decimal into a caller-owned buffer. No `write!`, no allocation: `snprintf`

@@ -10,7 +10,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 SQUASH = os.path.join(ROOT, "..", "Squash", "Software", "Apps", "TouchGFX-GUI", "generated", "fonts", "src")
 
-# (TouchGFX face, TextKit face, sample glyphs)
+# (TouchGFX face, IncisedText face, sample glyphs)
 FACES = [
     ("SemiBold_18", "SEMIBOLD_18_ASCII", "NOTIFICATIONS?"),
     ("Regular_14", "REGULAR_14_ASCII", "R1TOGGLEBACK"),
@@ -49,7 +49,7 @@ def main():
     for tg, tk, sample in FACES:
         data = hexbytes(os.path.join(SQUASH, f"Font_Poppins_{tg}_2bpp_0.cpp"))
         rows = table(tg)
-        lines.append(f"/// TouchGFX `Font_Poppins_{tg}_2bpp` against TextKit `{tk}`.")
+        lines.append(f"/// TouchGFX `Font_Poppins_{tg}_2bpp` against IncisedText `{tk}`.")
         lines.append(f"pub static {tk}: &[Oracle] = &[")
         for ch in dict.fromkeys(sample):
             off, w, h, t, l, a = rows[ord(ch)]

@@ -21,7 +21,7 @@ mod compose;
 ///
 #[cfg_attr(feature = "atkinson", doc = "```")]
 #[cfg_attr(not(feature = "atkinson"), doc = "```compile_fail")]
-/// let clock: &textkit::Face = &textkit::faces::ATKINSON_BOLD_62_CLOCK;
+/// let clock: &incised_text::Face = &incised_text::faces::ATKINSON_BOLD_62_CLOCK;
 /// assert!(clock.covers("16:27"));
 /// ```
 pub mod faces;

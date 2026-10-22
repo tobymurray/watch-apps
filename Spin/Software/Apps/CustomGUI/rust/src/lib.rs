@@ -15,7 +15,7 @@
 use micromath::F32Ext;
 use inscribed_disc::color::Abgr2222;
 use inscribed_disc::surface::Surface;
-use textkit::{faces, Align, Face, Style};
+use incised_text::{faces, Align, Face, Style};
 
 // PanicKit owns this app's `#[panic_handler]`. A lang item is only linked if
 // something references the crate, and nothing here calls it by name, so this
@@ -302,7 +302,7 @@ const ENTER_WORK_ESTIMATE_Y: i32 = 148;
 const PAUSED_BANNER_Y: i32 = 116;
 
 // -- Fonts -------------------------------------------------------------------
-// TextKit's pre-rendered Poppins atlases. Which faces and why: Spin/README.md
+// IncisedText's pre-rendered Poppins atlases. Which faces and why: Spin/README.md
 // "Text", and Docs/TEXT.md at the repo root for the measurements.
 
 static LABEL: &Face = &faces::REGULAR_16_LATIN;

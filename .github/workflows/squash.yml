@@ -47,7 +47,7 @@ jobs:
     uses: ./.github/workflows/app-build.yml
     with:
       app: Squash
-      links: EffortKit TextKit InscribedDisc PanicKit
+      links: EffortKit IncisedText InscribedDisc PanicKit
       version: ${{ inputs.version || '' }}
     permissions:
       # write, not read: a caller's grant caps what the called workflow can

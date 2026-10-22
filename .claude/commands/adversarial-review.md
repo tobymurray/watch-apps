@@ -176,7 +176,7 @@ also to Docker builds. Cheap rules:
 ### Round 0 — the link census (do this first, it is the cheapest thing in the command)
 
 Before any agent runs, establish who is actually affected. For a change to shared code — the SDK, a
-shared crate like `TextKit` or `MapKit`, a header used by several apps — that means: which apps
+shared crate like `IncisedText` or `MapKit`, a header used by several apps — that means: which apps
 compile the touched translation unit, and which shipped `.uapp`s carry the symbol at all.
 
 ```sh

@@ -162,13 +162,13 @@ jobs:
           # A CustomGUI app's renderer is a Rust crate with its own unit tests.
           # They cover the drawing, which no host test in Tests/ can reach.
           crate=$(find "$dir/Software/Apps" -maxdepth 3 -name Cargo.toml 2>/dev/null | head -n 1 || true)
-          # A renderer that draws text does it through the shared TextKit
+          # A renderer that draws text does it through the shared IncisedText
           # crate, whose atlases are generated files checked in beside their
           # generator; a build of this app is the only thing that exercises
           # them, so it is what checks they are current.
-          textkit=no
-          if [ -n "$crate" ] && grep -q 'TextKit' "$crate"; then textkit=yes; fi
-          # Found the same way as TextKit, from the crate's own Cargo.toml, so
+          incised_text=no
+          if [ -n "$crate" ] && grep -q 'IncisedText' "$crate"; then incised_text=yes; fi
+          # Found the same way as IncisedText, from the crate's own Cargo.toml, so
           # it is discovered rather than declared.
           inscribed_disc=no
           if [ -n "$crate" ] && grep -q 'InscribedDisc' "$crate"; then inscribed_disc=yes; fi
@@ -192,7 +192,7 @@ jobs:
             echo "tests=$([ -f "$tests" ] && dirname "$tests" || echo '')"
             echo "cmake=$([ -n "$cmake" ] && dirname "$cmake" || echo '')"
             echo "crate=$([ -n "$crate" ] && dirname "$crate" || echo '')"
-            echo "textkit=$textkit"
+            echo "incised_text=$incised_text"
             echo "inscribed_disc=$inscribed_disc"
             echo "panickit=$panickit"
             echo "effortkit=$effortkit"
@@ -202,7 +202,7 @@ jobs:
           echo "manifest       ${manifest#apps/}$([ -f "$manifest" ] || echo ' (none)')"
           echo "tests          $([ -f "$tests" ] && echo yes || echo no)"
           echo "crate          $([ -n "$crate" ] && echo yes || echo no)"
-          echo "textkit        $textkit"
+          echo "incised_text   $incised_text"
           echo "inscribed_disc $inscribed_disc"
           echo "panickit       $panickit"
           echo "effortkit      $effortkit"
@@ -437,7 +437,7 @@ jobs:
         working-directory: apps/EffortKit
         run: cargo test --features std
 
-      # TextKit's src/faces.rs is what Tools/atlas.py writes, checked in so an
+      # IncisedText's src/faces.rs is what Tools/atlas.py writes, checked in so an
       # app builds without FreeType; --check regenerates it in place and fails
       # if a face in faces.json changed without the output following. The
       # image carries the pinned freetype-py, fonttools and numpy the tool
@@ -445,10 +445,10 @@ jobs:
       # glyph to the TouchGFX-generated tables in Squash, which is the parity
       # claim this repository makes about them. The Atkinson faces compile
       # only with the `atkinson` feature, so their tests need it named.
-      - name: TextKit atlases are current and match TouchGFX
-        if: steps.app.outputs.textkit == 'yes'
+      - name: IncisedText atlases are current and match TouchGFX
+        if: steps.app.outputs.incised_text == 'yes'
         shell: bash
-        working-directory: apps/TextKit
+        working-directory: apps/IncisedText
         run: |
           set -euo pipefail
           python3 Tools/atlas.py --check

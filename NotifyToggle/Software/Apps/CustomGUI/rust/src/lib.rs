@@ -6,7 +6,7 @@ use embedded_graphics::{
     primitives::{Circle, CornerRadii, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, RoundedRectangle},
 };
 use inscribed_disc::{Abgr2222, Surface};
-use textkit::{faces, Face, Style};
+use incised_text::{faces, Face, Style};
 
 
 
@@ -110,11 +110,11 @@ const KNOB_UNKNOWN_CX: i32 = PANEL_CX;
 const LABEL_BASELINE_Y: i32 = PILL_Y + PILL_H + 32;
 /// MEASURED: the lit chord is 129 px wide at row 220 and 122 at row 222, and the
 /// footer is 117 px in its face; two rows up buys it six pixels of bezel each
-/// side. Re-measure with `textkit`'s `measure` example if the string or face changes.
+/// side. Re-measure with `incised_text`'s `measure` example if the string or face changes.
 const FOOTER_BASELINE_Y: i32 = 220;
 
 /// Poppins SemiBold for every word, Regular for the button hint, from the atlases
-/// TextKit generates; `Docs/TEXT.md` at the repo root is why these and not others.
+/// IncisedText generates; `Docs/TEXT.md` at the repo root is why these and not others.
 static WORD_FACE: &Face = &faces::SEMIBOLD_18_ASCII;
 static HINT_FACE: &Face = &faces::REGULAR_12_ASCII;
 

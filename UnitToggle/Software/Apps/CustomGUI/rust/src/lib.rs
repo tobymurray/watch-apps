@@ -9,7 +9,7 @@ use embedded_graphics::{
     },
 };
 use inscribed_disc::{Abgr2222, Surface};
-use textkit::{faces, Face, Style};
+use incised_text::{faces, Face, Style};
 
 
 
@@ -103,7 +103,7 @@ const TITLE_BASELINE_Y: i32 = 46;
 /// MEASURED: `METRIC` is 67 px and `IMPERIAL` 80 px in the word face, so equal
 /// halves of 102 px leave the wider label 22 px of padding. The whole control
 /// spans x 18..222, and the round mask's chord at its corner rows (92 and 148)
-/// is 233 px wide -- re-measure with `textkit`'s `measure` example if either
+/// is 233 px wide -- re-measure with `incised_text`'s `measure` example if either
 /// label changes.
 const SEG_W: i32 = 204;
 const SEG_H: i32 = 56;
@@ -119,12 +119,12 @@ const SEG_TEXT_BASELINE_Y: i32 = SEG_Y + SEG_H / 2 + 9;
 
 const LABEL_BASELINE_Y: i32 = SEG_Y + SEG_H + 32;
 /// MEASURED: the lit chord is 129 px wide at row 220 against 122 at row 222, and
-/// the widest footer here is 118 px in its face. Re-measure with `textkit`'s
+/// the widest footer here is 118 px in its face. Re-measure with `incised_text`'s
 /// `measure` example if a string or face changes.
 const FOOTER_BASELINE_Y: i32 = 220;
 
 /// Poppins SemiBold for every word, Regular for the button hint, from the atlases
-/// TextKit generates; `Docs/TEXT.md` at the repo root is why these and not others.
+/// IncisedText generates; `Docs/TEXT.md` at the repo root is why these and not others.
 static WORD_FACE: &Face = &faces::SEMIBOLD_18_ASCII;
 static HINT_FACE: &Face = &faces::REGULAR_12_ASCII;
 

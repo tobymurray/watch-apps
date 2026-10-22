@@ -442,14 +442,14 @@ Measured against the TouchGFX GUI it replaced, from real `arm-none-eabi-size`
 output on the same 600 KiB GUI RAM window (code runs from RAM on this SDK, so
 framework size and the framebuffer share one budget):
 
-| | Rust/CustomGUI, TextKit | Rust/CustomGUI, u8g2 (replaced) | TouchGFX (removed) |
+| | Rust/CustomGUI, IncisedText | Rust/CustomGUI, u8g2 (replaced) | TouchGFX (removed) |
 | --- | --- | --- | --- |
 | `.text` | 46,780 | 42,176 | 84,712 |
 | `.bss` | 58,352 | 73,712 | 65,560 |
 | RAM total, with the 10,240 stack | 115,572 — 18.8% | 126,328 — 20.6% | 152,648 — 24.8% |
 | packaged `.uapp` | 76,176 bytes | 72,004 bytes | 120,444 bytes |
 
-The text is drawn by [`TextKit`](../TextKit): Poppins SemiBold 20 for the
+The text is drawn by [`IncisedText`](../IncisedText): Poppins SemiBold 20 for the
 preferred id tier and Regular 18 for everything else, pre-rendered at build
 time into 2bpp atlases that reproduce the glyphs the TouchGFX build shipped
 pixel for pixel, with Latin-1 and Latin Extended-A on the Regular face so a
@@ -459,7 +459,7 @@ atlases (17.6 KB of glyph data less the 6.1 KB of u8g2 faces and their
 renderer) and `.bss` shrank by the buffer, so the GUI is 10.8 KB smaller in
 RAM and 4.2 KB larger on disk. Before and after, through the bezel mask:
 
-![Before and after the TextKit port](Docs/text-before-after.png)
+![Before and after the IncisedText port](Docs/text-before-after.png)
 
 Because the metrics are Poppins' own again, the id tiers step at the
 thresholds the measured table in
@@ -550,8 +550,8 @@ unchanged; only the two pixel thresholds are, because they were tuned to
 TouchGFX's specific proprietary font metrics and had to be re-derived against
 `u8g2-fonts`' bitmap faces. The round-bezel ink-overflow measurement in
 ["Fitting the id on a round screen"](#fitting-the-id-on-a-round-screen) below
-was never redone against the u8g2 fonts; with TextKit the advances are the
-TouchGFX faces' own again (`textkit`'s tests hold the table's numbers), and
+was never redone against the u8g2 fonts; with IncisedText the advances are the
+TouchGFX faces' own again (`incised-text`'s tests hold the table's numbers), and
 `nothing_is_drawn_outside_the_bezel` in this crate renders every tier and
 every prompt and asserts no pixel behind the bezel.
 
@@ -672,8 +672,8 @@ The build prints it, so it can be checked rather than assumed —
 ## Fitting the id on a round screen
 
 **This section was written for the TouchGFX build, and its numbers hold
-again.** The Rust GUI draws the id from TextKit's atlases of the same
-Poppins faces at the same sizes, and `textkit`'s
+again.** The Rust GUI draws the id from IncisedText's atlases of the same
+Poppins faces at the same sizes, and `incised-text`'s
 `advances_match_the_touchgfx_build_barcode_measured` asserts every width in
 the table below to the pixel. The u8g2 build in between used other faces
 and never re-ran this measurement; the crate's bezel test now does it on
