@@ -323,3 +323,10 @@ each for the clock.
 - **The one test that knew the renderer** asserted part-covered red on the
   discard screen through the old `shade`; it asks inscribed-disc's `shade` for
   the same two levels and passes unchanged in intent.
+
+## Licence
+
+The code is MIT (`LICENSE-MIT`) or Apache-2.0 (`LICENSE-APACHE`), at your
+option. `src/faces.rs` is glyph data rasterized from Poppins and Atkinson
+Hyperlegible Next and is under the SIL Open Font License 1.1, as the fonts
+are; `Fonts/FONTS.md` has the sources and `Fonts/OFL-*.txt` the texts.
