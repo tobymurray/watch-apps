@@ -64,7 +64,7 @@ pub fn summary(state: &State) -> (Line, Abgr2222) {
         return (line, MUTED_INK);
     }
     if !usual_known(state) {
-        line.push("learning");
+        line.push(if state.times_vary != 0 { "times vary" } else { "learning" });
         return (line, MUTED_INK);
     }
     line.num(on, 1).push(" of ").num(n, 1).push(" on time");

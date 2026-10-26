@@ -305,3 +305,126 @@ TEST(SleepPeriods, NothingInNothingOut)
     Period out[1];
     EXPECT_EQ(find(nullptr, 0, out, 1, 0), 0u);
 }
+
+/// Still from 22:00 to 22:45, then asleep from 23:44: the night's first block
+/// is only 30 minutes old at 00:14, so the evening must not settle before it.
+TEST(SleepPeriods, AStillEveningWaitsForTheNightThatMayJoinIt)
+{
+    for (int after = 0; after <= 20; after += 5) {
+        const uint32_t now = at(-1, 50 + after);
+        const auto     p   = Day(kNoon, now).still(at(-2), at(-2, 45)).still(at(-1, 44), now).periods(now);
+        ASSERT_FALSE(p.empty());
+        EXPECT_FALSE(p.back().settled) << after << " min after 23:50";
+    }
+    const auto p = Day(kNoon, at(8, 10)).still(at(-2), at(-2, 45)).still(at(-1, 44), at(7)).periods(at(8, 10));
+    ASSERT_EQ(p.size(), 1u);
+    expectNear(p[0].startUtc, at(-2));
+    EXPECT_TRUE(p[0].settled);
+}
+
+TEST(SleepPeriods, MovementAfterTheHourSettlesTheNight)
+{
+    const Day d = Day(kNoon, at(8, 5)).still(at(-1), at(7));
+    EXPECT_TRUE(d.periods(at(8, 5))[0].settled);
+}
+
+/// Back to bed lying on the watch, so the second run's wrist is unknown until
+/// trust returns at 08:05 and it joins the night.
+TEST(SleepPeriods, ANightDoesNotSettleWhileAnUnknownWristCanStillJoinIt)
+{
+    const auto day = [](uint32_t now) {
+        return Day(kNoon, now)
+            .still(at(-1), at(7))
+            .trust(at(6, 56), at(7, 10), 10)
+            .still(at(7, 10), at(9))
+            .trust(at(7, 10), at(8, 5), 10);
+    };
+    uint32_t settledEnd = 0;
+    for (uint32_t now = at(7, 30); now <= at(10, 30); now += 5 * kMin) {
+        const auto p = day(now).periods(now);
+        ASSERT_FALSE(p.empty());
+        if (p[0].settled && settledEnd == 0) {
+            settledEnd = p[0].endUtc;
+        }
+        if (settledEnd != 0) {
+            EXPECT_EQ(p[0].endUtc, settledEnd) << (now - at(7)) / kMin << " min after 07:00";
+        }
+    }
+    EXPECT_NE(settledEnd, 0u);
+    expectNear(settledEnd, at(9));
+}
+
+TEST(SleepPeriods, TheTableAfterWakingSettlesTheNight)
+{
+    const auto p = Day(kNoon, at(8, 10)).still(at(-1), at(7)).table(at(7, 5), at(8, 10)).periods(at(8, 10));
+    ASSERT_EQ(p.size(), 2u);
+    EXPECT_TRUE(p[0].settled);
+}
+
+TEST(SleepPeriods, NoLaterPeriodSettlesBeforeAnEarlierOne)
+{
+    const auto day = [](uint32_t now) {
+        return Day(kNoon, now)
+            .still(at(-1), at(7))
+            .trust(at(6, 56), at(7, 45), 10)
+            .still(at(7, 10), at(7, 40))
+            .table(at(7, 45), at(13));
+    };
+    for (uint32_t now = at(7, 30); now <= at(13, 30); now += 5 * kMin) {
+        const auto p = day(now).periods(now);
+        for (size_t k = 0; k + 1 < p.size(); ++k) {
+            if (p[k + 1].settled) {
+                EXPECT_TRUE(p[k].settled) << "period " << k << " unsettled while " << k + 1 << " settled, "
+                                          << (now - at(7)) / kMin << " min after 07:00";
+            }
+        }
+    }
+}
+
+/// A dropout stamped a second late is the newest epoch at a tick, so the wrist it
+/// gives the run is read from a window that the epochs after it still change.
+TEST(SleepPeriods, AnEpochStampedLateSettlesNothingThatCanStillGrow)
+{
+    std::vector<Epoch> all;
+    auto add = [&](uint32_t t, uint32_t count, bool hasHr, uint8_t trust) {
+        Epoch e;
+        e.utc        = t;
+        e.count      = count;
+        e.hasHr      = hasHr;
+        e.hrAsked    = true;
+        e.hrTrustX10 = trust;
+        all.push_back(e);
+    };
+    const uint32_t dropout = at(7, 24) + 30;
+    uint32_t       t       = at(-1);
+    for (; t < at(6); t += kEpochS) add(t, kStill, true, 30);
+    for (; t < at(6, 20); t += kEpochS) add(t, kMoving, true, 8);
+    for (; t < dropout; t += kEpochS) add(t, 500, true, 8);
+    add(dropout + 1, kStill, false, 0);
+    for (t += kEpochS; t < at(9); t += kEpochS) add(t, kStill, true, 30);
+    for (; t < at(13); t += kEpochS) add(t, kMoving, true, 30);
+
+    uint32_t settledEnd = 0;
+    for (uint32_t now = at(-1) + 15; now <= at(13); now += 5 * kMin) {
+        std::vector<Epoch> seen;
+        for (const Epoch &e : all) {
+            if (e.utc + kEpochS <= now) {
+                seen.push_back(e);
+            }
+        }
+        if (seen.empty()) {
+            continue;
+        }
+        std::vector<Period> p(8);
+        p.resize(find(seen.data(), seen.size(), p.data(), p.size(), now));
+        if (p.empty()) {
+            continue;
+        }
+        if (settledEnd != 0) {
+            EXPECT_EQ(p[0].endUtc, settledEnd) << (now - at(6)) / kMin << " min after 06:00";
+        } else if (p[0].settled) {
+            settledEnd = p[0].endUtc;
+        }
+    }
+    expectNear(settledEnd, at(9));
+}

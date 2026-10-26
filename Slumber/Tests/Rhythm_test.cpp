@@ -32,6 +32,14 @@ std::vector<Night> week()
             night(hm(23, 30), hm(8, 0))};
 }
 
+std::vector<Night> fortnight()
+{
+    std::vector<Night> v(4, night(hm(0, 50), hm(8, 0)));
+    const auto         w = week();
+    v.insert(v.end(), w.begin(), w.end());
+    return v;
+}
+
 } // namespace
 
 TEST(Rhythm, AfterNoonKeepsANightInOrder)
@@ -42,28 +50,61 @@ TEST(Rhythm, AfterNoonKeepsANightInOrder)
     EXPECT_LT(afterNoon(k2210Est, -300), afterNoon(k2210Est + 6 * 3600, -300));
 }
 
-TEST(Rhythm, NoUsualUnderThreeNights)
+TEST(Rhythm, NoUsualUnderSevenNights)
 {
-    const auto v = week();
-    EXPECT_FALSE(usual(v.data(), 2).known);
-    EXPECT_TRUE(usual(v.data(), 3).known);
+    const auto v = fortnight();
+    EXPECT_FALSE(usual(v.data(), 6).known);
+    EXPECT_FALSE(usual(v.data(), 6).varies);
+    EXPECT_TRUE(usual(v.data(), 7).known);
 }
 
 TEST(Rhythm, TheUsualIsTheMedianOfTheLastSixNights)
 {
-    const auto v = week();
-    const Usual u = usual(v.data(), 6);
+    const auto v = fortnight();
+    const Usual u = usual(v.data(), 10);
     ASSERT_TRUE(u.known);
     EXPECT_EQ(u.bed, (hm(0, 50) + hm(0, 55)) / 2);
     EXPECT_EQ(u.wake, (hm(8, 0) + hm(8, 5)) / 2);
-    EXPECT_EQ(usual(v.data(), 7).bed, (hm(0, 50) + hm(0, 55)) / 2);
+    EXPECT_EQ(usual(v.data(), 11).bed, (hm(0, 50) + hm(0, 55)) / 2);
 }
 
 TEST(Rhythm, OnlySixNightsCount)
 {
-    auto v = week();
+    auto v = fortnight();
     v.insert(v.begin(), night(hm(18, 0), hm(4, 0)));
-    EXPECT_EQ(usual(v.data(), 7).bed, usual(v.data() + 1, 6).bed);
+    EXPECT_EQ(usual(v.data(), 12).bed, usual(v.data() + 1, 11).bed);
+}
+
+TEST(Rhythm, BedtimesEitherSideOfNoonAreOneUsual)
+{
+    std::vector<Night> v;
+    for (int i = 0; i < 7; ++i) {
+        v.push_back(i % 2 == 0 ? night(hm(11, 50), hm(19, 0)) : night(hm(12, 10), hm(19, 20)));
+    }
+    const Usual u = usual(v.data(), v.size());
+    ASSERT_TRUE(u.known);
+    EXPECT_EQ(minuteOfDay(u.bed), 12 * 60);
+    EXPECT_EQ(offset(hm(11, 50), u), -10);
+}
+
+TEST(Rhythm, ARotaHasNoUsual)
+{
+    std::vector<Night> v;
+    for (int i = 0; i < 12; ++i) {
+        v.push_back((i / 3) % 2 == 0 ? night(hm(22, 30), hm(6, 30)) : night(hm(8, 30), hm(15, 30)));
+    }
+    const Usual u = usual(v.data(), v.size());
+    EXPECT_FALSE(u.known);
+    EXPECT_TRUE(u.varies);
+}
+
+TEST(Rhythm, AnOffsetIsNeverMoreThanTwelveHours)
+{
+    Usual u;
+    u.bed = hm(23, 0);
+    EXPECT_EQ(offset(hm(1, 0), u), 120);
+    EXPECT_EQ(offset(hm(10, 0), u), 660);
+    EXPECT_EQ(offset(hm(12, 0), u), -660);
 }
 
 TEST(Rhythm, RestFillsOneLapAtSevenHours)
@@ -87,14 +128,14 @@ TEST(Rhythm, TheWindowIsFullAndFadesToEmptyAtTwoHours)
 
 TEST(Rhythm, ABedtimeInTheWindowClosesTheRingAndAnEarlyOneDoesNot)
 {
-    const auto v = week();
-    const Usual before5 = usual(v.data(), 5);
-    EXPECT_EQ(offset(v[5].bed, before5), 5);
-    EXPECT_EQ(rhythmFill(offset(v[5].bed, before5)), kFull);
+    const auto v = fortnight();
+    const Usual before9 = usual(v.data(), 9);
+    EXPECT_EQ(offset(v[9].bed, before9), 5);
+    EXPECT_EQ(rhythmFill(offset(v[9].bed, before9)), kFull);
 
-    const Usual before6 = usual(v.data(), 6);
-    EXPECT_EQ(offset(v[6].bed, before6), -82);
-    EXPECT_EQ(rhythmFill(offset(v[6].bed, before6)), 423);
+    const Usual before10 = usual(v.data(), 10);
+    EXPECT_EQ(offset(v[10].bed, before10), -82);
+    EXPECT_EQ(rhythmFill(offset(v[10].bed, before10)), 423);
 }
 
 namespace
@@ -114,10 +155,10 @@ TEST(Rhythm, RecentKeepsTheLongestWornPeriodOfEachDay)
     EXPECT_FALSE(u.known);
 }
 
-TEST(Rhythm, RecentHoldsAWeekAndForgetsTheOldest)
+TEST(Rhythm, RecentHoldsAFortnightAndForgetsTheOldest)
 {
     Recent r;
-    for (uint32_t d = 0; d < 10; ++d) {
+    for (uint32_t d = 0; d < 20; ++d) {
         r.add(k0030Edt + d * 86400, k0030Edt + d * 86400 + 8 * 3600, -240, 450);
     }
     EXPECT_EQ(r.size(), Recent::kCap);
@@ -131,9 +172,25 @@ TEST(Rhythm, RecentHoldsAWeekAndForgetsTheOldest)
 TEST(Rhythm, UsualBeforeLeavesOutTheNightScored)
 {
     Recent r;
-    for (uint32_t d = 0; d < 3; ++d) {
+    for (uint32_t d = 0; d < 7; ++d) {
         r.add(k0030Edt + d * 86400, k0030Edt + d * 86400 + 8 * 3600, -240, 450);
     }
     EXPECT_TRUE(r.usualBefore(UINT32_MAX).known);
-    EXPECT_FALSE(r.usualBefore(k0030Edt + 2 * 86400).known);
+    EXPECT_FALSE(r.usualBefore(k0030Edt + 6 * 86400).known);
+}
+
+TEST(Rhythm, NightsToGoCountsEveryNightKept)
+{
+    Recent r;
+    EXPECT_EQ(r.nightsToGo(), kMinBaselineNights);
+    for (uint32_t d = 0; d < 5; ++d) {
+        r.add(k0030Edt + d * 86400, k0030Edt + d * 86400 + 8 * 3600, -240, 450);
+    }
+    const uint32_t back = k0030Edt + 100 * 86400;
+    r.add(back, back + 8 * 3600, -240, 450);
+    EXPECT_EQ(r.nightsToGo(), 1);
+    EXPECT_FALSE(r.usualBefore(UINT32_MAX).known);
+    r.add(back + 86400, back + 86400 + 8 * 3600, -240, 450);
+    EXPECT_EQ(r.nightsToGo(), 0);
+    EXPECT_TRUE(r.usualBefore(UINT32_MAX).known);
 }

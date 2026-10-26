@@ -74,6 +74,11 @@ pub struct Words {
 pub fn words(state: &State) -> Words {
     let mut w = Words { title: Line::new(), bed: Line::new(), wake: Line::new(), countdown: Line::new() };
     w.title.push("Tonight");
+    if !known(state) && state.times_vary != 0 {
+        w.bed.push("no usual");
+        w.wake.push("times vary");
+        return w;
+    }
     if !known(state) {
         w.bed.push("learning");
         match state.nights_to_go {

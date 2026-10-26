@@ -610,7 +610,7 @@ TEST(NightLog, MainNightsAreReadBackForTheUsual)
     SDK::Test::FakeFileSystem fs;
     {
         auto log = std::make_unique<NightLog>(fs);
-        for (int d = 0; d < 4; ++d) {
+        for (int d = 0; d < 7; ++d) {
             SleepPeriods::Period p = settledNight();
             p.startUtc += d * 86400;
             p.endUtc += d * 86400;
@@ -621,7 +621,7 @@ TEST(NightLog, MainNightsAreReadBackForTheUsual)
     auto                log = std::make_unique<NightLog>(fs);
     const Rhythm::Usual u   = log->recent().usualBefore(UINT32_MAX);
     ASSERT_TRUE(u.known);
-    EXPECT_EQ(u.nights, 4u);
+    EXPECT_EQ(u.nights, Rhythm::kBaselineNights);
     EXPECT_EQ(Rhythm::minuteOfDay(u.bed), 23 * 60 + 54);
     EXPECT_EQ(Rhythm::minuteOfDay(u.wake), 9 * 60 + 5);
 }
@@ -631,7 +631,7 @@ TEST(NightLog, MainNightsAreReadBackForTheWeek)
     SDK::Test::FakeFileSystem fs;
     {
         auto log = std::make_unique<NightLog>(fs);
-        for (int d = 0; d < 4; ++d) {
+        for (int d = 0; d < 7; ++d) {
             SleepPeriods::Period p = settledNight();
             p.startUtc += d * 86400;
             p.endUtc += d * 86400;
@@ -639,8 +639,8 @@ TEST(NightLog, MainNightsAreReadBackForTheWeek)
         }
     }
     auto log = std::make_unique<NightLog>(fs);
-    EXPECT_EQ(log->schedule().size(), 4u);
-    const Schedule::Expected e = log->schedule().expect(Rhythm::noonDay(settledNight().startUtc, -240) + 4);
+    EXPECT_EQ(log->schedule().size(), 7u);
+    const Schedule::Expected e = log->schedule().expect(Rhythm::noonDay(settledNight().startUtc, -240) + 7);
     ASSERT_TRUE(e.known);
     EXPECT_EQ(Rhythm::minuteOfDay(e.bed), 23 * 60 + 54);
 }

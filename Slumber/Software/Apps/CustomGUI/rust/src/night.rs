@@ -11,6 +11,8 @@ pub const KIND_SETTLED: u8 = 1;
 pub const KIND_SO_FAR: u8 = 2;
 pub const KIND_OFF_WRIST: u8 = 3;
 pub const UNKNOWN: u16 = 0xFFFF;
+/// A rhythm_fill for a night whose earlier nights keep no one time.
+pub const RHYTHM_VARIES: u16 = 0xFFFE;
 
 /// A bedtime this close to the usual is on time.
 pub(crate) const ON_TIME_MIN: i32 = 30;
@@ -215,7 +217,7 @@ pub fn words(state: &State) -> Words {
         rest: Line::new(),
         times: Line::new(),
         rhythm: Line::new(),
-        rhythm_known: state.rhythm_fill != UNKNOWN,
+        rhythm_known: state.rhythm_fill != UNKNOWN && state.rhythm_fill != RHYTHM_VARIES,
         times_are_usual: false,
     };
     if state.have_status == 0 {
@@ -233,7 +235,7 @@ pub fn words(state: &State) -> Words {
             if w.rhythm_known {
                 rhythm_words(&mut w.rhythm, state.rhythm_offset_min as i32);
             } else {
-                w.rhythm.push("learning");
+                w.rhythm.push(if state.rhythm_fill == RHYTHM_VARIES { "times vary" } else { "learning" });
             }
         }
         KIND_OFF_WRIST => {

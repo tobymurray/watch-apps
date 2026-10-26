@@ -471,7 +471,7 @@ void Service::publishNow(uint32_t utc)
     s.usual       = mNights.recent().usualBefore(UINT32_MAX);
     s.usualBefore = mNights.recent().usualBefore(mLastNight != nullptr ? mLastNight->startUtc : UINT32_MAX);
     s.tonightDay  = Schedule::tonight(utc, off);
-    s.tonight     = mNights.schedule().expect(s.tonightDay);
+    s.tonight     = Schedule::agree(mNights.schedule().expect(s.tonightDay), s.usual);
     s.week        = mNights.schedule().week();
     if (mLastNight != nullptr && mLastNight->worn == SleepPeriods::Worn::Worn) {
         s.lastHeart  = NightSummary::heart(mHistory.data(), mHistory.size(), *mLastNight);
@@ -583,6 +583,8 @@ void Service::showNight(LastNight::Kind kind, const SleepPeriods::Period &p, boo
         mShown.rhythmOffsetMin = static_cast<int16_t>(d);
         mShown.scoredBedMin    = static_cast<uint16_t>(Rhythm::minuteOfDay(before.bed));
         mShown.scoredWakeMin   = static_cast<uint16_t>(Rhythm::minuteOfDay(before.wake));
+    } else if (before.varies) {
+        mShown.rhythmFill = CustomMessage::kRhythmVaries;
     }
 }
 
@@ -616,14 +618,12 @@ void Service::fillWeek(CustomMessage::Status &st)
         st.week.usualWake = static_cast<int16_t>(usual.wake < usual.bed ? usual.wake + 1440 : usual.wake);
     }
 
-    const Schedule::Expected e = schedule.expect(tonight);
+    const Schedule::Expected e = Schedule::agree(schedule.expect(tonight), usual);
+    st.tonight.timesVary       = e.varies ? 1 : 0;
+    st.tonight.nightsToGo      = mNights.recent().nightsToGo();
     if (e.known) {
         st.tonight.bedMin  = static_cast<uint16_t>(Rhythm::minuteOfDay(e.bed));
         st.tonight.wakeMin = static_cast<uint16_t>(Rhythm::minuteOfDay(e.wake));
-    } else {
-        const size_t have     = schedule.size();
-        st.tonight.nightsToGo = static_cast<uint8_t>(
-            have < Rhythm::kMinBaselineNights ? Rhythm::kMinBaselineNights - have : 0);
     }
 }
 

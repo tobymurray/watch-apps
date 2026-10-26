@@ -68,19 +68,36 @@ TEST(Schedule, TonightTurnsOverInTheSmallHours)
     EXPECT_EQ(Schedule::tonight(at(tue, 23, 0), kOff), tue);
 }
 
-TEST(Schedule, ThreeNightsBeforeThereIsAUsual)
+TEST(Schedule, SevenNightsBeforeThereIsAUsual)
 {
     Schedule::Learner l;
-    sleep(l, kMonday, 23, 0);
-    sleep(l, kMonday + 1, 23, 0);
-    EXPECT_FALSE(l.expect(kMonday + 2).known);
-    sleep(l, kMonday + 2, 23, 0);
-    const Schedule::Expected e = l.expect(kMonday + 3);
+    for (int32_t d = 0; d < 6; ++d) {
+        sleep(l, kMonday + d, 23, 0);
+    }
+    EXPECT_FALSE(l.expect(kMonday + 6).known);
+    EXPECT_FALSE(l.expect(kMonday + 6).varies);
+    sleep(l, kMonday + 6, 23, 0);
+    const Schedule::Expected e = l.expect(kMonday + 7);
     ASSERT_TRUE(e.known);
     EXPECT_EQ(e.bed, clock(23, 0));
     EXPECT_EQ(e.wake, clock(7, 0));
-    EXPECT_EQ(e.own, 0);
-    EXPECT_EQ(e.nights, 3);
+    EXPECT_EQ(e.own, 1);
+    EXPECT_EQ(e.nights, 7);
+}
+
+TEST(Schedule, ARotaHasNoUsualForTonight)
+{
+    Schedule::Learner l;
+    for (int32_t d = 0; d < 24; ++d) {
+        if ((d / 4) % 2 == 0) {
+            sleep(l, kMonday + d, 22, 30);
+        } else {
+            sleep(l, kMonday + d, 8, 30, 420);
+        }
+    }
+    const Schedule::Expected e = l.expect(kMonday + 24);
+    EXPECT_FALSE(e.known);
+    EXPECT_TRUE(e.varies);
 }
 
 TEST(Schedule, OnlyNightsBeforeTheDayCount)
@@ -180,12 +197,12 @@ TEST(Schedule, LaterWeekendsAreSocialJetlag)
 TEST(Schedule, ANapBesideTheNightIsNotTheNight)
 {
     Schedule::Learner l;
-    for (int32_t d = 0; d < 3; ++d) {
+    for (int32_t d = 0; d < 7; ++d) {
         sleep(l, kMonday + d, 23, 0);
         sleep(l, kMonday + d, 14, 0, 40);
     }
-    EXPECT_EQ(l.size(), 3u);
-    EXPECT_EQ(l.expect(kMonday + 3).bed, clock(23, 0));
+    EXPECT_EQ(l.size(), 7u);
+    EXPECT_EQ(l.expect(kMonday + 7).bed, clock(23, 0));
 }
 
 TEST(Schedule, AnOldRoutineIsForgotten)
@@ -212,10 +229,10 @@ TEST(Schedule, ANightOlderThanTheWindowIsIgnored)
 TEST(Schedule, DaySleepWrapsPastNoon)
 {
     Schedule::Learner l;
-    for (int32_t d = 0; d < 3; ++d) {
+    for (int32_t d = 0; d < 7; ++d) {
         sleep(l, kMonday + d, 8, 0, 420);  // 08:00 to 15:00
     }
-    const Schedule::Expected e = l.expect(kMonday + 3);
+    const Schedule::Expected e = l.expect(kMonday + 7);
     ASSERT_TRUE(e.known);
     EXPECT_EQ(Rhythm::minuteOfDay(e.bed), 8 * 60);
     EXPECT_EQ(Rhythm::minuteOfDay(e.wake), 15 * 60);
@@ -323,4 +340,48 @@ TEST(Schedule, AWeekBeforeAnyNightIsEmpty)
     for (size_t i = 0; i < Schedule::kWeekNights; ++i) {
         EXPECT_EQ(b.bed[i], Schedule::kNoNight);
     }
+}
+
+namespace
+{
+
+Rhythm::Usual usualAt(int bedH, int wakeH, bool known = true)
+{
+    Rhythm::Usual u;
+    u.known  = known;
+    u.varies = !known;
+    u.bed    = clock(bedH, 0);
+    u.wake   = clock(wakeH, 0);
+    u.nights = 6;
+    return u;
+}
+
+} // namespace
+
+TEST(ScheduleAgree, TheWeekdayStandsWhileItAgreesWithTheUsual)
+{
+    const Schedule::Learner  l = weeksWithWednesdays(6, 0, 30);
+    const Schedule::Expected e = l.expect(kMonday + 44);
+    const Schedule::Expected a = Schedule::agree(e, usualAt(23, 7));
+    ASSERT_TRUE(a.known);
+    EXPECT_EQ(a.bed, e.bed);
+    EXPECT_EQ(a.own, e.own);
+}
+
+TEST(ScheduleAgree, TheUsualStandsWhenTheWeekdayLagsAChangeOfHours)
+{
+    const Schedule::Learner  l = weeksWithWednesdays(6, 23, 0);
+    const Schedule::Expected a = Schedule::agree(l.expect(kMonday + 42), usualAt(8, 15));
+    ASSERT_TRUE(a.known);
+    EXPECT_EQ(a.bed, clock(8, 0));
+    EXPECT_EQ(a.wake, clock(15, 0));
+    EXPECT_EQ(a.own, 0);
+}
+
+TEST(ScheduleAgree, NoUsualIsNoTonight)
+{
+    const Schedule::Learner  l = weeksWithWednesdays(6, 23, 0);
+    const Schedule::Expected a = Schedule::agree(l.expect(kMonday + 42), usualAt(23, 7, false));
+    EXPECT_FALSE(a.known);
+    EXPECT_TRUE(a.varies);
 }

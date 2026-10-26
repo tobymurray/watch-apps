@@ -22,7 +22,15 @@ constexpr int32_t kEmptyMin = 120;
 constexpr size_t kBaselineNights = 6;
 
 /// Fewer nights than this and there is no usual yet.
-constexpr size_t kMinBaselineNights = 3;
+constexpr size_t kMinBaselineNights = 7;
+
+/// Whether there is a usual at all is asked of this many nights, so a rota's
+/// last block cannot pass for a habit.
+constexpr size_t kKeptNights = 14;
+
+/// A night this close to the usual keeps it, chosen on synthetic schedules
+/// rather than wearers: `Slumber/README.md` "Irregular hours" has the sweep.
+constexpr int32_t kKeptMin = 4 * 60;
 
 constexpr uint16_t kFull = 1000;  ///< ring fills are per mille of one lap
 
@@ -53,45 +61,85 @@ struct Usual {
     int32_t bed    = 0;  ///< afterNoon
     int32_t wake   = 0;  ///< afterNoon
     uint8_t nights = 0;  ///< the median is of this many
+    bool    varies = false;  ///< enough nights, but most are not near any one time
 };
 
-namespace detail
+/// Shortest signed distance from `b` to `a` round the clock, in (-720, 720].
+inline int32_t apart(int32_t a, int32_t b)
 {
-
-/// Median of `n <= kBaselineNights` values, the lower-middle pair averaged down.
-inline int32_t median(int32_t *v, size_t n)
-{
-    for (size_t i = 1; i < n; ++i) {
-        for (size_t j = i; j > 0 && v[j - 1] > v[j]; --j) {
-            const int32_t t = v[j];
-            v[j]            = v[j - 1];
-            v[j - 1]        = t;
-        }
-    }
-    return n % 2 == 1 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2;
+    const int32_t d = ((a - b) % 1440 + 1440) % 1440;
+    return d > 720 ? d - 1440 : d;
 }
 
-} // namespace detail
+/// The median of clock times, cut where the clock has its widest stretch with
+/// none, so 11:50 and 12:10 are 20 minutes apart; sorts `v`.
+template <typename T>
+inline int32_t centre(T *v, size_t n)
+{
+    if (n == 0) {
+        return 0;
+    }
+    for (size_t i = 1; i < n; ++i) {
+        for (size_t j = i; j > 0 && v[j - 1] > v[j]; --j) {
+            const T t = v[j];
+            v[j]      = v[j - 1];
+            v[j - 1]  = t;
+        }
+    }
+    size_t  cut    = 0;
+    int32_t widest = static_cast<int32_t>(v[0]) + 1440 - v[n - 1];
+    for (size_t i = 1; i < n; ++i) {
+        if (v[i] - v[i - 1] > widest) {
+            widest = v[i] - v[i - 1];
+            cut    = i;
+        }
+    }
+    auto unwrapped = [&](size_t j) {
+        return cut + j < n ? static_cast<int32_t>(v[cut + j]) : static_cast<int32_t>(v[cut + j - n]) + 1440;
+    };
+    return (n % 2 == 1 ? unwrapped(n / 2) : (unwrapped(n / 2 - 1) + unwrapped(n / 2)) / 2) % 1440;
+}
 
-/// The usual bed and wake from the nights before `prior + n`, oldest first.
+/// Whether two thirds of the times lie within kKeptMin of `at`.
+template <typename T>
+inline bool kept(const T *v, size_t n, int32_t at)
+{
+    size_t near = 0;
+    for (size_t i = 0; i < n; ++i) {
+        const int32_t d = apart(v[i], at);
+        near += (d < 0 ? -d : d) <= kKeptMin ? 1 : 0;
+    }
+    return n > 0 && 3 * near >= 2 * n;
+}
+
+/// The usual bed and wake from the nights before `prior + n`, oldest first:
+/// the median of the last kBaselineNights, if the last kKeptNights keep it.
 inline Usual usual(const Night *prior, size_t n)
 {
     Usual u;
-    const size_t from = n > kBaselineNights ? n - kBaselineNights : 0;
-    const size_t k    = n - from;
-    if (k < kMinBaselineNights) {
+    if (n < kMinBaselineNights) {
         return u;
     }
+    const size_t from = n > kBaselineNights ? n - kBaselineNights : 0;
+    const size_t k    = n - from;
     int32_t beds[kBaselineNights];
     int32_t wakes[kBaselineNights];
     for (size_t i = 0; i < k; ++i) {
         beds[i]  = prior[from + i].bed;
         wakes[i] = prior[from + i].wake;
     }
-    u.known  = true;
-    u.bed    = detail::median(beds, k);
-    u.wake   = detail::median(wakes, k);
+    u.bed    = centre(beds, k);
+    u.wake   = centre(wakes, k);
     u.nights = static_cast<uint8_t>(k);
+    const size_t gFrom = n > kKeptNights ? n - kKeptNights : 0;
+    int32_t      gBeds[kKeptNights];
+    int32_t      gWakes[kKeptNights];
+    for (size_t i = gFrom; i < n; ++i) {
+        gBeds[i - gFrom]  = prior[i].bed;
+        gWakes[i - gFrom] = prior[i].wake;
+    }
+    u.known  = kept(gBeds, n - gFrom, u.bed) && kept(gWakes, n - gFrom, u.wake);
+    u.varies = !u.known;
     return u;
 }
 
@@ -106,7 +154,7 @@ inline int32_t minuteOfDay(int32_t afterNoonMin)
 class Recent
 {
 public:
-    static constexpr size_t kCap = kBaselineNights + 1;
+    static constexpr size_t kCap = kKeptNights + 1;
 
     void add(uint32_t startUtc, uint32_t endUtc, int32_t offsetMin, uint16_t restMin)
     {
@@ -157,6 +205,12 @@ public:
 
     size_t size() const { return mN; }
 
+    /// Nights still to log before there can be a usual.
+    uint8_t nightsToGo() const
+    {
+        return static_cast<uint8_t>(mN < kMinBaselineNights ? kMinBaselineNights - mN : 0);
+    }
+
 private:
     struct Main {
         int32_t  day     = 0;
@@ -178,7 +232,7 @@ inline uint16_t restFill(uint16_t restMin)
 /// Minutes `bed` is from the usual bedtime: negative is earlier.
 inline int32_t offset(int32_t bed, const Usual &u)
 {
-    return bed - u.bed;
+    return apart(bed, u.bed);
 }
 
 /// Full inside the window, empty past kEmptyMin, and linear between.

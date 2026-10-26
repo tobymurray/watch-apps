@@ -45,7 +45,7 @@ pub struct State {
     pub tonight_wake_min: u16,
     pub now_min: u16,
     pub nights_to_go: u8,
-    pub _pad: [u8; 1],
+    pub times_vary: u8,
     pub scored_bed_min: u16,
     pub scored_wake_min: u16,
 }
@@ -154,7 +154,7 @@ impl Default for State {
             tonight_wake_min: night::UNKNOWN,
             now_min: night::UNKNOWN,
             nights_to_go: 0,
-            _pad: [0; 1],
+            times_vary: 0,
             scored_bed_min: night::UNKNOWN,
             scored_wake_min: night::UNKNOWN,
         }
@@ -430,7 +430,7 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(State, tonight_wake_min));
     let h = fnv1a(h, core::mem::offset_of!(State, now_min));
     let h = fnv1a(h, core::mem::offset_of!(State, nights_to_go));
-    let h = fnv1a(h, core::mem::offset_of!(State, _pad));
+    let h = fnv1a(h, core::mem::offset_of!(State, times_vary));
     let h = fnv1a(h, core::mem::offset_of!(State, scored_bed_min));
     fnv1a(h, core::mem::offset_of!(State, scored_wake_min))
 }
@@ -464,6 +464,7 @@ const _: () = assert!(core::mem::offset_of!(State, week_usual_bed) == 68);
 const _: () = assert!(core::mem::offset_of!(State, tonight_bed_min) == 72);
 const _: () = assert!(core::mem::offset_of!(State, now_min) == 76);
 const _: () = assert!(core::mem::offset_of!(State, nights_to_go) == 78);
+const _: () = assert!(core::mem::offset_of!(State, times_vary) == 79);
 const _: () = assert!(core::mem::offset_of!(State, scored_bed_min) == 80);
 const _: () = assert!(core::mem::offset_of!(State, scored_wake_min) == 82);
 
@@ -580,6 +581,7 @@ mod tests {
             ("late", State { rhythm_fill: 0, rhythm_offset_min: 23 * 60 + 59, ..s }),
             ("early", State { rhythm_fill: 400, rhythm_offset_min: -(2 * 60 + 5), ..s }),
             ("learning", State { rhythm_fill: night::UNKNOWN, scored_bed_min: night::UNKNOWN, scored_wake_min: night::UNKNOWN, ..s }),
+            ("times-vary", State { rhythm_fill: night::RHYTHM_VARIES, scored_bed_min: night::UNKNOWN, scored_wake_min: night::UNKNOWN, ..s }),
             ("lie-in", State { rest_min: 9 * 60 + 15, onset_min: 50, wake_min: 10 * 60 + 40, rhythm_offset_min: 119, ..s }),
             ("so-far", State { night_kind: night::KIND_SO_FAR, ..s }),
             ("empty", State { rest_min: 0, rest_fill: 0, rhythm_fill: 0, ..s }),
@@ -634,6 +636,9 @@ mod tests {
             ], usual)),
             ("week-learning", week_of([None, None, None, None, None, Some(((23, 0), (7, 0))), Some(((23, 30), (7, 15)))], None)),
             ("week-empty", week_of([None; WEEK_NIGHTS], None)),
+            ("week-times-vary", State { times_vary: 1, ..week_of([
+                Some(((22, 30), (6, 30))), Some(((22, 30), (6, 30))), Some(((8, 30), (15, 30))), Some(((8, 30), (15, 30))),
+                Some(((8, 30), (15, 30))), Some(((22, 30), (6, 30))), Some(((22, 30), (6, 30)))], None) }),
         ]
     }
 
@@ -655,6 +660,7 @@ mod tests {
             ("tonight-learning", State { tonight_bed_min: night::UNKNOWN, tonight_wake_min: night::UNKNOWN, nights_to_go: 2, ..s }),
             ("tonight-one-more", State { tonight_bed_min: night::UNKNOWN, tonight_wake_min: night::UNKNOWN, nights_to_go: 1, ..s }),
             ("tonight-unworn", State { tonight_bed_min: night::UNKNOWN, tonight_wake_min: night::UNKNOWN, nights_to_go: 0, ..s }),
+            ("tonight-times-vary", State { tonight_bed_min: night::UNKNOWN, tonight_wake_min: night::UNKNOWN, times_vary: 1, ..s }),
         ]
     }
 
@@ -830,6 +836,13 @@ mod tests {
         assert_eq!(none.times.as_str(), "usually 22:51");
     }
 
+    #[test]
+    fn an_unscored_night_says_why_from_its_own_nights() {
+        let unscored = State { rhythm_fill: night::UNKNOWN, scored_bed_min: night::UNKNOWN, scored_wake_min: night::UNKNOWN, ..slept() };
+        assert_eq!(night::words(&State { times_vary: 1, ..unscored }).rhythm.as_str(), "learning");
+        assert_eq!(night::words(&State { rhythm_fill: night::RHYTHM_VARIES, ..unscored }).rhythm.as_str(), "times vary");
+    }
+
     /// The pixel on the middle of the dial's band at `minute` past midnight, `along` pixels clockwise of it.
     fn band_pixel(buf: &[u8], minute: u16, along: f32) -> u8 {
         let t = minute as f32 / 1440.0 * core::f32::consts::TAU + along / 110.5;
@@ -894,6 +907,7 @@ mod tests {
         assert_eq!(say(&w[1].1), "7 of 7 on time");
         assert_eq!(say(&w[3].1), "learning");
         assert_eq!(say(&w[4].1), "No nights yet");
+        assert_eq!(say(&w[5].1), "times vary");
     }
 
     #[test]
@@ -958,6 +972,8 @@ mod tests {
         assert_eq!((w.bed.as_str(), w.wake.as_str(), w.countdown.as_str()), ("23:15", "wake 07:05", "in 2h10"));
         assert_eq!(tonight::words(&t[5].1).wake.as_str(), "2 more nights");
         assert_eq!(tonight::words(&t[6].1).wake.as_str(), "1 more night");
+        assert_eq!(tonight::words(&t[8].1).bed.as_str(), "no usual");
+        assert_eq!(tonight::words(&t[8].1).wake.as_str(), "times vary");
         assert_eq!(tonight::words(&t[4].1).countdown.as_str(), "");
     }
 

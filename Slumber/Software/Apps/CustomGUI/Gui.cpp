@@ -217,6 +217,7 @@ void Gui::run()
                 mState.tonight_wake_min    = st->tonight.wakeMin;
                 mState.now_min             = st->tonight.nowMin;
                 mState.nights_to_go        = st->tonight.nightsToGo;
+                mState.times_vary          = st->tonight.timesVary;
                 if (!mOpened) {
                     mOpened = true;
                     if (mState.screen == SLUMBER_SCREEN_NIGHT) {
