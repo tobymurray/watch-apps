@@ -77,8 +77,8 @@ struct Period {
     uint8_t  wornPct      = 0;  ///< of epochs whose heart rate is evidence
     uint8_t  hrCoverPct   = 0;  ///< of epochs present, those whose heart rate is evidence
     Worn     worn         = Worn::Uncertain;
-    /// A period is final once kMergeGapS has passed after it, since nothing
-    /// later could still be merged into it.
+    /// Final once nothing later can merge into it: kMergeGapS has passed, and a
+    /// later period that can no longer join it or a break kMergeGapS after it has been seen.
     bool     settled      = false;
 };
 
@@ -211,9 +211,16 @@ inline size_t find(const Epoch *e, size_t n, Period *out, size_t maxOut, uint32_
     uint32_t runStart = 0;
     uint32_t runEnd   = 0;
     Wrist    runWrist = Wrist::Unknown;
+    // Whether runWrist was read from an epoch whose median window is complete, so cannot change.
+    bool     runWristJudged = false;
+    // Whether the last period written has a wrist that can no longer change, so cannot join the one before it.
+    bool     lastWristFinal = false;
     // Which side of the wrist each written period was built on, so a night is
     // never merged with the table the watch was left on after it.
     Wrist    lastWrist = Wrist::Unknown;
+    // The latest epoch that ends any run, among those whose median window is complete.
+    uint32_t lastBreakUtc = 0;
+    const uint32_t reach  = static_cast<uint32_t>(kMedianHalfWidth) * kEpochS;
 
     auto closeRun = [&]() {
         inRun = false;
@@ -229,6 +236,7 @@ inline size_t find(const Epoch *e, size_t n, Period *out, size_t maxOut, uint32_
             out[written].startUtc = runStart;
             out[written].endUtc   = runEnd;
             lastWrist             = runWrist;
+            lastWristFinal        = runWrist != Wrist::Unknown && runWristJudged;
             ++written;
         }
     };
@@ -238,7 +246,12 @@ inline size_t find(const Epoch *e, size_t n, Period *out, size_t maxOut, uint32_
         if (inRun && gapBefore) {
             closeRun();
         }
-        if (!detail::isRest(e, n, i)) {
+        const bool rest  = detail::isRest(e, n, i);
+        const bool judged = e[i].utc + reach <= e[n - 1].utc;
+        if (judged && (gapBefore || !rest)) {
+            lastBreakUtc = e[i].utc;
+        }
+        if (!rest) {
             if (inRun) {
                 closeRun();
             }
@@ -247,13 +260,17 @@ inline size_t find(const Epoch *e, size_t n, Period *out, size_t maxOut, uint32_
         const Wrist w = detail::wrist(e, n, i);
         if (inRun && w != Wrist::Unknown && runWrist != Wrist::Unknown && w != runWrist) {
             closeRun();
+            if (judged) {
+                lastBreakUtc = e[i].utc;
+            }
+        }
+        if (!inRun || runWrist == Wrist::Unknown) {
+            runWrist       = w;
+            runWristJudged = judged;
         }
         if (!inRun) {
             inRun    = true;
             runStart = e[i].utc;
-            runWrist = w;
-        } else if (runWrist == Wrist::Unknown) {
-            runWrist = w;
         }
         runEnd = e[i].utc + kEpochS;
     }
@@ -263,7 +280,10 @@ inline size_t find(const Epoch *e, size_t n, Period *out, size_t maxOut, uint32_
 
     for (size_t k = 0; k < written; ++k) {
         detail::score(e, n, out[k]);
-        out[k].settled = nowUtc >= out[k].endUtc && nowUtc - out[k].endUtc >= kMergeGapS;
+        // A period two on was closed by a break at least kMinBlockS old, so the one between is final.
+        const bool laterIsFinal    = k + 2 < written || (k + 2 == written && lastWristFinal);
+        const bool nothingCanMerge = laterIsFinal || lastBreakUtc >= out[k].endUtc + kMergeGapS;
+        out[k].settled = nowUtc >= out[k].endUtc && nowUtc - out[k].endUtc >= kMergeGapS && nothingCanMerge;
     }
     return written;
 }

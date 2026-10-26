@@ -11,6 +11,7 @@ extern "C" {
 #define SLUMBER_NO_MARK     0xFFu
 #define SLUMBER_NO_MARK_AGE 0xFFFFFFFFu
 #define SLUMBER_UNKNOWN     0xFFFFu
+#define SLUMBER_RHYTHM_VARIES 0xFFFEu
 #define SLUMBER_NO_BAR      (-1)
 #define SLUMBER_WEEK_NIGHTS 7
 
@@ -42,7 +43,7 @@ typedef struct {
     uint16_t onset_min;     /* minute of day */
     uint16_t wake_min;      /* minute of day */
     uint16_t rest_fill;     /* per mille; past 1000 is a second lap */
-    uint16_t rhythm_fill;   /* per mille; SLUMBER_UNKNOWN = no usual */
+    uint16_t rhythm_fill;   /* per mille; SLUMBER_UNKNOWN = no usual to score against */
     int16_t  rhythm_offset_min;
     uint16_t usual_bed_min; /* minute of day; SLUMBER_UNKNOWN = none */
     uint8_t  restless;
@@ -55,7 +56,7 @@ typedef struct {
     uint16_t tonight_wake_min;                /* minute of day; SLUMBER_UNKNOWN = none */
     uint16_t now_min;                         /* minute of day; SLUMBER_UNKNOWN = clock not set */
     uint8_t  nights_to_go;                    /* nights still needed before there is a usual */
-    uint8_t  _pad[1];
+    uint8_t  times_vary;                      /* 1 = enough nights, but they keep no one time */
     uint16_t scored_bed_min;                  /* minute of day: the usual rhythm_offset_min is against; SLUMBER_UNKNOWN = none */
     uint16_t scored_wake_min;                 /* minute of day; SLUMBER_UNKNOWN = none */
 } slumber_state;
@@ -142,7 +143,7 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(slumber_state, tonight_wake_min));
     h = fnv1a(h, offsetof(slumber_state, now_min));
     h = fnv1a(h, offsetof(slumber_state, nights_to_go));
-    h = fnv1a(h, offsetof(slumber_state, _pad));
+    h = fnv1a(h, offsetof(slumber_state, times_vary));
     h = fnv1a(h, offsetof(slumber_state, scored_bed_min));
     h = fnv1a(h, offsetof(slumber_state, scored_wake_min));
     return h;
@@ -174,6 +175,7 @@ static_assert(offsetof(slumber_state, week_usual_bed) == 68, "week_usual_bed mov
 static_assert(offsetof(slumber_state, tonight_bed_min) == 72, "tonight_bed_min moved");
 static_assert(offsetof(slumber_state, now_min) == 76, "now_min moved");
 static_assert(offsetof(slumber_state, nights_to_go) == 78, "nights_to_go moved");
+static_assert(offsetof(slumber_state, times_vary) == 79, "times_vary moved");
 static_assert(offsetof(slumber_state, scored_bed_min) == 80, "scored_bed_min moved");
 static_assert(offsetof(slumber_state, scored_wake_min) == 82, "scored_wake_min moved");
 #endif

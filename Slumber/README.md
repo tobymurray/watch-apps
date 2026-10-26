@@ -73,8 +73,8 @@ the state file is replaced, and what `null` means. This section is what Slumber 
 
 The card above stays the glance's private contract.
 
-**`sessions.jsonl`**: one line per period, once SleepPeriods has settled it, an hour
-after its last rest. Naps and table sessions are periods too, so filter on `worn`.
+**`sessions.jsonl`**: one line per period, once SleepPeriods has settled it, usually
+an hour after its last rest. Naps and table sessions are periods too, so filter on `worn`.
 
 | Field | Meaning |
 | --- | --- |
@@ -102,10 +102,10 @@ stages apart (see "The screens to come"). Over the 76 SleepLab sessions replayed
 | `written`, `heartbeat_s`, `utc_off_min` | When, how often, and the offset |
 | `asleep_since` | Start of the worn period still running, else `null` |
 | `last_night` | `{start, end, rest_min, worn, settled}`, the night the card shows, else `null` |
-| `usual` | `{bed_min, wake_min, nights}`: medians, in minutes past local midnight, of the main nights logged, at most six; `null` until three |
+| `usual` | `{bed_min, wake_min, nights}`: medians, in minutes past local midnight, of the main nights logged, at most six; `null` until seven, or while times vary ("Irregular hours") |
 | `rest_goal_min`, `rest_fill` | 420, and last night's rest against it in per mille; past 1000 is a second lap |
 | `rhythm_fill`, `rhythm_offset_min` | Last night's onset against the usual of the nights before it; `+` is later |
-| `tonight` | `{weekday, bed_min, wake_min, own_nights, nights}`: the usual for the night ahead, learned for its weekday (0 is Sunday); `null` until three nights. "Learning the week" says how |
+| `tonight` | `{weekday, bed_min, wake_min, own_nights, nights}`: the usual for the night ahead, learned for its weekday (0 is Sunday); `null` whenever `usual` is. "Learning the week" says how |
 | `week` | `{later_bed, earlier_bed, later_wake, earlier_wake}`, arrays of the weekdays that keep their own hours, and `social_jetlag_min`, or `null` until there are enough nights |
 | `heart` | `{median_bpm, low_bpm, low_at}` for last night, against `{usual_median_bpm, usual_low_bpm, usual_nights}`, with `median_vs_usual_bpm` and `notable`; `null` unless last night was worn with enough trusted readings, and its `usual_` fields `null` until three earlier nights had them |
 
@@ -131,7 +131,19 @@ any hour. It uses no bedtime window.
   nearby heart-rate epochs have trust under 2.0 with the count at the sensor
   floor, or no reading at all while heart rate was subscribed. A watch left on
   the table before or after a night is its own `NotWorn` period.
-- **A period is final** once 60 minutes have passed after it.
+- **A period is final** once nothing later can join it: 60 minutes have passed
+  after it, and either movement, a gap or a change of wrist has been seen at
+  least 60 minutes after it, or a later period proves it. A period two on
+  always does; the next one does once its wrist reads on or off from an epoch
+  whose 5.5-minute window is complete. A 30-minute block takes 30 minutes to
+  appear, so an hour alone is not enough: a still evening ending at 22:45 with
+  sleep from 23:44 would settle at 23:45, be logged, and leave the night that
+  joins it at 00:14 never logged. Nor is any later period: back in bed at 07:10
+  lying on the watch, the rest reads neither on nor off the wrist until trust
+  returns, and then joins the night; and an epoch stamped a second late can
+  give a run a wrist the next epochs take back. The cost is a night after which
+  the wrist stays unknown: in a synthetic replay, ten hours at count 260 and
+  trust 1.0 after waking logged the night 609 minutes after it ended, not 64.
 
 The 30-minute block, the 60-minute merge and the rolling median are van Hees et
 al. 2018's (Sci Rep 8:12975). The other constants were measured on 33 sessions
@@ -187,8 +199,8 @@ Every 5 minutes, with the heartbeat, Slumber runs SleepPeriods over the last
   loses its zone, cannot bring back an older night. The card shows a logged
   night's times in the offset it was logged with, the wearer's clock when they
   woke, so a flight later that day does not move them.
-- **Until SleepPeriods settles it**, an hour after its last rest, the card says
-  `so far`.
+- **Until SleepPeriods settles it**, usually an hour after its last rest, the
+  card says `so far`.
 - **Only a table, and no worn period**, reports `No night` / `watch was off`.
   An uncertain wrist is never reported.
 - **20 h after it ended**, the night expires and the card says `No night yet`.
@@ -230,6 +242,11 @@ holds it, and `Tests/Schedule_test.cpp` drives it through synthetic weeks.
 - **Social jetlag** is the median sleep midpoint of Friday and Saturday nights minus that
   of the other nights, the free-day and work-day comparison of Wittmann et al. (2006).
   The weekday arrays find other free days, such as a shift worker's, without assuming them.
+  It is `null` unless both groups keep one time.
+- **Tonight defers to the usual.** The weekday's own is shown while it lies within 4 h of
+  the usual (see "Irregular hours"); otherwise the usual is. The 56 days learn slowly, and
+  without this a switch from 23:00 nights to 08:30 day sleeps showed a 23:00 Tonight for
+  26 nights.
 
 None of this is on the watch's screen yet. `now.json` carries it for other apps, and the
 screens to come decide how it is shown. One rule for them: the Rhythm ring may score
@@ -238,6 +255,47 @@ late Wednesdays would score as perfectly regular.
 
 These thresholds are chosen, not measured. Each needs weeks of nights per wearer before
 it can be checked, and the recording period gives two of each weekday at most.
+
+## Irregular hours
+
+A usual is only worth showing if the nights keep one. Three nights at 22:30 and three
+day sleeps at 08:30 once had a median of 03:30, a bedtime nobody keeps, and every switch
+of shift read as `10h late`. So Slumber says when there is none:
+
+- **Times are taken round the clock.** The usual is the median after cutting the clock
+  at its widest empty stretch, so bedtimes of 11:50 and 12:10 are 20 minutes apart, not
+  23 h 40. How late or early a night was is the shorter way round, never past 12 h.
+- **A usual needs seven nights, and two thirds of the last 14 within 4 h of it.** The
+  usual itself is still the median of the last six. Otherwise `now.json` carries `null`
+  and the screens say `times vary`.
+
+`Tools/irregular.cpp` runs synthetic sleepers through these headers, 20 seeds each,
+evenings 21-120. "Usual" is the share of evenings with one; "kept" the share of those
+whose next bedtime fell within 2 h of it.
+
+| Schedule | Usual before | Kept before | Usual now | Kept now |
+| --- | --- | --- | --- | --- |
+| fixed 23:00 | 100% | 100% | 100% | 100% |
+| fixed, Fri/Sat 01:30 | 100% | 71% | 100% | 71% |
+| fixed, 2 nights out a week at 03:00 | 100% | 66% | 98% | 66% |
+| day sleeper 08:30 | 100% | 100% | 100% | 100% |
+| bedtime 11:40-12:20 | 100% | 65% | 100% | 100% |
+| Mon-Thu day sleeps, weekends 23:00 | 100% | 0% | 0% | - |
+| 3-on-3-off, 4-on-4-off | 100% | 0% | 0% | - |
+| alternate weeks of nights and days | 100% | 43% | 0% | - |
+| random | 100% | 15% | 1% | 7% |
+
+A permanent switch from 23:00 to 08:30 shows the old usual for two nights, then `times
+vary`, then the new usual from night ten. Tonight follows the same nights; it used to
+take 35.
+
+The 4 h is the radius that separated these groups: at 3 h a sleeper out until 03:00
+Thursday to Saturday kept a usual on only 56% of evenings, and at 5 h the weekly rota
+got one on 55%. The radius, two thirds and 14 nights are synthetic. Your own nights would
+show how often a regular sleeper is told `times vary`, and a rota worker's whether a
+rota ever gets a usual. A setting or a question on the watch was considered and not
+built: the nights already answer it, and a wrong answer here costs `times vary` for a
+while rather than a confident wrong time.
 
 ## Heart rate against your normal
 
@@ -381,7 +439,7 @@ against as a thin cyan arc just inside it, so a late bedtime is the band
 starting clockwise of the arc. Inside: the night's rest, its times and its
 bedtime against the usual, such as `7h42`, `23:29-07:30`, `38m late`. The band
 spans the whole period, so it can be longer than the rest it reports. Before
-there is a night it says `No night yet` and shows the usual arc once three
+there is a night it says `No night yet` and shows the usual arc once seven
 nights give one; a night on a table says `watch was off`. The times are in the
 offset the night was logged with.
 
@@ -393,10 +451,11 @@ bedtimes within 30 minutes of the usual, the window the Rhythm ring is full
 for. The plot runs in whole hours, at least six, so a single night does not
 fill it.
 
-**Tonight** is the usual night for tonight's weekday (`Schedule::expect`, see
+**Tonight** is the usual night for tonight's weekday (`Schedule::agree`, see
 "Learning the week") as a cyan band on the dial, and a white dot for now. Inside: the usual bedtime, the usual wake, and how far
 bedtime is, such as `in 2h10`, `about now` or `45m past`. Before there is a
-usual it says how many more nights it needs.
+usual it says how many more nights it needs, and when the nights keep no one
+time it says `no usual` and `times vary`, and the app no longer opens on it.
 
 `Software/Apps/CustomGUI/rust/src/` draws them: `night.rs`, `week.rs` and
 `tonight.rs`. The service sends the night, the week and tonight with every
@@ -450,7 +509,7 @@ when, and for how long. So the morning screen has two goal rings:
   it mark the overlap, as Apple's rings do. A lighter second lap was tried on the
   watch and read as a heavy unfilled track.
 - **Rhythm**, tonight's bedtime against the usual one: the median of up to the
-  six nights before, once there are three. Within 30 minutes it is full, and it
+  six nights before, once there are seven. Within 30 minutes it is full, and it
   empties linearly to 2 h. Sleep regularity predicted mortality better than
   duration in about 61,000 UK Biobank wearers (Windred et al. 2023), and bedtime
   is the part of it a wearer controls. The 30-minute window and 2 h floor are

@@ -35,6 +35,9 @@ constexpr int32_t kDayTurnMin = 4 * 60;
 /// The usual heart rate is the median of up to this many nights before the one compared.
 constexpr size_t kHeartNights = 14;
 
+/// Fewer nights with a heart rate than this and there is no usual one.
+constexpr size_t kMinHeartNights = 3;
+
 /// A night's median heart rate this far from the usual is worth saying.
 /// Measured by `Tools/hr_noise.py` over one wearer's 18 nights (SleepLab and
 /// Slumber), each against up to 14 before it: deviations p50 1.6, p90 4.1, max
@@ -65,6 +68,7 @@ struct Expected {
     int32_t wake   = 0;  ///< Rhythm::afterNoon
     uint8_t own    = 0;  ///< nights of this weekday behind it
     uint8_t nights = 0;  ///< nights behind it in all
+    bool    varies = false;  ///< enough nights, but they keep no one time
 };
 
 /// One weekday against the rest of the week; shifts are its median minus theirs.
@@ -119,6 +123,12 @@ inline int32_t median(int16_t *v, size_t n)
         }
     }
     return n % 2 == 1 ? v[n / 2] : (static_cast<int32_t>(v[n / 2 - 1]) + v[n / 2]) / 2;
+}
+
+inline bool within(int32_t a, int32_t b)
+{
+    const int32_t d = Rhythm::apart(a, b);
+    return (d < 0 ? -d : d) <= Rhythm::kKeptMin;
 }
 
 /// Whether `shift` is a difference and enough of `n` nights lean its way.
@@ -181,33 +191,33 @@ public:
         for (size_t i = 0; i < mN && mMain[i].day < day; ++i) {
             if (weekday(mMain[i].day) == wd) {
                 ownBed[own]    = mMain[i].bed;
-                ownWake[own++] = mMain[i].wake;
+                ownWake[own++] = static_cast<int16_t>(mMain[i].wake % 1440);
             } else {
                 restBed[rest]    = mMain[i].bed;
-                restWake[rest++] = mMain[i].wake;
+                restWake[rest++] = static_cast<int16_t>(mMain[i].wake % 1440);
             }
         }
         if (own + rest < Rhythm::kMinBaselineNights) {
             return e;
         }
-        e.known  = true;
         e.own    = static_cast<uint8_t>(own);
         e.nights = static_cast<uint8_t>(own + rest);
-        if (rest == 0) {
-            e.bed  = detail::median(ownBed, own);
-            e.wake = detail::median(ownWake, own);
-        } else if (own == 0) {
-            e.bed  = detail::median(restBed, rest);
-            e.wake = detail::median(restWake, rest);
-        } else {
-            const int32_t n = static_cast<int32_t>(own);
-            e.bed  = (n * detail::median(ownBed, own) + kPriorNights * detail::median(restBed, rest)) /
-                    (n + kPriorNights);
-            e.wake = (n * detail::median(ownWake, own) + kPriorNights * detail::median(restWake, rest)) /
-                     (n + kPriorNights);
+        const int32_t ob = Rhythm::centre(ownBed, own), ow = Rhythm::centre(ownWake, own);
+        const int32_t rb = Rhythm::centre(restBed, rest), rw = Rhythm::centre(restWake, rest);
+        const bool ownKeeps  = Rhythm::kept(ownBed, own, ob) && Rhythm::kept(ownWake, own, ow);
+        const bool restKeeps = Rhythm::kept(restBed, rest, rb) && Rhythm::kept(restWake, rest, rw);
+        const bool near      = detail::within(ob, rb) && detail::within(ow, rw);
+        const bool differs = own >= kMinPatternNights && !near;
+        if (!restKeeps || differs) {
+            e.varies = true;
+            return e;
         }
-        e.bed %= 1440;
-        e.wake %= 1440;
+        const int32_t n = ownKeeps && near ? static_cast<int32_t>(own) : 0;
+        e.bed  = rb + Rhythm::apart(ob, rb) * n / (n + kPriorNights);
+        e.wake = rw + Rhythm::apart(ow, rw) * n / (n + kPriorNights);
+        e.known = true;
+        e.bed   = (e.bed % 1440 + 1440) % 1440;
+        e.wake  = (e.wake % 1440 + 1440) % 1440;
         return e;
     }
 
@@ -220,24 +230,27 @@ public:
         for (size_t i = 0; i < mN; ++i) {
             if (weekday(mMain[i].day) == wd) {
                 ownBed[own]    = mMain[i].bed;
-                ownWake[own++] = mMain[i].wake;
+                ownWake[own++] = static_cast<int16_t>(mMain[i].wake % 1440);
             } else {
                 restBed[rest]    = mMain[i].bed;
-                restWake[rest++] = mMain[i].wake;
+                restWake[rest++] = static_cast<int16_t>(mMain[i].wake % 1440);
             }
         }
         p.nights = static_cast<uint8_t>(own);
         if (own < kMinPatternNights || rest < kMinPatternNights) {
             return p;
         }
-        const int32_t usualBed  = detail::median(restBed, rest);
-        const int32_t usualWake = detail::median(restWake, rest);
+        const int32_t rb = Rhythm::centre(restBed, rest), rw = Rhythm::centre(restWake, rest);
+        const int32_t ob = Rhythm::centre(ownBed, own), ow = Rhythm::centre(ownWake, own);
+        if (!Rhythm::kept(restBed, rest, rb) || !Rhythm::kept(restWake, rest, rw)) {
+            return p;
+        }
         p.known     = true;
-        p.bedShift  = detail::median(ownBed, own) - usualBed;
-        p.wakeShift = detail::median(ownWake, own) - usualWake;
+        p.bedShift  = Rhythm::apart(ob, rb);
+        p.wakeShift = Rhythm::apart(ow, rw);
         for (size_t i = 0; i < own; ++i) {
-            p.bedAgree += leans(ownBed[i] - usualBed, p.bedShift) ? 1 : 0;
-            p.wakeAgree += leans(ownWake[i] - usualWake, p.wakeShift) ? 1 : 0;
+            p.bedAgree += leans(Rhythm::apart(ownBed[i], rb), p.bedShift) ? 1 : 0;
+            p.wakeAgree += leans(Rhythm::apart(ownWake[i], rw), p.wakeShift) ? 1 : 0;
         }
         return p;
     }
@@ -263,7 +276,7 @@ public:
         size_t  nf = 0, nw = 0;
         for (size_t i = 0; i < mN; ++i) {
             const uint8_t d   = weekday(mMain[i].day);
-            const int16_t mid = static_cast<int16_t>((mMain[i].bed + mMain[i].wake) / 2);
+            const int16_t mid = static_cast<int16_t>((mMain[i].bed + mMain[i].wake) / 2 % 1440);
             if (d == kFriday || d == kSaturday) {
                 free[nf++] = mid;
             } else {
@@ -271,14 +284,15 @@ public:
             }
         }
         if (nf >= kMinPatternNights && nw >= kMinPatternNights) {
-            w.jetlagKnown     = true;
-            w.socialJetlagMin = detail::median(free, nf) - detail::median(work, nw);
+            const int32_t f = Rhythm::centre(free, nf), k = Rhythm::centre(work, nw);
+            w.jetlagKnown     = Rhythm::kept(free, nf, f) && Rhythm::kept(work, nw, k);
+            w.socialJetlagMin = w.jetlagKnown ? Rhythm::apart(f, k) : 0;
         }
         return w;
     }
 
     /// The usual sleeping heart rate from the last kHeartNights nights before
-    /// `day` that had one; unknown under Rhythm::kMinBaselineNights.
+    /// `day` that had one; unknown under kMinHeartNights.
     UsualHeart heartBefore(int32_t day) const
     {
         UsualHeart u;
@@ -294,7 +308,7 @@ public:
                 low[nl++] = m.hrLow;
             }
         }
-        if (nm < Rhythm::kMinBaselineNights) {
+        if (nm < kMinHeartNights) {
             return u;
         }
         u.known     = true;
@@ -357,6 +371,26 @@ private:
     Main   mMain[kCap];
     size_t mN = 0;
 };
+
+/// Tonight's usual as shown: the weekday's own while it agrees with `u`, `u`
+/// when the weekday lags a change of hours, and none when `u` is unknown.
+inline Expected agree(const Expected &e, const Rhythm::Usual &u)
+{
+    if (!u.known) {
+        Expected none;
+        none.varies = u.varies;
+        return none;
+    }
+    if (e.known && detail::within(e.bed, u.bed) && detail::within(e.wake, u.wake)) {
+        return e;
+    }
+    Expected recent;
+    recent.known  = true;
+    recent.bed    = u.bed;
+    recent.wake   = u.wake;
+    recent.nights = u.nights;
+    return recent;
+}
 
 } // namespace Schedule
 

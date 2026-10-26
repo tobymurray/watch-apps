@@ -41,6 +41,9 @@ struct Mark : public SDK::MessageBase {
 
 constexpr uint16_t kUnknown = 0xFFFFu;
 
+/// A rhythmFill for a night whose earlier nights keep no one time.
+constexpr uint16_t kRhythmVaries = 0xFFFEu;
+
 enum NightKind : uint8_t {
     kNoNight      = 0,
     kNightSettled = 1,
@@ -58,7 +61,7 @@ struct NightView {
     uint16_t restFill        = 0;  ///< per mille of the goal; past 1000 is a second lap
     uint16_t rhythmFill      = kUnknown;  ///< per mille; kUnknown = no usual to score against
     int16_t  rhythmOffsetMin = 0;         ///< bedtime against the usual; + is later
-    uint16_t usualBedMin     = kUnknown;  ///< minute of day; kUnknown = fewer than three nights
+    uint16_t usualBedMin     = kUnknown;  ///< minute of day; kUnknown = none
     uint16_t scoredBedMin    = kUnknown;  ///< minute of day: the usual rhythmOffsetMin is against; kUnknown = none
     uint16_t scoredWakeMin   = kUnknown;  ///< minute of day; kUnknown = none
 };
@@ -70,7 +73,7 @@ constexpr size_t  kWeekNights = 7;
 struct WeekView {
     int16_t bed[kWeekNights]  = {kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar};  ///< min after local noon
     int16_t wake[kWeekNights] = {kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar};  ///< past 1440 after noon
-    int16_t usualBed      = kNoBar;  ///< minutes after local noon; kNoBar = fewer than three nights
+    int16_t usualBed      = kNoBar;  ///< minutes after local noon; kNoBar = none
     int16_t usualWake     = kNoBar;  ///< minutes after local noon, past 1440 for a wake after noon
     uint8_t newestWeekday = 0;       ///< 0 = Sunday
 };
@@ -80,7 +83,8 @@ struct TonightView {
     uint16_t bedMin     = kUnknown;  ///< minute of day
     uint16_t wakeMin    = kUnknown;  ///< minute of day
     uint16_t nowMin     = kUnknown;  ///< minute of day; kUnknown = the clock is not set
-    uint8_t  nightsToGo = 0;         ///< nights still needed before there is a usual
+    uint8_t  nightsToGo = 0;         ///< nights still needed before there can be a usual
+    uint8_t  timesVary  = 0;         ///< 1 = enough nights, but they keep no one time
 };
 
 /// Service to GUI.
