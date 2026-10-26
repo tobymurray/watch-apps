@@ -397,17 +397,17 @@ impl Face {
             if word_end <= line_end {
                 continue;
             }
-            let candidate = text[line_start..word_end].trim();
+            let candidate = text[line_start..word_end].trim_matches(' ');
             if self.measure(candidate).advance <= max_width || line_end == line_start {
                 line_end = word_end;
             } else {
-                emit(lines, text[line_start..line_end].trim(), &mut count);
+                emit(lines, text[line_start..line_end].trim_matches(' '), &mut count);
                 line_start = line_end + 1;
                 line_end = word_end.max(line_start);
             }
         }
         if line_start < text.len() {
-            emit(lines, text[line_start..].trim(), &mut count);
+            emit(lines, text[line_start..].trim_matches(' '), &mut count);
         }
         count
     }
@@ -794,6 +794,15 @@ mod tests {
         let n = POPPINS_REGULAR_18_LATIN.wrap("a WWWWWWWWWWWWWWWWWWWW b", 60, &mut lines);
         assert_eq!(n, 3);
         assert_eq!(lines[1], "WWWWWWWWWWWWWWWWWWWW");
+    }
+
+    #[test]
+    fn wrap_keeps_no_break_spaces_at_a_line_edge() {
+        let mut lines = [""; 2];
+        let n = POPPINS_REGULAR_18_LATIN.wrap("bonjour \u{202f}\u{bb}", 75, &mut lines);
+        assert_eq!(&lines[..n], ["bonjour", "\u{202f}\u{bb}"]);
+        let n = POPPINS_REGULAR_18_LATIN.wrap("\u{a0}12 %", 200, &mut lines);
+        assert_eq!(&lines[..n], ["\u{a0}12 %"]);
     }
 
     #[test]
