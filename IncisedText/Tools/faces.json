@@ -11,10 +11,14 @@
     {"name": "POPPINS_SEMIBOLD_36_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 36, "charset": "0123456789:"},
     {"name": "POPPINS_SEMIBOLD_49_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 49, "charset": "0123456789:"},
     {"name": "POPPINS_SEMIBOLD_60_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 60, "charset": "0123456789:"},
+    {"name": "POPPINS_SEMIBOLD_22_LATIN", "font": "Poppins-SemiBold.ttf", "px": 22, "charset": "latin"},
+    {"name": "POPPINS_SEMIBOLD_26_LATIN", "font": "Poppins-SemiBold.ttf", "px": 26, "charset": "latin"},
     {"name": "ATKINSON_BOLD_16_ASCII", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 16, "charset": "ascii", "feature": "atkinson"},
     {"name": "ATKINSON_BOLD_20_ASCII", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 20, "charset": "ascii", "feature": "atkinson"},
     {"name": "ATKINSON_BOLD_25_ASCII", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 25, "charset": "ascii", "feature": "atkinson"},
     {"name": "ATKINSON_BOLD_49_CLOCK", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 49, "charset": "0123456789:", "features": ["tnum"], "feature": "atkinson"},
-    {"name": "ATKINSON_BOLD_62_CLOCK", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 62, "charset": "0123456789:", "features": ["tnum"], "feature": "atkinson"}
+    {"name": "ATKINSON_BOLD_62_CLOCK", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 62, "charset": "0123456789:", "features": ["tnum"], "feature": "atkinson"},
+    {"name": "ATKINSON_BOLD_23_LATIN", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 23, "charset": "latin", "feature": "atkinson"},
+    {"name": "ATKINSON_BOLD_28_LATIN", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 28, "charset": "latin", "feature": "atkinson"}
   ]
 }

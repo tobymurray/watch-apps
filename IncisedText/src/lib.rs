@@ -392,6 +392,8 @@ mod tests {
             ("POPPINS_SEMIBOLD_36_CLOCK", &POPPINS_SEMIBOLD_36_CLOCK),
             ("POPPINS_SEMIBOLD_49_CLOCK", &POPPINS_SEMIBOLD_49_CLOCK),
             ("POPPINS_SEMIBOLD_60_CLOCK", &POPPINS_SEMIBOLD_60_CLOCK),
+            ("POPPINS_SEMIBOLD_22_LATIN", &POPPINS_SEMIBOLD_22_LATIN),
+            ("POPPINS_SEMIBOLD_26_LATIN", &POPPINS_SEMIBOLD_26_LATIN),
             #[cfg(feature = "atkinson")]
             ("ATKINSON_BOLD_16_ASCII", &ATKINSON_BOLD_16_ASCII),
             #[cfg(feature = "atkinson")]
@@ -402,6 +404,10 @@ mod tests {
             ("ATKINSON_BOLD_49_CLOCK", &ATKINSON_BOLD_49_CLOCK),
             #[cfg(feature = "atkinson")]
             ("ATKINSON_BOLD_62_CLOCK", &ATKINSON_BOLD_62_CLOCK),
+            #[cfg(feature = "atkinson")]
+            ("ATKINSON_BOLD_23_LATIN", &ATKINSON_BOLD_23_LATIN),
+            #[cfg(feature = "atkinson")]
+            ("ATKINSON_BOLD_28_LATIN", &ATKINSON_BOLD_28_LATIN),
         ]
     }
 
@@ -442,14 +448,14 @@ mod tests {
 
     #[test]
     fn latin_covers_romanian_welsh_and_azerbaijani() {
-        for face in [&POPPINS_REGULAR_16_LATIN, &POPPINS_REGULAR_18_LATIN] {
+        for face in [&POPPINS_REGULAR_16_LATIN, &POPPINS_REGULAR_18_LATIN, &POPPINS_SEMIBOLD_22_LATIN, &POPPINS_SEMIBOLD_26_LATIN] {
             assert!(face.covers("mer. 30 sept. Mi., 30. Sept. März śr. 30 paź"));
             assert!(face.covers("Știință, țară: ȘȚ"));
             assert!(face.covers("Ẁẁ Ẃẃ Ẅẅ Ỳỳ"));
             assert!(face.covers("Azərbaycan Ə"));
             assert!(face.covers("\u{202F}\u{2212}"));
         }
-        assert!(POPPINS_REGULAR_18_LATIN.covers("S\u{0326}"), "a decomposed comma below composes");
+        assert!(POPPINS_SEMIBOLD_26_LATIN.covers("S\u{0326}"), "a decomposed comma below composes");
     }
 
     #[test]
