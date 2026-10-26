@@ -45,6 +45,6 @@ fn main() {
     let f = face(&args[1]);
     for text in &args[2..] {
         let m = f.measure(text);
-        println!("{:22} {:?}: advance {} ink {}..{} missing {} (ascent {} descent {})", args[1], text, m.advance, m.ink_left, m.ink_right, m.missing, f.ascent, f.descent);
+        println!("{:22} {:?}: advance {} ink {}..{} x {}..{} y missing {} (ascent {} descent {})", args[1], text, m.advance, m.ink_left, m.ink_right, m.ink_top, m.ink_bottom, m.missing, f.ascent, f.descent);
     }
 }
