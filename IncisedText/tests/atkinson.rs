@@ -80,8 +80,7 @@ fn latin_faces_cover_the_languages_their_tier_names() {
     }
 }
 
-/// The font's own gaps, which make its `latin` faces smaller than Poppins': Azerbaijani's schwa,
-/// Māori's and Latvian's macron o, the micro sign, Esperanto and Sami.
+/// Characters `latin` names that the font itself lacks.
 #[test]
 fn latin_faces_lack_what_the_font_lacks() {
     for (name, face) in latin() {

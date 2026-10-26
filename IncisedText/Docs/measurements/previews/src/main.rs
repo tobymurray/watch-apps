@@ -1,4 +1,4 @@
-//! Draws the strings a round watch face shows in each face 0.2 added, on the host, into
+//! Draws a round watch face's strings in each face listed here, on the host, into
 //! `Docs/previews/<FACE>.png`: `cargo run --release` here.
 use incised_text::{faces::*, Face, Style};
 use inscribed_disc::{Abgr2222, Surface};

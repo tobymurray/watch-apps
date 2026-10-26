@@ -279,8 +279,7 @@ impl Face {
         })
     }
 
-    /// Each character of `text` where [`Face::draw`] would put it at `x` with `align`, so a caller
-    /// can tell which columns changed between two strings and redraw only those.
+    /// Each character of `text` where [`Face::draw`] would put it at `x` with `align`.
     pub fn layout<'a>(&'a self, text: &'a str, x: i32, align: Align) -> impl Iterator<Item = Placed> + 'a {
         let advance = if align == Align::Left { 0 } else { self.measure(text).advance };
         self.placed(text, start(x, advance, align)).map(|(p, _)| p)

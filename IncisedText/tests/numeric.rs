@@ -1,5 +1,5 @@
 //! What the numeric faces promise: every 24-hour time CLDR's Latin-digit locales write, the numbers
-//! and percentages beside it, tabular digits, and digit heights that match the rows they replace.
+//! and percentages beside it, tabular digits, and the digit heights Docs/DESIGN.md chose.
 
 use incised_text::faces::*;
 use incised_text::Face;
@@ -57,9 +57,9 @@ fn digits_are_tabular() {
     }
 }
 
-/// The rows of `1`, which has no overshoot, match the 5×7 font scaled ×5 (35) and ×7 (49).
+/// `1` has no overshoot, so its rows are the digit height Docs/DESIGN.md chose for each face.
 #[test]
-fn digits_stand_as_tall_as_the_rows_they_replace() {
+fn digits_stand_at_the_chosen_height() {
     for (name, face, rows) in numeric() {
         assert_eq!(face.glyph('1').unwrap().h as i32, rows, "{name}");
     }
