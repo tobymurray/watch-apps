@@ -1,5 +1,5 @@
 {
-  "_comment": "One entry per face the crate publishes; a face only one app draws goes in that app's own faces.json (Tools/atlas.py --manifest). The generator emits src/faces.rs from this file. Charsets: ascii = U+0020-007E; latin = ascii + Latin-1 Supplement + Latin Extended-A + U+2026 U+2013 U+2014 U+2018 U+2019 U+201C U+201D U+20AC U+2022; a string = exactly those characters plus space. Optional keys: wght, the design coordinate on a variable font's wght axis; features, GSUB feature tags (single substitution only, such as tnum) applied when choosing each code point's glyph; feature, the Cargo feature the face is compiled under.",
+  "_comment": "One entry per face the crate publishes; a face only one app draws goes in that app's own faces.json (Tools/atlas.py --manifest). The generator emits src/faces.rs from this file. Charsets: ascii = U+0020-007E; latin = ascii + Latin-1 Supplement + Latin Extended-A + U+2026 U+2013 U+2014 U+2018 U+2019 U+201C U+201D U+20AC U+2022 + U+0218-021B (Romanian) + U+018F U+0259 (Azerbaijani) + U+1E80-1E85 U+1EF2 U+1EF3 (Welsh) + U+202F U+2212; numeric = space, 0-9, : . - h % , ' and U+00A0 U+202F U+2212; a font's missing code points are left out, except U+202F, which is synthesized; a string = exactly those characters plus space. Optional keys: wght, the design coordinate on a variable font's wght axis; features, GSUB feature tags (single substitution only, such as tnum) applied when choosing each code point's glyph; feature, the Cargo feature the face is compiled under.",
   "faces": [
     {"name": "POPPINS_SEMIBOLD_18_ASCII", "font": "Poppins-SemiBold.ttf", "px": 18, "charset": "ascii"},
     {"name": "POPPINS_REGULAR_14_ASCII",  "font": "Poppins-Regular.ttf",  "px": 14, "charset": "ascii"},
@@ -11,10 +11,18 @@
     {"name": "POPPINS_SEMIBOLD_36_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 36, "charset": "0123456789:"},
     {"name": "POPPINS_SEMIBOLD_49_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 49, "charset": "0123456789:"},
     {"name": "POPPINS_SEMIBOLD_60_CLOCK", "font": "Poppins-SemiBold.ttf", "px": 60, "charset": "0123456789:"},
+    {"name": "POPPINS_SEMIBOLD_22_LATIN", "font": "Poppins-SemiBold.ttf", "px": 22, "charset": "latin"},
+    {"name": "POPPINS_SEMIBOLD_26_LATIN", "font": "Poppins-SemiBold.ttf", "px": 26, "charset": "latin"},
+    {"name": "POPPINS_SEMIBOLD_47_NUMERIC", "font": "Poppins-SemiBold.ttf", "px": 47, "charset": "numeric"},
+    {"name": "POPPINS_SEMIBOLD_67_NUMERIC", "font": "Poppins-SemiBold.ttf", "px": 67, "charset": "numeric"},
     {"name": "ATKINSON_BOLD_16_ASCII", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 16, "charset": "ascii", "feature": "atkinson"},
     {"name": "ATKINSON_BOLD_20_ASCII", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 20, "charset": "ascii", "feature": "atkinson"},
     {"name": "ATKINSON_BOLD_25_ASCII", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 25, "charset": "ascii", "feature": "atkinson"},
     {"name": "ATKINSON_BOLD_49_CLOCK", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 49, "charset": "0123456789:", "features": ["tnum"], "feature": "atkinson"},
-    {"name": "ATKINSON_BOLD_62_CLOCK", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 62, "charset": "0123456789:", "features": ["tnum"], "feature": "atkinson"}
+    {"name": "ATKINSON_BOLD_62_CLOCK", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 62, "charset": "0123456789:", "features": ["tnum"], "feature": "atkinson"},
+    {"name": "ATKINSON_BOLD_23_LATIN", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 23, "charset": "latin", "feature": "atkinson"},
+    {"name": "ATKINSON_BOLD_28_LATIN", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 28, "charset": "latin", "feature": "atkinson"},
+    {"name": "ATKINSON_BOLD_52_NUMERIC", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 52, "charset": "numeric", "features": ["tnum"], "feature": "atkinson"},
+    {"name": "ATKINSON_BOLD_72_NUMERIC", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 72, "charset": "numeric", "features": ["tnum"], "feature": "atkinson"}
   ]
 }

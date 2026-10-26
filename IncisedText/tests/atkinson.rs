@@ -17,6 +17,10 @@ fn ascii() -> [(&'static str, &'static Face); 3] {
     ]
 }
 
+fn latin() -> [(&'static str, &'static Face); 2] {
+    [("ATKINSON_BOLD_23_LATIN", &ATKINSON_BOLD_23_LATIN), ("ATKINSON_BOLD_28_LATIN", &ATKINSON_BOLD_28_LATIN)]
+}
+
 /// Width, height and every coverage level: the glyph as the panel would show it, wherever it sits.
 fn bitmap(face: &Face, c: char) -> (u8, u8, Vec<u8>) {
     let node = face.glyph(c).unwrap_or_else(|| panic!("no glyph for {c:?}"));
@@ -49,7 +53,7 @@ fn clock_faces_cover_a_clock_and_nothing_else() {
 #[test]
 fn confusables_draw_differently() {
     let confusables = ['I', 'l', '1', '|'];
-    for (name, face) in ascii() {
+    for (name, face) in ascii().into_iter().chain(latin()) {
         for (i, &a) in confusables.iter().enumerate() {
             for &b in &confusables[i + 1..] {
                 assert_ne!(bitmap(face, a), bitmap(face, b), "{name}: {a:?} and {b:?} are the same pixels");
@@ -64,5 +68,23 @@ fn ascii_faces_cover_ascii() {
     for (name, face) in ascii() {
         assert!(face.covers(&all), "{name}");
         assert_eq!(face.nodes.len(), 95, "{name}");
+    }
+}
+
+#[test]
+fn latin_faces_cover_the_languages_their_tier_names() {
+    for (name, face) in latin() {
+        for text in ["mer. 30 sept.", "Mi., 30. Sept.", "März", "śr. 30 paź", "mie., 30 sept.", "Știință", "Llun 30 Medi, Ŵŷ ẃ", "Ħamis"] {
+            assert!(face.covers(text), "{name}: {text:?} lacks {:?}", face.uncovered(text).collect::<String>());
+        }
+    }
+}
+
+/// Characters `latin` names that the font itself lacks.
+#[test]
+fn latin_faces_lack_what_the_font_lacks() {
+    for (name, face) in latin() {
+        assert_eq!(face.uncovered("Əə Ōō µ ĉĝĥĵŝŭ Ŋŋ").filter(|&c| c != ' ').collect::<String>(), "ƏəŌōµĉĝĥĵŝŭŊŋ", "{name}");
+        assert_eq!(face.nodes.len(), 305, "{name}");
     }
 }

@@ -68,8 +68,30 @@ pub struct Measure {
     pub ink_left: i32,
     /// One past the rightmost inked column; 0 for an empty string.
     pub ink_right: i32,
+    /// Topmost inked row relative to the baseline, negative above it; 0 for an empty string.
+    pub ink_top: i32,
+    /// One past the bottommost inked row relative to the baseline; 0 for an empty string.
+    pub ink_bottom: i32,
     /// Characters that had no glyph and were drawn as a box, saturating.
     pub missing: u8,
+}
+
+/// Where one character of a string lands, in the same columns [`Face::draw`] would put it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Placed {
+    /// The character after composition, as [`chars`] yields it.
+    pub ch: char,
+    /// Column where this character's pen starts.
+    pub pen: i32,
+    /// Columns the pen moves after this character.
+    pub advance: i32,
+    /// Leftmost inked column; equal to `ink_right` for a character with no ink.
+    pub ink_left: i32,
+    /// One past the rightmost inked column.
+    pub ink_right: i32,
+    /// The face has no glyph for `ch`, so it is drawn as a box.
+    pub missing: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -162,6 +184,19 @@ enum Glyph<'f> {
     Missing { w: i32, h: i32, adv: i32 },
 }
 
+impl Glyph<'_> {
+    /// Columns from the pen, rows from the baseline (negative above it), and the advance.
+    fn bounds(&self) -> (i32, i32, i32, i32, i32) {
+        match *self {
+            Glyph::Node(n) => {
+                let (left, top) = (n.left as i32, -(n.top as i32));
+                (left, left + n.w as i32, top, top + n.h as i32, n.adv as i32)
+            }
+            Glyph::Missing { w, h, adv } => (0, w, -h, 0, adv),
+        }
+    }
+}
+
 impl Face {
     pub fn glyph(&self, c: char) -> Option<&Node> {
         let cp = c as u32;
@@ -176,7 +211,18 @@ impl Face {
 
     /// Whether every character of `text` has a glyph, after composition.
     pub fn covers(&self, text: &str) -> bool {
-        chars(text).all(|c| self.glyph(c).is_some())
+        self.uncovered(text).next().is_none()
+    }
+
+    /// The characters of `text` this face has no glyph for, after composition, in order and
+    /// repeated as often as they occur.
+    pub fn uncovered<'a>(&'a self, text: &'a str) -> impl Iterator<Item = char> + 'a {
+        chars(text).filter(move |&c| self.glyph(c).is_none())
+    }
+
+    /// Every character this face has a glyph for, in code point order.
+    pub fn covered(&self) -> impl Iterator<Item = char> + '_ {
+        self.nodes.iter().filter_map(|n| char::from_u32(n.cp as u32))
     }
 
     /// Ascent plus descent: the rows one line of this face may touch.
@@ -199,27 +245,44 @@ impl Face {
         let mut m = Measure::default();
         let mut first = true;
         for c in chars(text) {
-            let (left, right, adv) = match self.lookup(c) {
-                Glyph::Node(n) => (n.left as i32, n.left as i32 + n.w as i32, n.adv as i32),
-                Glyph::Missing { w, adv, .. } => {
-                    m.missing = m.missing.saturating_add(1);
-                    (0, w, adv)
-                }
-            };
+            let glyph = self.lookup(c);
+            if let Glyph::Missing { .. } = glyph {
+                m.missing = m.missing.saturating_add(1);
+            }
+            let (left, right, top, bottom, adv) = glyph.bounds();
             if right > left {
                 let (l, r) = (m.advance + left, m.advance + right);
                 if first {
-                    m.ink_left = l;
-                    m.ink_right = r;
+                    (m.ink_left, m.ink_right, m.ink_top, m.ink_bottom) = (l, r, top, bottom);
                     first = false;
                 } else {
                     m.ink_left = m.ink_left.min(l);
                     m.ink_right = m.ink_right.max(r);
+                    m.ink_top = m.ink_top.min(top);
+                    m.ink_bottom = m.ink_bottom.max(bottom);
                 }
             }
             m.advance += adv;
         }
         m
+    }
+
+    fn placed<'a>(&'a self, text: &'a str, mut pen: i32) -> impl Iterator<Item = (Placed, Glyph<'a>)> + 'a {
+        chars(text).map(move |ch| {
+            let glyph = self.lookup(ch);
+            let (left, right, _, _, advance) = glyph.bounds();
+            let (ink_left, ink_right) = if right > left { (pen + left, pen + right) } else { (pen, pen) };
+            let missing = matches!(glyph, Glyph::Missing { .. });
+            let placed = Placed { ch, pen, advance, ink_left, ink_right, missing };
+            pen += advance;
+            (placed, glyph)
+        })
+    }
+
+    /// Each character of `text` where [`Face::draw`] would put it at `x` with `align`.
+    pub fn layout<'a>(&'a self, text: &'a str, x: i32, align: Align) -> impl Iterator<Item = Placed> + 'a {
+        let advance = if align == Align::Left { 0 } else { self.measure(text).advance };
+        self.placed(text, start(x, advance, align)).map(|(p, _)| p)
     }
 
     fn level(&self, node: &Node, col: i32, row: i32) -> u8 {
@@ -247,13 +310,20 @@ impl Face {
             style.ink.shade(style.ground, 2),
             style.ink.shade(style.ground, 3),
         ];
-        let mut pen = match style.align {
-            Align::Left => x,
-            Align::Center => x - m.advance / 2,
-            Align::Right => x - m.advance,
-        };
-        for c in chars(text) {
-            match self.lookup(c) {
+        let area = target.bounding_box();
+        let (area_left, area_top) = (area.top_left.x, area.top_left.y);
+        let (area_right, area_bottom) = (area_left + area.size.width as i32, area_top + area.size.height as i32);
+        for (p, glyph) in self.placed(text, start(x, m.advance, style.align)) {
+            let (_, _, top, bottom, _) = glyph.bounds();
+            let outside = p.ink_right <= area_left
+                || p.ink_left >= area_right
+                || baseline + bottom <= area_top
+                || baseline + top >= area_bottom;
+            if p.ink_left == p.ink_right || outside {
+                continue;
+            }
+            let pen = p.pen;
+            match glyph {
                 Glyph::Node(n) => {
                     let x0 = pen + n.left as i32;
                     let y0 = baseline - n.top as i32;
@@ -267,9 +337,8 @@ impl Face {
                             )),
                         }
                     }))?;
-                    pen += n.adv as i32;
                 }
-                Glyph::Missing { w, h, adv } => {
+                Glyph::Missing { w, h, .. } => {
                     let y0 = baseline - h;
                     let top = (0..w).map(move |i| (pen + i, y0));
                     let bottom = (0..w).map(move |i| (pen + i, baseline - 1));
@@ -281,7 +350,6 @@ impl Face {
                             .chain(right)
                             .map(|(x, y)| Pixel(Point::new(x, y), style.ink)),
                     )?;
-                    pen += adv;
                 }
             }
         }
@@ -329,19 +397,28 @@ impl Face {
             if word_end <= line_end {
                 continue;
             }
-            let candidate = text[line_start..word_end].trim();
+            let candidate = text[line_start..word_end].trim_matches(' ');
             if self.measure(candidate).advance <= max_width || line_end == line_start {
                 line_end = word_end;
             } else {
-                emit(lines, text[line_start..line_end].trim(), &mut count);
+                emit(lines, text[line_start..line_end].trim_matches(' '), &mut count);
                 line_start = line_end + 1;
                 line_end = word_end.max(line_start);
             }
         }
         if line_start < text.len() {
-            emit(lines, text[line_start..].trim(), &mut count);
+            emit(lines, text[line_start..].trim_matches(' '), &mut count);
         }
         count
+    }
+}
+
+/// Where the pen starts for an advance placed at `x` as `align` says.
+fn start(x: i32, advance: i32, align: Align) -> i32 {
+    match align {
+        Align::Left => x,
+        Align::Center => x - advance / 2,
+        Align::Right => x - advance,
     }
 }
 
@@ -381,6 +458,10 @@ mod tests {
             ("POPPINS_SEMIBOLD_36_CLOCK", &POPPINS_SEMIBOLD_36_CLOCK),
             ("POPPINS_SEMIBOLD_49_CLOCK", &POPPINS_SEMIBOLD_49_CLOCK),
             ("POPPINS_SEMIBOLD_60_CLOCK", &POPPINS_SEMIBOLD_60_CLOCK),
+            ("POPPINS_SEMIBOLD_22_LATIN", &POPPINS_SEMIBOLD_22_LATIN),
+            ("POPPINS_SEMIBOLD_26_LATIN", &POPPINS_SEMIBOLD_26_LATIN),
+            ("POPPINS_SEMIBOLD_47_NUMERIC", &POPPINS_SEMIBOLD_47_NUMERIC),
+            ("POPPINS_SEMIBOLD_67_NUMERIC", &POPPINS_SEMIBOLD_67_NUMERIC),
             #[cfg(feature = "atkinson")]
             ("ATKINSON_BOLD_16_ASCII", &ATKINSON_BOLD_16_ASCII),
             #[cfg(feature = "atkinson")]
@@ -391,6 +472,14 @@ mod tests {
             ("ATKINSON_BOLD_49_CLOCK", &ATKINSON_BOLD_49_CLOCK),
             #[cfg(feature = "atkinson")]
             ("ATKINSON_BOLD_62_CLOCK", &ATKINSON_BOLD_62_CLOCK),
+            #[cfg(feature = "atkinson")]
+            ("ATKINSON_BOLD_23_LATIN", &ATKINSON_BOLD_23_LATIN),
+            #[cfg(feature = "atkinson")]
+            ("ATKINSON_BOLD_28_LATIN", &ATKINSON_BOLD_28_LATIN),
+            #[cfg(feature = "atkinson")]
+            ("ATKINSON_BOLD_52_NUMERIC", &ATKINSON_BOLD_52_NUMERIC),
+            #[cfg(feature = "atkinson")]
+            ("ATKINSON_BOLD_72_NUMERIC", &ATKINSON_BOLD_72_NUMERIC),
         ]
     }
 
@@ -430,6 +519,38 @@ mod tests {
     }
 
     #[test]
+    fn latin_covers_romanian_welsh_and_azerbaijani() {
+        for face in [&POPPINS_REGULAR_16_LATIN, &POPPINS_REGULAR_18_LATIN, &POPPINS_SEMIBOLD_22_LATIN, &POPPINS_SEMIBOLD_26_LATIN] {
+            assert!(face.covers("mer. 30 sept. Mi., 30. Sept. März śr. 30 paź"));
+            assert!(face.covers("Știință, țară: ȘȚ"));
+            assert!(face.covers("Ẁẁ Ẃẃ Ẅẅ Ỳỳ"));
+            assert!(face.covers("Azərbaycan Ə"));
+            assert!(face.covers("\u{202F}\u{2212}"));
+        }
+        assert!(POPPINS_SEMIBOLD_26_LATIN.covers("S\u{0326}"), "a decomposed comma below composes");
+    }
+
+    #[test]
+    fn a_narrow_no_break_space_is_inkless_and_narrower_than_a_space() {
+        for (name, f) in all_faces() {
+            let (Some(space), Some(narrow)) = (f.glyph(' '), f.glyph('\u{202F}')) else { continue };
+            assert_eq!((narrow.w, narrow.h), (0, 0), "{name}");
+            assert!(narrow.adv > 0 && narrow.adv < space.adv, "{name}: {} against {}", narrow.adv, space.adv);
+        }
+    }
+
+    #[test]
+    fn coverage_can_be_listed_and_its_gaps_named() {
+        let ascii: Vec<char> = POPPINS_SEMIBOLD_20_ASCII.covered().collect();
+        assert_eq!(ascii, (' '..='~').collect::<Vec<_>>());
+        assert_eq!(POPPINS_REGULAR_18_LATIN.covered().count(), POPPINS_REGULAR_18_LATIN.nodes.len());
+        let gaps: Vec<char> = POPPINS_SEMIBOLD_20_ASCII.uncovered("śr. 30 paź, ś").collect();
+        assert_eq!(gaps, vec!['ś', 'ź', 'ś']);
+        assert_eq!(POPPINS_REGULAR_18_LATIN.uncovered("Jose\u{0301} \u{0301}").collect::<Vec<_>>(), vec!['\u{0301}']);
+        assert!(POPPINS_REGULAR_18_LATIN.uncovered("śr. 30 paź").next().is_none());
+    }
+
+    #[test]
     fn a_decomposed_accent_is_composed_before_lookup() {
         let composed: Vec<char> = chars("Jose\u{0301}").collect();
         assert_eq!(composed, vec!['J', 'o', 's', 'é']);
@@ -447,6 +568,148 @@ mod tests {
         let lit = buf.iter().filter(|&&b| b != 0).count();
         assert!(lit > 20 && lit < 80, "a hollow box, not a filled one or nothing: {lit} lit");
         assert_eq!(buf[(99 * 240 + 100) as usize], WHITE.0, "box corner at the pen, on the baseline's row above");
+    }
+
+    #[test]
+    fn the_ink_box_is_rows_from_the_baseline() {
+        let h = POPPINS_SEMIBOLD_20_ASCII.glyph('H').unwrap();
+        let m = POPPINS_SEMIBOLD_20_ASCII.measure("H");
+        assert_eq!((m.ink_top, m.ink_bottom), (-(h.top as i32), h.h as i32 - h.top as i32));
+        assert_eq!(m.ink_bottom, 0, "H sits on the baseline");
+        let g = POPPINS_SEMIBOLD_20_ASCII.measure("Hg");
+        assert_eq!(g.ink_top, m.ink_top);
+        assert!(g.ink_bottom > 0, "g descends");
+        let (empty, space) = (POPPINS_SEMIBOLD_20_ASCII.measure(""), POPPINS_SEMIBOLD_20_ASCII.measure(" "));
+        assert_eq!((empty.ink_top, empty.ink_bottom, space.ink_top, space.ink_bottom), (0, 0, 0, 0));
+    }
+
+    #[test]
+    fn the_ink_box_bounds_what_draw_lights() {
+        for text in ["Wed 30 Sept", "Mi., 30. Sept.", "śr. 30 paź", "Știință", "Ąę gjpqy"] {
+            let f = &POPPINS_SEMIBOLD_26_LATIN;
+            let (x, baseline) = (20, 120);
+            let mut m = Measure::default();
+            let buf = on_black(|s| m = f.draw(s, text, x, baseline, Style::left(WHITE, BLACK)).unwrap());
+            let lit: Vec<(i32, i32)> = (0..240).flat_map(|y| (0..240).map(move |x| (x, y))).filter(|&(x, y)| buf[(y * 240 + x) as usize] != 0).collect();
+            let cols = (lit.iter().map(|p| p.0).min().unwrap(), lit.iter().map(|p| p.0).max().unwrap() + 1);
+            let rows = (lit.iter().map(|p| p.1).min().unwrap(), lit.iter().map(|p| p.1).max().unwrap() + 1);
+            assert_eq!(cols, (x + m.ink_left, x + m.ink_right), "{text}");
+            assert_eq!(rows, (baseline + m.ink_top, baseline + m.ink_bottom), "{text}");
+        }
+    }
+
+    #[test]
+    fn layout_places_each_character_where_draw_and_measure_do() {
+        let f = &POPPINS_SEMIBOLD_22_LATIN;
+        for align in [Align::Left, Align::Center, Align::Right] {
+            let text = "Mi., 30. Sept.";
+            let m = f.measure(text);
+            let placed: Vec<Placed> = f.layout(text, 120, align).collect();
+            assert_eq!(placed.len(), text.chars().count());
+            let first = placed[0].pen;
+            assert_eq!(first, start(120, m.advance, align));
+            assert_eq!(placed.iter().map(|p| p.advance).sum::<i32>(), m.advance);
+            assert!(placed.windows(2).all(|w| w[1].pen == w[0].pen + w[0].advance));
+            let inked = placed.iter().filter(|p| p.ink_right > p.ink_left);
+            assert_eq!(inked.clone().map(|p| p.ink_left).min().unwrap(), first + m.ink_left);
+            assert_eq!(inked.map(|p| p.ink_right).max().unwrap(), first + m.ink_right);
+        }
+        let composed: Vec<Placed> = f.layout("Jose\u{0301}é", 0, Align::Left).collect();
+        assert_eq!(composed.iter().map(|p| p.ch).collect::<String>(), "Joséé");
+        assert!(!composed[3].missing);
+        let box_: Vec<Placed> = POPPINS_SEMIBOLD_20_ASCII.layout("a\u{0444}", 0, Align::Left).collect();
+        assert!(box_[1].missing && box_[1].ink_right > box_[1].ink_left);
+    }
+
+    /// The partial-redraw recipe: clear and redraw, through a clip, only the columns whose
+    /// characters changed, and the frame is the one a full redraw gives.
+    #[test]
+    fn redrawing_only_the_changed_columns_gives_the_full_redraw() {
+        use embedded_graphics::{prelude::*, primitives::Rectangle};
+        let f = &POPPINS_SEMIBOLD_67_NUMERIC;
+        let (x, baseline) = (120, 150);
+        let style = Style::centered(WHITE, BLACK);
+        for (old, new) in [("23:58", "23:59"), ("23:59", "00:00"), ("--:--", "09:41"), ("9:05", "10:05"), ("23.59", "23 h 59")] {
+            let frame = |text: &str| {
+                let mut buf = vec![BLACK.0; (W * H) as usize];
+                f.draw(&mut Surface::<Abgr2222>::rect(&mut buf, W, H).unwrap(), text, x, baseline, style).unwrap();
+                buf
+            };
+            let (fresh, mut buf) = (frame(new), frame(old));
+            let before: Vec<Placed> = f.layout(old, x, Align::Center).collect();
+            let after: Vec<Placed> = f.layout(new, x, Align::Center).collect();
+            let mut span: Option<(i32, i32)> = None;
+            for i in 0..before.len().max(after.len()) {
+                let (b, a) = (before.get(i), after.get(i));
+                if b.map(|p| (p.ch, p.pen)) == a.map(|p| (p.ch, p.pen)) {
+                    continue;
+                }
+                for p in b.into_iter().chain(a) {
+                    if p.ink_right > p.ink_left {
+                        let (l, r) = span.unwrap_or((p.ink_left, p.ink_right));
+                        span = Some((l.min(p.ink_left), r.max(p.ink_right)));
+                    }
+                }
+            }
+            let (l, r) = span.expect("something changed");
+            let rows = (baseline - f.ascent as i32, f.line_height() as u32);
+            let area = Rectangle::new(Point::new(l, rows.0), Size::new((r - l) as u32, rows.1));
+            let mut s = Surface::<Abgr2222>::rect(&mut buf, W, H).unwrap();
+            s.fill_solid(&area, BLACK).unwrap();
+            f.draw(&mut s.clipped(&area), new, x, baseline, style).unwrap();
+            assert!(buf == fresh, "{old} -> {new}");
+            if old == "23:58" {
+                assert!(l > before[3].pen, "only the last digit is redrawn: {l}..{r}");
+            }
+        }
+    }
+
+    /// Records every pixel offered to it, inside its bounding box or not.
+    struct Offered {
+        area: embedded_graphics::primitives::Rectangle,
+        pixels: usize,
+    }
+
+    impl embedded_graphics::prelude::Dimensions for Offered {
+        fn bounding_box(&self) -> embedded_graphics::primitives::Rectangle {
+            self.area
+        }
+    }
+
+    impl DrawTarget for Offered {
+        type Color = Abgr2222;
+        type Error = core::convert::Infallible;
+        fn draw_iter<I: IntoIterator<Item = Pixel<Abgr2222>>>(&mut self, pixels: I) -> Result<(), Self::Error> {
+            self.pixels += pixels.into_iter().count();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn glyphs_wholly_outside_the_target_are_never_offered_to_it() {
+        use embedded_graphics::{prelude::*, primitives::Rectangle};
+        let f = &POPPINS_SEMIBOLD_67_NUMERIC;
+        let style = Style::left(WHITE, BLACK);
+        let offered = |area: Rectangle| {
+            let mut t = Offered { area, pixels: 0 };
+            f.draw(&mut t, "23:59", 0, 100, style).unwrap();
+            t.pixels
+        };
+        let all = offered(Rectangle::new(Point::zero(), Size::new(240, 240)));
+        let last: Vec<Placed> = f.layout("23:59", 0, Align::Left).collect();
+        let nine = last[4];
+        let only_nine = offered(Rectangle::new(Point::new(nine.ink_left, 0), Size::new((nine.ink_right - nine.ink_left) as u32, 240)));
+        let alone = offered_alone(f, '9');
+        assert!(only_nine >= alone && only_nine < all / 2, "{only_nine} of {all}, the 9 alone is {alone}");
+        assert_eq!(offered(Rectangle::new(Point::new(0, 200), Size::new(240, 40))), 0, "the rows below the text");
+    }
+
+    fn offered_alone(f: &Face, c: char) -> usize {
+        use embedded_graphics::{prelude::*, primitives::Rectangle};
+        let mut t = Offered { area: Rectangle::new(Point::zero(), Size::new(240, 240)), pixels: 0 };
+        let mut buf = [0u8; 4];
+        f.draw(&mut t, c.encode_utf8(&mut buf), 0, 100, Style::left(WHITE, BLACK)).unwrap();
+        t.pixels
     }
 
     #[test]
@@ -531,6 +794,15 @@ mod tests {
         let n = POPPINS_REGULAR_18_LATIN.wrap("a WWWWWWWWWWWWWWWWWWWW b", 60, &mut lines);
         assert_eq!(n, 3);
         assert_eq!(lines[1], "WWWWWWWWWWWWWWWWWWWW");
+    }
+
+    #[test]
+    fn wrap_keeps_no_break_spaces_at_a_line_edge() {
+        let mut lines = [""; 2];
+        let n = POPPINS_REGULAR_18_LATIN.wrap("bonjour \u{202f}\u{bb}", 75, &mut lines);
+        assert_eq!(&lines[..n], ["bonjour", "\u{202f}\u{bb}"]);
+        let n = POPPINS_REGULAR_18_LATIN.wrap("\u{a0}12 %", 200, &mut lines);
+        assert_eq!(&lines[..n], ["\u{a0}12 %"]);
     }
 
     #[test]

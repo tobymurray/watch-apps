@@ -14,6 +14,10 @@ fn face(name: &str) -> &'static Face {
         "POPPINS_SEMIBOLD_36_CLOCK" => &POPPINS_SEMIBOLD_36_CLOCK,
         "POPPINS_SEMIBOLD_49_CLOCK" => &POPPINS_SEMIBOLD_49_CLOCK,
         "POPPINS_SEMIBOLD_60_CLOCK" => &POPPINS_SEMIBOLD_60_CLOCK,
+        "POPPINS_SEMIBOLD_22_LATIN" => &POPPINS_SEMIBOLD_22_LATIN,
+        "POPPINS_SEMIBOLD_26_LATIN" => &POPPINS_SEMIBOLD_26_LATIN,
+        "POPPINS_SEMIBOLD_47_NUMERIC" => &POPPINS_SEMIBOLD_47_NUMERIC,
+        "POPPINS_SEMIBOLD_67_NUMERIC" => &POPPINS_SEMIBOLD_67_NUMERIC,
         #[cfg(feature = "atkinson")]
         "ATKINSON_BOLD_16_ASCII" => &ATKINSON_BOLD_16_ASCII,
         #[cfg(feature = "atkinson")]
@@ -24,6 +28,14 @@ fn face(name: &str) -> &'static Face {
         "ATKINSON_BOLD_49_CLOCK" => &ATKINSON_BOLD_49_CLOCK,
         #[cfg(feature = "atkinson")]
         "ATKINSON_BOLD_62_CLOCK" => &ATKINSON_BOLD_62_CLOCK,
+        #[cfg(feature = "atkinson")]
+        "ATKINSON_BOLD_23_LATIN" => &ATKINSON_BOLD_23_LATIN,
+        #[cfg(feature = "atkinson")]
+        "ATKINSON_BOLD_28_LATIN" => &ATKINSON_BOLD_28_LATIN,
+        #[cfg(feature = "atkinson")]
+        "ATKINSON_BOLD_52_NUMERIC" => &ATKINSON_BOLD_52_NUMERIC,
+        #[cfg(feature = "atkinson")]
+        "ATKINSON_BOLD_72_NUMERIC" => &ATKINSON_BOLD_72_NUMERIC,
         _ => panic!("no face {name}; see Tools/faces.json"),
     }
 }
@@ -33,6 +45,6 @@ fn main() {
     let f = face(&args[1]);
     for text in &args[2..] {
         let m = f.measure(text);
-        println!("{:22} {:?}: advance {} ink {}..{} missing {} (ascent {} descent {})", args[1], text, m.advance, m.ink_left, m.ink_right, m.missing, f.ascent, f.descent);
+        println!("{:22} {:?}: advance {} ink {}..{} x {}..{} y missing {} (ascent {} descent {})", args[1], text, m.advance, m.ink_left, m.ink_right, m.ink_top, m.ink_bottom, m.missing, f.ascent, f.descent);
     }
 }
