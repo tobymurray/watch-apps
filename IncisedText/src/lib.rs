@@ -441,6 +441,27 @@ mod tests {
     }
 
     #[test]
+    fn latin_covers_romanian_welsh_and_azerbaijani() {
+        for face in [&POPPINS_REGULAR_16_LATIN, &POPPINS_REGULAR_18_LATIN] {
+            assert!(face.covers("mer. 30 sept. Mi., 30. Sept. März śr. 30 paź"));
+            assert!(face.covers("Știință, țară: ȘȚ"));
+            assert!(face.covers("Ẁẁ Ẃẃ Ẅẅ Ỳỳ"));
+            assert!(face.covers("Azərbaycan Ə"));
+            assert!(face.covers("\u{202F}\u{2212}"));
+        }
+        assert!(POPPINS_REGULAR_18_LATIN.covers("S\u{0326}"), "a decomposed comma below composes");
+    }
+
+    #[test]
+    fn a_narrow_no_break_space_is_inkless_and_narrower_than_a_space() {
+        for (name, f) in all_faces() {
+            let (Some(space), Some(narrow)) = (f.glyph(' '), f.glyph('\u{202F}')) else { continue };
+            assert_eq!((narrow.w, narrow.h), (0, 0), "{name}");
+            assert!(narrow.adv > 0 && narrow.adv < space.adv, "{name}: {} against {}", narrow.adv, space.adv);
+        }
+    }
+
+    #[test]
     fn coverage_can_be_listed_and_its_gaps_named() {
         let ascii: Vec<char> = POPPINS_SEMIBOLD_20_ASCII.covered().collect();
         assert_eq!(ascii, (' '..='~').collect::<Vec<_>>());

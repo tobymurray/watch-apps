@@ -21,8 +21,12 @@ ROOT = os.path.dirname(HERE)
 FONTS = os.path.join(ROOT, "Fonts")
 
 ASCII = list(range(0x20, 0x7F))
+NNBSP = 0x202F
 LATIN = sorted(set(ASCII + list(range(0xA0, 0x180))
-                   + [0x2026, 0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x20AC, 0x2022]))
+                   + [0x2026, 0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x20AC, 0x2022]
+                   + [0x0218, 0x0219, 0x021A, 0x021B, 0x018F, 0x0259]
+                   + [0x1E80, 0x1E81, 0x1E82, 0x1E83, 0x1E84, 0x1E85, 0x1EF2, 0x1EF3]
+                   + [NNBSP, 0x2212]))
 CHARSETS = {"ascii": ASCII, "latin": LATIN}
 
 LEVEL_THRESHOLDS = (43, 128, 213)  # round(v * 3 / 255) for v in 0..=255
@@ -116,6 +120,15 @@ def open_face(path, entry):
     return face
 
 
+def narrow_space(face):
+    """U+202F's advance for a font without it: the font's thin space, or else a fifth of an em, as Unicode describes a thin space."""
+    thin = face.get_char_index(0x2009)
+    if thin:
+        face.load_glyph(thin, freetype.FT_LOAD_DEFAULT | freetype.FT_LOAD_TARGET_LIGHT)
+        return face.glyph.advance.x // 64
+    return round(face.size.x_ppem / 5)
+
+
 def build_face(entry):
     path = os.path.join(FONTS, entry["font"])
     face = open_face(path, entry)
@@ -125,6 +138,9 @@ def build_face(entry):
     data = bytearray()
     for cp in charset(entry["charset"]):
         gi = gids.get(cp, 0) if gids is not None else face.get_char_index(cp)
+        if gi == 0 and cp == NNBSP:
+            nodes.append((len(data), cp, 0, 0, 0, 0, narrow_space(face)))
+            continue
         if gi == 0 and cp != 0x20:
             continue
         face.load_glyph(gi, freetype.FT_LOAD_RENDER | freetype.FT_LOAD_TARGET_LIGHT)
