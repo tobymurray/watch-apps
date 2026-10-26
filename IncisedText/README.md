@@ -39,8 +39,9 @@ Each face is one font at one pixel size over one character set, in `faces`:
 
 **Latin** is ASCII, Latin-1, Latin Extended-A, Romanian's `Ș ș Ț ț`, Azerbaijani's
 `Ə ə`, Welsh's `Ẁ ẁ Ẃ ẃ Ẅ ẅ Ỳ ỳ`, `… – — ‘ ’ “ ” € •`, the minus sign `−` and the
-narrow no-break space, less what the font lacks: Poppins has no `Ĉ Ĝ Ĥ Ĵ Ŝ Ħ Ŋ Ŧ`;
-Atkinson has `Ħ` but none of the others, nor `Ə Ō Ŏ Ĩ Ũ Ŗ µ`. **Numeric** is the
+narrow no-break space, less what the font lacks: Poppins has no `Ĉ Ĝ Ĥ Ĵ Ŝ Ħ Ŋ Ŧ Ĳ ĸ ŉ ſ`;
+Atkinson has `Ħ Ĳ` but none of the others, nor `Ə Ō Ŏ Ĕ Ĭ Ŭ Ĩ Ũ Ŗ Ŀ µ` or the soft hyphen.
+`Face::uncovered` lists them exactly. **Numeric** is the
 digits, space, `: . - h % , '`, the no-break and narrow no-break spaces and `−`:
 every 24-hour time CLDR writes in Latin digits, `--:--`, and its percentages and
 decimals. Neither font has Greek or Cyrillic.
@@ -69,8 +70,9 @@ The design, the format and the measurements behind it are in
 
 Nothing a 0.1 caller wrote needs to change. `POPPINS_REGULAR_{16,18}_LATIN` gained
 the glyphs the wider Latin set adds, so strings that drew boxes now draw letters.
-`draw` now skips a glyph that misses the target's `bounding_box`: a `DrawTarget`
-of your own must report the area it draws, as every `embedded-graphics` target does.
+`draw` now skips a glyph that misses the target's `bounding_box`, so a `DrawTarget`
+of your own must report the area it draws. `embedded-graphics`' `cropped` does not
+clip; draw through `clipped` to keep a line inside an area.
 
 ## Licence
 

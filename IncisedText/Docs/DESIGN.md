@@ -110,9 +110,10 @@ with a different FreeType, weight or font revision.
 - **Culling**: `draw` skips a glyph whose ink box misses the target's
   `bounding_box`, so drawing a whole line through a clip of one digit offers
   the target that digit's pixels, not the line's. A target whose bounding
-  box is smaller than where it accepts pixels would lose glyphs; every
-  target in this repository, `Surface`, `DiscClipped` and
-  `embedded-graphics`' `Clipped` and `Cropped`, reports the area it draws.
+  box is smaller than where it accepts pixels would lose glyphs. `Surface`,
+  `DiscClipped` and `embedded-graphics`' `Clipped` report the area they draw;
+  `Cropped` does not clip, so a line drawn past its box keeps only the glyphs
+  that touch it.
 - **Coverage**: `covers` answers for a string, `uncovered` names what it
   lacks, `covered` lists what a face has.
 - **Ladder**: `pick` returns the first face whose advance fits.
