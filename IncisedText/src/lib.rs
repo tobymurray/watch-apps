@@ -394,6 +394,8 @@ mod tests {
             ("POPPINS_SEMIBOLD_60_CLOCK", &POPPINS_SEMIBOLD_60_CLOCK),
             ("POPPINS_SEMIBOLD_22_LATIN", &POPPINS_SEMIBOLD_22_LATIN),
             ("POPPINS_SEMIBOLD_26_LATIN", &POPPINS_SEMIBOLD_26_LATIN),
+            ("POPPINS_SEMIBOLD_47_NUMERIC", &POPPINS_SEMIBOLD_47_NUMERIC),
+            ("POPPINS_SEMIBOLD_67_NUMERIC", &POPPINS_SEMIBOLD_67_NUMERIC),
             #[cfg(feature = "atkinson")]
             ("ATKINSON_BOLD_16_ASCII", &ATKINSON_BOLD_16_ASCII),
             #[cfg(feature = "atkinson")]
@@ -408,6 +410,10 @@ mod tests {
             ("ATKINSON_BOLD_23_LATIN", &ATKINSON_BOLD_23_LATIN),
             #[cfg(feature = "atkinson")]
             ("ATKINSON_BOLD_28_LATIN", &ATKINSON_BOLD_28_LATIN),
+            #[cfg(feature = "atkinson")]
+            ("ATKINSON_BOLD_52_NUMERIC", &ATKINSON_BOLD_52_NUMERIC),
+            #[cfg(feature = "atkinson")]
+            ("ATKINSON_BOLD_72_NUMERIC", &ATKINSON_BOLD_72_NUMERIC),
         ]
     }
 

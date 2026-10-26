@@ -27,7 +27,9 @@ LATIN = sorted(set(ASCII + list(range(0xA0, 0x180))
                    + [0x0218, 0x0219, 0x021A, 0x021B, 0x018F, 0x0259]
                    + [0x1E80, 0x1E81, 0x1E82, 0x1E83, 0x1E84, 0x1E85, 0x1EF2, 0x1EF3]
                    + [NNBSP, 0x2212]))
-CHARSETS = {"ascii": ASCII, "latin": LATIN}
+# Derived from CLDR in Docs/DESIGN.md, "The faces a watch face's text rows need".
+NUMERIC = sorted(set(ord(c) for c in " 0123456789:.-h%,'") | {0x00A0, NNBSP, 0x2212})
+CHARSETS = {"ascii": ASCII, "latin": LATIN, "numeric": NUMERIC}
 
 LEVEL_THRESHOLDS = (43, 128, 213)  # round(v * 3 / 255) for v in 0..=255
 
