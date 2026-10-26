@@ -311,8 +311,16 @@ impl Face {
             style.ink.shade(style.ground, 2),
             style.ink.shade(style.ground, 3),
         ];
+        let area = target.bounding_box();
+        let (area_left, area_top) = (area.top_left.x, area.top_left.y);
+        let (area_right, area_bottom) = (area_left + area.size.width as i32, area_top + area.size.height as i32);
         for (p, glyph) in self.placed(text, start(x, m.advance, style.align)) {
-            if p.ink_left == p.ink_right {
+            let (_, _, top, bottom, _) = glyph.bounds();
+            let outside = p.ink_right <= area_left
+                || p.ink_left >= area_right
+                || baseline + bottom <= area_top
+                || baseline + top >= area_bottom;
+            if p.ink_left == p.ink_right || outside {
                 continue;
             }
             let pen = p.pen;
@@ -655,6 +663,54 @@ mod tests {
                 assert!(l > before[3].pen, "only the last digit is redrawn: {l}..{r}");
             }
         }
+    }
+
+    /// Records every pixel offered to it, inside its bounding box or not.
+    struct Offered {
+        area: embedded_graphics::primitives::Rectangle,
+        pixels: usize,
+    }
+
+    impl embedded_graphics::prelude::Dimensions for Offered {
+        fn bounding_box(&self) -> embedded_graphics::primitives::Rectangle {
+            self.area
+        }
+    }
+
+    impl DrawTarget for Offered {
+        type Color = Abgr2222;
+        type Error = core::convert::Infallible;
+        fn draw_iter<I: IntoIterator<Item = Pixel<Abgr2222>>>(&mut self, pixels: I) -> Result<(), Self::Error> {
+            self.pixels += pixels.into_iter().count();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn glyphs_wholly_outside_the_target_are_never_offered_to_it() {
+        use embedded_graphics::{prelude::*, primitives::Rectangle};
+        let f = &POPPINS_SEMIBOLD_67_NUMERIC;
+        let style = Style::left(WHITE, BLACK);
+        let offered = |area: Rectangle| {
+            let mut t = Offered { area, pixels: 0 };
+            f.draw(&mut t, "23:59", 0, 100, style).unwrap();
+            t.pixels
+        };
+        let all = offered(Rectangle::new(Point::zero(), Size::new(240, 240)));
+        let last: Vec<Placed> = f.layout("23:59", 0, Align::Left).collect();
+        let nine = last[4];
+        let only_nine = offered(Rectangle::new(Point::new(nine.ink_left, 0), Size::new((nine.ink_right - nine.ink_left) as u32, 240)));
+        let alone = offered_alone(f, '9');
+        assert!(only_nine >= alone && only_nine < all / 2, "{only_nine} of {all}, the 9 alone is {alone}");
+        assert_eq!(offered(Rectangle::new(Point::new(0, 200), Size::new(240, 40))), 0, "the rows below the text");
+    }
+
+    fn offered_alone(f: &Face, c: char) -> usize {
+        use embedded_graphics::{prelude::*, primitives::Rectangle};
+        let mut t = Offered { area: Rectangle::new(Point::zero(), Size::new(240, 240)), pixels: 0 };
+        let mut buf = [0u8; 4];
+        f.draw(&mut t, c.encode_utf8(&mut buf), 0, 100, Style::left(WHITE, BLACK)).unwrap();
+        t.pixels
     }
 
     #[test]
