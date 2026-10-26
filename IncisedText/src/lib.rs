@@ -176,7 +176,18 @@ impl Face {
 
     /// Whether every character of `text` has a glyph, after composition.
     pub fn covers(&self, text: &str) -> bool {
-        chars(text).all(|c| self.glyph(c).is_some())
+        self.uncovered(text).next().is_none()
+    }
+
+    /// The characters of `text` this face has no glyph for, after composition, in order and
+    /// repeated as often as they occur.
+    pub fn uncovered<'a>(&'a self, text: &'a str) -> impl Iterator<Item = char> + 'a {
+        chars(text).filter(move |&c| self.glyph(c).is_none())
+    }
+
+    /// Every character this face has a glyph for, in code point order.
+    pub fn covered(&self) -> impl Iterator<Item = char> + '_ {
+        self.nodes.iter().filter_map(|n| char::from_u32(n.cp as u32))
     }
 
     /// Ascent plus descent: the rows one line of this face may touch.
@@ -427,6 +438,17 @@ mod tests {
         assert!(POPPINS_REGULAR_18_LATIN.covers("José Zoë Müller Søren Łukasz ° µ ± … – — “ ” €"));
         assert!(!POPPINS_SEMIBOLD_20_ASCII.covers("é"));
         assert!(!POPPINS_REGULAR_18_LATIN.covers("′"), "Poppins has no prime");
+    }
+
+    #[test]
+    fn coverage_can_be_listed_and_its_gaps_named() {
+        let ascii: Vec<char> = POPPINS_SEMIBOLD_20_ASCII.covered().collect();
+        assert_eq!(ascii, (' '..='~').collect::<Vec<_>>());
+        assert_eq!(POPPINS_REGULAR_18_LATIN.covered().count(), POPPINS_REGULAR_18_LATIN.nodes.len());
+        let gaps: Vec<char> = POPPINS_SEMIBOLD_20_ASCII.uncovered("śr. 30 paź, ś").collect();
+        assert_eq!(gaps, vec!['ś', 'ź', 'ś']);
+        assert_eq!(POPPINS_REGULAR_18_LATIN.uncovered("Jose\u{0301} \u{0301}").collect::<Vec<_>>(), vec!['\u{0301}']);
+        assert!(POPPINS_REGULAR_18_LATIN.uncovered("śr. 30 paź").next().is_none());
     }
 
     #[test]
