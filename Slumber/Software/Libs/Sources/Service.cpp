@@ -471,8 +471,6 @@ void Service::publishNow(uint32_t utc)
     s.usual       = mNights.recent().usualBefore(UINT32_MAX);
     s.usualBefore = mNights.recent().usualBefore(mLastNight != nullptr ? mLastNight->startUtc : UINT32_MAX);
     s.tonightDay  = Schedule::tonight(utc, off);
-    s.tonight     = Schedule::agree(mNights.schedule().expect(s.tonightDay), s.usual);
-    s.week        = mNights.schedule().week();
     if (mLastNight != nullptr && mLastNight->worn == SleepPeriods::Worn::Worn) {
         s.lastHeart = NightSummary::heart(mHistory.data(), mHistory.size(), *mLastNight);
     }
@@ -602,9 +600,7 @@ void Service::fillWeek(CustomMessage::Status &st)
     }
     st.tonight.nowMin = Slumber::LocalTime::minuteOfDay(utc, off);
 
-    const int32_t            tonight  = Schedule::tonight(utc, off);
-    const Schedule::Learner &schedule = mNights.schedule();
-    const Schedule::Bars     bars     = schedule.before(tonight);
+    const Schedule::Bars bars = Schedule::bars(mNights.recent(), Schedule::tonight(utc, off));
     static_assert(CustomMessage::kWeekNights == Schedule::kWeekNights, "the week sent is the week learned");
     for (size_t i = 0; i < CustomMessage::kWeekNights; ++i) {
         st.week.bed[i]  = bars.bed[i];
@@ -616,13 +612,11 @@ void Service::fillWeek(CustomMessage::Status &st)
         st.week.usualBed  = static_cast<int16_t>(usual.bed);
         st.week.usualWake = static_cast<int16_t>(usual.wake < usual.bed ? usual.wake + 1440 : usual.wake);
     }
-
-    const Schedule::Expected e = Schedule::agree(schedule.expect(tonight), usual);
-    st.tonight.timesVary       = e.varies ? 1 : 0;
-    st.tonight.nightsToGo      = mNights.recent().nightsToGo();
-    if (e.known) {
-        st.tonight.bedMin  = static_cast<uint16_t>(Rhythm::minuteOfDay(e.bed));
-        st.tonight.wakeMin = static_cast<uint16_t>(Rhythm::minuteOfDay(e.wake));
+    st.tonight.timesVary  = usual.varies ? 1 : 0;
+    st.tonight.nightsToGo = mNights.recent().nightsToGo();
+    if (usual.known) {
+        st.tonight.bedMin  = static_cast<uint16_t>(Rhythm::minuteOfDay(usual.bed));
+        st.tonight.wakeMin = static_cast<uint16_t>(Rhythm::minuteOfDay(usual.wake));
     }
 }
 

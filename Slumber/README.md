@@ -96,7 +96,8 @@ stages apart (see "The screens to come"). Over the 76 SleepLab sessions replayed
 `Tests/`, the longest period was 1,683 epochs, so a line stays under about 2 KB.
 
 **`now.json`**: rewritten with the card, every 5 minutes. Schema 2 dropped schema 1's
-`heart` fields that compared a night with the wearer's usual; "What was cut" says why.
+`week`, `tonight.own_nights` and the `heart` fields that compared a night with the
+wearer's usual; "What was cut" says why.
 
 | Field | Meaning |
 | --- | --- |
@@ -106,8 +107,7 @@ stages apart (see "The screens to come"). Over the 76 SleepLab sessions replayed
 | `usual` | `{bed_min, wake_min, nights}`: medians, in minutes past local midnight, of the main nights logged, at most six; `null` until seven, or while times vary ("Irregular hours") |
 | `rest_goal_min`, `rest_fill` | 420, and last night's rest against it in per mille; past 1000 is a second lap |
 | `rhythm_fill`, `rhythm_offset_min` | Last night's onset against the usual of the nights before it; `+` is later |
-| `tonight` | `{weekday, bed_min, wake_min, own_nights, nights}`: the usual for the night ahead, learned for its weekday (0 is Sunday); `null` whenever `usual` is. "Learning the week" says how |
-| `week` | `{later_bed, earlier_bed, later_wake, earlier_wake}`, arrays of the weekdays that keep their own hours, and `social_jetlag_min`, or `null` until there are enough nights |
+| `tonight` | `{weekday, bed_min, wake_min, nights}`: the night ahead, which is `usual` on the weekday it begins (0 is Sunday); `null` whenever `usual` is |
 | `heart` | `{median_bpm, low_bpm, low_at}` for last night, as "Sleeping heart rate" defines them; `null` unless last night was worn with enough trusted readings |
 
 `asleep_since` comes late. A period exists only once it holds 30 minutes of rest, so it
@@ -225,38 +225,6 @@ the 36 h window. Besides its edges and rest, each line carries
   cannot see someone lying awake and still, so nothing here claims to count
   awakenings.
 
-## Learning the week
-
-Slumber learns a usual for each night of the week from the main nights of the last 56
-days, so a routine that changes is relearned within two months. `Sleep/Schedule.hpp`
-holds it, and `Tests/Schedule_test.cpp` drives it through synthetic weeks.
-
-- **A night belongs to the evening it began on.** Asleep at 00:40 on a Thursday is
-  Wednesday night. Before 04:00, tonight is still the night begun the evening before.
-- **A weekday's usual starts as the rest of the week's and moves toward its own.** It is
-  `(n × own median + 2 × rest-of-week median) / (n + 2)`, so one late Wednesday moves the
-  next Wednesday's usual a third of the way, and four of them move it two thirds.
-- **A weekday differs only once it has shown it.** It needs three nights of its own and
-  three of the rest of the week, a median 45 minutes or more from the rest of the week's,
-  and three in four of its nights at least 22 minutes the same way. Two late Wednesdays
-  out of the last six do not make a late Wednesday.
-- **Social jetlag** is the median sleep midpoint of Friday and Saturday nights minus that
-  of the other nights, the free-day and work-day comparison of Wittmann et al. (2006).
-  The weekday arrays find other free days, such as a shift worker's, without assuming them.
-  It is `null` unless both groups keep one time.
-- **Tonight defers to the usual.** The weekday's own is shown while it lies within 4 h of
-  the usual (see "Irregular hours"); otherwise the usual is. The 56 days learn slowly, and
-  without this a switch from 23:00 nights to 08:30 day sleeps showed a 23:00 Tonight for
-  26 nights.
-
-None of this is on the watch's screen yet. `now.json` carries it for other apps, and the
-screens to come decide how it is shown. One rule for them: the Rhythm ring may score
-tonight against tonight's own usual, but a regularity measure must not, or a habit of
-late Wednesdays would score as perfectly regular.
-
-These thresholds are chosen, not measured. Each needs weeks of nights per wearer before
-it can be checked, and the recording period gives two of each weekday at most.
-
 ## Irregular hours
 
 A usual is only worth showing if the nights keep one. Three nights at 22:30 and three
@@ -287,8 +255,8 @@ whose next bedtime fell within 2 h of it.
 | random | 100% | 15% | 1% | 7% |
 
 A permanent switch from 23:00 to 08:30 shows the old usual for two nights, then `times
-vary`, then the new usual from night ten. Tonight follows the same nights; it used to
-take 35.
+vary`, then the new usual from night ten. Tonight is the usual, so it follows the same
+nights.
 
 The 4 h is the radius that separated these groups: at 3 h a sleeper out until 03:00
 Thursday to Saturday kept a usual on only 56% of evenings, and at 5 h the weekly rota
@@ -302,6 +270,14 @@ while rather than a confident wrong time.
 
 These reached no screen, and no app in this repository reads `now.json`.
 
+- **A usual for each weekday**, shown as Tonight while it lay within 4 h of the usual,
+  with the weekdays that kept their own hours and Wittmann's social jetlag in `now.json`.
+  Its thresholds were chosen, not measured, from a recording period holding two of each
+  weekday at most. `Tools/irregular.cpp` at `4283b78`, extended to score Tonight against
+  the bedtime that followed, put the weekday Tonight within 30 minutes on 83% of evenings
+  for a sleeper out until 01:30 on Fridays and Saturdays, against 67% for the usual; for
+  the other regular schedules the two were within 4 points. Worth bringing back once real
+  nights show weekday effects larger than the spread inside a weekday.
 - **A night's heart rate against the usual**, `notable` at 4 bpm; "Sleeping heart rate"
   has the measurement against it.
 
@@ -454,8 +430,8 @@ bedtimes within 30 minutes of the usual, the window the Rhythm ring is full
 for. The plot runs in whole hours, at least six, so a single night does not
 fill it.
 
-**Tonight** is the usual night for tonight's weekday (`Schedule::agree`, see
-"Learning the week") as a cyan band on the dial, and a white dot for now. Inside: the usual bedtime, the usual wake, and how far
+**Tonight** is the usual night (see "Irregular hours") as a cyan band on the dial, and a
+white dot for now. Inside: the usual bedtime, the usual wake, and how far
 bedtime is, such as `in 2h10`, `about now` or `45m past`. Before there is a
 usual it says how many more nights it needs, and when the nights keep no one
 time it says `no usual` and `times vary`, and the app no longer opens on it.

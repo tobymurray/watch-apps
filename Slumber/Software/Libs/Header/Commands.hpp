@@ -78,7 +78,7 @@ struct WeekView {
     uint8_t newestWeekday = 0;       ///< 0 = Sunday
 };
 
-/// Tonight's usual bed and wake for its weekday.
+/// Tonight's usual bed and wake.
 struct TonightView {
     uint16_t bedMin     = kUnknown;  ///< minute of day
     uint16_t wakeMin    = kUnknown;  ///< minute of day

@@ -638,11 +638,11 @@ TEST(NightLog, MainNightsAreReadBackForTheWeek)
             ASSERT_TRUE(logNight(*log, p));
         }
     }
-    auto log = std::make_unique<NightLog>(fs);
-    EXPECT_EQ(log->schedule().size(), 7u);
-    const Schedule::Expected e = log->schedule().expect(Rhythm::noonDay(settledNight().startUtc, -240) + 7);
-    ASSERT_TRUE(e.known);
-    EXPECT_EQ(Rhythm::minuteOfDay(e.bed), 23 * 60 + 54);
+    auto                 log = std::make_unique<NightLog>(fs);
+    const Schedule::Bars b   = Schedule::bars(log->recent(), Rhythm::noonDay(settledNight().startUtc, -240) + 7);
+    for (size_t i = 0; i < Schedule::kWeekNights; ++i) {
+        EXPECT_EQ(Rhythm::minuteOfDay(b.bed[i]), 23 * 60 + 54) << i;
+    }
 }
 
 TEST(NightLog, TheLatestNightKeepsTheOffsetItWasLoggedWith)
@@ -683,9 +683,7 @@ TEST(SleepNow, BeforeAnyNightEveryAnswerIsNull)
     ASSERT_GT(SleepNow::format(s, out, sizeof(out)), 0u);
     EXPECT_STREQ(out, "{\"schema\":2,\"source\":\"Slumber\",\"written\":1791600000,\"heartbeat_s\":300,"
                       "\"utc_off_min\":-240,\"asleep_since\":null,\"last_night\":null,\"usual\":null,"
-                      "\"tonight\":null,\"week\":{\"later_bed\":[],\"earlier_bed\":[],\"later_wake\":[],"
-                      "\"earlier_wake\":[],\"social_jetlag_min\":null},\"heart\":null,"
-                      "\"rest_goal_min\":420,\"rest_fill\":null,\"rhythm_fill\":null,\"rhythm_offset_min\":null}");
+                      "\"tonight\":null,\"heart\":null,\"rest_goal_min\":420,\"rest_fill\":null,\"rhythm_fill\":null,\"rhythm_offset_min\":null}");
 }
 
 TEST(SleepNow, ANightIsScoredAgainstTheNightsBeforeIt)
@@ -710,27 +708,20 @@ TEST(SleepNow, ANightIsScoredAgainstTheNightsBeforeIt)
     EXPECT_NE(j.find("\"rhythm_fill\":778,\"rhythm_offset_min\":50}"), std::string::npos);
 }
 
-TEST(SleepNow, TheWeekIsShared)
+TEST(SleepNow, TonightIsTheUsual)
 {
     SleepNow::State s;
-    s.tonightDay         = 20740;  // a Wednesday
-    s.tonight.known      = true;
-    s.tonight.bed        = 12 * 60 + 7;   // 00:07
-    s.tonight.wake       = 20 * 60 + 15;  // 08:15
-    s.tonight.own        = 6;
-    s.tonight.nights     = 40;
-    s.week.laterBed      = (1u << Schedule::kFriday) | (1u << Schedule::kSaturday);
-    s.week.earlierWake   = 1u << Schedule::kSunday;
-    s.week.jetlagKnown   = true;
-    s.week.socialJetlagMin = 75;
+    s.tonightDay   = 20740;  // a Wednesday
+    s.usual.known  = true;
+    s.usual.bed    = 12 * 60 + 7;   // 00:07
+    s.usual.wake   = 20 * 60 + 15;  // 08:15
+    s.usual.nights = 6;
     char out[SleepNow::kCap];
     ASSERT_GT(SleepNow::format(s, out, sizeof(out)), 0u);
     const std::string j = out;
-    EXPECT_NE(j.find("\"tonight\":{\"weekday\":3,\"bed_min\":7,\"wake_min\":495,\"own_nights\":6,"
-                     "\"nights\":40},"), std::string::npos)
-        << j;
-    EXPECT_NE(j.find("\"week\":{\"later_bed\":[5,6],\"earlier_bed\":[],\"later_wake\":[],"
-                     "\"earlier_wake\":[0],\"social_jetlag_min\":75},"), std::string::npos)
+    EXPECT_NE(j.find("\"usual\":{\"bed_min\":7,\"wake_min\":495,\"nights\":6},"
+                     "\"tonight\":{\"weekday\":3,\"bed_min\":7,\"wake_min\":495,\"nights\":6},"),
+              std::string::npos)
         << j;
 }
 
@@ -748,8 +739,6 @@ TEST(SleepNow, TheLongestStateFits)
     s.lastNight      = &p;
     s.usual          = Rhythm::Usual{true, 1439, 1439, 255};
     s.usualBefore    = Rhythm::Usual{true, 0, 0, 255};
-    s.tonight        = Schedule::Expected{true, 1439, 1439, 255, 255};
-    s.week           = Schedule::Week{0x7F, 0, 0x7F, 0, true, -1439};  // a day is later or earlier, not both
     s.lastHeart      = NightSummary::Heart{149, 149, 4000000000u};
     char out[SleepNow::kCap];
     const size_t len = SleepNow::format(s, out, sizeof(out));
