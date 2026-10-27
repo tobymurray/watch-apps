@@ -3,7 +3,7 @@
 use inscribed_disc::{Abgr2222, Surface};
 use incised_text::{faces, Face};
 
-use crate::night::{dither, rest_ink, text, GROUND, MAIN_INK, MUTED_INK, ON_TIME_MIN, RHYTHM_INK, TITLE_INK};
+use crate::night::{dither, minutes, rest_ink, text, GROUND, MAIN_INK, MUTED_INK, RHYTHM_INK, TITLE_INK, UNKNOWN};
 use crate::{Line, State, NO_BAR, WEEK_NIGHTS};
 
 pub static TITLE_FACE: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
@@ -98,27 +98,19 @@ fn usual(state: &State) -> Option<(i32, i32)> {
         .then(|| unwrapped(state.week_usual_bed as i32, state.week_usual_wake as i32, day_start(state)))
 }
 
-/// Nights in the week, and how many of them began within ON_TIME_MIN of the usual bedtime.
-pub fn on_time(state: &State) -> (u32, u32) {
-    let usual = usual(state);
-    nights(state).fold((0, 0), |(n, on), (_, bed, _)| {
-        (n + 1, on + u32::from(usual.is_some_and(|(u, _)| (bed - u).abs() <= ON_TIME_MIN)))
-    })
-}
-
-/// "5 of 7 on time", or why there is no count yet.
+/// "half within 25m": the median distance of the usual's bedtimes from it, or why there is no usual yet.
 pub fn summary(state: &State) -> (Line, Abgr2222) {
     let mut line = Line::new();
-    let (n, on) = on_time(state);
-    if n == 0 {
+    if nights(state).next().is_none() {
         line.push("No nights yet");
         return (line, MUTED_INK);
     }
-    if !usual_known(state) {
+    if !usual_known(state) || state.usual_spread_min == UNKNOWN {
         line.push(if state.times_vary != 0 { "times vary" } else { "learning" });
         return (line, MUTED_INK);
     }
-    line.num(on, 1).push(" of ").num(n, 1).push(" on time");
+    line.push("half within ");
+    minutes(&mut line, state.usual_spread_min as u32);
     (line, RHYTHM_INK)
 }
 
@@ -190,7 +182,7 @@ pub fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
     text(fb, SUMMARY_FACE, &summary, SUMMARY_Y, ink);
 
     let span = span(state);
-    if on_time(state).0 > 0 {
+    if nights(state).next().is_some() {
         if let Some((bed, wake)) = usual(state) {
             dashed(fb, row(bed, span) as i32);
             dashed(fb, row(wake, span) as i32);

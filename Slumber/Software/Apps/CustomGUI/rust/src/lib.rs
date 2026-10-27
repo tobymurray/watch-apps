@@ -46,6 +46,7 @@ pub struct State {
     pub times_vary: u8,
     pub scored_bed_min: u16,
     pub scored_wake_min: u16,
+    pub usual_spread_min: u16,
 }
 
 pub const WEEK_NIGHTS: usize = 7;
@@ -153,6 +154,7 @@ impl Default for State {
             times_vary: 0,
             scored_bed_min: night::UNKNOWN,
             scored_wake_min: night::UNKNOWN,
+            usual_spread_min: night::UNKNOWN,
         }
     }
 }
@@ -426,7 +428,8 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(State, nights_to_go));
     let h = fnv1a(h, core::mem::offset_of!(State, times_vary));
     let h = fnv1a(h, core::mem::offset_of!(State, scored_bed_min));
-    fnv1a(h, core::mem::offset_of!(State, scored_wake_min))
+    let h = fnv1a(h, core::mem::offset_of!(State, scored_wake_min));
+    fnv1a(h, core::mem::offset_of!(State, usual_spread_min))
 }
 
 #[no_mangle]
@@ -461,6 +464,7 @@ const _: () = assert!(core::mem::offset_of!(State, nights_to_go) == 76);
 const _: () = assert!(core::mem::offset_of!(State, times_vary) == 77);
 const _: () = assert!(core::mem::offset_of!(State, scored_bed_min) == 78);
 const _: () = assert!(core::mem::offset_of!(State, scored_wake_min) == 80);
+const _: () = assert!(core::mem::offset_of!(State, usual_spread_min) == 82);
 
 #[no_mangle]
 pub extern "C" fn slumber_mark_count() -> u32 {
@@ -557,6 +561,7 @@ mod tests {
             scored_wake_min: 6 * 60 + 55,
             week_usual_bed: 22 * 60 + 51 - 720,
             week_usual_wake: 6 * 60 + 55 + 720,
+            usual_spread_min: 10,
             ..State::default()
         }
     }
@@ -572,6 +577,7 @@ mod tests {
             ("long", State { rest_min: 13 * 60 + 59, onset_min: 20 * 60 + 59, wake_min: 10 * 60 + 58, ..s }),
             ("past-two-laps", State { rest_min: 23 * 60 + 59, ..s }),
             ("late", State { rhythm_fill: 0, rhythm_offset_min: 23 * 60 + 59, ..s }),
+            ("usual-time", State { usual_spread_min: 25, ..s }),
             ("early", State { rhythm_fill: 400, rhythm_offset_min: -(2 * 60 + 5), ..s }),
             ("learning", State { rhythm_fill: night::UNKNOWN, scored_bed_min: night::UNKNOWN, scored_wake_min: night::UNKNOWN, ..s }),
             ("times-vary", State { rhythm_fill: night::RHYTHM_VARIES, scored_bed_min: night::UNKNOWN, scored_wake_min: night::UNKNOWN, ..s }),
@@ -597,6 +603,7 @@ mod tests {
             week_newest_weekday: 3,
             week_usual_bed: NO_BAR,
             week_usual_wake: NO_BAR,
+            usual_spread_min: night::UNKNOWN,
             ..slept()
         };
         let span = |((bh, bm), (wh, wm)): ((i32, i32), (i32, i32))| {
@@ -610,6 +617,7 @@ mod tests {
         }
         if let Some(u) = usual {
             (st.week_usual_bed, st.week_usual_wake) = span(u);
+            st.usual_spread_min = 25;
         }
         st
     }
@@ -633,6 +641,10 @@ mod tests {
                 Some(((11, 50), (19, 0))), Some(((12, 10), (19, 10))), Some(((12, 5), (19, 0))), None,
                 Some(((11, 40), (18, 50))), Some(((12, 20), (19, 30))), Some(((12, 0), (19, 0))),
             ], Some(((12, 5), (19, 5))))),
+            ("week-wide", State { usual_spread_min: 65, ..week_of([
+                Some(((22, 0), (6, 0))), Some(((0, 30), (8, 0))), Some(((23, 0), (7, 0))), Some(((21, 40), (6, 0))),
+                Some(((1, 10), (9, 0))), Some(((23, 20), (7, 0))), Some(((22, 30), (6, 45))),
+            ], usual) }),
             ("week-times-vary", State { times_vary: 1, ..week_of([
                 Some(((22, 30), (6, 30))), Some(((22, 30), (6, 30))), Some(((8, 30), (15, 30))), Some(((8, 30), (15, 30))),
                 Some(((8, 30), (15, 30))), Some(((22, 30), (6, 30))), Some(((22, 30), (6, 30)))], None) }),
@@ -897,21 +909,19 @@ mod tests {
     }
 
     #[test]
-    fn the_week_counts_bedtimes_near_the_usual() {
-        let say = |st: &State| week::summary(st).0.as_str().to_owned();
-        let w = weeks();
-        assert_eq!(say(&w[0].1), "4 of 6 on time");
-        assert_eq!(say(&w[1].1), "7 of 7 on time");
-        assert_eq!(say(&w[3].1), "learning");
-        assert_eq!(say(&w[4].1), "No nights yet");
-        assert_eq!(say(&w[6].1), "times vary");
+    fn the_week_says_how_far_bedtimes_stray() {
+        let say = |name: &str| week::summary(&weeks().into_iter().find(|(n, _)| *n == name).unwrap().1).0.as_str().to_owned();
+        assert_eq!(say("week"), "half within 25m");
+        assert_eq!(say("week-wide"), "half within 1h05");
+        assert_eq!(say("week-learning"), "learning");
+        assert_eq!(say("week-empty"), "No nights yet");
+        assert_eq!(say("week-times-vary"), "times vary");
     }
 
     /// Bedtimes either side of noon are minutes apart on the plot, not most of a day.
     #[test]
     fn a_noon_sleepers_week_is_not_squashed() {
         let (_, st) = weeks().into_iter().find(|(n, _)| *n == "week-noon-sleeper").unwrap();
-        assert_eq!(week::summary(&st).0.as_str(), "6 of 6 on time");
         let (lo, hi) = week::span(&st);
         assert!(hi - lo <= 9 * 60, "{lo}..{hi}");
     }

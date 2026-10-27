@@ -520,14 +520,15 @@ void Service::fillNight(SlumberCard::Card &card, uint32_t utc)
     mLastNight = nullptr;
     mLastSleep = LastNight::Sleep{};
     mShown     = CustomMessage::NightView{};
+    mUsual     = Rhythm::Usual{};
     std::tm       local{};
     const int32_t off = utcOffsetMin(utc, local);
     if (off == -1 || mHistory.size() == 0) {
         return;
     }
-    const Rhythm::Usual usual = mNights.recent().usualBefore(UINT32_MAX);
-    if (usual.known) {
-        mShown.usualBedMin = static_cast<uint16_t>((usual.bed + 720) % 1440);
+    mUsual = mNights.recent().usualBefore(UINT32_MAX);
+    if (mUsual.known) {
+        mShown.usualBedMin = static_cast<uint16_t>(Rhythm::minuteOfDay(mUsual.bed));
     }
     const size_t n = SleepPeriods::find(mHistory.data(), mHistory.size(), mPeriods,
                                         sizeof(mPeriods) / sizeof(mPeriods[0]), utc);
@@ -575,14 +576,14 @@ void Service::showNight(LastNight::Kind kind, const LastNight::Sleep &s, int32_t
     if (mShown.kind == kNightOffWrist) {
         return;
     }
-    const Rhythm::Usual before = mNights.recent().usualBefore(s.startUtc);
-    if (before.known) {
-        const int32_t d         = Rhythm::offset(Rhythm::afterNoon(s.startUtc, sleptOff), before);
+    mUsual = mNights.recent().usualBefore(s.startUtc);
+    if (mUsual.known) {
+        const int32_t d         = Rhythm::offset(Rhythm::afterNoon(s.startUtc, sleptOff), mUsual);
         mShown.rhythmFill      = Rhythm::rhythmFill(d);
         mShown.rhythmOffsetMin = static_cast<int16_t>(d);
-        mShown.scoredBedMin    = static_cast<uint16_t>(Rhythm::minuteOfDay(before.bed));
-        mShown.scoredWakeMin   = static_cast<uint16_t>(Rhythm::minuteOfDay(before.wake));
-    } else if (before.varies) {
+        mShown.scoredBedMin    = static_cast<uint16_t>(Rhythm::minuteOfDay(mUsual.bed));
+        mShown.scoredWakeMin   = static_cast<uint16_t>(Rhythm::minuteOfDay(mUsual.wake));
+    } else if (mUsual.varies) {
         mShown.rhythmFill = CustomMessage::kRhythmVaries;
     }
 }
@@ -609,11 +610,12 @@ void Service::fillWeek(CustomMessage::Status &st)
         st.week.wake[i] = bars.wake[i];
     }
     st.week.newestWeekday = bars.newestWeekday;
-    const Rhythm::Usual usual = mNights.recent().usualBefore(UINT32_MAX);
-    if (usual.known) {
-        st.week.usualBed  = static_cast<int16_t>(usual.bed);
-        st.week.usualWake = static_cast<int16_t>(usual.wake < usual.bed ? usual.wake + 1440 : usual.wake);
+    if (mUsual.known) {
+        st.week.usualBed       = static_cast<int16_t>(mUsual.bed);
+        st.week.usualWake      = static_cast<int16_t>(mUsual.wake < mUsual.bed ? mUsual.wake + 1440 : mUsual.wake);
+        st.week.usualSpreadMin = static_cast<uint16_t>(mUsual.spread);
     }
+    const Rhythm::Usual usual = mNights.recent().usualBefore(UINT32_MAX);
     st.tonight.timesVary  = usual.varies ? 1 : 0;
     st.tonight.nightsToGo = mNights.recent().nightsToGo();
     if (usual.known) {
