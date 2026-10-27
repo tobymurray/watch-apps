@@ -280,6 +280,8 @@ These reached no screen, and no app in this repository reads `now.json`.
   nights show weekday effects larger than the spread inside a weekday.
 - **A night's heart rate against the usual**, `notable` at 4 bpm; "Sleeping heart rate"
   has the measurement against it.
+- **Four colour themes** as a setting: Peak, Smile and Mono beside Nebula, whose
+  colours were never photographed on the glass. Nebula is the one theme.
 
 ## Sleeping heart rate
 
@@ -469,12 +471,12 @@ goes back on.
 
 ## The screens to come
 
-The week of bars and the evening screen are built (see "The screens"); the
-themes are not. The two morning rings below were built and then replaced by the
-dial: on the watch they were hard to read, because a Rhythm ring is full when
-on time and empties either way, so it cannot say early from late. Rest and
-Rhythm remain the two things the screen reports, as the night's length and its
-bedtime against the usual.
+The week of bars and the evening screen are built (see "The screens"). The two
+morning rings below were built and then replaced by the dial: on the watch they
+were hard to read, because a Rhythm ring is full when on time and empties
+either way, so it cannot say early from late. Rest and Rhythm remain the two
+things the screen reports, as the night's length and its bedtime against the
+usual.
 
 **Two rings, not a score.** A 0–100 sleep score is the most criticised thing
 wrist trackers show, and wrist movement cannot score sleep stages: across six
@@ -508,7 +510,7 @@ against magenta collapses to 21. So Rest is a violet→purple→magenta gradient
 codes (1,0,3)→(2,0,3)→(3,0,3), and Rhythm is cyan, (0,2,3)→(0,3,3). Purples
 keep their colour only with green at 0. Only 3 of the 64 codes are darker than
 L\* 40, so there is no dim purple for a track. Unfilled ring is a 3 px line
-instead of a full-width band. Amber marks restless spells and nothing else.
+instead of a full-width band. Amber marks `WRITE FAILS` and nothing else.
 
 **What the watch showed.** A test app drew the 64 colours, brightness ramps and
 the mockups on the glass, and they were photographed:
@@ -530,36 +532,3 @@ Rerun: photograph the same ramp page and normalise each row's four solid cells.
 glass, and 18 px is the floor. Every string is checked against the chord inside
 the ring at its own rows. `POPPINS_SEMIBOLD_24_ASCII` is Slumber's own face,
 listed in the renderer's `faces.json` and generated into `src/atlas.rs`.
-
-**Themes.** The colours are a setting, one of four. Ring geometry, thin
-tracks, the same-colour second lap and the text rules are shared by all four.
-The ΔE figures are the Rest and Rhythm fills compared through the panel model.
-
-- **Nebula**, the default, as above: purple and cyan, ΔE 39.
-- **Peak** uses the colours of UNA's own Peak face, which already puts two
-  goal rings on the rim. Rest is cyan (0,3,3) and Rhythm is orange (3,2,0), on
-  (1,1,1) tracks, ΔE 36. Restless spells are white, because orange already
-  means Rhythm.
-- **Smile** uses UNA's Smile face: teal (0,2,2) Rest and white Rhythm, ΔE 23.
-  It is the calmest, with white text at 25:1.
-- **Mono**, after UNA's Retro face, and the one theme that changes shape. Two
-  greys cannot carry the rings: white against (2,2,2) is ΔE 8.5, under the 10
-  needed to tell them apart at a glance. So both rings are white, and Rhythm is
-  cut into 60 ticks, like a dial's minute track, while Rest stays solid.
-  Restless spells are black notches in the white band. A dim (1,1,1) Rhythm
-  measures ΔE 22. It was passed over because it is the dimmest ink, and glare
-  flattens that first.
-
-The SDK's setting fields have no pick-list. So the theme is a text field limited
-by a pattern, as Barcode's format field is. The watch reads it once at launch,
-and anything it cannot read means Nebula:
-
-```json
-{"id": "theme", "type": "string", "label": "Colours", "default": "Nebula",
- "maxLength": 6, "pattern": "(?:[Nn]ebula|[Pp]eak|[Ss]mile|[Mm]ono)?",
- "validationMessage": "Nebula, Peak, Smile or Mono."}
-```
-
-Rerun: the Peak, Smile and Mono colours come from the SDK's screenshots of the
-faces, and the swatch test app has not photographed them. Photograph them
-before shipping.
