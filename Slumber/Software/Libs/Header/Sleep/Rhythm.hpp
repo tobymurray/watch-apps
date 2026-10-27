@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "SleepPeriods.hpp"
+
 /// The two goal rings: Rest against a fixed goal, Rhythm as tonight's bedtime
 /// against the usual one; `Slumber/README.md` records why these two.
 namespace Rhythm
@@ -149,45 +151,27 @@ inline int32_t minuteOfDay(int32_t afterNoonMin)
     return (afterNoonMin + 720) % 1440;
 }
 
-/// The main night of each recent noon-to-noon local day, the longest worn
-/// period that began in it, oldest first; a nap beside a night is not one.
+/// The main night of each recent noon-to-noon local day, oldest first: the
+/// longest sleep that began in it, a sleep being worn periods less than
+/// SleepPeriods::kSameSleepGapS apart, so a nap beside a night is not one.
 class Recent
 {
 public:
     static constexpr size_t kCap = kKeptNights + 1;
 
+    /// Adds a worn period, in time order, to the sleep it continues or as a new one.
     void add(uint32_t startUtc, uint32_t endUtc, int32_t offsetMin, uint16_t restMin)
     {
-        const int32_t day = noonDay(startUtc, offsetMin);
-        Main m{day, startUtc, endUtc - startUtc,
-               Night{afterNoon(startUtc, offsetMin), afterNoon(endUtc, offsetMin), restMin}};
-        for (size_t i = 0; i < mN; ++i) {
-            if (mMain[i].day == day) {
-                if (m.spanS > mMain[i].spanS) {
-                    mMain[i] = m;
-                }
-                return;
-            }
+        if (mOpen.spanS > 0 && startUtc >= mOpen.endUtc && startUtc - mOpen.endUtc < SleepPeriods::kSameSleepGapS) {
+            mOpen.endUtc = endUtc;
+            mOpen.spanS += endUtc - startUtc;
+            mOpen.night.wake    = afterNoon(endUtc, offsetMin);
+            mOpen.night.restMin = static_cast<uint16_t>(mOpen.night.restMin + restMin);
+        } else {
+            mOpen = Main{noonDay(startUtc, offsetMin), startUtc, endUtc, endUtc - startUtc,
+                         Night{afterNoon(startUtc, offsetMin), afterNoon(endUtc, offsetMin), restMin}};
         }
-        size_t at = mN;
-        while (at > 0 && mMain[at - 1].day > day) {
-            --at;
-        }
-        if (mN == kCap) {
-            if (at == 0) {
-                return;
-            }
-            for (size_t i = 1; i < mN; ++i) {
-                mMain[i - 1] = mMain[i];
-            }
-            --mN;
-            --at;
-        }
-        for (size_t i = mN; i > at; --i) {
-            mMain[i] = mMain[i - 1];
-        }
-        mMain[at] = m;
-        ++mN;
+        keep(mOpen);
     }
 
     /// The usual from the main nights that began before `beforeUtc`.
@@ -222,13 +206,49 @@ public:
 
 private:
     struct Main {
-        int32_t  day     = 0;
+        int32_t  day      = 0;
         uint32_t startUtc = 0;
-        uint32_t spanS   = 0;
+        uint32_t endUtc   = 0;
+        uint32_t spanS    = 0;  ///< the periods' lengths summed
         Night    night;
     };
+
+    /// Stores `m` as its day's main night if it is longer than the one there.
+    void keep(const Main &m)
+    {
+        const int32_t day = m.day;
+        for (size_t i = 0; i < mN; ++i) {
+            if (mMain[i].day == day) {
+                if (m.spanS > mMain[i].spanS) {
+                    mMain[i] = m;
+                }
+                return;
+            }
+        }
+        size_t at = mN;
+        while (at > 0 && mMain[at - 1].day > day) {
+            --at;
+        }
+        if (mN == kCap) {
+            if (at == 0) {
+                return;
+            }
+            for (size_t i = 1; i < mN; ++i) {
+                mMain[i - 1] = mMain[i];
+            }
+            --mN;
+            --at;
+        }
+        for (size_t i = mN; i > at; --i) {
+            mMain[i] = mMain[i - 1];
+        }
+        mMain[at] = m;
+        ++mN;
+    }
+
     Main   mMain[kCap];
     size_t mN = 0;
+    Main   mOpen;  ///< the latest sleep, kept or not
 };
 
 /// Rest against the goal; past kFull is a second lap.

@@ -38,6 +38,33 @@ TEST(LastNight, TheLongerHalfOfASplitNightWins)
     EXPECT_EQ(c.period, &p[0]);
 }
 
+/// 23:00-03:00, up for 61 minutes, 04:01-07:30: one night of the rest of both.
+TEST(LastNight, ASplitNightIsReportedWhole)
+{
+    Period p[] = {period(4 * kH + 29 * 60, 4, Worn::Worn), period(0, 3, Worn::Worn)};
+    p[1].startUtc = p[0].endUtc + 61 * 60;
+    p[0].restMin  = 230;
+    p[1].restMin  = 200;
+    p[1].settled  = true;
+    const auto c = choose(p, 2, kNow);
+    ASSERT_EQ(c.kind, Kind::Worn);
+    EXPECT_EQ(c.sleep.startUtc, p[0].startUtc);
+    EXPECT_EQ(c.sleep.endUtc, p[1].endUtc);
+    EXPECT_EQ(c.sleep.restMin, 430);
+    EXPECT_EQ(c.sleep.periods, 2);
+    EXPECT_TRUE(c.sleep.settled);
+    EXPECT_EQ(c.sleep.last, &p[1]);
+}
+
+TEST(LastNight, ANightAndANapAreTwoSleeps)
+{
+    const Period p[] = {period(8 * kH, 7, Worn::Worn), period(1 * kH, 1, Worn::Worn)};
+    const auto   c   = choose(p, 2, kNow);
+    EXPECT_EQ(c.sleep.startUtc, p[0].startUtc);
+    EXPECT_EQ(c.sleep.endUtc, p[0].endUtc);
+    EXPECT_EQ(c.sleep.periods, 1);
+}
+
 TEST(LastNight, AnAfternoonNapDoesNotReplaceTheNight)
 {
     const Period p[] = {period(8 * kH, 7, Worn::Worn), period(1 * kH, 1, Worn::Worn)};
@@ -86,7 +113,10 @@ TEST(LastNight, AWornNightOutranksALongerTable)
 TEST(LastNight, OnlyATableReportsNotWorn)
 {
     const Period p[] = {period(2 * kH, 8, Worn::NotWorn)};
-    EXPECT_EQ(choose(p, 1, kNow).kind, Kind::NotWorn);
+    const auto   c   = choose(p, 1, kNow);
+    EXPECT_EQ(c.kind, Kind::NotWorn);
+    EXPECT_EQ(c.sleep.startUtc, p[0].startUtc);
+    EXPECT_EQ(c.sleep.endUtc, p[0].endUtc);
 }
 
 TEST(LastNight, AnUncertainWristIsNeverReported)

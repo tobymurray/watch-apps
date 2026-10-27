@@ -6,7 +6,7 @@
 
 #include "SleepPeriods.hpp"
 
-/// Which of SleepPeriods' periods the card reports as last night.
+/// Which sleep the card reports as last night.
 namespace LastNight
 {
 
@@ -19,59 +19,76 @@ enum class Kind : uint8_t {
     NotWorn,  ///< rest found, but on a table
 };
 
-struct Choice {
-    Kind                        kind   = Kind::None;
-    const SleepPeriods::Period *period = nullptr;
+/// One or more periods reported as one night.
+struct Sleep {
+    uint32_t startUtc = 0;  ///< the first period's start
+    uint32_t endUtc   = 0;  ///< the last period's end
+    uint32_t spanS    = 0;  ///< the periods' lengths summed, leaving out the gaps between them
+    uint16_t restMin  = 0;  ///< the periods' rest summed
+    uint8_t  periods  = 0;
+    bool     settled  = false;  ///< the last period is settled
+    const SleepPeriods::Period *longest = nullptr;
+    const SleepPeriods::Period *last    = nullptr;
 };
 
-/// Worn periods closer than this are one sleep broken by an awakening, not a night and a
-/// nap: the split nights replayed in README "Finding a night" were 64-108 min apart.
-constexpr uint32_t kSameSleepGapS = 3u * 60u * 60u;
+struct Choice {
+    Kind                        kind   = Kind::None;
+    const SleepPeriods::Period *period = nullptr;  ///< the sleep's longest period
+    Sleep                       sleep;
+};
 
 namespace detail
 {
 
-/// Calls `f(longestPeriod, spanS)` for each sleep of recent worn periods, in time order.
+inline void extend(Sleep &s, const SleepPeriods::Period &q)
+{
+    if (s.periods == 0) {
+        s.startUtc = q.startUtc;
+    }
+    if (s.longest == nullptr || q.endUtc - q.startUtc > s.longest->endUtc - s.longest->startUtc) {
+        s.longest = &q;
+    }
+    s.endUtc = q.endUtc;
+    s.spanS += q.endUtc - q.startUtc;
+    s.restMin = static_cast<uint16_t>(s.restMin + q.restMin);
+    s.settled = q.settled;
+    s.last    = &q;
+    ++s.periods;
+}
+
+/// Calls `f(sleep)` for each sleep of recent worn periods, in time order.
 template <typename F>
 void eachSleep(const SleepPeriods::Period *p, size_t n, uint32_t nowUtc, F f)
 {
-    const SleepPeriods::Period *longest = nullptr;
-    uint32_t                    spanS = 0, endUtc = 0;
+    Sleep s;
     for (size_t i = 0; i < n; ++i) {
         const SleepPeriods::Period &q = p[i];
         if (q.worn != SleepPeriods::Worn::Worn || q.endUtc > nowUtc || nowUtc - q.endUtc > kRecentS) {
             continue;
         }
-        if (longest != nullptr && q.startUtc - endUtc >= kSameSleepGapS) {
-            f(longest, spanS);
-            longest = nullptr;
-            spanS   = 0;
+        if (s.periods > 0 && q.startUtc - s.endUtc >= SleepPeriods::kSameSleepGapS) {
+            f(s);
+            s = Sleep{};
         }
-        if (longest == nullptr || q.endUtc - q.startUtc > longest->endUtc - longest->startUtc) {
-            longest = &q;
-        }
-        spanS += q.endUtc - q.startUtc;
-        endUtc = q.endUtc;
+        extend(s, q);
     }
-    if (longest != nullptr) {
-        f(longest, spanS);
+    if (s.periods > 0) {
+        f(s);
     }
 }
 
 } // namespace detail
 
-/// The longest period of the latest recent sleep at least half as long as the
-/// longest recent sleep, else the longest recent not-worn period; `p` in time order.
+/// The latest recent sleep at least half as long as the longest recent sleep,
+/// else the longest recent not-worn period; `p` in time order.
 inline Choice choose(const SleepPeriods::Period *p, size_t n, uint32_t nowUtc)
 {
     uint32_t longestS = 0;
-    detail::eachSleep(p, n, nowUtc, [&](const SleepPeriods::Period *, uint32_t spanS) {
-        longestS = spanS > longestS ? spanS : longestS;
-    });
+    detail::eachSleep(p, n, nowUtc, [&](const Sleep &s) { longestS = s.spanS > longestS ? s.spanS : longestS; });
     Choice best;
-    detail::eachSleep(p, n, nowUtc, [&](const SleepPeriods::Period *q, uint32_t spanS) {
-        if (2u * static_cast<uint64_t>(spanS) >= longestS) {
-            best = Choice{Kind::Worn, q};
+    detail::eachSleep(p, n, nowUtc, [&](const Sleep &s) {
+        if (2u * static_cast<uint64_t>(s.spanS) >= longestS) {
+            best = Choice{Kind::Worn, s.longest, s};
         }
     });
     if (best.kind == Kind::Worn) {
@@ -83,7 +100,8 @@ inline Choice choose(const SleepPeriods::Period *p, size_t n, uint32_t nowUtc)
         const SleepPeriods::Period &q = p[i];
         if (q.worn == SleepPeriods::Worn::NotWorn && q.endUtc <= nowUtc && nowUtc - q.endUtc <= kRecentS &&
             q.endUtc - q.startUtc > bestS) {
-            best  = Choice{Kind::NotWorn, &q};
+            best = Choice{Kind::NotWorn, &q, Sleep{}};
+            detail::extend(best.sleep, q);
             bestS = q.endUtc - q.startUtc;
         }
     }
