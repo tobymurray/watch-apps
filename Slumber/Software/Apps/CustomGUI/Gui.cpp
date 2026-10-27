@@ -196,11 +196,9 @@ void Gui::run()
                 mState.hr_ok          = st->hrOk;
                 mState.have_status    = 1;
                 mState.night_kind        = st->night.kind;
-                mState.restless          = st->night.restless;
                 mState.rest_min          = st->night.restMin;
                 mState.onset_min         = st->night.onsetMin;
                 mState.wake_min          = st->night.wakeMin;
-                mState.rest_fill         = st->night.restFill;
                 mState.rhythm_fill       = st->night.rhythmFill;
                 mState.rhythm_offset_min = st->night.rhythmOffsetMin;
                 mState.usual_bed_min     = st->night.usualBedMin;

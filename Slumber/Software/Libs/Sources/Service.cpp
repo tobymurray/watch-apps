@@ -570,9 +570,6 @@ void Service::showNight(LastNight::Kind kind, const SleepPeriods::Period &p, boo
     if (mShown.kind == kNightOffWrist) {
         return;
     }
-    const NightSummary::Summary s = NightSummary::summarise(mHistory.data(), mHistory.size(), p);
-    mShown.restless = static_cast<uint8_t>(s.restlessSpells > 255 ? 255 : s.restlessSpells);
-    mShown.restFill = Rhythm::restFill(p.restMin);
     const Rhythm::Usual before = mNights.recent().usualBefore(p.startUtc);
     if (before.known) {
         const int32_t d         = Rhythm::offset(Rhythm::afterNoon(p.startUtc, sleptOff), before);

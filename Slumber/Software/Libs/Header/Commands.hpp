@@ -54,11 +54,9 @@ enum NightKind : uint8_t {
 /// Last night as the screen shows it.
 struct NightView {
     uint8_t  kind            = kNoNight;  ///< a NightKind
-    uint8_t  restless        = 0;         ///< restless spells, saturating
     uint16_t restMin         = 0;
     uint16_t onsetMin        = 0;  ///< minute of the local day, in the offset the night was slept in
     uint16_t wakeMin         = 0;
-    uint16_t restFill        = 0;  ///< per mille of the goal; past 1000 is a second lap
     uint16_t rhythmFill      = kUnknown;  ///< per mille; kUnknown = no usual to score against
     int16_t  rhythmOffsetMin = 0;         ///< bedtime against the usual; + is later
     uint16_t usualBedMin     = kUnknown;  ///< minute of day; kUnknown = none
