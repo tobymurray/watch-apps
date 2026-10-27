@@ -1,6 +1,6 @@
 [package]
 name = "incised-text"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 # MEASURED, not inherited: `cargo +1.71.1 build` succeeds with no features and
 # with `abgr2222`; 1.70 fails on `div_ceil`. `std` needs nothing further.

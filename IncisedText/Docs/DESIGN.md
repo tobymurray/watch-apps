@@ -50,8 +50,12 @@ What a caller should know about it:
   font's `tnum` feature, which swaps each digit for its tabular form, so every
   digit advances the same (`tests/atkinson.rs`); the ASCII faces keep the
   proportional digits, which read better in running text such as
-  "Sat 17 Oct". Poppins' digits already share one advance in every face
-  here, so its faces use no feature.
+  "Sat 17 Oct". `ATKINSON_BOLD_28_FIGURES` is the 28 px Latin face's
+  tabular digits alone, for a number in a line of text that changes in
+  place, such as `87 %`: every digit advances 18, and the broad tabular `1`,
+  12 columns of ink against the proportional 9, leaves no hole in its cell.
+  Poppins' digits already share one advance in every face here, so its
+  faces use no feature.
 - **Zero is always slashed.** The font has no plain zero, in either its
   default or its tabular digits, so `0` never passes for `O`, and there is no
   way to get an unslashed one.
@@ -325,6 +329,7 @@ not changed:
 | `ATKINSON_BOLD_62_CLOCK` | 12 | 3,706 |
 | `ATKINSON_BOLD_23_LATIN` | 305 | 19,469 |
 | `ATKINSON_BOLD_28_LATIN` | 305 | 25,311 |
+| `ATKINSON_BOLD_28_FIGURES` (`0-9`, `tnum`) | 11 | 790 |
 | `ATKINSON_BOLD_52_NUMERIC` (`tnum`) | 21 | 3,624 |
 | `ATKINSON_BOLD_72_NUMERIC` | 21 | 6,625 |
 

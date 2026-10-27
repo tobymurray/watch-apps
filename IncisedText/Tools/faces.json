@@ -22,6 +22,7 @@
     {"name": "ATKINSON_BOLD_62_CLOCK", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 62, "charset": "0123456789:", "features": ["tnum"], "feature": "atkinson"},
     {"name": "ATKINSON_BOLD_23_LATIN", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 23, "charset": "latin", "feature": "atkinson"},
     {"name": "ATKINSON_BOLD_28_LATIN", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 28, "charset": "latin", "feature": "atkinson"},
+    {"name": "ATKINSON_BOLD_28_FIGURES", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 28, "charset": "0123456789", "features": ["tnum"], "feature": "atkinson"},
     {"name": "ATKINSON_BOLD_52_NUMERIC", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 52, "charset": "numeric", "features": ["tnum"], "feature": "atkinson"},
     {"name": "ATKINSON_BOLD_72_NUMERIC", "font": "AtkinsonHyperlegibleNext[wght].ttf", "wght": 700, "px": 72, "charset": "numeric", "features": ["tnum"], "feature": "atkinson"}
   ]

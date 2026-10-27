@@ -9,6 +9,10 @@ fn clocks() -> [(&'static str, &'static Face); 2] {
     [("ATKINSON_BOLD_49_CLOCK", &ATKINSON_BOLD_49_CLOCK), ("ATKINSON_BOLD_62_CLOCK", &ATKINSON_BOLD_62_CLOCK)]
 }
 
+fn figures() -> [(&'static str, &'static Face, &'static Face); 1] {
+    [("ATKINSON_BOLD_28_FIGURES", &ATKINSON_BOLD_28_FIGURES, &ATKINSON_BOLD_28_LATIN)]
+}
+
 fn ascii() -> [(&'static str, &'static Face); 3] {
     [
         ("ATKINSON_BOLD_16_ASCII", &ATKINSON_BOLD_16_ASCII),
@@ -39,6 +43,18 @@ fn clock_digits_share_one_advance() {
         let advances: Vec<u8> = ('0'..='9').map(|c| face.glyph(c).expect("digit").adv).collect();
         assert!(advances.iter().all(|&a| a == advances[0]), "{name}: digit advances {advances:?}");
         assert_eq!(face.measure("11:11").advance, face.measure("88:88").advance, "{name}");
+    }
+}
+
+/// A text face's tabular digits: one advance, and the text face's rows, so they sit in its lines.
+#[test]
+fn figures_share_one_advance_and_their_text_face_s_rows() {
+    for (name, figures, text) in figures() {
+        let advances: Vec<u8> = ('0'..='9').map(|c| figures.glyph(c).expect("digit").adv).collect();
+        assert!(advances.iter().all(|&a| a == advances[0]), "{name}: digit advances {advances:?}");
+        assert_eq!((figures.ascent, figures.descent), (text.ascent, text.descent), "{name}");
+        assert_eq!(figures.measure("0123456789").ink_top, text.measure("0123456789").ink_top, "{name}");
+        assert!(figures.glyph('1').unwrap().w > text.glyph('1').unwrap().w, "{name}: the tabular 1 is the broad one");
     }
 }
 
