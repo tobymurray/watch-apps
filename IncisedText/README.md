@@ -34,6 +34,7 @@ Each face is one font at one pixel size over one character set, in `faces`:
 | `POPPINS_SEMIBOLD_{47,67}_NUMERIC` | Poppins SemiBold | 47, 67 | numeric |
 | `ATKINSON_BOLD_{16,20,25}_ASCII` | Atkinson Hyperlegible Next Bold | 16, 20, 25 | ASCII |
 | `ATKINSON_BOLD_{23,28}_LATIN` | Atkinson Hyperlegible Next Bold | 23, 28 | Latin |
+| `ATKINSON_BOLD_28_FIGURES` | Atkinson Hyperlegible Next Bold | 28 | `0123456789`, tabular |
 | `ATKINSON_BOLD_{49,62}_CLOCK` | Atkinson Hyperlegible Next Bold | 49, 62 | `0123456789:`, tabular |
 | `ATKINSON_BOLD_{52,72}_NUMERIC` | Atkinson Hyperlegible Next Bold | 52, 72 | numeric, tabular |
 

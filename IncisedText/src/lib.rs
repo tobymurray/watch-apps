@@ -477,6 +477,8 @@ mod tests {
             #[cfg(feature = "atkinson")]
             ("ATKINSON_BOLD_28_LATIN", &ATKINSON_BOLD_28_LATIN),
             #[cfg(feature = "atkinson")]
+            ("ATKINSON_BOLD_28_FIGURES", &ATKINSON_BOLD_28_FIGURES),
+            #[cfg(feature = "atkinson")]
             ("ATKINSON_BOLD_52_NUMERIC", &ATKINSON_BOLD_52_NUMERIC),
             #[cfg(feature = "atkinson")]
             ("ATKINSON_BOLD_72_NUMERIC", &ATKINSON_BOLD_72_NUMERIC),
