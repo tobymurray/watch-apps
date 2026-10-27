@@ -126,15 +126,16 @@ public:
             "{\"schema\":%u,\"source\":\"%s\",\"start\":%lu,\"end\":%lu,\"utc_off_min\":%ld,"
             "\"rest_min\":%u,\"worn\":\"%s\",\"start_local\":\"%s\",\"end_local\":\"%s\","
             "\"span_min\":%lu,\"missing_min\":%u,\"longest_rest_min\":%u,\"restless_spells\":%u,"
-            "\"worn_pct\":%u,\"hr_cover_pct\":%u,\"hr_median_bpm\":%s,\"hr_low_bpm\":%s,\"hr_low_at\":%s,"
-            "\"epoch_s\":%u,\"epochs\":\"",
+            "\"worn_pct\":%u,\"hr_cover_pct\":%u,\"wrist_pct\":%u,\"wrist_cover_pct\":%u,"
+            "\"hr_median_bpm\":%s,\"hr_low_bpm\":%s,\"hr_low_at\":%s,\"epoch_s\":%u,\"epochs\":\"",
             kSchema, kSource, static_cast<unsigned long>(p.startUtc),
             static_cast<unsigned long>(p.endUtc), static_cast<long>(offsetMin),
             static_cast<unsigned>(p.restMin), name(p.worn), from, to,
             static_cast<unsigned long>((p.endUtc - p.startUtc) / 60u),
             static_cast<unsigned>(p.missingMin), static_cast<unsigned>(s.longestRestMin),
             static_cast<unsigned>(s.restlessSpells), static_cast<unsigned>(p.wornPct),
-            static_cast<unsigned>(p.hrCoverPct), med, low, at, static_cast<unsigned>(SleepPeriods::kEpochS));
+            static_cast<unsigned>(p.hrCoverPct), static_cast<unsigned>(p.wristPct),
+            static_cast<unsigned>(p.wristCoverPct), med, low, at, static_cast<unsigned>(SleepPeriods::kEpochS));
     }
 
 private:

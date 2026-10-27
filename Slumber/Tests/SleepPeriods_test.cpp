@@ -225,18 +225,25 @@ TEST(SleepPeriods, AnArmOnTheSensorDoesNotSplitTheNight)
     expectNear(p[0].endUtc, at(7));
 }
 
-TEST(SleepPeriods, WithHeartRateNeverAskedForTheWristIsUncertain)
+TEST(SleepPeriods, WithHeartRateNeverAskedRestAtTheFloorIsUncertain)
 {
-    const auto p = Day(kNoon, kNextNoon).still(at(-1), at(7)).hrNotAsked(kNoon, kNextNoon).periods();
+    const auto p = Day(kNoon, kNextNoon).table(at(-1), at(7)).hrNotAsked(kNoon, kNextNoon).periods();
     ASSERT_EQ(p.size(), 1u);
     EXPECT_EQ(p[0].worn, Worn::Uncertain);
 }
 
+TEST(SleepPeriods, WithHeartRateNeverAskedAWristAboveTheFloorIsWorn)
+{
+    const auto p = Day(kNoon, kNextNoon).still(at(-1), at(7)).hrNotAsked(kNoon, kNextNoon).periods();
+    ASSERT_EQ(p.size(), 1u);
+    EXPECT_EQ(p[0].worn, Worn::Worn);
+}
+
 /// Off the wrist the optical sensor can say nothing at all rather than say it
-/// with low trust; asked and silent is a table, not an unknown.
+/// with low trust; asked and silent at the floor is a table, not an unknown.
 TEST(SleepPeriods, ATableWhereHeartRateIsSilentIsNotWorn)
 {
-    const auto p = Day(kNoon, kNextNoon).still(at(-4), at(0)).hrSilent(at(-4), at(0)).periods();
+    const auto p = Day(kNoon, kNextNoon).table(at(-4), at(0)).hrSilent(at(-4), at(0)).periods();
     ASSERT_EQ(p.size(), 1u);
     EXPECT_EQ(p[0].worn, Worn::NotWorn);
 }
@@ -245,7 +252,7 @@ TEST(SleepPeriods, ATableWhereHeartRateIsSilentIsNotWorn)
 TEST(SleepPeriods, ASilentTableBeforeTheNightIsNotPartOfIt)
 {
     const auto p = Day(kNoon, kNextNoon)
-                       .still(at(-4), at(-1) - 20 * 60)
+                       .table(at(-4), at(-1) - 20 * 60)
                        .hrSilent(at(-4), at(-1) - 20 * 60)
                        .still(at(-1), at(7))
                        .periods();
@@ -253,6 +260,25 @@ TEST(SleepPeriods, ASilentTableBeforeTheNightIsNotPartOfIt)
     EXPECT_EQ(p[0].worn, Worn::NotWorn);
     EXPECT_EQ(p[1].worn, Worn::Worn);
     expectNear(p[1].startUtc, at(-1));
+}
+
+/// Heart rate silent for an hour of a still night: the count above the floor is the wrist.
+TEST(SleepPeriods, SilentHeartRateDoesNotSplitTheNight)
+{
+    const auto p = Day(kNoon, kNextNoon).still(at(-1), at(7)).hrSilent(at(3), at(4)).periods();
+    ASSERT_EQ(p.size(), 1u);
+    EXPECT_EQ(p[0].worn, Worn::Worn);
+    expectNear(p[0].startUtc, at(-1));
+    expectNear(p[0].endUtc, at(7));
+}
+
+/// Heart rate silent while up and about, and for the first 20 minutes in bed: the rest is worn.
+TEST(SleepPeriods, SilenceWhileUpDoesNotMakeTheNextRestATable)
+{
+    const auto p = Day(kNoon, kNextNoon).hrSilent(at(-3), at(-1, 20)).still(at(-1), at(7)).periods();
+    ASSERT_EQ(p.size(), 1u);
+    EXPECT_EQ(p[0].worn, Worn::Worn);
+    expectNear(p[0].startUtc, at(-1));
 }
 
 /// Trust that hovers at the threshold all night gives no clear wrist either way.
