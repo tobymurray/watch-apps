@@ -2,8 +2,8 @@
 //
 // Built from the headers the watch compiles. Usage: irregular
 // Prints, per schedule over 20 seeds and evenings 21-120: the share of evenings
-// with a usual, how often the next bedtime fell within 2 h of it, and the share
-// with a Tonight; then how many nights a permanent switch takes to relearn.
+// with a usual, and how often the next bedtime fell within 2 h of it; then how
+// many nights a permanent switch takes to relearn.
 
 #include <cstdio>
 #include <random>
@@ -68,48 +68,40 @@ int32_t away(int32_t a, int32_t b)
 
 int main()
 {
-    std::printf("%-26s %8s %8s %8s\n", "schedule", "usual", "kept", "tonight");
+    std::printf("%-26s %8s %8s\n", "schedule", "usual", "kept");
     for (int sc = 0; sc < kSchedules; ++sc) {
-        long evenings = 0, usual = 0, kept = 0, tonight = 0;
+        long evenings = 0, usual = 0, kept = 0;
         for (int seed = 0; seed < kSeeds; ++seed) {
-            std::mt19937      rng(1000 * seed + sc);
-            Rhythm::Recent    recent;
-            Schedule::Learner learner;
+            std::mt19937   rng(1000 * seed + sc);
+            Rhythm::Recent recent;
             for (int s = 0; s < kNights; ++s) {
                 const Sleep    sl    = night(sc, s, rng);
                 const uint32_t start = startOf(kFirstDay + s, sl.bedMin);
                 if (s >= kFrom) {
-                    const Rhythm::Usual      u = recent.usualBefore(UINT32_MAX);
-                    const Schedule::Expected e = Schedule::agree(learner.expect(kFirstDay + s), u);
+                    const Rhythm::Usual u = recent.usualBefore(UINT32_MAX);
                     ++evenings;
                     usual += u.known;
                     kept += u.known && away(Rhythm::afterNoon(start, 0), u.bed) <= Rhythm::kEmptyMin;
-                    tonight += e.known;
                 }
                 recent.add(start, start + sl.lenMin * 60, 0, static_cast<uint16_t>(sl.lenMin));
-                learner.add(start, start + sl.lenMin * 60, 0);
             }
         }
-        std::printf("%-26s %7ld%% %7ld%% %7ld%%\n", kNames[sc], 100 * usual / evenings,
-                    usual ? 100 * kept / usual : 0, 100 * tonight / evenings);
+        std::printf("%-26s %7ld%% %7ld%%\n", kNames[sc], 100 * usual / evenings, usual ? 100 * kept / usual : 0);
     }
 
-    Rhythm::Recent    recent;
-    Schedule::Learner learner;
+    Rhythm::Recent recent;
     for (int s = 0; s < 56; ++s) {
         const uint32_t start = startOf(kFirstDay + s, 23 * 60);
         recent.add(start, start + 450 * 60, 0, 450);
-        learner.add(start, start + 450 * 60, 0);
     }
     int stale = 0, back = 0;
     for (int k = 1; k <= 60 && back == 0; ++k) {
-        const int32_t  d     = kFirstDay + 55 + k;
-        const uint32_t start = startOf(d, 8 * 60 + 30);
+        const int32_t       d     = kFirstDay + 55 + k;
+        const uint32_t      start = startOf(d, 8 * 60 + 30);
         recent.add(start, start + 420 * 60, 0, 420);
-        learner.add(start, start + 420 * 60, 0);
-        const Schedule::Expected e = Schedule::agree(learner.expect(d + 1), recent.usualBefore(UINT32_MAX));
-        stale = e.known && away(e.bed, Rhythm::afterNoon(startOf(0, 23 * 60), 0)) == 0 ? k : stale;
-        back  = e.known && away(e.bed, Rhythm::afterNoon(start, 0)) <= 30 ? k : 0;
+        const Rhythm::Usual u = recent.usualBefore(UINT32_MAX);
+        stale = u.known && away(u.bed, Rhythm::afterNoon(startOf(0, 23 * 60), 0)) == 0 ? k : stale;
+        back  = u.known && away(u.bed, Rhythm::afterNoon(start, 0)) <= 30 ? k : 0;
     }
     std::printf("23:00 to 08:30 for good: the old Tonight through night %d, the new from night %d\n", stale, back);
     return 0;

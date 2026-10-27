@@ -31,11 +31,9 @@ pub struct State {
     pub rest_min: u16,
     pub onset_min: u16,
     pub wake_min: u16,
-    pub rest_fill: u16,
     pub rhythm_fill: u16,
     pub rhythm_offset_min: i16,
     pub usual_bed_min: u16,
-    pub restless: u8,
     pub week_newest_weekday: u8,
     pub week_bed: [i16; WEEK_NIGHTS],
     pub week_wake: [i16; WEEK_NIGHTS],
@@ -140,11 +138,9 @@ impl Default for State {
             rest_min: 0,
             onset_min: 0,
             wake_min: 0,
-            rest_fill: 0,
             rhythm_fill: night::UNKNOWN,
             rhythm_offset_min: 0,
             usual_bed_min: night::UNKNOWN,
-            restless: 0,
             week_newest_weekday: 0,
             week_bed: [NO_BAR; WEEK_NIGHTS],
             week_wake: [NO_BAR; WEEK_NIGHTS],
@@ -416,11 +412,9 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(State, rest_min));
     let h = fnv1a(h, core::mem::offset_of!(State, onset_min));
     let h = fnv1a(h, core::mem::offset_of!(State, wake_min));
-    let h = fnv1a(h, core::mem::offset_of!(State, rest_fill));
     let h = fnv1a(h, core::mem::offset_of!(State, rhythm_fill));
     let h = fnv1a(h, core::mem::offset_of!(State, rhythm_offset_min));
     let h = fnv1a(h, core::mem::offset_of!(State, usual_bed_min));
-    let h = fnv1a(h, core::mem::offset_of!(State, restless));
     let h = fnv1a(h, core::mem::offset_of!(State, week_newest_weekday));
     let h = fnv1a(h, core::mem::offset_of!(State, week_bed));
     let h = fnv1a(h, core::mem::offset_of!(State, week_wake));
@@ -454,19 +448,19 @@ const _: () = assert!(core::mem::offset_of!(State, just_logged) == 21);
 const _: () = assert!(core::mem::offset_of!(State, screen) == 22);
 const _: () = assert!(core::mem::offset_of!(State, night_kind) == 23);
 const _: () = assert!(core::mem::offset_of!(State, rest_min) == 24);
-const _: () = assert!(core::mem::offset_of!(State, rest_fill) == 30);
-const _: () = assert!(core::mem::offset_of!(State, rhythm_offset_min) == 34);
-const _: () = assert!(core::mem::offset_of!(State, usual_bed_min) == 36);
-const _: () = assert!(core::mem::offset_of!(State, restless) == 38);
-const _: () = assert!(core::mem::offset_of!(State, week_bed) == 40);
-const _: () = assert!(core::mem::offset_of!(State, week_wake) == 54);
-const _: () = assert!(core::mem::offset_of!(State, week_usual_bed) == 68);
-const _: () = assert!(core::mem::offset_of!(State, tonight_bed_min) == 72);
-const _: () = assert!(core::mem::offset_of!(State, now_min) == 76);
-const _: () = assert!(core::mem::offset_of!(State, nights_to_go) == 78);
-const _: () = assert!(core::mem::offset_of!(State, times_vary) == 79);
-const _: () = assert!(core::mem::offset_of!(State, scored_bed_min) == 80);
-const _: () = assert!(core::mem::offset_of!(State, scored_wake_min) == 82);
+const _: () = assert!(core::mem::offset_of!(State, rhythm_fill) == 30);
+const _: () = assert!(core::mem::offset_of!(State, rhythm_offset_min) == 32);
+const _: () = assert!(core::mem::offset_of!(State, usual_bed_min) == 34);
+const _: () = assert!(core::mem::offset_of!(State, week_newest_weekday) == 36);
+const _: () = assert!(core::mem::offset_of!(State, week_bed) == 38);
+const _: () = assert!(core::mem::offset_of!(State, week_wake) == 52);
+const _: () = assert!(core::mem::offset_of!(State, week_usual_bed) == 66);
+const _: () = assert!(core::mem::offset_of!(State, tonight_bed_min) == 70);
+const _: () = assert!(core::mem::offset_of!(State, now_min) == 74);
+const _: () = assert!(core::mem::offset_of!(State, nights_to_go) == 76);
+const _: () = assert!(core::mem::offset_of!(State, times_vary) == 77);
+const _: () = assert!(core::mem::offset_of!(State, scored_bed_min) == 78);
+const _: () = assert!(core::mem::offset_of!(State, scored_wake_min) == 80);
 
 #[no_mangle]
 pub extern "C" fn slumber_mark_count() -> u32 {
@@ -556,7 +550,6 @@ mod tests {
             rest_min: 7 * 60 + 42,
             onset_min: 23 * 60 + 29,
             wake_min: 7 * 60 + 30,
-            rest_fill: 1100,
             rhythm_fill: 860,
             rhythm_offset_min: 38,
             usual_bed_min: 22 * 60 + 51,
@@ -574,17 +567,17 @@ mod tests {
         vec![
             ("starting", State::default()),
             ("settled", s),
-            ("short", State { rest_min: 3 * 60 + 30, wake_min: 3 * 60 + 5, rest_fill: 500, rhythm_fill: 1000, rhythm_offset_min: -12, ..s }),
-            ("full", State { rest_min: 7 * 60, rest_fill: 1000, ..s }),
-            ("long", State { rest_min: 13 * 60 + 59, onset_min: 20 * 60 + 59, wake_min: 10 * 60 + 58, rest_fill: 1997, ..s }),
-            ("past-two-laps", State { rest_min: 23 * 60 + 59, rest_fill: 3427, ..s }),
+            ("short", State { rest_min: 3 * 60 + 30, wake_min: 3 * 60 + 5, rhythm_fill: 1000, rhythm_offset_min: -12, ..s }),
+            ("full", State { rest_min: 7 * 60, ..s }),
+            ("long", State { rest_min: 13 * 60 + 59, onset_min: 20 * 60 + 59, wake_min: 10 * 60 + 58, ..s }),
+            ("past-two-laps", State { rest_min: 23 * 60 + 59, ..s }),
             ("late", State { rhythm_fill: 0, rhythm_offset_min: 23 * 60 + 59, ..s }),
             ("early", State { rhythm_fill: 400, rhythm_offset_min: -(2 * 60 + 5), ..s }),
             ("learning", State { rhythm_fill: night::UNKNOWN, scored_bed_min: night::UNKNOWN, scored_wake_min: night::UNKNOWN, ..s }),
             ("times-vary", State { rhythm_fill: night::RHYTHM_VARIES, scored_bed_min: night::UNKNOWN, scored_wake_min: night::UNKNOWN, ..s }),
             ("lie-in", State { rest_min: 9 * 60 + 15, onset_min: 50, wake_min: 10 * 60 + 40, rhythm_offset_min: 119, ..s }),
             ("so-far", State { night_kind: night::KIND_SO_FAR, ..s }),
-            ("empty", State { rest_min: 0, rest_fill: 0, rhythm_fill: 0, ..s }),
+            ("empty", State { rest_min: 0, rhythm_fill: 0, ..s }),
             ("off-wrist", State { night_kind: night::KIND_OFF_WRIST, ..s }),
             ("none-usual", State { night_kind: night::KIND_NONE, ..s }),
             ("none", State { night_kind: night::KIND_NONE, usual_bed_min: night::UNKNOWN, ..s }),

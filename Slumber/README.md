@@ -86,7 +86,7 @@ an hour after its last rest. Naps and table sessions are periods too, so filter 
 | `span_min`, `missing_min` | Its length, and the minutes inside it with no data |
 | `longest_rest_min`, `restless_spells` | "Reporting a night" defines them |
 | `worn_pct`, `hr_cover_pct` | The heart-rate evidence the `worn` verdict came from |
-| `hr_median_bpm`, `hr_low_bpm`, `hr_low_at` | Sleeping heart rate: the median, the lowest 10-minute mean and the middle of that window in UTC seconds; `null` with too few trusted readings. "Heart rate against your normal" defines them |
+| `hr_median_bpm`, `hr_low_bpm`, `hr_low_at` | Sleeping heart rate: the median, the lowest 10-minute mean and the middle of that window in UTC seconds; `null` with too few trusted readings. "Sleeping heart rate" defines them |
 | `epoch_s`, `epochs` | One character per 30 s from `start`: `r` rest, `m` movement, `-` no data |
 
 `epochs` is what the wrist saw before any smoothing. `m` is an epoch whose activity count
@@ -95,7 +95,9 @@ about being awake: a wearer lying awake and still is `r`, and the wrist cannot t
 stages apart (see "The screens to come"). Over the 76 SleepLab sessions replayed in
 `Tests/`, the longest period was 1,683 epochs, so a line stays under about 2 KB.
 
-**`now.json`**: rewritten with the card, every 5 minutes.
+**`now.json`**: rewritten with the card, every 5 minutes. Schema 2 dropped schema 1's
+`week`, `tonight.own_nights` and the `heart` fields that compared a night with the
+wearer's usual; "What was cut" says why.
 
 | Field | Meaning |
 | --- | --- |
@@ -105,9 +107,8 @@ stages apart (see "The screens to come"). Over the 76 SleepLab sessions replayed
 | `usual` | `{bed_min, wake_min, nights}`: medians, in minutes past local midnight, of the main nights logged, at most six; `null` until seven, or while times vary ("Irregular hours") |
 | `rest_goal_min`, `rest_fill` | 420, and last night's rest against it in per mille; past 1000 is a second lap |
 | `rhythm_fill`, `rhythm_offset_min` | Last night's onset against the usual of the nights before it; `+` is later |
-| `tonight` | `{weekday, bed_min, wake_min, own_nights, nights}`: the usual for the night ahead, learned for its weekday (0 is Sunday); `null` whenever `usual` is. "Learning the week" says how |
-| `week` | `{later_bed, earlier_bed, later_wake, earlier_wake}`, arrays of the weekdays that keep their own hours, and `social_jetlag_min`, or `null` until there are enough nights |
-| `heart` | `{median_bpm, low_bpm, low_at}` for last night, against `{usual_median_bpm, usual_low_bpm, usual_nights}`, with `median_vs_usual_bpm` and `notable`; `null` unless last night was worn with enough trusted readings, and its `usual_` fields `null` until three earlier nights had them |
+| `tonight` | `{weekday, bed_min, wake_min, nights}`: the night ahead, which is `usual` on the weekday it begins (0 is Sunday); `null` whenever `usual` is |
+| `heart` | `{median_bpm, low_bpm, low_at}` for last night, as "Sleeping heart rate" defines them; `null` unless last night was worn with enough trusted readings |
 
 `asleep_since` comes late. A period exists only once it holds 30 minutes of rest, so it
 appears about half an hour after falling asleep, and an app silencing notifications at
@@ -224,38 +225,6 @@ the 36 h window. Besides its edges and rest, each line carries
   cannot see someone lying awake and still, so nothing here claims to count
   awakenings.
 
-## Learning the week
-
-Slumber learns a usual for each night of the week from the main nights of the last 56
-days, so a routine that changes is relearned within two months. `Sleep/Schedule.hpp`
-holds it, and `Tests/Schedule_test.cpp` drives it through synthetic weeks.
-
-- **A night belongs to the evening it began on.** Asleep at 00:40 on a Thursday is
-  Wednesday night. Before 04:00, tonight is still the night begun the evening before.
-- **A weekday's usual starts as the rest of the week's and moves toward its own.** It is
-  `(n × own median + 2 × rest-of-week median) / (n + 2)`, so one late Wednesday moves the
-  next Wednesday's usual a third of the way, and four of them move it two thirds.
-- **A weekday differs only once it has shown it.** It needs three nights of its own and
-  three of the rest of the week, a median 45 minutes or more from the rest of the week's,
-  and three in four of its nights at least 22 minutes the same way. Two late Wednesdays
-  out of the last six do not make a late Wednesday.
-- **Social jetlag** is the median sleep midpoint of Friday and Saturday nights minus that
-  of the other nights, the free-day and work-day comparison of Wittmann et al. (2006).
-  The weekday arrays find other free days, such as a shift worker's, without assuming them.
-  It is `null` unless both groups keep one time.
-- **Tonight defers to the usual.** The weekday's own is shown while it lies within 4 h of
-  the usual (see "Irregular hours"); otherwise the usual is. The 56 days learn slowly, and
-  without this a switch from 23:00 nights to 08:30 day sleeps showed a 23:00 Tonight for
-  26 nights.
-
-None of this is on the watch's screen yet. `now.json` carries it for other apps, and the
-screens to come decide how it is shown. One rule for them: the Rhythm ring may score
-tonight against tonight's own usual, but a regularity measure must not, or a habit of
-late Wednesdays would score as perfectly regular.
-
-These thresholds are chosen, not measured. Each needs weeks of nights per wearer before
-it can be checked, and the recording period gives two of each weekday at most.
-
 ## Irregular hours
 
 A usual is only worth showing if the nights keep one. Three nights at 22:30 and three
@@ -286,8 +255,8 @@ whose next bedtime fell within 2 h of it.
 | random | 100% | 15% | 1% | 7% |
 
 A permanent switch from 23:00 to 08:30 shows the old usual for two nights, then `times
-vary`, then the new usual from night ten. Tonight follows the same nights; it used to
-take 35.
+vary`, then the new usual from night ten. Tonight is the usual, so it follows the same
+nights.
 
 The 4 h is the radius that separated these groups: at 3 h a sleeper out until 03:00
 Thursday to Saturday kept a usual on only 56% of evenings, and at 5 h the weekly rota
@@ -297,27 +266,39 @@ rota ever gets a usual. A setting or a question on the watch was considered and 
 built: the nights already answer it, and a wrong answer here costs `times vary` for a
 while rather than a confident wrong time.
 
-## Heart rate against your normal
+## What was cut
 
-Each worn night carries its sleeping heart rate, and `now.json` sets last night's
-against the wearer's own usual. It says how this night compares, never what a heart
-rate means: 60 bpm is not good or bad, 4 above your usual is worth a look.
+These reached no screen, and no app in this repository reads `now.json`.
+
+- **A usual for each weekday**, shown as Tonight while it lay within 4 h of the usual,
+  with the weekdays that kept their own hours and Wittmann's social jetlag in `now.json`.
+  Its thresholds were chosen, not measured, from a recording period holding two of each
+  weekday at most. `Tools/irregular.cpp` at `4283b78`, extended to score Tonight against
+  the bedtime that followed, put the weekday Tonight within 30 minutes on 83% of evenings
+  for a sleeper out until 01:30 on Fridays and Saturdays, against 67% for the usual; for
+  the other regular schedules the two were within 4 points. Worth bringing back once real
+  nights show weekday effects larger than the spread inside a weekday.
+- **A night's heart rate against the usual**, `notable` at 4 bpm; "Sleeping heart rate"
+  has the measurement against it.
+- **Four colour themes** as a setting: Peak, Smile and Mono beside Nebula, whose
+  colours were never photographed on the glass. Nebula is the one theme.
+
+## Sleeping heart rate
+
+Each worn night carries its sleeping heart rate, in `sessions.jsonl` and, for last night,
+`now.json`.
 
 - **Only trusted readings count**, those at `SleepPeriods::kWornTrustX10` and between 30
   and 149 bpm. A night with fewer than half its epochs trusted has no heart rate.
 - **The median** is to the nearest bpm. **The lowest** is the lowest mean over 10
   minutes with at least 15 of its 20 epochs trusted, so one low reading cannot set it.
-- **The usual** is the median of up to 14 earlier main nights that had one, and needs
-  three.
-- **A night is `notable` when its median is 4 bpm or more from the usual.** Over 18 of one
-  wearer's nights (SleepLab and Slumber), a night's median strayed from the nights
-  before it by 1.6 bpm at the median, 4.1 at p90 and 4.8 at most, so 4 flags about one
-  ordinary night in eight. The lowest strayed up to 6.9 and is never judged.
-  `Tools/hr_noise.py` reruns the measurement over any copied-off nights.
 
-The threshold needs other wearers' nights before anything on the screen is built on it.
-
-None of this is on the screen yet.
+Nothing judges a night against the wearer's own. Over 18 of one wearer's nights (SleepLab
+and Slumber), a night's median strayed from the median of up to 14 nights before it by
+1.6 bpm at the median, 4.1 at p90 and 4.8 at most, and the lowest strayed up to 6.9. A
+4 bpm flag would mark about one ordinary night in eight. `Tools/hr_noise.py` reruns the
+measurement over any copied-off nights; other wearers' nights would say whether any
+threshold separates a night worth a look from noise.
 
 ## What the log answers
 
@@ -451,8 +432,8 @@ bedtimes within 30 minutes of the usual, the window the Rhythm ring is full
 for. The plot runs in whole hours, at least six, so a single night does not
 fill it.
 
-**Tonight** is the usual night for tonight's weekday (`Schedule::agree`, see
-"Learning the week") as a cyan band on the dial, and a white dot for now. Inside: the usual bedtime, the usual wake, and how far
+**Tonight** is the usual night (see "Irregular hours") as a cyan band on the dial, and a
+white dot for now. Inside: the usual bedtime, the usual wake, and how far
 bedtime is, such as `in 2h10`, `about now` or `45m past`. Before there is a
 usual it says how many more nights it needs, and when the nights keep no one
 time it says `no usual` and `times vary`, and the app no longer opens on it.
@@ -490,12 +471,12 @@ goes back on.
 
 ## The screens to come
 
-The week of bars and the evening screen are built (see "The screens"); the
-themes are not. The two morning rings below were built and then replaced by the
-dial: on the watch they were hard to read, because a Rhythm ring is full when
-on time and empties either way, so it cannot say early from late. Rest and
-Rhythm remain the two things the screen reports, as the night's length and its
-bedtime against the usual.
+The week of bars and the evening screen are built (see "The screens"). The two
+morning rings below were built and then replaced by the dial: on the watch they
+were hard to read, because a Rhythm ring is full when on time and empties
+either way, so it cannot say early from late. Rest and Rhythm remain the two
+things the screen reports, as the night's length and its bedtime against the
+usual.
 
 **Two rings, not a score.** A 0–100 sleep score is the most criticised thing
 wrist trackers show, and wrist movement cannot score sleep stages: across six
@@ -529,7 +510,7 @@ against magenta collapses to 21. So Rest is a violet→purple→magenta gradient
 codes (1,0,3)→(2,0,3)→(3,0,3), and Rhythm is cyan, (0,2,3)→(0,3,3). Purples
 keep their colour only with green at 0. Only 3 of the 64 codes are darker than
 L\* 40, so there is no dim purple for a track. Unfilled ring is a 3 px line
-instead of a full-width band. Amber marks restless spells and nothing else.
+instead of a full-width band. Amber marks `WRITE FAILS` and nothing else.
 
 **What the watch showed.** A test app drew the 64 colours, brightness ramps and
 the mockups on the glass, and they were photographed:
@@ -551,36 +532,3 @@ Rerun: photograph the same ramp page and normalise each row's four solid cells.
 glass, and 18 px is the floor. Every string is checked against the chord inside
 the ring at its own rows. `POPPINS_SEMIBOLD_24_ASCII` is Slumber's own face,
 listed in the renderer's `faces.json` and generated into `src/atlas.rs`.
-
-**Themes.** The colours are a setting, one of four. Ring geometry, thin
-tracks, the same-colour second lap and the text rules are shared by all four.
-The ΔE figures are the Rest and Rhythm fills compared through the panel model.
-
-- **Nebula**, the default, as above: purple and cyan, ΔE 39.
-- **Peak** uses the colours of UNA's own Peak face, which already puts two
-  goal rings on the rim. Rest is cyan (0,3,3) and Rhythm is orange (3,2,0), on
-  (1,1,1) tracks, ΔE 36. Restless spells are white, because orange already
-  means Rhythm.
-- **Smile** uses UNA's Smile face: teal (0,2,2) Rest and white Rhythm, ΔE 23.
-  It is the calmest, with white text at 25:1.
-- **Mono**, after UNA's Retro face, and the one theme that changes shape. Two
-  greys cannot carry the rings: white against (2,2,2) is ΔE 8.5, under the 10
-  needed to tell them apart at a glance. So both rings are white, and Rhythm is
-  cut into 60 ticks, like a dial's minute track, while Rest stays solid.
-  Restless spells are black notches in the white band. A dim (1,1,1) Rhythm
-  measures ΔE 22. It was passed over because it is the dimmest ink, and glare
-  flattens that first.
-
-The SDK's setting fields have no pick-list. So the theme is a text field limited
-by a pattern, as Barcode's format field is. The watch reads it once at launch,
-and anything it cannot read means Nebula:
-
-```json
-{"id": "theme", "type": "string", "label": "Colours", "default": "Nebula",
- "maxLength": 6, "pattern": "(?:[Nn]ebula|[Pp]eak|[Ss]mile|[Mm]ono)?",
- "validationMessage": "Nebula, Peak, Smile or Mono."}
-```
-
-Rerun: the Peak, Smile and Mono colours come from the SDK's screenshots of the
-faces, and the swatch test app has not photographed them. Photograph them
-before shipping.
