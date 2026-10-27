@@ -455,8 +455,9 @@ tonight, a floating bar from bedtime to wake in the Rest colours, under dashed
 cyan lines at the usual bedtime and wake. Each bar is labelled with the weekday
 it began on, the newest in white. Above them, `4 of 6 on time` counts the
 bedtimes within 30 minutes of the usual, the window the Rhythm ring is full
-for. The plot runs in whole hours, at least six, so a single night does not
-fill it.
+for. The plot starts its day after the widest stretch of the clock with no
+bedtime, so a day sleeper's 11:50 and 12:10 sit 20 minutes apart, and it runs
+in whole hours, at least six, so a single night does not fill it.
 
 **Tonight** is the usual night (see "Irregular hours") as a cyan band on the dial, and a
 white dot for now. Inside: the usual bedtime, the usual wake, and how far

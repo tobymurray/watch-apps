@@ -629,6 +629,10 @@ mod tests {
             ], usual)),
             ("week-learning", week_of([None, None, None, None, None, Some(((23, 0), (7, 0))), Some(((23, 30), (7, 15)))], None)),
             ("week-empty", week_of([None; WEEK_NIGHTS], None)),
+            ("week-noon-sleeper", week_of([
+                Some(((11, 50), (19, 0))), Some(((12, 10), (19, 10))), Some(((12, 5), (19, 0))), None,
+                Some(((11, 40), (18, 50))), Some(((12, 20), (19, 30))), Some(((12, 0), (19, 0))),
+            ], Some(((12, 5), (19, 5))))),
             ("week-times-vary", State { times_vary: 1, ..week_of([
                 Some(((22, 30), (6, 30))), Some(((22, 30), (6, 30))), Some(((8, 30), (15, 30))), Some(((8, 30), (15, 30))),
                 Some(((8, 30), (15, 30))), Some(((22, 30), (6, 30))), Some(((22, 30), (6, 30)))], None) }),
@@ -900,7 +904,16 @@ mod tests {
         assert_eq!(say(&w[1].1), "7 of 7 on time");
         assert_eq!(say(&w[3].1), "learning");
         assert_eq!(say(&w[4].1), "No nights yet");
-        assert_eq!(say(&w[5].1), "times vary");
+        assert_eq!(say(&w[6].1), "times vary");
+    }
+
+    /// Bedtimes either side of noon are minutes apart on the plot, not most of a day.
+    #[test]
+    fn a_noon_sleepers_week_is_not_squashed() {
+        let (_, st) = weeks().into_iter().find(|(n, _)| *n == "week-noon-sleeper").unwrap();
+        assert_eq!(week::summary(&st).0.as_str(), "6 of 6 on time");
+        let (lo, hi) = week::span(&st);
+        assert!(hi - lo <= 9 * 60, "{lo}..{hi}");
     }
 
     #[test]
@@ -914,10 +927,8 @@ mod tests {
     fn every_bar_lies_inside_the_plot() {
         for (name, st) in weeks() {
             let (lo, hi) = week::span(&st);
-            for i in 0..WEEK_NIGHTS {
-                if st.week_bed[i] != NO_BAR {
-                    assert!(lo <= st.week_bed[i] as i32 && st.week_wake[i] as i32 <= hi, "{name} night {i}");
-                }
+            for (i, bed, wake) in week::nights(&st) {
+                assert!(lo <= bed && wake <= hi, "{name} night {i}");
             }
         }
     }

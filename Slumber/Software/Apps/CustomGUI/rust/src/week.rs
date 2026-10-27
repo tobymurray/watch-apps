@@ -37,21 +37,72 @@ pub fn day(state: &State, i: usize) -> &'static str {
     DAYS[(state.week_newest_weekday as i32 - back).rem_euclid(7) as usize]
 }
 
-fn nights(state: &State) -> impl Iterator<Item = (usize, i32, i32)> + '_ {
-    (0..WEEK_NIGHTS)
-        .filter(move |&i| state.week_bed[i] != NO_BAR)
-        .map(move |i| (i, state.week_bed[i] as i32, state.week_wake[i] as i32))
-}
-
 fn usual_known(state: &State) -> bool {
     state.week_usual_bed != NO_BAR && state.week_usual_wake != NO_BAR
 }
 
+const DAY_MIN: i32 = 1440;
+
+/// The bedtime, minutes after noon, that the plot's day starts from: the first after the clock's
+/// widest stretch with no bedtime, the usual's included, so bedtimes either side of noon sit together.
+fn day_start(state: &State) -> i32 {
+    let mut beds = [0i32; WEEK_NIGHTS + 1];
+    let mut n = 0;
+    for i in 0..WEEK_NIGHTS {
+        if state.week_bed[i] != NO_BAR {
+            beds[n] = state.week_bed[i] as i32;
+            n += 1;
+        }
+    }
+    if usual_known(state) {
+        beds[n] = state.week_usual_bed as i32;
+        n += 1;
+    }
+    let beds = &mut beds[..n];
+    beds.sort_unstable();
+    let mut start = beds.first().copied().unwrap_or(0);
+    let mut widest = match n {
+        0 => 0,
+        _ => beds[0] + DAY_MIN - beds[n - 1],
+    };
+    for k in 1..n {
+        if beds[k] - beds[k - 1] > widest {
+            widest = beds[k] - beds[k - 1];
+            start = beds[k];
+        }
+    }
+    start
+}
+
+/// `(bed, wake)` moved a day on if the bed falls before the plot's day starts.
+fn unwrapped(bed: i32, wake: i32, start: i32) -> (i32, i32) {
+    if bed < start {
+        (bed + DAY_MIN, wake + DAY_MIN)
+    } else {
+        (bed, wake)
+    }
+}
+
+/// Each night's column and its bed and wake, unwrapped onto the plot's day.
+pub fn nights(state: &State) -> impl Iterator<Item = (usize, i32, i32)> + '_ {
+    let start = day_start(state);
+    (0..WEEK_NIGHTS).filter(move |&i| state.week_bed[i] != NO_BAR).map(move |i| {
+        let (bed, wake) = unwrapped(state.week_bed[i] as i32, state.week_wake[i] as i32, start);
+        (i, bed, wake)
+    })
+}
+
+/// The usual bed and wake, unwrapped onto the plot's day.
+fn usual(state: &State) -> Option<(i32, i32)> {
+    usual_known(state)
+        .then(|| unwrapped(state.week_usual_bed as i32, state.week_usual_wake as i32, day_start(state)))
+}
+
 /// Nights in the week, and how many of them began within ON_TIME_MIN of the usual bedtime.
 pub fn on_time(state: &State) -> (u32, u32) {
-    let usual = state.week_usual_bed as i32;
+    let usual = usual(state);
     nights(state).fold((0, 0), |(n, on), (_, bed, _)| {
-        (n + 1, on + u32::from(usual_known(state) && (bed - usual).abs() <= ON_TIME_MIN))
+        (n + 1, on + u32::from(usual.is_some_and(|(u, _)| (bed - u).abs() <= ON_TIME_MIN)))
     })
 }
 
@@ -75,13 +126,9 @@ pub fn summary(state: &State) -> (Line, Abgr2222) {
 pub fn span(state: &State) -> (i32, i32) {
     let mut lo = i32::MAX;
     let mut hi = i32::MIN;
-    for (_, bed, wake) in nights(state) {
+    for (_, bed, wake) in nights(state).chain(usual(state).map(|(bed, wake)| (0, bed, wake))) {
         lo = lo.min(bed);
         hi = hi.max(wake);
-    }
-    if usual_known(state) {
-        lo = lo.min(state.week_usual_bed as i32);
-        hi = hi.max(state.week_usual_wake as i32);
     }
     if lo > hi {
         return (0, MIN_SPAN_MIN);
@@ -144,9 +191,9 @@ pub fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
 
     let span = span(state);
     if on_time(state).0 > 0 {
-        if usual_known(state) {
-            dashed(fb, row(state.week_usual_bed as i32, span) as i32);
-            dashed(fb, row(state.week_usual_wake as i32, span) as i32);
+        if let Some((bed, wake)) = usual(state) {
+            dashed(fb, row(bed, span) as i32);
+            dashed(fb, row(wake, span) as i32);
         }
         for (i, bed, wake) in nights(state) {
             bar(fb, column_x(i), row(bed, span), row(wake, span));
