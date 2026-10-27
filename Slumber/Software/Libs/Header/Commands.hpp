@@ -73,6 +73,7 @@ struct WeekView {
     int16_t wake[kWeekNights] = {kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar};  ///< past 1440 after noon
     int16_t usualBed      = kNoBar;  ///< minutes after local noon; kNoBar = none
     int16_t usualWake     = kNoBar;  ///< minutes after local noon, past 1440 for a wake after noon
+    uint16_t usualSpreadMin = kUnknown;  ///< Rhythm::Usual::spread; kUnknown = no usual
     uint8_t newestWeekday = 0;       ///< 0 = Sunday
 };
 

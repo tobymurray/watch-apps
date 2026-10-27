@@ -64,6 +64,7 @@ struct Usual {
     int32_t wake   = 0;  ///< afterNoon
     uint8_t nights = 0;  ///< the median is of this many
     bool    varies = false;  ///< enough nights, but most are not near any one time
+    int32_t spread = 0;  ///< minutes: the median distance of those nights' bedtimes from `bed`
 };
 
 /// Shortest signed distance from `b` to `a` round the clock, in (-720, 720].
@@ -71,6 +72,19 @@ inline int32_t apart(int32_t a, int32_t b)
 {
     const int32_t d = ((a - b) % 1440 + 1440) % 1440;
     return d > 720 ? d - 1440 : d;
+}
+
+/// The median of `v`, which it sorts.
+inline int32_t median(int32_t *v, size_t n)
+{
+    for (size_t i = 1; i < n; ++i) {
+        for (size_t j = i; j > 0 && v[j - 1] > v[j]; --j) {
+            const int32_t t = v[j];
+            v[j]            = v[j - 1];
+            v[j - 1]        = t;
+        }
+    }
+    return n == 0 ? 0 : n % 2 == 1 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2;
 }
 
 /// The median of clock times, cut where the clock has its widest stretch with
@@ -133,6 +147,11 @@ inline Usual usual(const Night *prior, size_t n)
     u.bed    = centre(beds, k);
     u.wake   = centre(wakes, k);
     u.nights = static_cast<uint8_t>(k);
+    for (size_t i = 0; i < k; ++i) {
+        const int32_t d = apart(beds[i], u.bed);
+        beds[i]         = d < 0 ? -d : d;
+    }
+    u.spread = median(beds, k);
     const size_t gFrom = n > kKeptNights ? n - kKeptNights : 0;
     int32_t      gBeds[kKeptNights];
     int32_t      gWakes[kKeptNights];

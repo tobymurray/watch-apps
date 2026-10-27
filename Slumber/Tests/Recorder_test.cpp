@@ -726,7 +726,7 @@ TEST(SleepNow, ANightIsScoredAgainstTheNightsBeforeIt)
     const std::string j = out;
     EXPECT_NE(j.find("\"last_night\":{\"start\":1791518040,\"end\":1791551100,\"rest_min\":551,"
                      "\"worn\":\"worn\",\"settled\":true}"), std::string::npos);
-    EXPECT_NE(j.find("\"usual\":{\"bed_min\":1384,\"wake_min\":720,\"nights\":3}"), std::string::npos);
+    EXPECT_NE(j.find("\"usual\":{\"bed_min\":1384,\"wake_min\":720,\"nights\":3,\"spread_min\":0}"), std::string::npos);
     EXPECT_NE(j.find("\"rest_fill\":1311,"), std::string::npos);
     EXPECT_NE(j.find("\"rhythm_fill\":778,\"rhythm_offset_min\":50}"), std::string::npos);
 }
@@ -761,10 +761,11 @@ TEST(SleepNow, TonightIsTheUsual)
     s.usual.bed    = 12 * 60 + 7;   // 00:07
     s.usual.wake   = 20 * 60 + 15;  // 08:15
     s.usual.nights = 6;
+    s.usual.spread = 25;
     char out[SleepNow::kCap];
     ASSERT_GT(SleepNow::format(s, out, sizeof(out)), 0u);
     const std::string j = out;
-    EXPECT_NE(j.find("\"usual\":{\"bed_min\":7,\"wake_min\":495,\"nights\":6},"
+    EXPECT_NE(j.find("\"usual\":{\"bed_min\":7,\"wake_min\":495,\"nights\":6,\"spread_min\":25},"
                      "\"tonight\":{\"weekday\":3,\"bed_min\":7,\"wake_min\":495,\"nights\":6},"),
               std::string::npos)
         << j;

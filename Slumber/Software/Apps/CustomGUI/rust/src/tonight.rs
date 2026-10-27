@@ -4,13 +4,16 @@ use inscribed_disc::{Abgr2222, Surface};
 
 use crate::dial::{self, Span};
 use crate::night::{
-    clock, duration, rhythm_ink, text, Rgb, DETAIL_FACE, GROUND, KIND_SO_FAR, MAIN_INK, MUTED_INK, ON_TIME_MIN,
+    clock, duration, rhythm_ink, text, Rgb, DETAIL_FACE, GROUND, KIND_SO_FAR, MAIN_INK, MUTED_INK,
     REST_FACE, REST_Y, RHYTHM_INK, RHYTHM_Y, TIMES_Y, TITLE_FACE, TITLE_INK, TITLE_Y, UNKNOWN,
 };
 use crate::{Line, State, SCREEN_NIGHT, SCREEN_TONIGHT};
 
 const DAY_MIN: i32 = 1440;
 const NOW_R: f32 = 5.0;
+
+/// Bedtime this close is "about now".
+const ABOUT_NOW_MIN: i32 = 30;
 
 /// The app opens on this screen from this long before tonight's usual bedtime...
 const OPENS_BEFORE_MIN: i32 = 4 * 60;
@@ -46,7 +49,7 @@ pub fn countdown(line: &mut Line, now: u16, bed: u16, wake: u16) {
     let to = ahead(now, bed);
     let asleep_window = ahead(bed, wake);
     let (minutes, past) = if since <= asleep_window { (since, true) } else { (to, false) };
-    if minutes <= ON_TIME_MIN {
+    if minutes <= ABOUT_NOW_MIN {
         line.push("about now");
         return;
     }
