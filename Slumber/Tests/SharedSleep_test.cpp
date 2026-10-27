@@ -97,7 +97,6 @@ TEST(SharedSleep, NowReadsThroughTheSdkJsonReader)
     s.tonight        = Schedule::Expected{true, s.usual.bed, s.usual.wake, 1, 5};
     s.week.laterBed  = (1u << Schedule::kFriday) | (1u << Schedule::kSaturday);
     s.lastHeart      = NightSummary::Heart{57, 51, p.startUtc + 3600};
-    s.usualHeart     = Schedule::UsualHeart{true, 53, 0, 6};
     ASSERT_TRUE(SleepNow::publish(fs, s));
 
     const std::string all = fs.fileContents(SleepNow::kPath);
@@ -139,12 +138,7 @@ TEST(SharedSleep, NowReadsThroughTheSdkJsonReader)
     EXPECT_EQ(earlyDays, 0u);
     EXPECT_TRUE(jetlagNull);
 
-    int8_t vsUsual  = 0;
-    bool   notable  = false, usualLowNull = false;
-    ASSERT_TRUE(json.get("heart.median_vs_usual_bpm", vsUsual));
-    ASSERT_TRUE(json.get("heart.notable", notable));
-    ASSERT_TRUE(json.getNull("heart.usual_low_bpm", usualLowNull));
-    EXPECT_EQ(vsUsual, 4);
-    EXPECT_TRUE(notable);
-    EXPECT_TRUE(usualLowNull);
+    uint8_t heartMedian = 0;
+    ASSERT_TRUE(json.get("heart.median_bpm", heartMedian));
+    EXPECT_EQ(heartMedian, 57);
 }

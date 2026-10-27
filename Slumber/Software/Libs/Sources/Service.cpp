@@ -474,8 +474,7 @@ void Service::publishNow(uint32_t utc)
     s.tonight     = Schedule::agree(mNights.schedule().expect(s.tonightDay), s.usual);
     s.week        = mNights.schedule().week();
     if (mLastNight != nullptr && mLastNight->worn == SleepPeriods::Worn::Worn) {
-        s.lastHeart  = NightSummary::heart(mHistory.data(), mHistory.size(), *mLastNight);
-        s.usualHeart = mNights.schedule().heartBefore(Rhythm::noonDay(mLastNight->startUtc, off));
+        s.lastHeart = NightSummary::heart(mHistory.data(), mHistory.size(), *mLastNight);
     }
     if (!Slumber::SleepNow::publish(mKernel.fs, s)) {
         ++mWriteFails;

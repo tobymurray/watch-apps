@@ -86,7 +86,7 @@ an hour after its last rest. Naps and table sessions are periods too, so filter 
 | `span_min`, `missing_min` | Its length, and the minutes inside it with no data |
 | `longest_rest_min`, `restless_spells` | "Reporting a night" defines them |
 | `worn_pct`, `hr_cover_pct` | The heart-rate evidence the `worn` verdict came from |
-| `hr_median_bpm`, `hr_low_bpm`, `hr_low_at` | Sleeping heart rate: the median, the lowest 10-minute mean and the middle of that window in UTC seconds; `null` with too few trusted readings. "Heart rate against your normal" defines them |
+| `hr_median_bpm`, `hr_low_bpm`, `hr_low_at` | Sleeping heart rate: the median, the lowest 10-minute mean and the middle of that window in UTC seconds; `null` with too few trusted readings. "Sleeping heart rate" defines them |
 | `epoch_s`, `epochs` | One character per 30 s from `start`: `r` rest, `m` movement, `-` no data |
 
 `epochs` is what the wrist saw before any smoothing. `m` is an epoch whose activity count
@@ -95,7 +95,8 @@ about being awake: a wearer lying awake and still is `r`, and the wrist cannot t
 stages apart (see "The screens to come"). Over the 76 SleepLab sessions replayed in
 `Tests/`, the longest period was 1,683 epochs, so a line stays under about 2 KB.
 
-**`now.json`**: rewritten with the card, every 5 minutes.
+**`now.json`**: rewritten with the card, every 5 minutes. Schema 2 dropped schema 1's
+`heart` fields that compared a night with the wearer's usual; "What was cut" says why.
 
 | Field | Meaning |
 | --- | --- |
@@ -107,7 +108,7 @@ stages apart (see "The screens to come"). Over the 76 SleepLab sessions replayed
 | `rhythm_fill`, `rhythm_offset_min` | Last night's onset against the usual of the nights before it; `+` is later |
 | `tonight` | `{weekday, bed_min, wake_min, own_nights, nights}`: the usual for the night ahead, learned for its weekday (0 is Sunday); `null` whenever `usual` is. "Learning the week" says how |
 | `week` | `{later_bed, earlier_bed, later_wake, earlier_wake}`, arrays of the weekdays that keep their own hours, and `social_jetlag_min`, or `null` until there are enough nights |
-| `heart` | `{median_bpm, low_bpm, low_at}` for last night, against `{usual_median_bpm, usual_low_bpm, usual_nights}`, with `median_vs_usual_bpm` and `notable`; `null` unless last night was worn with enough trusted readings, and its `usual_` fields `null` until three earlier nights had them |
+| `heart` | `{median_bpm, low_bpm, low_at}` for last night, as "Sleeping heart rate" defines them; `null` unless last night was worn with enough trusted readings |
 
 `asleep_since` comes late. A period exists only once it holds 30 minutes of rest, so it
 appears about half an hour after falling asleep, and an app silencing notifications at
@@ -297,27 +298,29 @@ rota ever gets a usual. A setting or a question on the watch was considered and 
 built: the nights already answer it, and a wrong answer here costs `times vary` for a
 while rather than a confident wrong time.
 
-## Heart rate against your normal
+## What was cut
 
-Each worn night carries its sleeping heart rate, and `now.json` sets last night's
-against the wearer's own usual. It says how this night compares, never what a heart
-rate means: 60 bpm is not good or bad, 4 above your usual is worth a look.
+These reached no screen, and no app in this repository reads `now.json`.
+
+- **A night's heart rate against the usual**, `notable` at 4 bpm; "Sleeping heart rate"
+  has the measurement against it.
+
+## Sleeping heart rate
+
+Each worn night carries its sleeping heart rate, in `sessions.jsonl` and, for last night,
+`now.json`.
 
 - **Only trusted readings count**, those at `SleepPeriods::kWornTrustX10` and between 30
   and 149 bpm. A night with fewer than half its epochs trusted has no heart rate.
 - **The median** is to the nearest bpm. **The lowest** is the lowest mean over 10
   minutes with at least 15 of its 20 epochs trusted, so one low reading cannot set it.
-- **The usual** is the median of up to 14 earlier main nights that had one, and needs
-  three.
-- **A night is `notable` when its median is 4 bpm or more from the usual.** Over 18 of one
-  wearer's nights (SleepLab and Slumber), a night's median strayed from the nights
-  before it by 1.6 bpm at the median, 4.1 at p90 and 4.8 at most, so 4 flags about one
-  ordinary night in eight. The lowest strayed up to 6.9 and is never judged.
-  `Tools/hr_noise.py` reruns the measurement over any copied-off nights.
 
-The threshold needs other wearers' nights before anything on the screen is built on it.
-
-None of this is on the screen yet.
+Nothing judges a night against the wearer's own. Over 18 of one wearer's nights (SleepLab
+and Slumber), a night's median strayed from the median of up to 14 nights before it by
+1.6 bpm at the median, 4.1 at p90 and 4.8 at most, and the lowest strayed up to 6.9. A
+4 bpm flag would mark about one ordinary night in eight. `Tools/hr_noise.py` reruns the
+measurement over any copied-off nights; other wearers' nights would say whether any
+threshold separates a night worth a look from noise.
 
 ## What the log answers
 

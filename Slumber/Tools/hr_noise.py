@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """How far a night's sleeping heart rate strays from the nights before it.
 
-Sets Schedule::kNotableBpm. Each argument is a Slumber folder copied off a watch
+README "Sleeping heart rate" records what it found. Each argument is a Slumber folder copied off a watch
 (with ../SharedData/health/sleep/sessions.jsonl beside it, as on the watch) or a
 folder of SleepLab session CSVs. Worn nights are taken in time order, measured
 as Slumber measures them, and each is set against the median of up to 14 before
@@ -19,7 +19,7 @@ import sys
 TRUST_X10 = 20       # SleepPeriods::kWornTrustX10
 WINDOW_S = 600       # NightSummary::kHrLowWindowS
 MIN_READINGS = 15    # NightSummary::kHrLowMinReadings
-PRIOR = 14           # Schedule::kHeartNights
+PRIOR = 14           # nights before each one, as its usual
 
 
 def measure(epochs):

@@ -66,7 +66,7 @@ public:
         noteLatest(p.startUtc, p.endUtc, offsetMin);
         if (p.worn == SleepPeriods::Worn::Worn) {
             mRecent.add(p.startUtc, p.endUtc, offsetMin, p.restMin);
-            mSchedule.add(p.startUtc, p.endUtc, offsetMin, h.medianBpm, h.lowBpm);
+            mSchedule.add(p.startUtc, p.endUtc, offsetMin);
         }
         return true;
     }
@@ -265,12 +265,7 @@ private:
         if (std::strstr(line, "\"worn\":\"worn\"") != nullptr && end > start) {
             mRecent.add(static_cast<uint32_t>(start), static_cast<uint32_t>(end),
                         static_cast<int32_t>(off), static_cast<uint16_t>(rest));
-            long hrMed = 0, hrLow = 0;
-            number(line, "\"hr_median_bpm\":", hrMed);
-            number(line, "\"hr_low_bpm\":", hrLow);
-            mSchedule.add(static_cast<uint32_t>(start), static_cast<uint32_t>(end), static_cast<int32_t>(off),
-                          static_cast<uint8_t>(hrMed > 0 && hrMed < 256 ? hrMed : 0),
-                          static_cast<uint8_t>(hrLow > 0 && hrLow < 256 ? hrLow : 0));
+            mSchedule.add(static_cast<uint32_t>(start), static_cast<uint32_t>(end), static_cast<int32_t>(off));
         }
     }
 

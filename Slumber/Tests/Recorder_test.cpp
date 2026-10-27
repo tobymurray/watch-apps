@@ -645,25 +645,6 @@ TEST(NightLog, MainNightsAreReadBackForTheWeek)
     EXPECT_EQ(Rhythm::minuteOfDay(e.bed), 23 * 60 + 54);
 }
 
-TEST(NightLog, SleepingHeartRatesAreReadBackForTheUsual)
-{
-    SDK::Test::FakeFileSystem fs;
-    {
-        auto log = std::make_unique<NightLog>(fs);
-        for (int d = 0; d < 4; ++d) {
-            SleepPeriods::Period p = settledNight();
-            p.startUtc += d * 86400;
-            p.endUtc += d * 86400;
-            ASSERT_TRUE(logNight(*log, p, {}, {}, static_cast<uint16_t>(530 + 20 * d)));
-        }
-    }
-    auto                       log = std::make_unique<NightLog>(fs);
-    const Schedule::UsualHeart u   = log->schedule().heartBefore(Rhythm::noonDay(settledNight().startUtc, -240) + 4);
-    ASSERT_TRUE(u.known);
-    EXPECT_EQ(u.nights, 4);
-    EXPECT_EQ(u.medianBpm, 56);  // 53, 55, 57, 59
-}
-
 TEST(NightLog, TheLatestNightKeepsTheOffsetItWasLoggedWith)
 {
     SDK::Test::FakeFileSystem  fs;
@@ -700,7 +681,7 @@ TEST(SleepNow, BeforeAnyNightEveryAnswerIsNull)
     s.offsetMin  = -240;
     char out[SleepNow::kCap];
     ASSERT_GT(SleepNow::format(s, out, sizeof(out)), 0u);
-    EXPECT_STREQ(out, "{\"schema\":1,\"source\":\"Slumber\",\"written\":1791600000,\"heartbeat_s\":300,"
+    EXPECT_STREQ(out, "{\"schema\":2,\"source\":\"Slumber\",\"written\":1791600000,\"heartbeat_s\":300,"
                       "\"utc_off_min\":-240,\"asleep_since\":null,\"last_night\":null,\"usual\":null,"
                       "\"tonight\":null,\"week\":{\"later_bed\":[],\"earlier_bed\":[],\"later_wake\":[],"
                       "\"earlier_wake\":[],\"social_jetlag_min\":null},\"heart\":null,"
@@ -770,36 +751,27 @@ TEST(SleepNow, TheLongestStateFits)
     s.tonight        = Schedule::Expected{true, 1439, 1439, 255, 255};
     s.week           = Schedule::Week{0x7F, 0, 0x7F, 0, true, -1439};  // a day is later or earlier, not both
     s.lastHeart      = NightSummary::Heart{149, 149, 4000000000u};
-    s.usualHeart     = Schedule::UsualHeart{true, 30, 30, 255};
     char out[SleepNow::kCap];
     const size_t len = SleepNow::format(s, out, sizeof(out));
     ASSERT_GT(len, 0u);
     EXPECT_LT(len, SleepNow::kCap * 3 / 4) << len;
 }
 
-TEST(SleepNow, LastNightsHeartIsSetAgainstTheUsual)
+TEST(SleepNow, LastNightsHeartIsShared)
 {
     const SleepPeriods::Period p = settledNight();
     SleepNow::State            s;
-    s.lastNight  = &p;
-    s.lastHeart  = NightSummary::Heart{57, 51, 1791545000u};
-    s.usualHeart = Schedule::UsualHeart{true, 53, 47, 3};
+    s.lastNight = &p;
+    s.lastHeart = NightSummary::Heart{57, 51, 1791545000u};
     char out[SleepNow::kCap];
     ASSERT_GT(SleepNow::format(s, out, sizeof(out)), 0u);
-    EXPECT_NE(std::string(out).find("\"heart\":{\"median_bpm\":57,\"low_bpm\":51,\"low_at\":1791545000,"
-                                    "\"usual_median_bpm\":53,\"usual_nights\":3,\"median_vs_usual_bpm\":4,"
-                                    "\"notable\":true,\"usual_low_bpm\":47},"),
+    EXPECT_NE(std::string(out).find("\"heart\":{\"median_bpm\":57,\"low_bpm\":51,\"low_at\":1791545000},"),
               std::string::npos)
         << out;
 
-    s.lastHeart.medianBpm = 50;
+    s.lastHeart.lowBpm = 0;
     ASSERT_GT(SleepNow::format(s, out, sizeof(out)), 0u);
-    EXPECT_NE(std::string(out).find("\"median_vs_usual_bpm\":-3,\"notable\":false,"), std::string::npos) << out;
-
-    s.usualHeart = Schedule::UsualHeart{};
-    ASSERT_GT(SleepNow::format(s, out, sizeof(out)), 0u);
-    EXPECT_NE(std::string(out).find("\"usual_median_bpm\":null,\"usual_nights\":null,\"median_vs_usual_bpm\":null,"
-                                    "\"notable\":null,\"usual_low_bpm\":null},"),
+    EXPECT_NE(std::string(out).find("\"heart\":{\"median_bpm\":57,\"low_bpm\":null,\"low_at\":null},"),
               std::string::npos)
         << out;
 }

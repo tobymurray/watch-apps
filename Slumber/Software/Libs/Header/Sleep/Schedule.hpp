@@ -7,8 +7,8 @@
 #include "Rhythm.hpp"
 
 /// The wearer's normal, learned from the main night of each day: a usual bed
-/// and wake for each night of the week, the weekdays that keep to their own
-/// hours, and the usual sleeping heart rate.
+/// and wake for each night of the week, and the weekdays that keep to their
+/// own hours.
 namespace Schedule
 {
 
@@ -31,19 +31,6 @@ constexpr unsigned kAgreePct = 75;
 
 /// Before this local time, tonight is still the night begun the evening before.
 constexpr int32_t kDayTurnMin = 4 * 60;
-
-/// The usual heart rate is the median of up to this many nights before the one compared.
-constexpr size_t kHeartNights = 14;
-
-/// Fewer nights with a heart rate than this and there is no usual one.
-constexpr size_t kMinHeartNights = 3;
-
-/// A night's median heart rate this far from the usual is worth saying.
-/// Measured by `Tools/hr_noise.py` over one wearer's 18 nights (SleepLab and
-/// Slumber), each against up to 14 before it: deviations p50 1.6, p90 4.1, max
-/// 4.8 bpm, and 13% reached 4; the lowest 10-minute mean strayed to 6.9, so it
-/// is shared but never judged. Rerun it over more wearers' nights to move this.
-constexpr int32_t kNotableBpm = 4;
 
 constexpr uint8_t kSunday   = 0;
 constexpr uint8_t kFriday   = 5;
@@ -81,13 +68,6 @@ struct Pattern {
     uint8_t wakeAgree  = 0;  ///< nights leaning the way wakeShift does
 };
 
-struct UsualHeart {
-    bool    known     = false;
-    uint8_t medianBpm = 0;  ///< median of the nights' medians
-    uint8_t lowBpm    = 0;  ///< median of the nights' lows; 0 = none had one
-    uint8_t nights    = 0;
-};
-
 constexpr size_t kWeekNights = 7;
 
 /// A day in Bars with no main night.
@@ -113,18 +93,6 @@ struct Week {
 namespace detail
 {
 
-inline int32_t median(int16_t *v, size_t n)
-{
-    for (size_t i = 1; i < n; ++i) {
-        for (size_t j = i; j > 0 && v[j - 1] > v[j]; --j) {
-            const int16_t t = v[j];
-            v[j]            = v[j - 1];
-            v[j - 1]        = t;
-        }
-    }
-    return n % 2 == 1 ? v[n / 2] : (static_cast<int32_t>(v[n / 2 - 1]) + v[n / 2]) / 2;
-}
-
 inline bool within(int32_t a, int32_t b)
 {
     const int32_t d = Rhythm::apart(a, b);
@@ -147,8 +115,7 @@ public:
     static constexpr size_t kCap = static_cast<size_t>(kWindowDays);
 
     /// Keeps the longest period begun on each day as that day's night.
-    void add(uint32_t startUtc, uint32_t endUtc, int32_t offsetMin, uint8_t hrMedianBpm = 0,
-             uint8_t hrLowBpm = 0)
+    void add(uint32_t startUtc, uint32_t endUtc, int32_t offsetMin)
     {
         const int32_t day    = Rhythm::noonDay(startUtc, offsetMin);
         const int32_t newest = mN > 0 && mMain[mN - 1].day > day ? mMain[mN - 1].day : day;
@@ -161,8 +128,7 @@ public:
         if (wake < bed) {
             wake += 1440;
         }
-        const Main m{day, endUtc - startUtc, static_cast<int16_t>(bed), static_cast<int16_t>(wake),
-                     hrMedianBpm, hrLowBpm};
+        const Main m{day, endUtc - startUtc, static_cast<int16_t>(bed), static_cast<int16_t>(wake)};
         size_t     at = mN;
         while (at > 0 && mMain[at - 1].day > day) {
             --at;
@@ -291,33 +257,6 @@ public:
         return w;
     }
 
-    /// The usual sleeping heart rate from the last kHeartNights nights before
-    /// `day` that had one; unknown under kMinHeartNights.
-    UsualHeart heartBefore(int32_t day) const
-    {
-        UsualHeart u;
-        int16_t    med[kHeartNights], low[kHeartNights];
-        size_t     nm = 0, nl = 0;
-        for (size_t i = mN; i > 0 && nm < kHeartNights; --i) {
-            const Main &m = mMain[i - 1];
-            if (m.day >= day || m.hrMedian == 0) {
-                continue;
-            }
-            med[nm++] = m.hrMedian;
-            if (m.hrLow != 0) {
-                low[nl++] = m.hrLow;
-            }
-        }
-        if (nm < kMinHeartNights) {
-            return u;
-        }
-        u.known     = true;
-        u.nights    = static_cast<uint8_t>(nm);
-        u.medianBpm = static_cast<uint8_t>(detail::median(med, nm));
-        u.lowBpm    = nl > 0 ? static_cast<uint8_t>(detail::median(low, nl)) : 0;
-        return u;
-    }
-
     /// The main nights begun on the kWeekNights days before `day`.
     Bars before(int32_t day) const
     {
@@ -365,8 +304,6 @@ private:
         uint32_t spanS    = 0;
         int16_t  bed      = 0;  ///< Rhythm::afterNoon
         int16_t  wake     = 0;  ///< Rhythm::afterNoon, past 1440 when it wraps noon
-        uint8_t  hrMedian = 0;  ///< bpm; 0 = unknown
-        uint8_t  hrLow    = 0;  ///< bpm; 0 = unknown
     };
     Main   mMain[kCap];
     size_t mN = 0;
