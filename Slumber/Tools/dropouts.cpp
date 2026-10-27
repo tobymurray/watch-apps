@@ -5,7 +5,8 @@
 // each it prints how often the count is above kSensorFloorCount, the longest stretch whose
 // 5.5-minute median count is not, then silences heart rate for 30, 60, 90 and 180 minutes
 // starting every 15 minutes across the longest period and counts how often the card still
-// shows that period whole (within 10 minutes of each edge), a shorter one, or none.
+// shows that period whole (within 10 minutes of each edge), a shorter one, or none; and
+// last, what the card shows with heart rate silent throughout.
 
 #include <algorithm>
 #include <cstdio>
@@ -135,6 +136,20 @@ int main(int argc, char **argv)
             }
             std::printf("  silent %3u min: whole %2d, shorter %2d, none %2d\n", silentMin, whole, shorter, none);
         }
+        std::vector<Epoch> e = base;
+        for (Epoch &x : e) {
+            x.hasHr = false;
+        }
+        Period       p[64];
+        const size_t n = find(e.data(), e.size(), p, 64, now);
+        const auto   c = LastNight::choose(p, n, now);
+        std::printf("  silent throughout: %s", c.kind == LastNight::Kind::Worn      ? "a night"
+                                               : c.kind == LastNight::Kind::NotWorn ? "watch was off"
+                                                                                    : "no night");
+        if (c.period != nullptr) {
+            std::printf(", %u min of rest", c.period->restMin);
+        }
+        std::printf("\n");
     }
     return 0;
 }

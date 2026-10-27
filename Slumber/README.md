@@ -216,7 +216,8 @@ The rest split into a shorter night; none was lost, and the table and pillow
 stayed off the wrist under every silence. Heart rate silent the whole night
 showed `watch was off` before, and now the longest piece of it, with 132 or
 166 minutes of rest.
-Synthetic nights at 23:00-07:00 agree in kind: a night with heart rate silent in
+
+The review's synthetic nights at 23:00-07:00 agree in kind: a night with heart rate silent in
 32% of its epochs showed in 2 of 20 seeds and now in 20, a 30-90 minute dropout
 no longer splits it, and heart rate silent while up and for the first 10-90
 minutes in bed no longer makes that rest a table or moves bedtime later.
