@@ -85,7 +85,8 @@ an hour after its last rest. Naps and table sessions are periods too, so filter 
 | `start_local`, `end_local` | The same edges as `yyyy-mm-dd hh:mm` local, for people |
 | `span_min`, `missing_min` | Its length, and the minutes inside it with no data |
 | `longest_rest_min`, `restless_spells` | "Reporting a night" defines them |
-| `worn_pct`, `hr_cover_pct` | The heart-rate evidence the `worn` verdict came from |
+| `worn_pct`, `hr_cover_pct` | The heart-rate evidence alone: of the epochs whose heart rate says anything, the share that says worn, and their share of the period |
+| `wrist_pct`, `wrist_cover_pct` | The same for the evidence `worn` is judged on: heart rate, and a count above the sensor floor ("Finding a night") |
 | `hr_median_bpm`, `hr_low_bpm`, `hr_low_at` | Sleeping heart rate: the median, the lowest 10-minute mean and the middle of that window in UTC seconds; `null` with too few trusted readings. "Heart rate against your normal" defines them |
 | `epoch_s`, `epochs` | One character per 30 s from `start`: `r` rest, `m` movement, `-` no data |
 
@@ -128,9 +129,10 @@ any hour. It uses no bedtime window.
 - **Blocks less than 60 minutes apart are merged**, so a bathroom trip stays
   inside its night, and a night that runs past noon is not cut at a clock.
 - **Coming off the wrist ends a period.** Off the wrist means two thirds of the
-  nearby heart-rate epochs have trust under 2.0 with the count at the sensor
-  floor, or no reading at all while heart rate was subscribed. A watch left on
-  the table before or after a night is its own `NotWorn` period.
+  nearby evidence says so: the count at the sensor floor, with heart rate under
+  trust 2.0 or silent while subscribed. A count above the floor is the wrist
+  whatever heart rate says. A watch left on the table before or after a night is
+  its own `NotWorn` period.
 - **A period is final** once nothing later can join it: 60 minutes have passed
   after it, and either movement, a gap or a change of wrist has been seen at
   least 60 minutes after it, or a later period proves it. A period two on
@@ -181,6 +183,50 @@ SleepLab sessions, quiet low-trust epochs on a nightstand or pillow exceeded
 night and SleepLab's 2026-09-07, which had split in three, and changed no
 table's verdict. Heart rate alone cannot make this call: the pillow read a
 plausible 46-76 bpm.
+
+**Silent heart rate is no evidence against a count above the floor either.**
+Silence used to count against the wrist however much it moved, so 30 minutes
+without a reading cut a night in three, and a night with heart rate silent in a
+third of its epochs went `Uncertain` and vanished. Now an epoch above
+`kSensorFloorCount` says wrist on its own. That was argued from the 92% above,
+and synthetic nights built on that figure lost nothing; real counts are lower.
+Four SleepLab recordings, kept in this repository's history at `987d55b`
+(`SleepLab/Recordings/`), replayed through `Tools/dropouts.cpp`:
+
+| Recording | Epochs above 250 | Longest 5.5-min median at or under 250 | Verdict, before and after |
+| --- | --- | --- | --- |
+| Worn, 2026-08-19 | 70.5% | 46.0 min | worn, 23:29-09:00 |
+| Worn, 2026-08-21 | 80.5% | 43.5 min | worn, 00:37-08:54 |
+| Table, 54 min | 0.9% | all of it | not worn |
+| Pillow, 6.2 h, heart rate 98% low-trust | 0.5% | all of it | not worn |
+
+A sleeping wrist sits at the floor for most of an hour at a time, so the count
+cannot carry a night alone. With heart rate silenced for a stretch starting
+every 15 minutes across each worn night, the card showed the night whole this
+many times:
+
+| Silent for | 2026-08-19, before | after | 2026-08-21, before | after |
+| --- | --- | --- | --- | --- |
+| 30 min | 0 of 37 | 34 | 2 of 32 | 28 |
+| 60 min | 0 of 35 | 25 | 0 of 30 | 21 |
+| 90 min | 0 of 33 | 17 | 0 of 28 | 14 |
+| 180 min | 0 of 27 | 1 | 0 of 22 | 2 |
+
+The rest split into a shorter night; none was lost, and the table and pillow
+stayed off the wrist under every silence. Heart rate silent the whole night
+showed `watch was off` before, and now the longest piece of it, with 132 or
+166 minutes of rest.
+
+The review's synthetic nights at 23:00-07:00 agree in kind: a night with heart rate silent in
+32% of its epochs showed in 2 of 20 seeds and now in 20, a 30-90 minute dropout
+no longer splits it, and heart rate silent while up and for the first 10-90
+minutes in bed no longer makes that rest a table or moves bedtime later.
+
+**Not yet validated on the 33 sessions.** The table at the top of this section
+and the 92% predate this rule. `SLUMBER_REPLAY_DIR` and `SLUMBER_DAYS_DIR`
+rerun it, and `Tools/dropouts.cpp` takes any SleepLab night CSVs; a night on a
+mattress beside a sleeping partner is the case most likely to read worn when it
+is not.
 
 ## Reporting a night
 

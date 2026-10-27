@@ -46,11 +46,11 @@ constexpr uint8_t kWornTrustX10 = 20;
 /// pillow exceeded it 0.28% of the time (p99 224) and those in worn sessions 92%
 /// (median 455); the floor is the BMI270's own noise, 183-187 on any surface.
 constexpr uint32_t kSensorFloorCount = 250;
-/// Per recorded session, worn nights scored 77-98% and nightstand nights 0-3%.
+/// Per recorded session, heart rate alone scored worn nights 77-98% and nightstand nights 0-3%.
 constexpr uint8_t kWornMinPct    = 70;
 constexpr uint8_t kNotWornMaxPct = 30;
-/// Below this share of epochs with heart rate asked for, the wrist question has
-/// no answer: half the evidence is missing.
+/// Below this share of epochs that are evidence, the wrist question has no
+/// answer: half the evidence is missing.
 constexpr uint8_t kMinHrCoveragePct = 50;
 
 struct Epoch {
@@ -74,8 +74,10 @@ struct Period {
     uint32_t endUtc       = 0;  ///< s, end of the last rest epoch
     uint16_t restMin      = 0;  ///< minutes of rest epochs inside it
     uint16_t missingMin   = 0;  ///< minutes inside it with no epoch at all
-    uint8_t  wornPct      = 0;  ///< of epochs whose heart rate is evidence
+    uint8_t  wornPct      = 0;  ///< of epochs whose heart rate is evidence, those it says are worn
     uint8_t  hrCoverPct   = 0;  ///< of epochs present, those whose heart rate is evidence
+    uint8_t  wristPct      = 0;  ///< of epochs that are wrist evidence, those that say worn; `worn` is judged on it
+    uint8_t  wristCoverPct = 0;  ///< of epochs present, those that are wrist evidence
     Worn     worn         = Worn::Uncertain;
     /// Final once nothing later can merge into it: kMergeGapS has passed, and a
     /// later period that can no longer join it or a break kMergeGapS after it has been seen.
@@ -106,6 +108,23 @@ inline bool hrSaysWorn(const Epoch &e)
     return e.hasHr && e.hrTrustX10 >= kWornTrustX10;
 }
 
+/// A count above the sensor floor is a wrist whatever heart rate says, since a
+/// table or a pillow sits at the floor; README "Finding a night" has the replay.
+inline bool countSaysWorn(const Epoch &e)
+{
+    return e.count > kSensorFloorCount;
+}
+
+inline bool wristEvidence(const Epoch &e)
+{
+    return countSaysWorn(e) || hrEvidence(e);
+}
+
+inline bool saysWorn(const Epoch &e)
+{
+    return countSaysWorn(e) || hrSaysWorn(e);
+}
+
 /// Median of the epochs within kMedianHalfWidth of `i` in time, not merely in
 /// index, so a gap in the data does not borrow from the far side of it.
 inline bool isRest(const Epoch *e, size_t n, size_t i)
@@ -134,8 +153,8 @@ inline bool isRest(const Epoch *e, size_t n, size_t i)
 
 enum class Wrist : uint8_t { On, Off, Unknown };
 
-/// Two thirds of the heart-rate evidence within the median's reach, so neither
-/// one low-trust reading nor trust hovering at the threshold moves the wrist.
+/// Two thirds of the wrist evidence within the median's reach, so neither one
+/// low-trust reading nor trust hovering at the threshold moves the wrist.
 inline Wrist wrist(const Epoch *e, size_t n, size_t i)
 {
     const uint32_t reach = static_cast<uint32_t>(kMedianHalfWidth) * kEpochS;
@@ -144,8 +163,8 @@ inline Wrist wrist(const Epoch *e, size_t n, size_t i)
     uint32_t on = 0, off = 0;
     for (size_t j = lo; j <= hi; ++j) {
         const uint32_t d = e[j].utc > e[i].utc ? e[j].utc - e[i].utc : e[i].utc - e[j].utc;
-        if (d <= reach && hrEvidence(e[j])) {
-            (hrSaysWorn(e[j]) ? on : off) += 1;
+        if (d <= reach && wristEvidence(e[j])) {
+            (saysWorn(e[j]) ? on : off) += 1;
         }
     }
     if (on >= 2 * off && on > 0) {
@@ -159,7 +178,7 @@ inline Wrist wrist(const Epoch *e, size_t n, size_t i)
 
 inline void score(const Epoch *e, size_t n, Period &p)
 {
-    uint32_t present = 0, asked = 0, worn = 0, rest = 0;
+    uint32_t present = 0, asked = 0, worn = 0, evidence = 0, wrist = 0, rest = 0;
     uint32_t prevUtc = 0;
     uint32_t missingS = 0;
     for (size_t i = 0; i < n; ++i) {
@@ -180,16 +199,24 @@ inline void score(const Epoch *e, size_t n, Period &p)
                 ++worn;
             }
         }
+        if (wristEvidence(e[i])) {
+            ++evidence;
+            if (saysWorn(e[i])) {
+                ++wrist;
+            }
+        }
     }
     p.restMin    = static_cast<uint16_t>(rest * kEpochS / 60u);
     p.missingMin = static_cast<uint16_t>(missingS / 60u);
     p.hrCoverPct = static_cast<uint8_t>(present ? asked * 100u / present : 0u);
     p.wornPct    = static_cast<uint8_t>(asked ? worn * 100u / asked : 0u);
-    if (p.hrCoverPct < kMinHrCoveragePct) {
+    p.wristCoverPct = static_cast<uint8_t>(present ? evidence * 100u / present : 0u);
+    p.wristPct      = static_cast<uint8_t>(evidence ? wrist * 100u / evidence : 0u);
+    if (p.wristCoverPct < kMinHrCoveragePct) {
         p.worn = Worn::Uncertain;
-    } else if (p.wornPct >= kWornMinPct) {
+    } else if (p.wristPct >= kWornMinPct) {
         p.worn = Worn::Worn;
-    } else if (p.wornPct <= kNotWornMaxPct) {
+    } else if (p.wristPct <= kNotWornMaxPct) {
         p.worn = Worn::NotWorn;
     } else {
         p.worn = Worn::Uncertain;
