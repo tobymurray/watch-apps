@@ -9,12 +9,20 @@ fn clocks() -> [(&'static str, &'static Face); 2] {
     [("ATKINSON_BOLD_49_CLOCK", &ATKINSON_BOLD_49_CLOCK), ("ATKINSON_BOLD_62_CLOCK", &ATKINSON_BOLD_62_CLOCK)]
 }
 
+fn figures() -> [(&'static str, &'static Face, &'static Face); 1] {
+    [("ATKINSON_BOLD_28_FIGURES", &ATKINSON_BOLD_28_FIGURES, &ATKINSON_BOLD_28_LATIN)]
+}
+
 fn ascii() -> [(&'static str, &'static Face); 3] {
     [
         ("ATKINSON_BOLD_16_ASCII", &ATKINSON_BOLD_16_ASCII),
         ("ATKINSON_BOLD_20_ASCII", &ATKINSON_BOLD_20_ASCII),
         ("ATKINSON_BOLD_25_ASCII", &ATKINSON_BOLD_25_ASCII),
     ]
+}
+
+fn latin() -> [(&'static str, &'static Face); 2] {
+    [("ATKINSON_BOLD_23_LATIN", &ATKINSON_BOLD_23_LATIN), ("ATKINSON_BOLD_28_LATIN", &ATKINSON_BOLD_28_LATIN)]
 }
 
 /// Width, height and every coverage level: the glyph as the panel would show it, wherever it sits.
@@ -38,6 +46,18 @@ fn clock_digits_share_one_advance() {
     }
 }
 
+/// A text face's tabular digits: one advance, and the text face's rows, so they sit in its lines.
+#[test]
+fn figures_share_one_advance_and_their_text_face_s_rows() {
+    for (name, figures, text) in figures() {
+        let advances: Vec<u8> = ('0'..='9').map(|c| figures.glyph(c).expect("digit").adv).collect();
+        assert!(advances.iter().all(|&a| a == advances[0]), "{name}: digit advances {advances:?}");
+        assert_eq!((figures.ascent, figures.descent), (text.ascent, text.descent), "{name}");
+        assert_eq!(figures.measure("0123456789").ink_top, text.measure("0123456789").ink_top, "{name}");
+        assert!(figures.glyph('1').unwrap().w > text.glyph('1').unwrap().w, "{name}: the tabular 1 is the broad one");
+    }
+}
+
 #[test]
 fn clock_faces_cover_a_clock_and_nothing_else() {
     for (name, face) in clocks() {
@@ -49,7 +69,7 @@ fn clock_faces_cover_a_clock_and_nothing_else() {
 #[test]
 fn confusables_draw_differently() {
     let confusables = ['I', 'l', '1', '|'];
-    for (name, face) in ascii() {
+    for (name, face) in ascii().into_iter().chain(latin()) {
         for (i, &a) in confusables.iter().enumerate() {
             for &b in &confusables[i + 1..] {
                 assert_ne!(bitmap(face, a), bitmap(face, b), "{name}: {a:?} and {b:?} are the same pixels");
@@ -64,5 +84,23 @@ fn ascii_faces_cover_ascii() {
     for (name, face) in ascii() {
         assert!(face.covers(&all), "{name}");
         assert_eq!(face.nodes.len(), 95, "{name}");
+    }
+}
+
+#[test]
+fn latin_faces_cover_the_languages_their_tier_names() {
+    for (name, face) in latin() {
+        for text in ["mer. 30 sept.", "Mi., 30. Sept.", "März", "śr. 30 paź", "mie., 30 sept.", "Știință", "Llun 30 Medi, Ŵŷ ẃ", "Ħamis"] {
+            assert!(face.covers(text), "{name}: {text:?} lacks {:?}", face.uncovered(text).collect::<String>());
+        }
+    }
+}
+
+/// Characters `latin` names that the font itself lacks.
+#[test]
+fn latin_faces_lack_what_the_font_lacks() {
+    for (name, face) in latin() {
+        assert_eq!(face.uncovered("Əə Ōō µ ĉĝĥĵŝŭ Ŋŋ").filter(|&c| c != ' ').collect::<String>(), "ƏəŌōµĉĝĥĵŝŭŊŋ", "{name}");
+        assert_eq!(face.nodes.len(), 305, "{name}");
     }
 }

@@ -273,6 +273,68 @@ constexpr AddressSet kFirmware_1_6_1 = {
     .signatureCount           = sizeof(kSignatures_1_6_1) / sizeof(kSignatures_1_6_1[0]),
 };
 
+// Kernel 1.6.2, same ABI (3). Derived statically from the CRC-32 0xF311E373 flash
+// image (FwDump 1.1.0 on 2026-10-28) against 1.6.1's CRC-32 0x5C69FC89.
+//
+// File class: 0x080a6a24-0x080a6eb8 in 1.6.1 reappears whole at +0x418, with no
+// instruction differing once branch targets and literal pools are set aside; its
+// pools still hold 0x2000029c, and only their flash string pointers moved.
+//
+// Live settings struct: the FTS write-completion handler moved to 0x0806C3E8 and
+// still loads 0x2001116C, so the base is unchanged; the loader it calls (now
+// 0x080B8ED4) matches 1.6.1's 0x080B8ABC through 0x080B9338 on the same terms, so
+// every offset is too. The runtime file cross-check is what would catch either.
+constexpr Signature kSignatures_1_6_2[] = {
+    // Open
+    {0x080a6e3cu, {0xF0, 0xB5, 0x05, 0x46, 0x85, 0xB0, 0x00, 0xF5, 0x84, 0x77, 0x06, 0x1D, 0x0A, 0xB3, 0x00, 0x29}},
+    // Read
+    {0x080a70ecu, {0x1F, 0xB5, 0x29, 0xB9, 0x8F, 0x21, 0x0F, 0x4B, 0x0F, 0x4A, 0x10, 0x48, 0xC4, 0xF7, 0x02, 0xF9}},
+    // Write
+    {0x080a6f48u, {0x30, 0xB5, 0x14, 0x46, 0x1D, 0x46, 0x85, 0xB0, 0x29, 0xB9, 0x9F, 0x21, 0x0F, 0x4B, 0x10, 0x4A}},
+    // Close
+    {0x080a7064u, {0x1F, 0xB5, 0x00, 0xF5, 0x84, 0x70, 0x39, 0xF0, 0x3F, 0xF9, 0x88, 0xB1, 0x09, 0x4B, 0x01, 0x22}},
+    // Release
+    {0x080a6eb4u, {0x30, 0xB5, 0x90, 0xF8, 0x04, 0x31, 0x04, 0x46, 0x85, 0xB0, 0x03, 0xB3, 0x00, 0xF5, 0x84, 0x75}},
+    // SetPath -- unmoved since 1.4.0.
+    {0x0802b3eau, {0x01, 0x39, 0x03, 0x46, 0x10, 0xB5, 0x32, 0xB1, 0x11, 0xF8, 0x01, 0x4F, 0x01, 0x3A, 0x03, 0xF8}},
+    // Exists
+    {0x080a71a4u, {0x10, 0xB5, 0x04, 0x46, 0x28, 0xB9, 0xE2, 0x21, 0x06, 0x4B, 0x07, 0x4A, 0x07, 0x48, 0xC4, 0xF7}},
+    // Delete
+    {0x080a724cu, {0x10, 0xB5, 0x04, 0x46, 0x28, 0xB9, 0xF0, 0x21, 0x06, 0x4B, 0x07, 0x4A, 0x07, 0x48, 0xC4, 0xF7}},
+    // Rename
+    {0x080a71dcu, {0x70, 0xB5, 0x0D, 0x46, 0x04, 0x46, 0x28, 0xB9, 0xE8, 0x21, 0x09, 0x4B, 0x09, 0x4A, 0x0A, 0x48}},
+};
+
+constexpr AddressSet kFirmware_1_6_2 = {
+    .abi                      = 3u,
+    .derivedFrom              = "1.6.2",
+    .settingsStructBase       = 0x2001116cu,
+    .phoneNotificationsOffset = 5u,
+    .unitsImperialOffset      = 4u,
+    .watchFaceIdOffset        = kNoWatchFaceAnchor,
+    .heartRateZonesOffset     = 0x06u,
+    .activityMinutesOffset    = 0x0cu,
+    .stepsOffset              = 0x10u,
+    .floorsOffset             = 0x14u,
+    .heightOffset             = 0x18u,
+    .weightOffset             = 0x1cu,
+    .fileOpenAddr             = 0x080a6e3cu | 1u,
+    .fileReadAddr             = 0x080a70ecu | 1u,
+    .fileWriteAddr            = 0x080a6f48u | 1u,
+    .fileCloseAddr            = 0x080a7064u | 1u,
+    .fileReleaseAddr          = 0x080a6eb4u | 1u,
+    .setPathAddr              = 0x0802b3eau | 1u,
+    .fileExistsAddr           = 0x080a71a4u | 1u,
+    .fileDeleteAddr           = 0x080a724cu | 1u,
+    .fileRenameAddr           = 0x080a71dcu | 1u,
+    .fileObjectSize           = 856u,
+    .pathBufferOffset         = 0x04u,
+    .pathBufferSize           = 0x100u,
+    .fileSizeFieldOffset      = 0x118u,
+    .signatures               = kSignatures_1_6_2,
+    .signatureCount           = sizeof(kSignatures_1_6_2) / sizeof(kSignatures_1_6_2[0]),
+};
+
 // This part's memory map: code executes from the 4MB flash bank at
 // 0x08000000, and the kernel's live structs sit in SRAM at 0x20000000.
 constexpr uintptr_t kFlashBase = 0x08000000u;
@@ -381,6 +443,7 @@ constexpr const AddressSet *kSupported[] = {
     &kFirmware_1_5_0,
     &kFirmware_1_6_0,
     &kFirmware_1_6_1,
+    &kFirmware_1_6_2,
 };
 
 constexpr bool everyEntryIsWellFormed()
