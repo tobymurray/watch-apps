@@ -207,20 +207,27 @@ Four SleepLab recordings, kept in this repository's history at `987d55b`
 
 A sleeping wrist sits at the floor for most of an hour at a time, so the count
 cannot carry a night alone. With heart rate silenced for a stretch starting
-every 15 minutes across each worn night, the card showed the night whole this
-many times:
+every 15 minutes across each worn night, the card showed the whole sleep (within
+10 minutes of each edge) this many times. Before is the whole-sleep card without
+this rule; most short silences were already bridged by the sleep reported whole:
 
 | Silent for | 2026-08-19, before | after | 2026-08-21, before | after |
 | --- | --- | --- | --- | --- |
-| 30 min | 0 of 37 | 34 | 2 of 32 | 28 |
-| 60 min | 0 of 35 | 25 | 0 of 30 | 21 |
-| 90 min | 0 of 33 | 17 | 0 of 28 | 14 |
-| 180 min | 0 of 27 | 1 | 0 of 22 | 2 |
+| 30 min | 32 of 37 | 35 | 28 of 32 | 30 |
+| 60 min | 30 of 35 | 33 | 26 of 30 | 28 |
+| 90 min | 28 of 33 | 31 | 24 of 28 | 26 |
+| 180 min | 0 of 27 | 25 | 0 of 22 | 20 |
 
-The rest split into a shorter night; none was lost, and the table and pillow
-stayed off the wrist under every silence. Heart rate silent the whole night
-showed `watch was off` before, and now the longest piece of it, with 132 or
-166 minutes of rest.
+None was lost, and the table and pillow stayed off the wrist under every
+silence. Heart rate silent the whole night showed `watch was off` before, and
+now a night, with 374 of 570 and 316 of 495 minutes of rest. Rerun with
+`Tools/dropouts.cpp` and the recordings at `987d55b`.
+
+Fifteen real days from a second watch (2026-10-10 to 10-23, nine worn periods
+and six on a table, heart rate 83-99% covered) replay to the same periods with
+and without this rule, except one table session that starts 72 minutes later
+and stays not worn. They have no long silence, so they show it does no harm,
+not that it helps.
 
 The review's synthetic nights at 23:00-07:00 agree in kind: a night with heart rate silent in
 32% of its epochs showed in 2 of 20 seeds and now in 20, a 30-90 minute dropout

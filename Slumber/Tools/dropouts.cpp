@@ -4,8 +4,8 @@
 // Each argument is one recording, SleepLab epoch CSVs of any schema joined by commas. For
 // each it prints how often the count is above kSensorFloorCount, the longest stretch whose
 // 5.5-minute median count is not, then silences heart rate for 30, 60, 90 and 180 minutes
-// starting every 15 minutes across the longest period and counts how often the card still
-// shows that period whole (within 10 minutes of each edge), a shorter one, or none; and
+// starting every 15 minutes across the longest period and counts how often the card's sleep
+// still spans that period (within 10 minutes of each edge), a shorter one, or none; and
 // last, what the card shows with heart rate silent throughout.
 
 #include <algorithm>
@@ -128,7 +128,7 @@ int main(int argc, char **argv)
                 const auto   c = LastNight::choose(p, n, now);
                 if (c.kind != LastNight::Kind::Worn) {
                     ++none;
-                } else if (c.period->startUtc <= night->startUtc + 600 && c.period->endUtc + 600 >= night->endUtc) {
+                } else if (c.sleep.startUtc <= night->startUtc + 600 && c.sleep.endUtc + 600 >= night->endUtc) {
                     ++whole;
                 } else {
                     ++shorter;
@@ -147,7 +147,7 @@ int main(int argc, char **argv)
                                                : c.kind == LastNight::Kind::NotWorn ? "watch was off"
                                                                                     : "no night");
         if (c.period != nullptr) {
-            std::printf(", %u min of rest", c.period->restMin);
+            std::printf(", %u min of rest", c.sleep.restMin);
         }
         std::printf("\n");
     }
