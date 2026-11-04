@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "SleepPeriods.hpp"
+
 /// The two goal rings: Rest against a fixed goal, Rhythm as tonight's bedtime
 /// against the usual one; `Slumber/README.md` records why these two.
 namespace Rhythm
@@ -149,18 +151,72 @@ inline int32_t minuteOfDay(int32_t afterNoonMin)
     return (afterNoonMin + 720) % 1440;
 }
 
-/// The main night of each recent noon-to-noon local day, the longest worn
-/// period that began in it, oldest first; a nap beside a night is not one.
+/// The main night of each recent noon-to-noon local day, oldest first: the
+/// longest sleep that began in it, a sleep being worn periods less than
+/// SleepPeriods::kSameSleepGapS apart, so a nap beside a night is not one.
 class Recent
 {
 public:
     static constexpr size_t kCap = kKeptNights + 1;
 
+    /// Adds a worn period, in time order, to the sleep it continues or as a new one.
     void add(uint32_t startUtc, uint32_t endUtc, int32_t offsetMin, uint16_t restMin)
     {
-        const int32_t day = noonDay(startUtc, offsetMin);
-        Main m{day, startUtc, endUtc - startUtc,
-               Night{afterNoon(startUtc, offsetMin), afterNoon(endUtc, offsetMin), restMin}};
+        if (mOpen.spanS > 0 && startUtc >= mOpen.endUtc && startUtc - mOpen.endUtc < SleepPeriods::kSameSleepGapS) {
+            mOpen.endUtc = endUtc;
+            mOpen.spanS += endUtc - startUtc;
+            mOpen.night.wake    = afterNoon(endUtc, offsetMin);
+            mOpen.night.restMin = static_cast<uint16_t>(mOpen.night.restMin + restMin);
+        } else {
+            mOpen = Main{noonDay(startUtc, offsetMin), startUtc, endUtc, endUtc - startUtc,
+                         Night{afterNoon(startUtc, offsetMin), afterNoon(endUtc, offsetMin), restMin}};
+        }
+        keep(mOpen);
+    }
+
+    /// The usual from the main nights that began before `beforeUtc`.
+    Usual usualBefore(uint32_t beforeUtc) const
+    {
+        Night  prior[kCap];
+        size_t k = 0;
+        for (size_t i = 0; i < mN; ++i) {
+            if (mMain[i].startUtc < beforeUtc) {
+                prior[k++] = mMain[i].night;
+            }
+        }
+        return usual(prior, k);
+    }
+
+    size_t size() const { return mN; }
+
+    /// Calls `f(noonDay, night)` for each main night kept, oldest first.
+    template <typename F>
+    void each(F f) const
+    {
+        for (size_t i = 0; i < mN; ++i) {
+            f(mMain[i].day, mMain[i].night);
+        }
+    }
+
+    /// Nights still to log before there can be a usual.
+    uint8_t nightsToGo() const
+    {
+        return static_cast<uint8_t>(mN < kMinBaselineNights ? kMinBaselineNights - mN : 0);
+    }
+
+private:
+    struct Main {
+        int32_t  day      = 0;
+        uint32_t startUtc = 0;
+        uint32_t endUtc   = 0;
+        uint32_t spanS    = 0;  ///< the periods' lengths summed
+        Night    night;
+    };
+
+    /// Stores `m` as its day's main night if it is longer than the one there.
+    void keep(const Main &m)
+    {
+        const int32_t day = m.day;
         for (size_t i = 0; i < mN; ++i) {
             if (mMain[i].day == day) {
                 if (m.spanS > mMain[i].spanS) {
@@ -190,36 +246,9 @@ public:
         ++mN;
     }
 
-    /// The usual from the main nights that began before `beforeUtc`.
-    Usual usualBefore(uint32_t beforeUtc) const
-    {
-        Night  prior[kCap];
-        size_t k = 0;
-        for (size_t i = 0; i < mN; ++i) {
-            if (mMain[i].startUtc < beforeUtc) {
-                prior[k++] = mMain[i].night;
-            }
-        }
-        return usual(prior, k);
-    }
-
-    size_t size() const { return mN; }
-
-    /// Nights still to log before there can be a usual.
-    uint8_t nightsToGo() const
-    {
-        return static_cast<uint8_t>(mN < kMinBaselineNights ? kMinBaselineNights - mN : 0);
-    }
-
-private:
-    struct Main {
-        int32_t  day     = 0;
-        uint32_t startUtc = 0;
-        uint32_t spanS   = 0;
-        Night    night;
-    };
     Main   mMain[kCap];
     size_t mN = 0;
+    Main   mOpen;  ///< the latest sleep, kept or not
 };
 
 /// Rest against the goal; past kFull is a second lap.
