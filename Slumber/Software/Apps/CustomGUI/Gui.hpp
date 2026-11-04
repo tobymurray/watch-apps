@@ -24,6 +24,7 @@ private:
     void onButton(SDK::Message::EventButton::Id id);
     void show(uint8_t screen);
     void turnTo(uint8_t page);
+    void unpick();
 
     static constexpr int16_t  kFallbackWidth     = 240;
     static constexpr int16_t  kFallbackHeight    = 240;
@@ -45,6 +46,9 @@ private:
 
     uint8_t  mSequence    = 0;  ///< presses of the picker's sequence made so far
     uint32_t mLastPressMs = 0;
+
+    /// A night picked on the week is let go after this long with no press.
+    static constexpr uint32_t kPickIdleMs = 10000;
 
     slumber_state mState{};
 

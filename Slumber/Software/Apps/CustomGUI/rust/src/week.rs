@@ -4,11 +4,14 @@ use inscribed_disc::{Abgr2222, Surface};
 use incised_text::{faces, Face};
 
 use crate::night::{dither, minutes, rest_ink, text, GROUND, MAIN_INK, MUTED_INK, RHYTHM_INK, TITLE_INK, UNKNOWN};
-use crate::{Line, State, NO_BAR, WEEK_NIGHTS};
+use crate::{Line, State, NO_BAR, SCREEN_WEEK, WEEK_NIGHTS};
 
 pub static TITLE_FACE: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
 pub static SUMMARY_FACE: &Face = &faces::POPPINS_SEMIBOLD_20_ASCII;
 pub static DAY_FACE: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
+/// Measured: a 10 h night's "10h22 22:05-08:50" is 192 px in the summary's 20 px face, past
+/// the 190 the glass has at that row, and 177 in this one. Re-measure with `Face::measure`.
+pub static PICK_FACE: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
 
 pub const TITLE_Y: i32 = 46;
 pub const SUMMARY_Y: i32 = 70;
@@ -26,15 +29,55 @@ const DASH: i32 = 3;
 const MIN_SPAN_MIN: i32 = 6 * 60;
 
 const DAYS: [&str; 7] = ["S", "M", "T", "W", "T", "F", "S"];
+const NAMES: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/// What is left of a bar's colour while another night is picked.
+const UNPICKED_LIT: f32 = 0.35;
+const UNDERLINE_Y: i32 = DAY_Y + 6;
+const UNDERLINE_HALF_W: i32 = 6;
 
 pub fn column_x(i: usize) -> i32 {
     120 + (i as i32 - (WEEK_NIGHTS as i32 - 1) / 2) * COLUMN_STEP
 }
 
+fn weekday(state: &State, i: usize) -> usize {
+    let back = (WEEK_NIGHTS - 1 - i) as i32;
+    (state.week_newest_weekday as i32 - back).rem_euclid(7) as usize
+}
+
 /// The weekday letter under bar `i`, given the weekday of the newest.
 pub fn day(state: &State, i: usize) -> &'static str {
-    let back = (WEEK_NIGHTS - 1 - i) as i32;
-    DAYS[(state.week_newest_weekday as i32 - back).rem_euclid(7) as usize]
+    DAYS[weekday(state, i)]
+}
+
+/// The night picked on the week, if the week is up and one is.
+pub fn picked(state: &State) -> Option<usize> {
+    (state.screen == SCREEN_WEEK && (state.week_pick as usize) < WEEK_NIGHTS).then_some(state.week_pick as usize)
+}
+
+pub fn picking(state: &State) -> bool {
+    picked(state).is_some()
+}
+
+/// The picked night's weekday, in place of the title.
+pub fn pick_title(state: &State, i: usize) -> &'static str {
+    NAMES[weekday(state, i)]
+}
+
+/// "7h42 23:15-07:20", or "no night", in place of the summary.
+pub fn pick_detail(state: &State, i: usize) -> (Line, Abgr2222) {
+    let mut line = Line::new();
+    if state.week_bed[i] == NO_BAR {
+        line.push("no night");
+        return (line, MUTED_INK);
+    }
+    let clock = |m: i16| ((m as i32 + DAY_MIN / 2).rem_euclid(DAY_MIN)) as u16;
+    minutes(&mut line, state.week_rest[i] as u32);
+    line.push(" ");
+    crate::night::clock(&mut line, clock(state.week_bed[i]));
+    line.push("-");
+    crate::night::clock(&mut line, clock(state.week_wake[i]));
+    (line, MAIN_INK)
 }
 
 fn usual_known(state: &State) -> bool {
@@ -150,7 +193,7 @@ fn dashed(fb: &mut Surface<Abgr2222>, y: i32) {
 const SUB: [f32; 2] = [-0.25, 0.25];
 
 /// A capsule from row `top` to row `bottom`, in the Rest colours down its length, edges antialiased.
-fn bar(fb: &mut Surface<Abgr2222>, cx: i32, top: f32, bottom: f32) {
+fn bar(fb: &mut Surface<Abgr2222>, cx: i32, top: f32, bottom: f32, lit: f32) {
     let r = BAR_HALF_W;
     let (a, b) = (top + r, (bottom - r).max(top + r));
     for y in (top - 1.0) as i32..=(bottom + 1.0) as i32 {
@@ -168,18 +211,28 @@ fn bar(fb: &mut Surface<Abgr2222>, cx: i32, top: f32, bottom: f32) {
             }
             let t = (y - PLOT_TOP) as f32 / (PLOT_BOTTOM - PLOT_TOP) as f32;
             let c = rest_ink(t);
-            let k = hit as f32 / 4.0;
+            let k = lit * hit as f32 / 4.0;
             fb.fill_rect(x, y, 1, 1, dither([c[0] * k, c[1] * k, c[2] * k], x, y));
         }
     }
 }
 
 pub fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
+    let pick = picked(state);
     let mut title = Line::new();
-    title.push("Past week");
+    title.push(pick.map_or("Past week", |i| pick_title(state, i)));
     text(fb, TITLE_FACE, &title, TITLE_Y, TITLE_INK);
-    let (summary, ink) = summary(state);
-    text(fb, SUMMARY_FACE, &summary, SUMMARY_Y, ink);
+    let (summary, ink, face) = match pick {
+        Some(i) => {
+            let (line, ink) = pick_detail(state, i);
+            (line, ink, PICK_FACE)
+        }
+        None => {
+            let (line, ink) = summary(state);
+            (line, ink, SUMMARY_FACE)
+        }
+    };
+    text(fb, face, &summary, SUMMARY_Y, ink);
 
     let span = span(state);
     if nights(state).next().is_some() {
@@ -188,16 +241,20 @@ pub fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
             dashed(fb, row(wake, span) as i32);
         }
         for (i, bed, wake) in nights(state) {
-            bar(fb, column_x(i), row(bed, span), row(wake, span));
+            let lit = if pick.is_some_and(|p| p != i) { UNPICKED_LIT } else { 1.0 };
+            bar(fb, column_x(i), row(bed, span), row(wake, span), lit);
         }
     }
 
-    let newest = WEEK_NIGHTS - 1;
+    let bright = pick.unwrap_or(WEEK_NIGHTS - 1);
     for i in 0..WEEK_NIGHTS {
         let mut letter = Line::new();
         letter.push(day(state, i));
-        let ink = if i == newest { MAIN_INK } else { MUTED_INK };
+        let ink = if i == bright { MAIN_INK } else { MUTED_INK };
         DAY_FACE.draw(fb, letter.as_str(), column_x(i), DAY_Y, incised_text::Style::centered(ink, GROUND)).ok();
+    }
+    if let Some(i) = pick {
+        fb.fill_rect(column_x(i) - UNDERLINE_HALF_W, UNDERLINE_Y, 2 * UNDERLINE_HALF_W + 1, 2, MAIN_INK);
     }
 }
 

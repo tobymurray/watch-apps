@@ -99,3 +99,13 @@ TEST(Schedule, AWeekBeforeAnyNightIsEmpty)
         EXPECT_EQ(b.bed[i], Schedule::kNoNight);
     }
 }
+
+TEST(Schedule, AWeekBarCarriesItsWholeSleepsRest)
+{
+    Rhythm::Recent r;
+    sleep(r, kMonday, 23, 0, 240);
+    sleep(r, kMonday, 4, 10, 170);
+    const Schedule::Bars b = Schedule::bars(r, kMonday + 1);
+    EXPECT_EQ(b.rest[Schedule::kWeekNights - 1], 240 + 170);
+    EXPECT_EQ(b.rest[Schedule::kWeekNights - 2], 0);
+}

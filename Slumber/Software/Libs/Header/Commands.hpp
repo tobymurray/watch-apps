@@ -71,6 +71,7 @@ constexpr size_t  kWeekNights = 7;
 struct WeekView {
     int16_t bed[kWeekNights]  = {kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar};  ///< min after local noon
     int16_t wake[kWeekNights] = {kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar};  ///< past 1440 after noon
+    uint16_t rest[kWeekNights] = {};  ///< minutes of rest; 0 where there is no bar
     int16_t usualBed      = kNoBar;  ///< minutes after local noon; kNoBar = none
     int16_t usualWake     = kNoBar;  ///< minutes after local noon, past 1440 for a wake after noon
     uint16_t usualSpreadMin = kUnknown;  ///< Rhythm::Usual::spread; kUnknown = no usual

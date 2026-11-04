@@ -40,6 +40,7 @@ constexpr int16_t kNoNight = -1;
 struct Bars {
     int16_t bed[kWeekNights];   ///< Rhythm::afterNoon; kNoNight = none that day
     int16_t wake[kWeekNights];  ///< Rhythm::afterNoon, past 1440 when it wraps noon
+    uint16_t rest[kWeekNights];  ///< minutes; 0 = no night that day
     uint8_t newestWeekday = 0;  ///< the weekday the last one began on
 };
 
@@ -50,6 +51,7 @@ inline Bars bars(const Rhythm::Recent &recent, int32_t day)
     for (size_t i = 0; i < kWeekNights; ++i) {
         b.bed[i]  = kNoNight;
         b.wake[i] = kNoNight;
+        b.rest[i] = 0;
     }
     b.newestWeekday = weekday(day - 1);
     recent.each([&](int32_t nightDay, const Rhythm::Night &n) {
@@ -58,6 +60,7 @@ inline Bars bars(const Rhythm::Recent &recent, int32_t day)
             const size_t at = kWeekNights - static_cast<size_t>(back);
             b.bed[at]       = static_cast<int16_t>(n.bed);
             b.wake[at]      = static_cast<int16_t>(n.wake < n.bed ? n.wake + 1440 : n.wake);
+            b.rest[at]      = n.restMin;
         }
     });
     return b;
