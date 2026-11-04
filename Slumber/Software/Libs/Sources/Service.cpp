@@ -573,6 +573,11 @@ void Service::showNight(LastNight::Kind kind, const LastNight::Sleep &s, int32_t
     mShown.restMin  = s.restMin;
     mShown.onsetMin = Slumber::LocalTime::minuteOfDay(s.startUtc, sleptOff);
     mShown.wakeMin  = Slumber::LocalTime::minuteOfDay(s.endUtc, sleptOff);
+    static_assert(kAwakenings == LastNight::kAwakenings, "every awakening kept is sent");
+    for (size_t i = 0; i < kAwakenings && s.awakeFromUtc[i] != 0; ++i) {
+        mShown.awakeFromMin[i] = Slumber::LocalTime::minuteOfDay(s.awakeFromUtc[i], sleptOff);
+        mShown.awakeToMin[i]   = Slumber::LocalTime::minuteOfDay(s.awakeToUtc[i], sleptOff);
+    }
     if (mShown.kind == kNightOffWrist) {
         return;
     }

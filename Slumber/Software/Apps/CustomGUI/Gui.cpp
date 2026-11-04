@@ -223,6 +223,11 @@ void Gui::run()
                 mState.usual_bed_min     = st->night.usualBedMin;
                 mState.scored_bed_min    = st->night.scoredBedMin;
                 mState.scored_wake_min   = st->night.scoredWakeMin;
+                static_assert(CustomMessage::kAwakenings == SLUMBER_AWAKENINGS, "every awakening sent is drawn");
+                for (size_t i = 0; i < CustomMessage::kAwakenings; ++i) {
+                    mState.awake_from_min[i] = st->night.awakeFromMin[i];
+                    mState.awake_to_min[i]   = st->night.awakeToMin[i];
+                }
                 if (st->week.newestWeekday != mState.week_newest_weekday) {
                     unpick();
                 }

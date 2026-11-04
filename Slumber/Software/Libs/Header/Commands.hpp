@@ -52,6 +52,9 @@ enum NightKind : uint8_t {
 };
 
 /// Last night as the screen shows it.
+/// Awakenings sent with a night, the longest first.
+constexpr size_t kAwakenings = 2;
+
 struct NightView {
     uint8_t  kind            = kNoNight;  ///< a NightKind
     uint16_t restMin         = 0;
@@ -62,6 +65,8 @@ struct NightView {
     uint16_t usualBedMin     = kUnknown;  ///< minute of day; kUnknown = none
     uint16_t scoredBedMin    = kUnknown;  ///< minute of day: the usual rhythmOffsetMin is against; kUnknown = none
     uint16_t scoredWakeMin   = kUnknown;  ///< minute of day; kUnknown = none
+    uint16_t awakeFromMin[kAwakenings] = {kUnknown, kUnknown};  ///< minute of day; kUnknown = none
+    uint16_t awakeToMin[kAwakenings]   = {kUnknown, kUnknown};  ///< minute of day; kUnknown = none
 };
 
 constexpr int16_t kNoBar      = -1;

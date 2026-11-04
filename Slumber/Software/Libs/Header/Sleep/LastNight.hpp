@@ -19,6 +19,9 @@ enum class Kind : uint8_t {
     NotWorn,  ///< rest found, but on a table
 };
 
+/// How many of a sleep's awakenings it keeps.
+constexpr size_t kAwakenings = 2;
+
 /// One or more periods reported as one night.
 struct Sleep {
     uint32_t startUtc = 0;  ///< the first period's start
@@ -27,6 +30,8 @@ struct Sleep {
     uint16_t restMin  = 0;  ///< the periods' rest summed
     uint8_t  periods  = 0;
     bool     settled  = false;  ///< the last period is settled
+    uint32_t awakeFromUtc[kAwakenings] = {};  ///< the longest gaps between its periods, longest first; 0 = none
+    uint32_t awakeToUtc[kAwakenings]   = {};
     const SleepPeriods::Period *longest = nullptr;
     const SleepPeriods::Period *last    = nullptr;
 };
@@ -40,10 +45,28 @@ struct Choice {
 namespace detail
 {
 
+/// Keeps the awakening `from..to` if it is among the sleep's kAwakenings longest.
+inline void keepAwakening(Sleep &s, uint32_t from, uint32_t to)
+{
+    for (size_t i = 0; i < kAwakenings; ++i) {
+        if (s.awakeFromUtc[i] == 0 || to - from > s.awakeToUtc[i] - s.awakeFromUtc[i]) {
+            for (size_t j = kAwakenings - 1; j > i; --j) {
+                s.awakeFromUtc[j] = s.awakeFromUtc[j - 1];
+                s.awakeToUtc[j]   = s.awakeToUtc[j - 1];
+            }
+            s.awakeFromUtc[i] = from;
+            s.awakeToUtc[i]   = to;
+            return;
+        }
+    }
+}
+
 inline void extend(Sleep &s, const SleepPeriods::Period &q)
 {
     if (s.periods == 0) {
         s.startUtc = q.startUtc;
+    } else if (q.startUtc > s.endUtc) {
+        keepAwakening(s, s.endUtc, q.startUtc);
     }
     if (s.longest == nullptr || q.endUtc - q.startUtc > s.longest->endUtc - s.longest->startUtc) {
         s.longest = &q;

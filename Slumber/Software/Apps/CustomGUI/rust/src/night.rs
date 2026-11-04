@@ -287,10 +287,18 @@ fn usual(state: &State, night: bool) -> Option<Span> {
         .then(|| Span { from_min: state.usual_bed_min, to_min: ((wake as i32 + 720).rem_euclid(1440)) as u16 })
 }
 
+/// Last night's awakenings, as the service sent them.
+pub fn awakenings(state: &State) -> [Option<Span>; crate::AWAKENINGS] {
+    core::array::from_fn(|i| {
+        let (from, to) = (state.awake_from_min[i], state.awake_to_min[i]);
+        (from != UNKNOWN && to != UNKNOWN).then_some(Span { from_min: from, to_min: to })
+    })
+}
+
 pub fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
     let night = state.have_status != 0
         && (state.night_kind == KIND_SETTLED || state.night_kind == KIND_SO_FAR);
-    let slept = night.then_some((Span { from_min: state.onset_min, to_min: state.wake_min }, rest_ink as fn(f32) -> Rgb));
+    let slept = night.then_some((Span { from_min: state.onset_min, to_min: state.wake_min }, rest_ink as fn(f32) -> Rgb, awakenings(state)));
     dial::draw(fb, slept, if state.have_status != 0 { usual(state, night) } else { None });
     dial::numerals(fb, GROUND);
 

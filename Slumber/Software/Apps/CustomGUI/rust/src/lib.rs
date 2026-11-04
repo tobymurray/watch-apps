@@ -50,9 +50,12 @@ pub struct State {
     pub usual_spread_min: u16,
     pub week_rest: [u16; WEEK_NIGHTS],
     pub week_pick: u8,
+    pub awake_from_min: [u16; AWAKENINGS],
+    pub awake_to_min: [u16; AWAKENINGS],
 }
 
 pub const WEEK_NIGHTS: usize = 7;
+pub const AWAKENINGS: usize = 2;
 pub const NO_BAR: i16 = -1;
 
 pub const SCREEN_NIGHT: u8 = 0;
@@ -174,6 +177,8 @@ impl Default for State {
             usual_spread_min: night::UNKNOWN,
             week_rest: [0; WEEK_NIGHTS],
             week_pick: NO_PICK,
+            awake_from_min: [night::UNKNOWN; AWAKENINGS],
+            awake_to_min: [night::UNKNOWN; AWAKENINGS],
         }
     }
 }
@@ -471,7 +476,9 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(State, scored_wake_min));
     let h = fnv1a(h, core::mem::offset_of!(State, usual_spread_min));
     let h = fnv1a(h, core::mem::offset_of!(State, week_rest));
-    fnv1a(h, core::mem::offset_of!(State, week_pick))
+    let h = fnv1a(h, core::mem::offset_of!(State, week_pick));
+    let h = fnv1a(h, core::mem::offset_of!(State, awake_from_min));
+    fnv1a(h, core::mem::offset_of!(State, awake_to_min))
 }
 
 #[no_mangle]
@@ -479,7 +486,7 @@ pub extern "C" fn slumber_abi_fingerprint() -> u32 {
     abi_fingerprint()
 }
 
-const _: () = assert!(core::mem::size_of::<State>() == 100);
+const _: () = assert!(core::mem::size_of::<State>() == 108);
 const _: () = assert!(core::mem::align_of::<State>() == 4);
 const _: () = assert!(core::mem::offset_of!(State, rows_today) == 4);
 const _: () = assert!(core::mem::offset_of!(State, write_fails) == 8);
@@ -509,6 +516,8 @@ const _: () = assert!(core::mem::offset_of!(State, scored_wake_min) == 80);
 const _: () = assert!(core::mem::offset_of!(State, usual_spread_min) == 82);
 const _: () = assert!(core::mem::offset_of!(State, week_rest) == 84);
 const _: () = assert!(core::mem::offset_of!(State, week_pick) == 98);
+const _: () = assert!(core::mem::offset_of!(State, awake_from_min) == 100);
+const _: () = assert!(core::mem::offset_of!(State, awake_to_min) == 104);
 
 #[no_mangle]
 pub extern "C" fn slumber_mark_count() -> u32 {
@@ -625,6 +634,14 @@ mod tests {
             ("early", State { rhythm_fill: 400, rhythm_offset_min: -(2 * 60 + 5), ..s }),
             ("learning", State { rhythm_fill: night::UNKNOWN, scored_bed_min: night::UNKNOWN, scored_wake_min: night::UNKNOWN, ..s }),
             ("times-vary", State { rhythm_fill: night::RHYTHM_VARIES, scored_bed_min: night::UNKNOWN, scored_wake_min: night::UNKNOWN, ..s }),
+            ("awakened", State {
+                rest_min: 7 * 60 + 45, onset_min: 23 * 60 + 11, wake_min: 8 * 60 + 9,
+                awake_from_min: [4 * 60 + 31, night::UNKNOWN], awake_to_min: [5 * 60 + 44, night::UNKNOWN], ..s
+            }),
+            ("awakened-twice", State {
+                rest_min: 6 * 60 + 50, onset_min: 22 * 60 + 40, wake_min: 8 * 60 + 20,
+                awake_from_min: [3 * 60 + 10, 0 * 60 + 5], awake_to_min: [4 * 60 + 40, 1 * 60 + 15], ..s
+            }),
             ("lie-in", State { rest_min: 9 * 60 + 15, onset_min: 50, wake_min: 10 * 60 + 40, rhythm_offset_min: 119, ..s }),
             ("so-far", State { night_kind: night::KIND_SO_FAR, ..s }),
             ("empty", State { rest_min: 0, rhythm_fill: 0, ..s }),

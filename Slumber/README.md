@@ -478,8 +478,10 @@ so its length can be counted in blocks.
 against as a thin cyan arc just inside it, so a late bedtime is the band
 starting clockwise of the arc. Inside: the night's rest, its times and its
 bedtime against the usual, such as `7h42`, `23:29-07:30`, `38m late` or `usual
-time` ("Bedtime spread"). The band spans the whole sleep, awakenings included,
-so it can be longer than the rest it reports. Before there is a night it says
+time` ("Bedtime spread"). The band spans the whole sleep, and its two longest
+awakenings are cut out of it. An awakening is a gap between two of its periods; one
+shorter than SleepPeriods' merge gap stays inside a period, so most cuts are an hour or
+more, but a stretch the wrist could not judge also splits a period and is cut the same way. Before there is a night it says
 `No night yet` and shows the usual arc once seven nights give one; a night on a
 table says `watch was off`. The times are in the
 offset the night was logged with.
