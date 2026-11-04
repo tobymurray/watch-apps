@@ -476,6 +476,8 @@ SleepPeriods::Period settledNight()
     p.restMin    = 551;
     p.wornPct    = 100;
     p.hrCoverPct = 83;
+    p.wristPct      = 100;
+    p.wristCoverPct = 96;
     p.worn       = SleepPeriods::Worn::Worn;
     p.settled    = true;
     return p;
@@ -529,7 +531,8 @@ TEST(NightLog, ASettledNightIsLoggedOnceAsOneJsonLine)
         "{\"schema\":1,\"source\":\"Slumber\",\"start\":1791518040,\"end\":1791551100,"
         "\"utc_off_min\":-240,\"rest_min\":551,\"worn\":\"worn\",\"start_local\":\"2026-10-08 23:54\","
         "\"end_local\":\"2026-10-09 09:05\",\"span_min\":551,\"missing_min\":0,\"longest_rest_min\":240,"
-        "\"restless_spells\":15,\"worn_pct\":100,\"hr_cover_pct\":83,\"hr_median_bpm\":null,"
+        "\"restless_spells\":15,\"worn_pct\":100,\"hr_cover_pct\":83,\"wrist_pct\":100,"
+        "\"wrist_cover_pct\":96,\"hr_median_bpm\":null,"
         "\"hr_low_bpm\":null,\"hr_low_at\":null,\"epoch_s\":30,\"epochs\":\"";
     ASSERT_EQ(all.find(head), 0u);
     const std::string strip = all.substr(head.size(), all.size() - head.size() - 3);

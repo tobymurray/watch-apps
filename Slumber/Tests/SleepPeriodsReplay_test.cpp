@@ -295,7 +295,7 @@ TEST(SleepPeriodsReplay, SlumberDays)
 
     // A period with heart rate asked for and never trusted is a table.
     for (const Period &q : p) {
-        if (q.hrCoverPct >= kMinHrCoveragePct && q.wornPct == 0) {
+        if (q.wristCoverPct >= kMinHrCoveragePct && q.wristPct == 0) {
             EXPECT_EQ(q.worn, Worn::NotWorn) << "at " << local(q.startUtc);
         }
     }
