@@ -645,6 +645,29 @@ TEST(NightLog, MainNightsAreReadBackForTheWeek)
     }
 }
 
+TEST(NightLog, ASplitNightIsReadBackWhole)
+{
+    SDK::Test::FakeFileSystem fs;
+    {
+        auto                 log  = std::make_unique<NightLog>(fs);
+        SleepPeriods::Period head = settledNight();
+        SleepPeriods::Period tail = settledNight();
+        head.endUtc   = head.startUtc + 4 * 3600;
+        head.restMin  = 230;
+        tail.startUtc = head.endUtc + 61 * 60;
+        tail.restMin  = 200;
+        ASSERT_TRUE(logNight(*log, head));
+        ASSERT_TRUE(logNight(*log, tail));
+    }
+    auto log = std::make_unique<NightLog>(fs);
+    ASSERT_EQ(log->recent().size(), 1u);
+    log->recent().each([](int32_t, const Rhythm::Night &n) {
+        EXPECT_EQ(Rhythm::minuteOfDay(n.bed), 23 * 60 + 54);
+        EXPECT_EQ(Rhythm::minuteOfDay(n.wake), 9 * 60 + 5);
+        EXPECT_EQ(n.restMin, 430);
+    });
+}
+
 TEST(NightLog, TheLatestNightKeepsTheOffsetItWasLoggedWith)
 {
     SDK::Test::FakeFileSystem  fs;
@@ -682,7 +705,7 @@ TEST(SleepNow, BeforeAnyNightEveryAnswerIsNull)
     char out[SleepNow::kCap];
     ASSERT_GT(SleepNow::format(s, out, sizeof(out)), 0u);
     EXPECT_STREQ(out, "{\"schema\":2,\"source\":\"Slumber\",\"written\":1791600000,\"heartbeat_s\":300,"
-                      "\"utc_off_min\":-240,\"asleep_since\":null,\"last_night\":null,\"usual\":null,"
+                      "\"utc_off_min\":-240,\"asleep_since\":null,\"last_night\":null,\"last_sleep\":null,\"usual\":null,"
                       "\"tonight\":null,\"heart\":null,\"rest_goal_min\":420,\"rest_fill\":null,\"rhythm_fill\":null,\"rhythm_offset_min\":null}");
 }
 
@@ -706,6 +729,28 @@ TEST(SleepNow, ANightIsScoredAgainstTheNightsBeforeIt)
     EXPECT_NE(j.find("\"usual\":{\"bed_min\":1384,\"wake_min\":720,\"nights\":3}"), std::string::npos);
     EXPECT_NE(j.find("\"rest_fill\":1311,"), std::string::npos);
     EXPECT_NE(j.find("\"rhythm_fill\":778,\"rhythm_offset_min\":50}"), std::string::npos);
+}
+
+TEST(SleepNow, LastSleepIsTheWholeNightTheCardShows)
+{
+    SleepPeriods::Period p[2] = {settledNight(), settledNight()};
+    p[0].endUtc  = p[0].startUtc + 5 * 3600;
+    p[0].restMin = 290;
+    p[1].startUtc = p[0].endUtc + 61 * 60;
+    p[1].restMin  = 200;
+    const LastNight::Choice c = LastNight::choose(p, 2, p[1].endUtc + 3600);
+    SleepNow::State         s;
+    s.lastNight = c.period;
+    s.lastSleep = c.sleep;
+    char out[SleepNow::kCap];
+    ASSERT_GT(SleepNow::format(s, out, sizeof(out)), 0u);
+    const std::string j = out;
+    EXPECT_NE(j.find("\"last_night\":{\"start\":1791518040,\"end\":1791536040,\"rest_min\":290,"), std::string::npos)
+        << j;
+    EXPECT_NE(j.find("\"last_sleep\":{\"start\":1791518040,\"end\":1791551100,\"rest_min\":490,\"periods\":2,"
+                     "\"settled\":true},"),
+              std::string::npos)
+        << j;
 }
 
 TEST(SleepNow, TonightIsTheUsual)

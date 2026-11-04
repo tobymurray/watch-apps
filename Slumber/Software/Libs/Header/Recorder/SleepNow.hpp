@@ -8,6 +8,7 @@
 
 #include "SDK/Interfaces/IFileSystem.hpp"
 
+#include "LastNight.hpp"
 #include "NightLog.hpp"
 #include "NightSummary.hpp"
 #include "Rhythm.hpp"
@@ -33,7 +34,8 @@ struct State {
     uint32_t heartbeatS     = 0;
     int32_t  offsetMin      = 0;
     uint32_t asleepSinceUtc = 0;  ///< 0 = not asleep now, as far as Slumber can tell
-    const SleepPeriods::Period *lastNight = nullptr;
+    const SleepPeriods::Period *lastNight = nullptr;  ///< the longest period of lastSleep
+    LastNight::Sleep lastSleep;    ///< the night the card shows; no periods = none
     Rhythm::Usual usual;           ///< for tonight: every main night logged
     Rhythm::Usual usualBefore;     ///< what last night is scored against
     int32_t       tonightDay = 0;  ///< Schedule::tonight
@@ -66,6 +68,14 @@ inline size_t format(const State &s, char *out, size_t cap)
             p->settled ? "true" : "false");
     } else {
         put("%s", "\"last_night\":null,");
+    }
+    const LastNight::Sleep &z = s.lastSleep;
+    if (p != nullptr && p->worn == SleepPeriods::Worn::Worn && z.periods > 0) {
+        put("\"last_sleep\":{\"start\":%lu,\"end\":%lu,\"rest_min\":%u,\"periods\":%u,\"settled\":%s},",
+            static_cast<unsigned long>(z.startUtc), static_cast<unsigned long>(z.endUtc),
+            static_cast<unsigned>(z.restMin), static_cast<unsigned>(z.periods), z.settled ? "true" : "false");
+    } else {
+        put("%s", "\"last_sleep\":null,");
     }
     if (s.usual.known) {
         put("\"usual\":{\"bed_min\":%ld,\"wake_min\":%ld,\"nights\":%u},",

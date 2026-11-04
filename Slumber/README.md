@@ -75,6 +75,8 @@ The card above stays the glance's private contract.
 
 **`sessions.jsonl`**: one line per period, once SleepPeriods has settled it, usually
 an hour after its last rest. Naps and table sessions are periods too, so filter on `worn`.
+A night broken by an awakening is several lines; worn lines less than 3 h apart are one
+sleep, as "Reporting a night" says.
 
 | Field | Meaning |
 | --- | --- |
@@ -103,7 +105,8 @@ wearer's usual; "What was cut" says why.
 | --- | --- |
 | `written`, `heartbeat_s`, `utc_off_min` | When, how often, and the offset |
 | `asleep_since` | Start of the worn period still running, else `null` |
-| `last_night` | `{start, end, rest_min, worn, settled}`, the night the card shows, else `null` |
+| `last_night` | `{start, end, rest_min, worn, settled}`, the longest period of the night the card shows, else `null` |
+| `last_sleep` | `{start, end, rest_min, periods, settled}`, the whole of the night the card shows: the first period's start, the last one's end, and their rest summed; `null` unless that night was worn |
 | `usual` | `{bed_min, wake_min, nights}`: medians, in minutes past local midnight, of the main nights logged, at most six; `null` until seven, or while times vary ("Irregular hours") |
 | `rest_goal_min`, `rest_fill` | 420, and last night's rest against it in per mille; past 1000 is a second lap |
 | `rhythm_fill`, `rhythm_offset_min` | Last night's onset against the usual of the nights before it; `+` is later |
@@ -112,8 +115,9 @@ wearer's usual; "What was cut" says why.
 
 `asleep_since` comes late. A period exists only once it holds 30 minutes of rest, so it
 appears about half an hour after falling asleep, and an app silencing notifications at
-bedtime cannot do better from this file. A night's main night is the longest worn
-period starting between noon and noon, so a nap does not move the usual.
+bedtime cannot do better from this file. A day's main night is the longest sleep
+starting between noon and noon, so a nap does not move the usual, and a night split by
+an awakening counts whole.
 
 The files outlive Slumber, as `shared-data.md` says every shared file does. The sessions
 file grows by about 1 KB a night, and nothing trims it yet.
@@ -186,16 +190,16 @@ plausible 46-76 bpm.
 ## Reporting a night
 
 Every 5 minutes, with the heartbeat, Slumber runs SleepPeriods over the last
-36 h and puts one period on the card:
+36 h and puts one sleep on the card:
 
 - **The latest sleep that ended in the last 20 h, unless it is under half as
   long as the longest one.** A sleep is the worn periods less than 3 h apart,
-  and the card shows its longest period. SleepLab's 2026-08-25 night split at
-  a 65-minute awakening into 5.3 h and 3.2 h, and the later half is not the
-  night; the split nights above were 64-108 minutes apart. A nap the next
-  afternoon is under half the night, so it does not replace it. A shorter
-  night after a long one does: a 9 h night ending at 09:00 and a 5 h one
-  ending at 04:00 show the 5 h one.
+  and the card shows all of it: from the first period's start to the last
+  one's end, with the rest of each summed. SleepLab's 2026-08-25 night split at
+  a 65-minute awakening into 5.3 h and 3.2 h; the split nights above were
+  64-108 minutes apart. A nap the next afternoon is under half the night, so it
+  does not replace it. A shorter night after a long one does: a 9 h night
+  ending at 09:00 and a 5 h one ending at 04:00 show the 5 h one.
 - **Only UTC durations choose**, so crossing time zones, or a watch whose clock
   loses its zone, cannot bring back an older night. The card shows a logged
   night's times in the offset it was logged with, the wearer's clock when they
@@ -211,6 +215,27 @@ first card, so plugging in to charge in the morning keeps the night on the
 card. A day missing from `Epochs/`, as after an upgrade from a build without
 it, is rebuilt from its day file and written back. `Software/Libs/Header/Sleep/LastNight.hpp` makes the choice;
 `SLUMBER_DAYS_DIR` replays a day file and prints what the card would say.
+
+**The usual learns the same sleep.** The card, the week and the usual once took a
+sleep's longest period, so one awakening halved the night everywhere. `Tools/splits.cpp`
+runs synthetic broken nights through the headers and prints the Now column; Before is the
+same nights through those of `944cacc`:
+
+| Night | Before | Now |
+| --- | --- | --- |
+| Up 61 min at 03:00, asleep again to 07:30 | `4h00`, `23:00-03:00`, learned 23:00-03:00 | `7h29`, `23:00-07:30`, learned 23:00-07:30 |
+| Up 150 min at 03:00 | `4h00`, `23:00-03:00` | `6h00`, `23:00-07:30` |
+| Up 200 min at 03:00 | `4h00`, `23:00-03:00` | the same: two sleeps |
+| Heart rate silent 30 min from 03:00, to 07:00 | `4h01`, `23:00-03:01` | `7h30`, `23:00-07:00` |
+| Heart rate silent 90 min from 03:00 | `4h01`, `23:00-03:01` | `6h30`, `23:00-07:00` |
+| A 45-minute doze ending 60, 105 or 170 min before bed at 23:30 | `7h30`, `23:30-07:00` | `8h15`, from the doze's start |
+| The same doze ending 190 min before bed | `7h30`, `23:30-07:00` | the same |
+
+The doze is the cost: rest within 3 h of bed is one sleep with it, so the bedtime moves
+to the doze. The 3 h is the card's own rule from before, kept so the card, the week and
+the usual agree; real nights with dozes would say whether a shorter gap or a minimum
+length for the first period serves better. The silent heart rate still loses the minutes
+it was silent, because the wrist reads off for them (see "Finding a night").
 
 **Every period is logged once it settles**, one line in the shared
 `sessions.jsonl` (see "Sharing sleep with other apps"), so the nights outlive
@@ -419,7 +444,8 @@ so its length can be counted in blocks.
 against as a thin cyan arc just inside it, so a late bedtime is the band
 starting clockwise of the arc. Inside: the night's rest, its times and its
 bedtime against the usual, such as `7h42`, `23:29-07:30`, `38m late`. The band
-spans the whole period, so it can be longer than the rest it reports. Before
+spans the whole sleep, awakenings included, so it can be longer than the rest it
+reports. Before
 there is a night it says `No night yet` and shows the usual arc once seven
 nights give one; a night on a table says `watch was off`. The times are in the
 offset the night was logged with.

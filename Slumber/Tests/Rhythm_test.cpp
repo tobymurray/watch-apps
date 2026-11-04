@@ -155,6 +155,50 @@ TEST(Rhythm, RecentKeepsTheLongestWornPeriodOfEachDay)
     EXPECT_FALSE(u.known);
 }
 
+/// 00:30-04:30, up for 61 minutes, 05:31-08:30: the night learned runs 00:30-08:30.
+TEST(Rhythm, RecentLearnsTheWholeSleepNotItsLongerHalf)
+{
+    Recent r;
+    for (uint32_t d = 0; d < 7; ++d) {
+        const uint32_t s = k0030Edt + d * 86400;
+        r.add(s, s + 4 * 3600, -240, 230);
+        r.add(s + 5 * 3600 + 60, s + 8 * 3600, -240, 170);
+    }
+    EXPECT_EQ(r.size(), 7u);
+    r.each([](int32_t, const Night &n) {
+        EXPECT_EQ(minuteOfDay(n.bed), 30);
+        EXPECT_EQ(minuteOfDay(n.wake), 8 * 60 + 30);
+        EXPECT_EQ(n.restMin, 400);
+    });
+    const Usual u = r.usualBefore(UINT32_MAX);
+    ASSERT_TRUE(u.known);
+    EXPECT_EQ(minuteOfDay(u.wake), 8 * 60 + 30);
+}
+
+TEST(Rhythm, ASleepThatOutgrowsTheDaysNapReplacesIt)
+{
+    Recent r;
+    const uint32_t nap = k0030Edt - 10 * 3600;  // 14:30, same noon-to-noon day
+    r.add(nap, nap + 3600, -240, 55);
+    r.add(k0030Edt - 90 * 60, k0030Edt - 60 * 60, -240, 30);  // 23:00-23:30
+    r.add(k0030Edt, k0030Edt + 8 * 3600, -240, 450);
+    ASSERT_EQ(r.size(), 1u);
+    r.each([](int32_t, const Night &n) {
+        EXPECT_EQ(minuteOfDay(n.bed), 23 * 60);
+        EXPECT_EQ(minuteOfDay(n.wake), 8 * 60 + 30);
+        EXPECT_EQ(n.restMin, 480);
+    });
+}
+
+TEST(Rhythm, APeriodThreeHoursOnIsAnotherSleep)
+{
+    Recent r;
+    r.add(k0030Edt, k0030Edt + 7 * 3600, -240, 400);  // 00:30-07:30
+    r.add(k0030Edt + 10 * 3600 + 30 * 60, k0030Edt + 11 * 3600 + 30 * 60, -240, 55);  // 11:00-12:00
+    ASSERT_EQ(r.size(), 1u);
+    r.each([](int32_t, const Night &n) { EXPECT_EQ(minuteOfDay(n.wake), 7 * 60 + 30); });
+}
+
 TEST(Rhythm, RecentHoldsAFortnightAndForgetsTheOldest)
 {
     Recent r;

@@ -83,7 +83,7 @@ int main(int argc, char **argv)
     const LastNight::Choice c = LastNight::choose(p.data(), p.size(), now);
     if (c.period != nullptr) {
         std::printf("card,%s,%u,%u\n", c.kind == LastNight::Kind::Worn ? "night" : "watch-off",
-                    c.period->startUtc, c.period->endUtc);
+                    c.sleep.startUtc, c.sleep.endUtc);
     }
     return 0;
 }

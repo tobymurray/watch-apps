@@ -89,6 +89,7 @@ TEST(SharedSleep, NowReadsThroughTheSdkJsonReader)
     s.heartbeatS     = 300;
     s.offsetMin      = -240;
     s.lastNight      = &p;
+    s.lastSleep      = LastNight::choose(&p, 1, s.writtenUtc).sleep;
     s.usual.known    = true;
     s.usual.bed      = Rhythm::afterNoon(p.startUtc, -240);
     s.usual.wake     = Rhythm::afterNoon(p.endUtc, -240);
@@ -118,6 +119,13 @@ TEST(SharedSleep, NowReadsThroughTheSdkJsonReader)
     EXPECT_EQ(wake, 9 * 60 + 5);
     EXPECT_EQ(restFill, 1311);
     EXPECT_TRUE(rhythmNull);
+
+    uint32_t sleepEnd = 0;
+    uint8_t  periods  = 0;
+    ASSERT_TRUE(json.get("last_sleep.end", sleepEnd));
+    ASSERT_TRUE(json.get("last_sleep.periods", periods));
+    EXPECT_EQ(sleepEnd, p.endUtc);
+    EXPECT_EQ(periods, 1);
 
     uint8_t  weekday = 9, heartMedian = 0;
     uint16_t tonightBed = 0;
