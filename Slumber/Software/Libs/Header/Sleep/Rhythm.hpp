@@ -52,10 +52,16 @@ inline int32_t noonDay(uint32_t utc, int32_t offsetMin)
     return static_cast<int32_t>(local >= 0 ? local / 86400 : (local - 86399) / 86400);
 }
 
+/// Night::awakeFrom and awakeTo when the night has no awakening.
+constexpr int32_t kNoAwakening = -1;
+
 struct Night {
     int32_t  bed  = 0;  ///< afterNoon of the start
     int32_t  wake = 0;  ///< afterNoon of the end
     uint16_t restMin = 0;
+    int32_t  awakeFrom = kNoAwakening;  ///< afterNoon: the longest gap between its periods
+    int32_t  awakeTo   = kNoAwakening;  ///< afterNoon
+    uint32_t awakeS    = 0;
 };
 
 struct Usual {
@@ -182,6 +188,11 @@ public:
     void add(uint32_t startUtc, uint32_t endUtc, int32_t offsetMin, uint16_t restMin)
     {
         if (mOpen.spanS > 0 && startUtc >= mOpen.endUtc && startUtc - mOpen.endUtc < SleepPeriods::kSameSleepGapS) {
+            if (startUtc - mOpen.endUtc > mOpen.night.awakeS) {
+                mOpen.night.awakeFrom = afterNoon(mOpen.endUtc, offsetMin);
+                mOpen.night.awakeTo   = afterNoon(startUtc, offsetMin);
+                mOpen.night.awakeS    = startUtc - mOpen.endUtc;
+            }
             mOpen.endUtc = endUtc;
             mOpen.spanS += endUtc - startUtc;
             mOpen.night.wake    = afterNoon(endUtc, offsetMin);

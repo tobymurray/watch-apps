@@ -52,6 +52,9 @@ enum NightKind : uint8_t {
 };
 
 /// Last night as the screen shows it.
+/// Awakenings sent with a night, the longest first.
+constexpr size_t kAwakenings = 2;
+
 struct NightView {
     uint8_t  kind            = kNoNight;  ///< a NightKind
     uint16_t restMin         = 0;
@@ -62,6 +65,8 @@ struct NightView {
     uint16_t usualBedMin     = kUnknown;  ///< minute of day; kUnknown = none
     uint16_t scoredBedMin    = kUnknown;  ///< minute of day: the usual rhythmOffsetMin is against; kUnknown = none
     uint16_t scoredWakeMin   = kUnknown;  ///< minute of day; kUnknown = none
+    uint16_t awakeFromMin[kAwakenings] = {kUnknown, kUnknown};  ///< minute of day; kUnknown = none
+    uint16_t awakeToMin[kAwakenings]   = {kUnknown, kUnknown};  ///< minute of day; kUnknown = none
 };
 
 constexpr int16_t kNoBar      = -1;
@@ -71,6 +76,9 @@ constexpr size_t  kWeekNights = 7;
 struct WeekView {
     int16_t bed[kWeekNights]  = {kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar};  ///< min after local noon
     int16_t wake[kWeekNights] = {kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar};  ///< past 1440 after noon
+    uint16_t rest[kWeekNights] = {};  ///< minutes of rest; 0 where there is no bar
+    int16_t awakeFrom[kWeekNights] = {kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar};  ///< as wake; kNoBar = none
+    int16_t awakeTo[kWeekNights]   = {kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar, kNoBar};  ///< as wake; kNoBar = none
     int16_t usualBed      = kNoBar;  ///< minutes after local noon; kNoBar = none
     int16_t usualWake     = kNoBar;  ///< minutes after local noon, past 1440 for a wake after noon
     uint16_t usualSpreadMin = kUnknown;  ///< Rhythm::Usual::spread; kUnknown = no usual

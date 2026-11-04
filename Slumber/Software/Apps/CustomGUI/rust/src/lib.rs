@@ -7,6 +7,7 @@ use incised_text::{faces, Face, Style};
 use panickit as _;
 
 mod atlas;
+mod buttons;
 mod dial;
 mod night;
 mod tonight;
@@ -47,15 +48,25 @@ pub struct State {
     pub scored_bed_min: u16,
     pub scored_wake_min: u16,
     pub usual_spread_min: u16,
+    pub week_rest: [u16; WEEK_NIGHTS],
+    pub week_pick: u8,
+    pub awake_from_min: [u16; AWAKENINGS],
+    pub awake_to_min: [u16; AWAKENINGS],
+    pub week_awake_from: [i16; WEEK_NIGHTS],
+    pub week_awake_to: [i16; WEEK_NIGHTS],
 }
 
 pub const WEEK_NIGHTS: usize = 7;
+pub const AWAKENINGS: usize = 2;
 pub const NO_BAR: i16 = -1;
 
 pub const SCREEN_NIGHT: u8 = 0;
 pub const SCREEN_PICKER: u8 = 1;
 pub const SCREEN_WEEK: u8 = 2;
 pub const SCREEN_TONIGHT: u8 = 3;
+
+/// `week_pick` when no night on the week is picked.
+pub const NO_PICK: u8 = 0xFF;
 
 /// The screens L1 and L2 page through, in order; the picker is not one of them.
 pub const PAGES: [u8; 3] = [SCREEN_NIGHT, SCREEN_WEEK, SCREEN_TONIGHT];
@@ -118,6 +129,17 @@ fn draw_dots(fb: &mut Surface<Abgr2222>, screen: u8) {
     }
 }
 
+/// Which buttons get an arc: on the week, R1 while nothing is picked, then L1, L2 and R2.
+fn button_arcs(state: &State) -> [bool; 4] {
+    let mut lit = [false; 4];
+    if state.screen == SCREEN_WEEK {
+        let picking = week::picking(state);
+        (lit[buttons::L1], lit[buttons::L2], lit[buttons::R2]) = (picking, picking, picking);
+        lit[buttons::R1] = !picking;
+    }
+    lit
+}
+
 pub const NO_MARK: u8 = 0xFF;
 pub const NO_MARK_AGE: u32 = 0xFFFF_FFFF;
 
@@ -155,6 +177,12 @@ impl Default for State {
             scored_bed_min: night::UNKNOWN,
             scored_wake_min: night::UNKNOWN,
             usual_spread_min: night::UNKNOWN,
+            week_rest: [0; WEEK_NIGHTS],
+            week_pick: NO_PICK,
+            awake_from_min: [night::UNKNOWN; AWAKENINGS],
+            awake_to_min: [night::UNKNOWN; AWAKENINGS],
+            week_awake_from: [NO_BAR; WEEK_NIGHTS],
+            week_awake_to: [NO_BAR; WEEK_NIGHTS],
         }
     }
 }
@@ -350,7 +378,10 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {
         SCREEN_TONIGHT => tonight::draw(&mut fb, state),
         _ => night::draw(&mut fb, state),
     }
-    draw_dots(&mut fb, state.screen);
+    if !week::picking(state) {
+        draw_dots(&mut fb, state.screen);
+    }
+    buttons::draw(&mut fb, button_arcs(state));
 }
 
 pub const BUTTON_L1: u8 = 0;
@@ -384,6 +415,24 @@ pub extern "C" fn slumber_sequence_step(progress: u8, button: u8, gap_ms: u32) -
 #[no_mangle]
 pub extern "C" fn slumber_sequence_len() -> u8 {
     SEQUENCE.len() as u8
+}
+
+/// The night picked on the week after `button`: R1 picks the newest, L1 and L2 step older and
+/// newer and stop at the ends, and anything else leaves `pick` as it was.
+pub fn pick_after(pick: u8, button: u8) -> u8 {
+    let newest = (WEEK_NIGHTS - 1) as u8;
+    match (pick, button) {
+        (NO_PICK, BUTTON_R1) => newest,
+        (NO_PICK, _) => NO_PICK,
+        (p, BUTTON_L1) => p.saturating_sub(1),
+        (p, BUTTON_L2) => (p + 1).min(newest),
+        (p, _) => p,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn slumber_pick_after(pick: u8, button: u8) -> u8 {
+    pick_after(pick, button)
 }
 
 const FNV_OFFSET_BASIS: u32 = 0x811C_9DC5;
@@ -429,7 +478,13 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(State, times_vary));
     let h = fnv1a(h, core::mem::offset_of!(State, scored_bed_min));
     let h = fnv1a(h, core::mem::offset_of!(State, scored_wake_min));
-    fnv1a(h, core::mem::offset_of!(State, usual_spread_min))
+    let h = fnv1a(h, core::mem::offset_of!(State, usual_spread_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, week_rest));
+    let h = fnv1a(h, core::mem::offset_of!(State, week_pick));
+    let h = fnv1a(h, core::mem::offset_of!(State, awake_from_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, awake_to_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, week_awake_from));
+    fnv1a(h, core::mem::offset_of!(State, week_awake_to))
 }
 
 #[no_mangle]
@@ -437,7 +492,7 @@ pub extern "C" fn slumber_abi_fingerprint() -> u32 {
     abi_fingerprint()
 }
 
-const _: () = assert!(core::mem::size_of::<State>() == 84);
+const _: () = assert!(core::mem::size_of::<State>() == 136);
 const _: () = assert!(core::mem::align_of::<State>() == 4);
 const _: () = assert!(core::mem::offset_of!(State, rows_today) == 4);
 const _: () = assert!(core::mem::offset_of!(State, write_fails) == 8);
@@ -465,6 +520,12 @@ const _: () = assert!(core::mem::offset_of!(State, times_vary) == 77);
 const _: () = assert!(core::mem::offset_of!(State, scored_bed_min) == 78);
 const _: () = assert!(core::mem::offset_of!(State, scored_wake_min) == 80);
 const _: () = assert!(core::mem::offset_of!(State, usual_spread_min) == 82);
+const _: () = assert!(core::mem::offset_of!(State, week_rest) == 84);
+const _: () = assert!(core::mem::offset_of!(State, week_pick) == 98);
+const _: () = assert!(core::mem::offset_of!(State, awake_from_min) == 100);
+const _: () = assert!(core::mem::offset_of!(State, awake_to_min) == 104);
+const _: () = assert!(core::mem::offset_of!(State, week_awake_from) == 108);
+const _: () = assert!(core::mem::offset_of!(State, week_awake_to) == 122);
 
 #[no_mangle]
 pub extern "C" fn slumber_mark_count() -> u32 {
@@ -581,6 +642,14 @@ mod tests {
             ("early", State { rhythm_fill: 400, rhythm_offset_min: -(2 * 60 + 5), ..s }),
             ("learning", State { rhythm_fill: night::UNKNOWN, scored_bed_min: night::UNKNOWN, scored_wake_min: night::UNKNOWN, ..s }),
             ("times-vary", State { rhythm_fill: night::RHYTHM_VARIES, scored_bed_min: night::UNKNOWN, scored_wake_min: night::UNKNOWN, ..s }),
+            ("awakened", State {
+                rest_min: 7 * 60 + 45, onset_min: 23 * 60 + 11, wake_min: 8 * 60 + 9,
+                awake_from_min: [4 * 60 + 31, night::UNKNOWN], awake_to_min: [5 * 60 + 44, night::UNKNOWN], ..s
+            }),
+            ("awakened-twice", State {
+                rest_min: 6 * 60 + 50, onset_min: 22 * 60 + 40, wake_min: 8 * 60 + 20,
+                awake_from_min: [3 * 60 + 10, 0 * 60 + 5], awake_to_min: [4 * 60 + 40, 1 * 60 + 15], ..s
+            }),
             ("lie-in", State { rest_min: 9 * 60 + 15, onset_min: 50, wake_min: 10 * 60 + 40, rhythm_offset_min: 119, ..s }),
             ("so-far", State { night_kind: night::KIND_SO_FAR, ..s }),
             ("empty", State { rest_min: 0, rhythm_fill: 0, ..s }),
@@ -613,11 +682,25 @@ mod tests {
         for (i, n) in nights.into_iter().enumerate() {
             if let Some(n) = n {
                 (st.week_bed[i], st.week_wake[i]) = span(n);
+                st.week_rest[i] = (st.week_wake[i] - st.week_bed[i] - 23) as u16;
             }
         }
         if let Some(u) = usual {
             (st.week_usual_bed, st.week_usual_wake) = span(u);
             st.usual_spread_min = 25;
+        }
+        st
+    }
+
+    /// `st` with an awakening in each `(night, from, to)`, clock times, as the service sends them.
+    fn awake_in(mut st: State, awake: impl IntoIterator<Item = (usize, (i32, i32), (i32, i32))>) -> State {
+        for (i, (fh, fm), (th, tm)) in awake {
+            let onto = |h: i32, m: i32| {
+                let v = hm(h, m);
+                if v < st.week_bed[i] { v + 1440 } else { v }
+            };
+            st.week_awake_from[i] = onto(fh, fm);
+            st.week_awake_to[i] = onto(th, tm);
         }
         st
     }
@@ -631,6 +714,10 @@ mod tests {
                 Some(((0, 55), (8, 30))), Some(((1, 30), (10, 15))), Some(((23, 15), (7, 20))),
             ], usual)),
             ("week-steady", week_of([Some(((23, 5), (7, 0))); WEEK_NIGHTS], usual)),
+            ("week-awake", awake_in(week_of([
+                Some(((23, 0), (7, 0))), Some(((23, 40), (7, 10))), None, Some(((22, 50), (6, 55))),
+                Some(((0, 55), (8, 30))), Some(((1, 30), (10, 15))), Some(((23, 11), (8, 9))),
+            ], usual), [(3, (3, 40), (4, 50)), (6, (4, 31), (5, 44))])),
             ("week-noon", week_of([
                 None, None, Some(((4, 0), (13, 30))), Some(((23, 0), (7, 0))),
                 Some(((20, 30), (5, 0))), None, Some(((23, 30), (7, 30))),
@@ -645,10 +732,25 @@ mod tests {
                 Some(((22, 0), (6, 0))), Some(((0, 30), (8, 0))), Some(((23, 0), (7, 0))), Some(((21, 40), (6, 0))),
                 Some(((1, 10), (9, 0))), Some(((23, 20), (7, 0))), Some(((22, 30), (6, 45))),
             ], usual) }),
+            ("week-long", week_of([
+                Some(((22, 5), (8, 50))), Some(((23, 15), (9, 20))), None, Some(((22, 50), (6, 55))),
+                Some(((21, 40), (10, 15))), Some(((23, 59), (10, 59))), Some(((23, 15), (7, 20))),
+            ], usual)),
             ("week-times-vary", State { times_vary: 1, ..week_of([
                 Some(((22, 30), (6, 30))), Some(((22, 30), (6, 30))), Some(((8, 30), (15, 30))), Some(((8, 30), (15, 30))),
                 Some(((8, 30), (15, 30))), Some(((22, 30), (6, 30))), Some(((22, 30), (6, 30)))], None) }),
         ]
+    }
+
+    /// Every week with each of its nights picked.
+    fn picks() -> Vec<(String, State)> {
+        let mut out = Vec::new();
+        for (name, st) in weeks() {
+            for i in 0..WEEK_NIGHTS as u8 {
+                out.push((format!("{name}-pick-{i}"), State { week_pick: i, ..st }));
+            }
+        }
+        out
     }
 
     /// The evening screen in every state that changes what it says or draws.
@@ -688,6 +790,7 @@ mod tests {
         out.push(State { mark_ago_min: 7, ..reported() });
         out.extend(nights().into_iter().map(|(_, st)| st));
         out.extend(weeks().into_iter().map(|(_, st)| st));
+        out.extend(picks().into_iter().map(|(_, st)| st));
         out.extend(tonights().into_iter().map(|(_, st)| st));
         out
     }
@@ -934,6 +1037,149 @@ mod tests {
     }
 
     #[test]
+    fn r1_picks_the_newest_and_l1_l2_step_to_the_ends() {
+        let newest = (WEEK_NIGHTS - 1) as u8;
+        assert_eq!(pick_after(NO_PICK, BUTTON_R1), newest);
+        assert_eq!(pick_after(NO_PICK, BUTTON_L1), NO_PICK);
+        assert_eq!(pick_after(NO_PICK, BUTTON_L2), NO_PICK);
+        assert_eq!(pick_after(newest, BUTTON_L1), newest - 1);
+        assert_eq!(pick_after(newest, BUTTON_L2), newest);
+        assert_eq!(pick_after(0, BUTTON_L1), 0);
+        assert_eq!(pick_after(3, BUTTON_R1), 3);
+        assert_eq!(pick_after(3, BUTTON_OTHER), 3);
+    }
+
+    #[test]
+    fn a_picked_night_says_its_rest_and_times() {
+        let (_, st) = weeks().into_iter().find(|(n, _)| *n == "week").unwrap();
+        let say = |i: u8| week::pick_parts(&st, i as usize).map(|(r, t)| (r.as_str().to_owned(), t.as_str().to_owned()));
+        assert_eq!(week::pick_title(&st, 6), "Wednesday");
+        assert_eq!(say(6), Some(("7h42".into(), "23:15-07:20".into())));
+        assert_eq!(say(5), Some(("8h22".into(), "01:30-10:15".into())));
+        assert_eq!(say(2), None);
+        assert_eq!(week::pick_title(&st, 2), "Saturday");
+    }
+
+    #[test]
+    fn a_picked_nights_text_fits_the_glass() {
+        let f = week::PICK_FACE;
+        let y = week::PICK_Y;
+        assert!(y + (f.descent as i32) < week::PLOT_TOP);
+        assert!(fits_the_glass(f, "no night", 120, y));
+        for (name, st) in picks() {
+            let i = st.week_pick as usize;
+            assert!(fits_the_glass(week::TITLE_FACE, week::pick_title(&st, i), 120, week::TITLE_Y), "{name}");
+            let Some((rest, times)) = week::pick_parts(&st, i) else { continue };
+            assert!(f.covers(rest.as_str()) && f.covers(times.as_str()), "{name}");
+            let (left, _, right) = week::pick_layout(&rest, &times);
+            for row in [y - f.ascent as i32, y + f.descent as i32] {
+                let d = row as f32 - 119.5;
+                let room = (118.5f32 * 118.5 - d * d).max(0.0).sqrt();
+                assert!(left as f32 - 1.0 >= 119.5 - room && right as f32 + 1.0 <= 119.5 + room, "{name}: {left}..{right}");
+            }
+        }
+    }
+
+    /// Pixels around the page dots that differ from the empty glass beside them.
+    fn dots_lit(st: &State) -> usize {
+        let f = frame(st);
+        let at = |x: i32, y: i32| f[(y * W as i32 + x) as usize];
+        let ground = at(60, DOTS_Y);
+        (DOTS_Y - DOT_R..=DOTS_Y + DOT_R).map(|y| (100..=140).filter(|&x| at(x, y) != ground).count()).sum()
+    }
+
+    #[test]
+    fn the_page_dots_go_while_a_night_is_picked() {
+        let (_, st) = weeks().into_iter().find(|(n, _)| *n == "week").unwrap();
+        assert!(dots_lit(&st) > 0);
+        assert_eq!(dots_lit(&State { week_pick: 6, ..st }), 0);
+        assert!(dots_lit(&State { week_pick: 6, screen: SCREEN_NIGHT, ..st }) > 0);
+    }
+
+    #[test]
+    fn the_week_marks_r1_and_a_pick_marks_l1_l2_and_r2() {
+        let (_, st) = weeks().into_iter().find(|(n, _)| *n == "week").unwrap();
+        assert_eq!(button_arcs(&st), [false, false, true, false]);
+        assert_eq!(button_arcs(&State { week_pick: 4, ..st }), [true, true, false, true]);
+        for (_, st) in nights().into_iter().chain(tonights()) {
+            assert_eq!(button_arcs(&st), [false; 4]);
+        }
+        assert_eq!(button_arcs(&reported()), [false; 4]);
+    }
+
+    /// Least clearance, in pixels, between an arc and anything else drawn.
+    const ARC_CLEARANCE: i32 = 3;
+
+    #[test]
+    fn nothing_on_the_week_comes_near_a_button_arc() {
+        let all = weeks().into_iter().map(|(n, s)| (n.to_owned(), s)).chain(picks());
+        for (name, st) in all {
+            let f = frame(&st);
+            let mut mask = vec![0u8; (W * H) as usize];
+            buttons::draw(&mut Surface::<Abgr2222>::round(&mut mask, W, H).unwrap(), button_arcs(&st));
+            let at = |x: i32, y: i32| (y * W as i32 + x) as usize;
+            let ground = f[at(60, DOTS_Y)];
+            for y in 0..H as i32 {
+                for x in 0..W as i32 {
+                    if mask[at(x, y)] == 0 {
+                        continue;
+                    }
+                    for ny in (y - ARC_CLEARANCE + 1).max(0)..=(y + ARC_CLEARANCE - 1).min(H as i32 - 1) {
+                        for nx in (x - ARC_CLEARANCE + 1).max(0)..=(x + ARC_CLEARANCE - 1).min(W as i32 - 1) {
+                            let ink = mask[at(nx, ny)] == 0 && f[at(nx, ny)] != ground && geometry_lit(nx, ny);
+                            assert!(!ink, "{name}: ink at {nx},{ny} beside the arc at {x},{y}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn geometry_lit(x: i32, y: i32) -> bool {
+        let (dx, dy) = (x as f32 - 119.5, y as f32 - 119.5);
+        dx * dx + dy * dy < 118.0 * 118.0
+    }
+
+    #[test]
+    fn a_pick_changes_only_the_week() {
+        for (_, st) in nights().into_iter().chain(tonights()) {
+            assert_eq!(frame(&st), frame(&State { week_pick: 3, ..st }));
+        }
+    }
+
+    /// Whether night `i`'s bar is lit in its column at clock minute `minute`.
+    fn bar_lit_at(st: &State, i: usize, (h, m): (i32, i32)) -> bool {
+        let span = week::span(st);
+        let mut v = hm(h, m) as i32;
+        let (_, bed, _) = week::nights(st).find(|&(k, _, _)| k == i).unwrap();
+        while v < bed {
+            v += 1440;
+        }
+        let y = week::PLOT_TOP as f32 + (v - span.0) as f32 * (week::PLOT_BOTTOM - week::PLOT_TOP) as f32 / (span.1 - span.0) as f32;
+        let f = frame(st);
+        f[(y as i32 * W as i32 + week::column_x(i)) as usize] != f[(y as i32 * W as i32 + 24) as usize]
+    }
+
+    #[test]
+    fn a_bars_awakening_is_a_break_in_it() {
+        let (_, st) = weeks().into_iter().find(|(n, _)| *n == "week-awake").unwrap();
+        assert!(!bar_lit_at(&st, 6, (5, 7)));
+        assert!(bar_lit_at(&st, 6, (2, 0)) && bar_lit_at(&st, 6, (7, 0)));
+        assert!(!bar_lit_at(&st, 3, (4, 15)));
+        let whole = State { week_awake_from: [NO_BAR; WEEK_NIGHTS], week_awake_to: [NO_BAR; WEEK_NIGHTS], ..st };
+        assert!(bar_lit_at(&whole, 6, (5, 7)));
+    }
+
+    #[test]
+    fn an_awakening_outside_its_night_breaks_nothing() {
+        let (_, st) = weeks().into_iter().find(|(n, _)| *n == "week").unwrap();
+        let mut odd = st;
+        (odd.week_awake_from[6], odd.week_awake_to[6]) = (hm(12, 0) + 1440, hm(13, 0) + 1440);
+        assert_eq!(week::awake(&odd, 6), None);
+        assert_eq!(frame(&odd), frame(&st));
+    }
+
+    #[test]
     fn every_bar_lies_inside_the_plot() {
         for (name, st) in weeks() {
             let (lo, hi) = week::span(&st);
@@ -1128,7 +1374,10 @@ mod tests {
             return;
         };
         let opts = inscribed_disc::preview::Options { scale: 2, ..Default::default() };
-        for (name, st) in nights().into_iter().chain(weeks()).chain(tonights()).chain([("picker", reported())]) {
+        let picked = ["week-pick-6", "week-pick-5", "week-pick-2", "week-long-pick-5", "week-awake-pick-6"];
+        let picks = picks().into_iter().filter(|(n, _)| picked.contains(&n.as_str())).collect::<Vec<_>>();
+        let picks = picks.iter().map(|(n, st)| (n.as_str(), *st));
+        for (name, st) in nights().into_iter().chain(weeks()).chain(picks).chain(tonights()).chain([("picker", reported())]) {
             let rgba = inscribed_disc::preview::to_rgba(&frame(&st), W, H, opts);
             inscribed_disc::preview::write_png(format!("{dir}/{name}.png"), &rgba, W * 2, H * 2).unwrap();
         }

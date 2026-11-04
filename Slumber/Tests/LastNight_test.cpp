@@ -56,6 +56,40 @@ TEST(LastNight, ASplitNightIsReportedWhole)
     EXPECT_EQ(c.sleep.last, &p[1]);
 }
 
+TEST(LastNight, ASplitNightKeepsItsAwakening)
+{
+    const Period p[] = {period(4 * kH, 5, Worn::Worn), period(0, 3, Worn::Worn)};
+    const auto   s   = choose(p, 2, kNow).sleep;
+    EXPECT_EQ(s.awakeFromUtc[0], p[0].endUtc);
+    EXPECT_EQ(s.awakeToUtc[0], p[1].startUtc);
+    EXPECT_EQ(s.awakeFromUtc[1], 0u);
+}
+
+TEST(LastNight, AWholeNightHasNoAwakening)
+{
+    const Period p[] = {period(0, 8, Worn::Worn)};
+    EXPECT_EQ(choose(p, 1, kNow).sleep.awakeFromUtc[0], 0u);
+}
+
+TEST(LastNight, OnlyTheLongestAwakeningsAreKept)
+{
+    constexpr uint32_t kM = 60u;
+    Period p[4];
+    const uint32_t gapsMin[] = {70, 150, 100};
+    uint32_t at = kNow - 14 * kH;
+    for (size_t i = 0; i < 4; ++i) {
+        p[i].startUtc = at;
+        p[i].endUtc   = at + 2 * kH;
+        p[i].worn     = Worn::Worn;
+        at = p[i].endUtc + (i < 3 ? gapsMin[i] * kM : 0);
+    }
+    const auto s = choose(p, 4, kNow).sleep;
+    ASSERT_EQ(s.periods, 4);
+    EXPECT_EQ(s.awakeToUtc[0] - s.awakeFromUtc[0], 150 * kM);
+    EXPECT_EQ(s.awakeToUtc[1] - s.awakeFromUtc[1], 100 * kM);
+    EXPECT_EQ(s.awakeFromUtc[0], p[1].endUtc);
+}
+
 TEST(LastNight, ANightAndANapAreTwoSleeps)
 {
     const Period p[] = {period(8 * kH, 7, Worn::Worn), period(1 * kH, 1, Worn::Worn)};

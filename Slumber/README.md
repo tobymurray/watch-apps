@@ -478,8 +478,10 @@ so its length can be counted in blocks.
 against as a thin cyan arc just inside it, so a late bedtime is the band
 starting clockwise of the arc. Inside: the night's rest, its times and its
 bedtime against the usual, such as `7h42`, `23:29-07:30`, `38m late` or `usual
-time` ("Bedtime spread"). The band spans the whole sleep, awakenings included,
-so it can be longer than the rest it reports. Before there is a night it says
+time` ("Bedtime spread"). The band spans the whole sleep, and its two longest
+awakenings are cut out of it. An awakening is a gap between two of its periods; one
+shorter than SleepPeriods' merge gap stays inside a period, so most cuts are an hour or
+more, but a stretch the wrist could not judge also splits a period and is cut the same way. Before there is a night it says
 `No night yet` and shows the usual arc once seven nights give one; a night on a
 table says `watch was off`. The times are in the
 offset the night was logged with.
@@ -487,11 +489,31 @@ offset the night was logged with.
 **The past week** is the main night of each of the seven evenings before
 tonight, a floating bar from bedtime to wake in the Rest colours, under dashed
 cyan lines at the usual bedtime and wake. Each bar is labelled with the weekday
-it began on, the newest in white. Above them, `half within 25m` is that
+it began on, the newest in white. A bar breaks at its night's longest awakening, as
+last night's band does, with round ends either side; a piece shorter than the bar is
+wide gets flatter ends rather than spilling into the break. A 73-minute awakening is
+about 8 px on a 12 h plot. Above them, `half within 25m` is that
 usual's spread ("Bedtime spread"). The plot starts its day after the widest
 stretch of the clock with no bedtime, so a day sleeper's 11:50 and 12:10 sit 20
 minutes apart, and it runs in whole hours, at least six, so a single night does
 not fill it.
+
+**R1 on the week picks a night**, the newest first. The title says its weekday and the
+line under it its rest in magenta and its times in white, as last night has them, such as
+`7h42 23:15-07:20`, or `no night`; its bar stays lit, the others dim and its letter is
+underlined. L1 and L2 then step to the night
+before and after, stopping at the oldest and the newest rather than paging, and the page
+dots are hidden so they do not say otherwise. R2 lets the night go, and so do 10 s
+without a press, the screen going off, and a new night arriving, which moves every bar
+along one. The line is in the 18 px face: a 10 h night's `10h22 22:05-08:50` is 192 px
+in the summary's 20 px face, past the 190 the glass has at that row, and 177 in this one.
+
+**A grey arc on the rim marks each button that does something there**, the stock
+`Buttons` container's geometry and neutral white from the SDK's Running example: R1's on
+the week, then L1's, L2's and R2's while a night is picked. No other page has one, since
+no other page gives a button anything new to do. The picked line sits 3 px below the
+summary's row, where the glass is wider: at the summary's row a 10 h night's line came
+within 2 px of L1's arc, and the tests now hold everything 3 px clear of every arc.
 
 **Tonight** is the usual night (see "Irregular hours") as a cyan band on the dial, and a
 white dot for now. Inside: the usual bedtime, the usual wake, and how far
@@ -508,7 +530,7 @@ state as a PNG.
 
 **The marks picker is behind R1 R1 R1**, pressed with no more than 1.5 s
 between presses on any page; R2 goes back to last night. R1 does nothing else
-on the pages, so paging with L1 and L2 never opens it. Long presses are not used: a hold
+on the pages but pick a night on the week, so paging with L1 and L2 never opens it. Long presses are not used: a hold
 never reached Spin's screens.
 
 In the picker, L1 and L2 pick what you are doing from now on; R1 logs it, and the label

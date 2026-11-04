@@ -5,6 +5,7 @@ use incised_text::{faces, Face, Style};
 use inscribed_disc::{Abgr2222, Surface};
 
 use crate::night::{draw_band, on_ring, Rgb};
+use crate::AWAKENINGS;
 
 /// The night's band, as pixel-centre radii, 2 px in from the glass edge.
 pub const BAND_IN: f32 = 104.5;
@@ -109,13 +110,47 @@ fn usual_ink(_: f32) -> Rgb {
     USUAL_INK
 }
 
-/// The hour ticks; `night` as a band in `ink`, notched at each hour; `usual` as a thin cyan arc inside it.
-pub fn draw(fb: &mut Surface<Abgr2222>, night: Option<(Span, fn(f32) -> Rgb)>, usual: Option<Span>) {
+/// How far into `span` minute `m` falls, in minutes; past its length if outside it.
+fn into(span: Span, m: u16) -> i32 {
+    (m as i32 - span.from_min as i32).rem_euclid(DAY_MIN)
+}
+
+/// The pieces of `span` left once `awake` is cut out, in order; an awakening not inside it is ignored.
+pub fn pieces(span: Span, awake: [Option<Span>; AWAKENINGS]) -> ([Span; AWAKENINGS + 1], usize) {
+    let len = into(span, span.to_min);
+    let mut cuts = [(0, 0); AWAKENINGS];
+    let mut n = 0;
+    for a in awake.into_iter().flatten() {
+        let (from, to) = (into(span, a.from_min), into(span, a.to_min));
+        if 0 < from && from < to && to < len {
+            cuts[n] = (from, to);
+            n += 1;
+        }
+    }
+    cuts[..n].sort_unstable();
+    let at = |k: i32| ((span.from_min as i32 + k).rem_euclid(DAY_MIN)) as u16;
+    let mut out = [span; AWAKENINGS + 1];
+    let mut start = 0;
+    for (i, &(from, to)) in cuts[..n].iter().enumerate() {
+        out[i] = Span { from_min: at(start), to_min: at(from) };
+        start = to.max(start);
+    }
+    out[n] = Span { from_min: at(start), to_min: span.to_min };
+    (out, n + 1)
+}
+
+/// The hour ticks; `night` as a band in `ink`, notched at each hour, with its awakenings cut
+/// out; `usual` as a thin cyan arc inside it.
+pub fn draw(fb: &mut Surface<Abgr2222>, night: Option<(Span, fn(f32) -> Rgb, [Option<Span>; AWAKENINGS])>, usual: Option<Span>) {
+    let cut = night.map(|(span, _, awake)| pieces(span, awake));
     draw_band(fb, USUAL_IN - 1.0, BAND_OUT + 2.0, |dx, dy, t| {
         let r2 = dx * dx + dy * dy;
-        if let Some((span, ink)) = night {
+        if let (Some((span, ink, _)), Some((parts, n))) = (night, cut) {
             if let Some(c) = arc(dx, dy, t, span, BAND_IN, BAND_OUT, ink) {
-                return Some(if near_hour(t, r2, NOTCH_HALF).0 { [0.0; 3] } else { c });
+                let asleep = n == 1 || parts[..n].iter().any(|&p| arc(dx, dy, t, p, BAND_IN, BAND_OUT, ink).is_some());
+                if asleep {
+                    return Some(if near_hour(t, r2, NOTCH_HALF).0 { [0.0; 3] } else { c });
+                }
             }
         }
         if let Some(span) = usual {
@@ -177,5 +212,52 @@ mod tests {
         assert!(on_tick(0.0, edge) && on_tick(0.25, edge));
         assert!(!on_tick(1.0 / 24.0, edge));
         assert!(!on_tick(0.5 / 24.0, r2));
+    }
+
+    fn span(from: (u16, u16), to: (u16, u16)) -> Span {
+        Span { from_min: from.0 * 60 + from.1, to_min: to.0 * 60 + to.1 }
+    }
+
+    fn minutes(parts: &[Span]) -> Vec<(u16, u16)> {
+        parts.iter().map(|p| (p.from_min, p.to_min)).collect()
+    }
+
+    #[test]
+    fn an_awakening_splits_the_night_where_it_was() {
+        let night = span((23, 11), (8, 9));
+        let (parts, n) = pieces(night, [Some(span((4, 31), (5, 44))), None]);
+        assert_eq!(minutes(&parts[..n]), [(23 * 60 + 11, 4 * 60 + 31), (5 * 60 + 44, 8 * 60 + 9)]);
+    }
+
+    #[test]
+    fn awakenings_cut_in_night_order_whatever_order_they_come_in() {
+        let night = span((22, 0), (8, 0));
+        let (parts, n) = pieces(night, [Some(span((5, 0), (6, 30))), Some(span((23, 30), (0, 40)))]);
+        assert_eq!(minutes(&parts[..n]), [(22 * 60, 23 * 60 + 30), (40, 5 * 60), (6 * 60 + 30, 8 * 60)]);
+    }
+
+    #[test]
+    fn an_awakening_outside_the_night_cuts_nothing() {
+        let night = span((23, 0), (7, 0));
+        let (parts, n) = pieces(night, [Some(span((12, 0), (13, 0))), Some(span((7, 0), (8, 0)))]);
+        assert_eq!(minutes(&parts[..n]), [(23 * 60, 7 * 60)]);
+    }
+
+    /// Whether the band is lit halfway across it at `minute`.
+    fn band_lit(awake: [Option<Span>; AWAKENINGS], minute: u16) -> bool {
+        let mut buf = [0u8; 240 * 240];
+        let mut fb = Surface::<Abgr2222>::round(&mut buf, 240, 240).unwrap();
+        draw(&mut fb, Some((span((23, 11), (8, 9)), |_| [3.0, 0.0, 3.0], awake)), None);
+        let (x, y) = on_ring((BAND_IN + BAND_OUT) / 2.0, turn(minute));
+        buf[(119.5 + y) as usize * 240 + (119.5 + x) as usize] != 0
+    }
+
+    #[test]
+    fn the_band_is_empty_while_awake_and_lit_either_side() {
+        let awake = [Some(span((4, 31), (5, 44))), None];
+        assert!(band_lit([None; AWAKENINGS], 5 * 60 + 7));
+        assert!(!band_lit(awake, 5 * 60 + 7));
+        assert!(band_lit(awake, 3 * 60 + 50));
+        assert!(band_lit(awake, 6 * 60 + 25));
     }
 }

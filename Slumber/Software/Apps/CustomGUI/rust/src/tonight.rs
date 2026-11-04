@@ -104,6 +104,7 @@ pub fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
     let usual = known(state).then_some((
         Span { from_min: state.tonight_bed_min, to_min: state.tonight_wake_min },
         rhythm_ink as fn(f32) -> Rgb,
+        [None; crate::AWAKENINGS],
     ));
     dial::draw(fb, usual, None);
     dial::numerals(fb, GROUND);
