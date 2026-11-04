@@ -205,6 +205,15 @@ public:
 
     size_t size() const { return mN; }
 
+    /// Calls `f(noonDay, night)` for each main night kept, oldest first.
+    template <typename F>
+    void each(F f) const
+    {
+        for (size_t i = 0; i < mN; ++i) {
+            f(mMain[i].day, mMain[i].night);
+        }
+    }
+
     /// Nights still to log before there can be a usual.
     uint8_t nightsToGo() const
     {
