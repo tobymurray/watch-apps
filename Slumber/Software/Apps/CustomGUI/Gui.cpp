@@ -211,6 +211,7 @@ void Gui::run()
                 mState.week_newest_weekday = st->week.newestWeekday;
                 mState.week_usual_bed      = st->week.usualBed;
                 mState.week_usual_wake     = st->week.usualWake;
+                mState.usual_spread_min    = st->week.usualSpreadMin;
                 mState.tonight_bed_min     = st->tonight.bedMin;
                 mState.tonight_wake_min    = st->tonight.wakeMin;
                 mState.now_min             = st->tonight.nowMin;

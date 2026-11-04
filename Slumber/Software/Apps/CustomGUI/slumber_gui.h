@@ -57,6 +57,7 @@ typedef struct {
     uint8_t  times_vary;                      /* 1 = enough nights, but they keep no one time */
     uint16_t scored_bed_min;                  /* minute of day: the usual rhythm_offset_min is against; SLUMBER_UNKNOWN = none */
     uint16_t scored_wake_min;                 /* minute of day; SLUMBER_UNKNOWN = none */
+    uint16_t usual_spread_min;                /* minutes: Rhythm::Usual::spread of the week's usual; SLUMBER_UNKNOWN = none */
 } slumber_state;
 
 /* FNV-1a over the layout as the linked Rust core sees it. */
@@ -142,6 +143,7 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(slumber_state, times_vary));
     h = fnv1a(h, offsetof(slumber_state, scored_bed_min));
     h = fnv1a(h, offsetof(slumber_state, scored_wake_min));
+    h = fnv1a(h, offsetof(slumber_state, usual_spread_min));
     return h;
 }
 
@@ -174,6 +176,7 @@ static_assert(offsetof(slumber_state, nights_to_go) == 76, "nights_to_go moved")
 static_assert(offsetof(slumber_state, times_vary) == 77, "times_vary moved");
 static_assert(offsetof(slumber_state, scored_bed_min) == 78, "scored_bed_min moved");
 static_assert(offsetof(slumber_state, scored_wake_min) == 80, "scored_wake_min moved");
+static_assert(offsetof(slumber_state, usual_spread_min) == 82, "usual_spread_min moved");
 #endif
 
 #endif // SLUMBER_GUI_H

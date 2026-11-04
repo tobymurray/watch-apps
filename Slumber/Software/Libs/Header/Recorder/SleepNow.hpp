@@ -78,9 +78,10 @@ inline size_t format(const State &s, char *out, size_t cap)
         put("%s", "\"last_sleep\":null,");
     }
     if (s.usual.known) {
-        put("\"usual\":{\"bed_min\":%ld,\"wake_min\":%ld,\"nights\":%u},",
+        put("\"usual\":{\"bed_min\":%ld,\"wake_min\":%ld,\"nights\":%u,\"spread_min\":%ld},",
             static_cast<long>(Rhythm::minuteOfDay(s.usual.bed)),
-            static_cast<long>(Rhythm::minuteOfDay(s.usual.wake)), static_cast<unsigned>(s.usual.nights));
+            static_cast<long>(Rhythm::minuteOfDay(s.usual.wake)), static_cast<unsigned>(s.usual.nights),
+            static_cast<long>(s.usual.spread));
         put("\"tonight\":{\"weekday\":%u,\"bed_min\":%ld,\"wake_min\":%ld,\"nights\":%u},",
             static_cast<unsigned>(Schedule::weekday(s.tonightDay)),
             static_cast<long>(Rhythm::minuteOfDay(s.usual.bed)),
