@@ -614,6 +614,8 @@ void Service::fillWeek(CustomMessage::Status &st)
         st.week.bed[i]  = bars.bed[i];
         st.week.wake[i] = bars.wake[i];
         st.week.rest[i] = bars.rest[i];
+        st.week.awakeFrom[i] = bars.awakeFrom[i];
+        st.week.awakeTo[i]   = bars.awakeTo[i];
     }
     st.week.newestWeekday = bars.newestWeekday;
     if (mUsual.known) {

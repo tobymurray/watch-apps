@@ -41,6 +41,8 @@ struct Bars {
     int16_t bed[kWeekNights];   ///< Rhythm::afterNoon; kNoNight = none that day
     int16_t wake[kWeekNights];  ///< Rhythm::afterNoon, past 1440 when it wraps noon
     uint16_t rest[kWeekNights];  ///< minutes; 0 = no night that day
+    int16_t awakeFrom[kWeekNights];  ///< Rhythm::afterNoon, past 1440 as wake is; kNoNight = none
+    int16_t awakeTo[kWeekNights];    ///< Rhythm::afterNoon, past 1440 as wake is; kNoNight = none
     uint8_t newestWeekday = 0;  ///< the weekday the last one began on
 };
 
@@ -52,6 +54,8 @@ inline Bars bars(const Rhythm::Recent &recent, int32_t day)
         b.bed[i]  = kNoNight;
         b.wake[i] = kNoNight;
         b.rest[i] = 0;
+        b.awakeFrom[i] = kNoNight;
+        b.awakeTo[i]   = kNoNight;
     }
     b.newestWeekday = weekday(day - 1);
     recent.each([&](int32_t nightDay, const Rhythm::Night &n) {
@@ -61,6 +65,11 @@ inline Bars bars(const Rhythm::Recent &recent, int32_t day)
             b.bed[at]       = static_cast<int16_t>(n.bed);
             b.wake[at]      = static_cast<int16_t>(n.wake < n.bed ? n.wake + 1440 : n.wake);
             b.rest[at]      = n.restMin;
+            if (n.awakeFrom != Rhythm::kNoAwakening) {
+                const auto onto = [&](int32_t m) { return static_cast<int16_t>(m < n.bed ? m + 1440 : m); };
+                b.awakeFrom[at] = onto(n.awakeFrom);
+                b.awakeTo[at]   = onto(n.awakeTo);
+            }
         }
     });
     return b;

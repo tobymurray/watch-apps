@@ -489,7 +489,10 @@ offset the night was logged with.
 **The past week** is the main night of each of the seven evenings before
 tonight, a floating bar from bedtime to wake in the Rest colours, under dashed
 cyan lines at the usual bedtime and wake. Each bar is labelled with the weekday
-it began on, the newest in white. Above them, `half within 25m` is that
+it began on, the newest in white. A bar breaks at its night's longest awakening, as
+last night's band does, with round ends either side; a piece shorter than the bar is
+wide gets flatter ends rather than spilling into the break. A 73-minute awakening is
+about 8 px on a 12 h plot. Above them, `half within 25m` is that
 usual's spread ("Bedtime spread"). The plot starts its day after the widest
 stretch of the clock with no bedtime, so a day sleeper's 11:50 and 12:10 sit 20
 minutes apart, and it runs in whole hours, at least six, so a single night does

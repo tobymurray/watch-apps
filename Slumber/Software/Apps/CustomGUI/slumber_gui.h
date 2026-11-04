@@ -64,6 +64,8 @@ typedef struct {
     uint8_t  week_pick;                       /* the night picked on the week, 0 oldest; SLUMBER_NO_PICK = none */
     uint16_t awake_from_min[SLUMBER_AWAKENINGS]; /* minute of day: last night's longest awakenings; SLUMBER_UNKNOWN = none */
     uint16_t awake_to_min[SLUMBER_AWAKENINGS];   /* minute of day; SLUMBER_UNKNOWN = none */
+    int16_t  week_awake_from[SLUMBER_WEEK_NIGHTS]; /* minutes after local noon, as week_wake; SLUMBER_NO_BAR = none */
+    int16_t  week_awake_to[SLUMBER_WEEK_NIGHTS];   /* minutes after local noon, as week_wake; SLUMBER_NO_BAR = none */
 } slumber_state;
 
 /* FNV-1a over the layout as the linked Rust core sees it. */
@@ -157,12 +159,14 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(slumber_state, week_pick));
     h = fnv1a(h, offsetof(slumber_state, awake_from_min));
     h = fnv1a(h, offsetof(slumber_state, awake_to_min));
+    h = fnv1a(h, offsetof(slumber_state, week_awake_from));
+    h = fnv1a(h, offsetof(slumber_state, week_awake_to));
     return h;
 }
 
 } // namespace slumber_abi
 
-static_assert(sizeof(slumber_state) == 108, "slumber_state size changed");
+static_assert(sizeof(slumber_state) == 136, "slumber_state size changed");
 static_assert(alignof(slumber_state) == 4, "slumber_state alignment changed");
 static_assert(offsetof(slumber_state, rows_today) == 4, "rows_today moved");
 static_assert(offsetof(slumber_state, write_fails) == 8, "write_fails moved");
@@ -194,6 +198,8 @@ static_assert(offsetof(slumber_state, week_rest) == 84, "week_rest moved");
 static_assert(offsetof(slumber_state, week_pick) == 98, "week_pick moved");
 static_assert(offsetof(slumber_state, awake_from_min) == 100, "awake_from_min moved");
 static_assert(offsetof(slumber_state, awake_to_min) == 104, "awake_to_min moved");
+static_assert(offsetof(slumber_state, week_awake_from) == 108, "week_awake_from moved");
+static_assert(offsetof(slumber_state, week_awake_to) == 122, "week_awake_to moved");
 #endif
 
 #endif // SLUMBER_GUI_H

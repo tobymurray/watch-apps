@@ -52,6 +52,8 @@ pub struct State {
     pub week_pick: u8,
     pub awake_from_min: [u16; AWAKENINGS],
     pub awake_to_min: [u16; AWAKENINGS],
+    pub week_awake_from: [i16; WEEK_NIGHTS],
+    pub week_awake_to: [i16; WEEK_NIGHTS],
 }
 
 pub const WEEK_NIGHTS: usize = 7;
@@ -179,6 +181,8 @@ impl Default for State {
             week_pick: NO_PICK,
             awake_from_min: [night::UNKNOWN; AWAKENINGS],
             awake_to_min: [night::UNKNOWN; AWAKENINGS],
+            week_awake_from: [NO_BAR; WEEK_NIGHTS],
+            week_awake_to: [NO_BAR; WEEK_NIGHTS],
         }
     }
 }
@@ -478,7 +482,9 @@ const fn abi_fingerprint() -> u32 {
     let h = fnv1a(h, core::mem::offset_of!(State, week_rest));
     let h = fnv1a(h, core::mem::offset_of!(State, week_pick));
     let h = fnv1a(h, core::mem::offset_of!(State, awake_from_min));
-    fnv1a(h, core::mem::offset_of!(State, awake_to_min))
+    let h = fnv1a(h, core::mem::offset_of!(State, awake_to_min));
+    let h = fnv1a(h, core::mem::offset_of!(State, week_awake_from));
+    fnv1a(h, core::mem::offset_of!(State, week_awake_to))
 }
 
 #[no_mangle]
@@ -486,7 +492,7 @@ pub extern "C" fn slumber_abi_fingerprint() -> u32 {
     abi_fingerprint()
 }
 
-const _: () = assert!(core::mem::size_of::<State>() == 108);
+const _: () = assert!(core::mem::size_of::<State>() == 136);
 const _: () = assert!(core::mem::align_of::<State>() == 4);
 const _: () = assert!(core::mem::offset_of!(State, rows_today) == 4);
 const _: () = assert!(core::mem::offset_of!(State, write_fails) == 8);
@@ -518,6 +524,8 @@ const _: () = assert!(core::mem::offset_of!(State, week_rest) == 84);
 const _: () = assert!(core::mem::offset_of!(State, week_pick) == 98);
 const _: () = assert!(core::mem::offset_of!(State, awake_from_min) == 100);
 const _: () = assert!(core::mem::offset_of!(State, awake_to_min) == 104);
+const _: () = assert!(core::mem::offset_of!(State, week_awake_from) == 108);
+const _: () = assert!(core::mem::offset_of!(State, week_awake_to) == 122);
 
 #[no_mangle]
 pub extern "C" fn slumber_mark_count() -> u32 {
@@ -684,6 +692,19 @@ mod tests {
         st
     }
 
+    /// `st` with an awakening in each `(night, from, to)`, clock times, as the service sends them.
+    fn awake_in(mut st: State, awake: impl IntoIterator<Item = (usize, (i32, i32), (i32, i32))>) -> State {
+        for (i, (fh, fm), (th, tm)) in awake {
+            let onto = |h: i32, m: i32| {
+                let v = hm(h, m);
+                if v < st.week_bed[i] { v + 1440 } else { v }
+            };
+            st.week_awake_from[i] = onto(fh, fm);
+            st.week_awake_to[i] = onto(th, tm);
+        }
+        st
+    }
+
     /// The week screen in every state that changes what it says or how it scales.
     fn weeks() -> Vec<(&'static str, State)> {
         let usual = Some(((23, 10), (7, 5)));
@@ -693,6 +714,10 @@ mod tests {
                 Some(((0, 55), (8, 30))), Some(((1, 30), (10, 15))), Some(((23, 15), (7, 20))),
             ], usual)),
             ("week-steady", week_of([Some(((23, 5), (7, 0))); WEEK_NIGHTS], usual)),
+            ("week-awake", awake_in(week_of([
+                Some(((23, 0), (7, 0))), Some(((23, 40), (7, 10))), None, Some(((22, 50), (6, 55))),
+                Some(((0, 55), (8, 30))), Some(((1, 30), (10, 15))), Some(((23, 11), (8, 9))),
+            ], usual), [(3, (3, 40), (4, 50)), (6, (4, 31), (5, 44))])),
             ("week-noon", week_of([
                 None, None, Some(((4, 0), (13, 30))), Some(((23, 0), (7, 0))),
                 Some(((20, 30), (5, 0))), None, Some(((23, 30), (7, 30))),
@@ -1122,6 +1147,38 @@ mod tests {
         }
     }
 
+    /// Whether night `i`'s bar is lit in its column at clock minute `minute`.
+    fn bar_lit_at(st: &State, i: usize, (h, m): (i32, i32)) -> bool {
+        let span = week::span(st);
+        let mut v = hm(h, m) as i32;
+        let (_, bed, _) = week::nights(st).find(|&(k, _, _)| k == i).unwrap();
+        while v < bed {
+            v += 1440;
+        }
+        let y = week::PLOT_TOP as f32 + (v - span.0) as f32 * (week::PLOT_BOTTOM - week::PLOT_TOP) as f32 / (span.1 - span.0) as f32;
+        let f = frame(st);
+        f[(y as i32 * W as i32 + week::column_x(i)) as usize] != f[(y as i32 * W as i32 + 24) as usize]
+    }
+
+    #[test]
+    fn a_bars_awakening_is_a_break_in_it() {
+        let (_, st) = weeks().into_iter().find(|(n, _)| *n == "week-awake").unwrap();
+        assert!(!bar_lit_at(&st, 6, (5, 7)));
+        assert!(bar_lit_at(&st, 6, (2, 0)) && bar_lit_at(&st, 6, (7, 0)));
+        assert!(!bar_lit_at(&st, 3, (4, 15)));
+        let whole = State { week_awake_from: [NO_BAR; WEEK_NIGHTS], week_awake_to: [NO_BAR; WEEK_NIGHTS], ..st };
+        assert!(bar_lit_at(&whole, 6, (5, 7)));
+    }
+
+    #[test]
+    fn an_awakening_outside_its_night_breaks_nothing() {
+        let (_, st) = weeks().into_iter().find(|(n, _)| *n == "week").unwrap();
+        let mut odd = st;
+        (odd.week_awake_from[6], odd.week_awake_to[6]) = (hm(12, 0) + 1440, hm(13, 0) + 1440);
+        assert_eq!(week::awake(&odd, 6), None);
+        assert_eq!(frame(&odd), frame(&st));
+    }
+
     #[test]
     fn every_bar_lies_inside_the_plot() {
         for (name, st) in weeks() {
@@ -1317,7 +1374,7 @@ mod tests {
             return;
         };
         let opts = inscribed_disc::preview::Options { scale: 2, ..Default::default() };
-        let picked = ["week-pick-6", "week-pick-5", "week-pick-2", "week-long-pick-5"];
+        let picked = ["week-pick-6", "week-pick-5", "week-pick-2", "week-long-pick-5", "week-awake-pick-6"];
         let picks = picks().into_iter().filter(|(n, _)| picked.contains(&n.as_str())).collect::<Vec<_>>();
         let picks = picks.iter().map(|(n, st)| (n.as_str(), *st));
         for (name, st) in nights().into_iter().chain(weeks()).chain(picks).chain(tonights()).chain([("picker", reported())]) {

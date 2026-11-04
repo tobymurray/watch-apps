@@ -100,6 +100,32 @@ TEST(Schedule, AWeekBeforeAnyNightIsEmpty)
     }
 }
 
+TEST(Schedule, AWeekBarCarriesItsLongestAwakening)
+{
+    Rhythm::Recent r;
+    sleep(r, kMonday, 23, 0, 240);
+    sleep(r, kMonday, 4, 10, 170);
+    sleep(r, kMonday, 7, 20, 30);
+    sleep(r, kMonday + 1, 23, 0);
+    const Schedule::Bars b = Schedule::bars(r, kMonday + 2);
+    EXPECT_EQ(b.awakeFrom[Schedule::kWeekNights - 2], clock(3, 0));
+    EXPECT_EQ(b.awakeTo[Schedule::kWeekNights - 2], clock(4, 10));
+    EXPECT_EQ(b.awakeFrom[Schedule::kWeekNights - 1], Schedule::kNoNight);
+}
+
+TEST(Schedule, AnAwakeningPastNoonRunsOnAsTheWakeDoes)
+{
+    Rhythm::Recent r;
+    const uint32_t s = at(kMonday, 6, 0);
+    r.add(s, s + 330 * 60, kOff, 330);
+    r.add(s + 390 * 60, s + 630 * 60, kOff, 240);
+    const Schedule::Bars b = Schedule::bars(r, kMonday + 1);
+    const size_t at = Schedule::kWeekNights - 1;
+    EXPECT_LT(b.bed[at], b.awakeFrom[at]);
+    EXPECT_LT(b.awakeFrom[at], b.awakeTo[at]);
+    EXPECT_LT(b.awakeTo[at], b.wake[at]);
+}
+
 TEST(Schedule, AWeekBarCarriesItsWholeSleepsRest)
 {
     Rhythm::Recent r;

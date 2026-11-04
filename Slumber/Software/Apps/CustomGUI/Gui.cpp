@@ -235,6 +235,8 @@ void Gui::run()
                     mState.week_bed[i]  = st->week.bed[i];
                     mState.week_wake[i] = st->week.wake[i];
                     mState.week_rest[i] = st->week.rest[i];
+                    mState.week_awake_from[i] = st->week.awakeFrom[i];
+                    mState.week_awake_to[i]   = st->week.awakeTo[i];
                 }
                 mState.week_newest_weekday = st->week.newestWeekday;
                 mState.week_usual_bed      = st->week.usualBed;

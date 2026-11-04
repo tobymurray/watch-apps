@@ -163,6 +163,19 @@ pub fn nights(state: &State) -> impl Iterator<Item = (usize, i32, i32)> + '_ {
     })
 }
 
+/// Night `i`'s longest awakening, unwrapped onto the plot's day as its bed and wake are;
+/// `None` without one, or one that does not lie inside the night.
+pub fn awake(state: &State, i: usize) -> Option<(i32, i32)> {
+    let (from, to) = (state.week_awake_from[i], state.week_awake_to[i]);
+    if state.week_bed[i] == NO_BAR || from == NO_BAR || to == NO_BAR {
+        return None;
+    }
+    let (raw_bed, raw_wake) = (state.week_bed[i] as i32, state.week_wake[i] as i32);
+    let shift = unwrapped(raw_bed, raw_wake, day_start(state)).0 - raw_bed;
+    let (from, to) = (from as i32, to as i32);
+    (raw_bed < from && from < to && to < raw_wake).then_some((from + shift, to + shift))
+}
+
 /// The usual bed and wake, unwrapped onto the plot's day.
 fn usual(state: &State) -> Option<(i32, i32)> {
     usual_known(state)
@@ -221,17 +234,21 @@ fn dashed(fb: &mut Surface<Abgr2222>, y: i32) {
 const SUB: [f32; 2] = [-0.25, 0.25];
 
 /// A capsule from row `top` to row `bottom`, in the Rest colours down its length, edges antialiased.
+/// A piece shorter than the bar is wide gets ends no rounder than half its length, so it
+/// keeps to its rows instead of spilling into an awakening beside it.
 fn bar(fb: &mut Surface<Abgr2222>, cx: i32, top: f32, bottom: f32, lit: f32) {
     let r = BAR_HALF_W;
-    let (a, b) = (top + r, (bottom - r).max(top + r));
+    let round = r.min((bottom - top) / 2.0);
+    let (a, b) = (top + round, (bottom - round).max(top + round));
     for y in (top - 1.0) as i32..=(bottom + 1.0) as i32 {
         for x in cx - r as i32 - 1..=cx + r as i32 + 1 {
             let mut hit = 0;
             for sy in SUB {
                 for sx in SUB {
                     let (px, py) = (x as f32 + sx - cx as f32, y as f32 + sy);
-                    let d = py.max(a).min(b) - py;
-                    hit += u32::from(px * px + d * d <= r * r);
+                    let qx = (if px < 0.0 { -px } else { px } - (r - round)).max(0.0);
+                    let qy = py.max(a).min(b) - py;
+                    hit += u32::from(qx * qx + qy * qy <= round * round);
                 }
             }
             if hit == 0 || !fb.is_lit(x, y) {
@@ -266,7 +283,13 @@ pub fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
         }
         for (i, bed, wake) in nights(state) {
             let lit = if pick.is_some_and(|p| p != i) { UNPICKED_LIT } else { 1.0 };
-            bar(fb, column_x(i), row(bed, span), row(wake, span), lit);
+            match awake(state, i) {
+                Some((from, to)) => {
+                    bar(fb, column_x(i), row(bed, span), row(from, span), lit);
+                    bar(fb, column_x(i), row(to, span), row(wake, span), lit);
+                }
+                None => bar(fb, column_x(i), row(bed, span), row(wake, span), lit),
+            }
         }
     }
 
