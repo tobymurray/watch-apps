@@ -87,6 +87,20 @@ TEST(Rhythm, BedtimesEitherSideOfNoonAreOneUsual)
     EXPECT_EQ(offset(hm(11, 50), u), -10);
 }
 
+/// Bedtimes 22:40, 22:50, 23:00, 23:10, 23:20 and 00:30 after an older night: the usual is
+/// 23:05, and they lie 25, 15, 5, 5, 15 and 85 minutes from it.
+TEST(Rhythm, TheSpreadIsTheMedianDistanceFromTheUsual)
+{
+    std::vector<Night> v = {night(hm(23, 0), hm(7, 0))};
+    for (int32_t m : {-20, -10, 0, 10, 20, 90}) {
+        v.push_back(night((hm(23, 0) + m + 1440) % 1440, hm(7, 0)));
+    }
+    const Usual u = usual(v.data(), v.size());
+    ASSERT_TRUE(u.known);
+    EXPECT_EQ(minuteOfDay(u.bed), 23 * 60 + 5);
+    EXPECT_EQ(u.spread, 15);
+}
+
 TEST(Rhythm, ARotaHasNoUsual)
 {
     std::vector<Night> v;

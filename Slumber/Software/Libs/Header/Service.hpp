@@ -81,6 +81,7 @@ private:
     size_t                mPeriodN   = 0;
     const SleepPeriods::Period *mLastNight = nullptr;  ///< into mPeriods, as last found
     LastNight::Sleep            mLastSleep;  ///< its pointers into mPeriods, as last found
+    Rhythm::Usual               mUsual;      ///< the one the night and the week are shown against
     CustomMessage::NightView    mShown;
 
     Slumber::ActivityCount mCount;

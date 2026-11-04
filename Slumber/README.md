@@ -107,9 +107,9 @@ wearer's usual; "What was cut" says why.
 | `asleep_since` | Start of the worn period still running, else `null` |
 | `last_night` | `{start, end, rest_min, worn, settled}`, the longest period of the night the card shows, else `null` |
 | `last_sleep` | `{start, end, rest_min, periods, settled}`, the whole of the night the card shows: the first period's start, the last one's end, and their rest summed; `null` unless that night was worn |
-| `usual` | `{bed_min, wake_min, nights}`: medians, in minutes past local midnight, of the main nights logged, at most six; `null` until seven, or while times vary ("Irregular hours") |
+| `usual` | `{bed_min, wake_min, nights, spread_min}`: medians, in minutes past local midnight, of the main nights logged, at most six, and the median distance of their bedtimes from `bed_min` ("Bedtime spread"); `null` until seven, or while times vary ("Irregular hours") |
 | `rest_goal_min`, `rest_fill` | 420, and last night's rest against it in per mille; past 1000 is a second lap |
-| `rhythm_fill`, `rhythm_offset_min` | Last night's onset against the usual of the nights before it; `+` is later |
+| `rhythm_fill`, `rhythm_offset_min` | Last night's onset against the usual of the nights before it; `+` is later. The fill is the retired ring's, full within 30 minutes; the screens judge by "Bedtime spread" instead |
 | `tonight` | `{weekday, bed_min, wake_min, nights}`: the night ahead, which is `usual` on the weekday it begins (0 is Sunday); `null` whenever `usual` is |
 | `heart` | `{median_bpm, low_bpm, low_at}` for last night, as "Sleeping heart rate" defines them; `null` unless last night was worn with enough trusted readings |
 
@@ -291,6 +291,40 @@ rota ever gets a usual. A setting or a question on the watch was considered and 
 built: the nights already answer it, and a wrong answer here costs `times vary` for a
 while rather than a confident wrong time.
 
+## Bedtime spread
+
+A bedtime 38 minutes from the usual is noise for one wearer and news for another. Day-to-day
+bedtime SD in actigraphy cohorts is about 1 to 1.5 h (sleepdata.org, FFCWS), so a fixed
+30-minute window called most ordinary nights late or early. So each usual carries its
+**spread**, the median distance of its six nights' bedtimes from it, and the screens judge
+by that:
+
+- **Last night is late or early only beyond three spreads of the usual**, and never within 30
+  minutes; otherwise it is `usual time`.
+- **The week says `half within 25m`**: the spread of the usual its dashed lines show.
+
+`Tools/spread.cpp` runs sleepers going to bed at 23:00 with a normal error of the given SD,
+some with nights out three hours late, 40 seeds of 60 nights, and counts the nights called
+late or early:
+
+| Bedtime SD | Nights out a week | Within 30 min, as before | Three spreads, now | Spread, median |
+| --- | --- | --- | --- | --- |
+| 15 min | 0 | 6% | 6% | 8 min |
+| 30 min | 0 | 36% | 17% | 16 min |
+| 60 min | 0 | 67% | 20% | 33 min |
+| 90 min | 0 | 76% | 19% | 48 min |
+| 60 min | 1 | 70% | 21% | 41 min |
+| 30 min | 2 | 67% | 28% | 30 min |
+
+Three spreads calls about one ordinary night in five whatever the wearer's SD, and still
+calls the nights out: two a week are 29% of nights. Two spreads called 27-37%, since six
+nights estimate a spread loosely. The 30-minute floor keeps a very steady sleeper from being
+told `12m late`. Real nights would say whether one in five is what a wearer finds worth hearing.
+
+The night screen and the week show one usual: the one last night was scored against, the
+median of the six main nights before it, or with no night on the card, the latest. Tonight
+looks ahead, so it is the latest, last night included.
+
 ## What was cut
 
 These reached no screen, and no app in this repository reads `now.json`.
@@ -443,20 +477,21 @@ so its length can be counted in blocks.
 **Last night** is the night as a purple band, with the usual it was scored
 against as a thin cyan arc just inside it, so a late bedtime is the band
 starting clockwise of the arc. Inside: the night's rest, its times and its
-bedtime against the usual, such as `7h42`, `23:29-07:30`, `38m late`. The band
-spans the whole sleep, awakenings included, so it can be longer than the rest it
-reports. Before
-there is a night it says `No night yet` and shows the usual arc once seven
-nights give one; a night on a table says `watch was off`. The times are in the
+bedtime against the usual, such as `7h42`, `23:29-07:30`, `38m late` or `usual
+time` ("Bedtime spread"). The band spans the whole sleep, awakenings included,
+so it can be longer than the rest it reports. Before there is a night it says
+`No night yet` and shows the usual arc once seven nights give one; a night on a
+table says `watch was off`. The times are in the
 offset the night was logged with.
 
 **The past week** is the main night of each of the seven evenings before
 tonight, a floating bar from bedtime to wake in the Rest colours, under dashed
 cyan lines at the usual bedtime and wake. Each bar is labelled with the weekday
-it began on, the newest in white. Above them, `4 of 6 on time` counts the
-bedtimes within 30 minutes of the usual, the window the Rhythm ring is full
-for. The plot runs in whole hours, at least six, so a single night does not
-fill it.
+it began on, the newest in white. Above them, `half within 25m` is that
+usual's spread ("Bedtime spread"). The plot starts its day after the widest
+stretch of the clock with no bedtime, so a day sleeper's 11:50 and 12:10 sit 20
+minutes apart, and it runs in whole hours, at least six, so a single night does
+not fill it.
 
 **Tonight** is the usual night (see "Irregular hours") as a cyan band on the dial, and a
 white dot for now. Inside: the usual bedtime, the usual wake, and how far
