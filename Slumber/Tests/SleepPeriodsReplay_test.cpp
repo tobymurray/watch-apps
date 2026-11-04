@@ -290,7 +290,7 @@ TEST(SleepPeriodsReplay, SlumberDays)
     if (c.period != nullptr) {
         std::printf("card at the last row: %s %s-%s\n",
                     c.kind == LastNight::Kind::Worn ? "night" : "table",
-                    local(c.period->startUtc).c_str(), local(c.period->endUtc).substr(6).c_str());
+                    local(c.sleep.startUtc).c_str(), local(c.sleep.endUtc).substr(6).c_str());
     }
 
     // A period with heart rate asked for and never trusted is a table.

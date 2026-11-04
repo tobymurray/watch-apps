@@ -14,8 +14,11 @@ pub const UNKNOWN: u16 = 0xFFFF;
 /// A rhythm_fill for a night whose earlier nights keep no one time.
 pub const RHYTHM_VARIES: u16 = 0xFFFE;
 
-/// A bedtime this close to the usual is on time.
-pub(crate) const ON_TIME_MIN: i32 = 30;
+/// A bedtime more than this many of the wearer's spreads from the usual is late or early;
+/// README "Bedtime spread" has the sweep that chose it.
+const SPREADS: i32 = 3;
+/// A bedtime this close to the usual is never late or early, however steady the wearer.
+const USUAL_FLOOR_MIN: i32 = 30;
 
 const CENTRE: f32 = 119.5;
 /// Text stays inside this radius, clear of the dial.
@@ -82,7 +85,7 @@ fn atan_unit(z: f32) -> f32 {
 }
 
 /// The angle of (dx, dy) in turns, clockwise from 12 o'clock, in [0, 1).
-fn turns(dx: f32, dy: f32) -> f32 {
+pub(crate) fn turns(dx: f32, dy: f32) -> f32 {
     // atan2(dx, -dy): x is right, y is down.
     let (y, x) = (dx, -dy);
     let (ax, ay) = (if x < 0.0 { -x } else { x }, if y < 0.0 { -y } else { y });
@@ -109,7 +112,7 @@ fn turns(dx: f32, dy: f32) -> f32 {
 }
 
 /// sin of a turn fraction, by its Taylor series after folding into a quarter turn.
-fn sin_turns(t: f32) -> f32 {
+pub(crate) fn sin_turns(t: f32) -> f32 {
     let mut f = t - t as i32 as f32;
     if f > 0.5 {
         f -= 1.0;
@@ -185,18 +188,31 @@ pub fn clock(line: &mut Line, minute_of_day: u16) {
     line.num(m / 60, 2).push(":").num(m % 60, 2);
 }
 
-/// "on time", "38m late", "1h05 early".
-pub fn rhythm_words(line: &mut Line, offset_min: i32) {
-    if offset_min.abs() <= ON_TIME_MIN {
-        line.push("on time");
+/// "38m", "1h05".
+pub fn minutes(line: &mut Line, minutes: u32) {
+    if minutes < 60 {
+        line.num(minutes, 1).push("m");
+    } else {
+        duration(line, minutes);
+    }
+}
+
+/// How far from the usual a bedtime may fall before it is late or early.
+pub fn usual_reach(spread_min: u16) -> i32 {
+    if spread_min == UNKNOWN {
+        USUAL_FLOOR_MIN
+    } else {
+        USUAL_FLOOR_MIN.max(SPREADS * spread_min as i32)
+    }
+}
+
+/// "usual time", "38m late", "1h05 early".
+pub fn rhythm_words(line: &mut Line, offset_min: i32, spread_min: u16) {
+    if offset_min.abs() <= usual_reach(spread_min) {
+        line.push("usual time");
         return;
     }
-    let a = offset_min.unsigned_abs();
-    if a < 60 {
-        line.num(a, 1).push("m");
-    } else {
-        duration(line, a);
-    }
+    minutes(line, offset_min.unsigned_abs());
     line.push(if offset_min > 0 { " late" } else { " early" });
 }
 
@@ -233,7 +249,7 @@ pub fn words(state: &State) -> Words {
             w.times.push("-");
             clock(&mut w.times, state.wake_min);
             if w.rhythm_known {
-                rhythm_words(&mut w.rhythm, state.rhythm_offset_min as i32);
+                rhythm_words(&mut w.rhythm, state.rhythm_offset_min as i32, state.usual_spread_min);
             } else {
                 w.rhythm.push(if state.rhythm_fill == RHYTHM_VARIES { "times vary" } else { "learning" });
             }
@@ -271,10 +287,18 @@ fn usual(state: &State, night: bool) -> Option<Span> {
         .then(|| Span { from_min: state.usual_bed_min, to_min: ((wake as i32 + 720).rem_euclid(1440)) as u16 })
 }
 
+/// Last night's awakenings, as the service sent them.
+pub fn awakenings(state: &State) -> [Option<Span>; crate::AWAKENINGS] {
+    core::array::from_fn(|i| {
+        let (from, to) = (state.awake_from_min[i], state.awake_to_min[i]);
+        (from != UNKNOWN && to != UNKNOWN).then_some(Span { from_min: from, to_min: to })
+    })
+}
+
 pub fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
     let night = state.have_status != 0
         && (state.night_kind == KIND_SETTLED || state.night_kind == KIND_SO_FAR);
-    let slept = night.then_some((Span { from_min: state.onset_min, to_min: state.wake_min }, rest_ink as fn(f32) -> Rgb));
+    let slept = night.then_some((Span { from_min: state.onset_min, to_min: state.wake_min }, rest_ink as fn(f32) -> Rgb, awakenings(state)));
     dial::draw(fb, slept, if state.have_status != 0 { usual(state, night) } else { None });
     dial::numerals(fb, GROUND);
 
@@ -327,16 +351,26 @@ mod tests {
         }
     }
 
+    fn say(offset: i32, spread: u16) -> Line {
+        let mut l = Line::new();
+        rhythm_words(&mut l, offset, spread);
+        l
+    }
+
     #[test]
     fn rhythm_reads_in_words() {
-        let say = |m| {
-            let mut l = Line::new();
-            rhythm_words(&mut l, m);
-            l
-        };
-        assert_eq!(say(0).as_str(), "on time");
-        assert_eq!(say(-30).as_str(), "on time");
-        assert_eq!(say(38).as_str(), "38m late");
-        assert_eq!(say(-65).as_str(), "1h05 early");
+        assert_eq!(say(0, UNKNOWN).as_str(), "usual time");
+        assert_eq!(say(-30, 5).as_str(), "usual time");
+        assert_eq!(say(38, 5).as_str(), "38m late");
+        assert_eq!(say(-65, 20).as_str(), "1h05 early");
+    }
+
+    /// A wearer whose bedtimes stray 40 minutes is not late at 1h50; one who keeps to 10 is at 31m.
+    #[test]
+    fn late_is_judged_against_the_wearers_own_spread() {
+        assert_eq!(say(110, 40).as_str(), "usual time");
+        assert_eq!(say(121, 40).as_str(), "2h01 late");
+        assert_eq!(say(31, 10).as_str(), "31m late");
+        assert_eq!(say(-31, 10).as_str(), "31m early");
     }
 }

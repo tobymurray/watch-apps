@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "SleepPeriods.hpp"
+
 /// The two goal rings: Rest against a fixed goal, Rhythm as tonight's bedtime
 /// against the usual one; `Slumber/README.md` records why these two.
 namespace Rhythm
@@ -50,10 +52,16 @@ inline int32_t noonDay(uint32_t utc, int32_t offsetMin)
     return static_cast<int32_t>(local >= 0 ? local / 86400 : (local - 86399) / 86400);
 }
 
+/// Night::awakeFrom and awakeTo when the night has no awakening.
+constexpr int32_t kNoAwakening = -1;
+
 struct Night {
     int32_t  bed  = 0;  ///< afterNoon of the start
     int32_t  wake = 0;  ///< afterNoon of the end
     uint16_t restMin = 0;
+    int32_t  awakeFrom = kNoAwakening;  ///< afterNoon: the longest gap between its periods
+    int32_t  awakeTo   = kNoAwakening;  ///< afterNoon
+    uint32_t awakeS    = 0;
 };
 
 struct Usual {
@@ -62,6 +70,7 @@ struct Usual {
     int32_t wake   = 0;  ///< afterNoon
     uint8_t nights = 0;  ///< the median is of this many
     bool    varies = false;  ///< enough nights, but most are not near any one time
+    int32_t spread = 0;  ///< minutes: the median distance of those nights' bedtimes from `bed`
 };
 
 /// Shortest signed distance from `b` to `a` round the clock, in (-720, 720].
@@ -69,6 +78,19 @@ inline int32_t apart(int32_t a, int32_t b)
 {
     const int32_t d = ((a - b) % 1440 + 1440) % 1440;
     return d > 720 ? d - 1440 : d;
+}
+
+/// The median of `v`, which it sorts.
+inline int32_t median(int32_t *v, size_t n)
+{
+    for (size_t i = 1; i < n; ++i) {
+        for (size_t j = i; j > 0 && v[j - 1] > v[j]; --j) {
+            const int32_t t = v[j];
+            v[j]            = v[j - 1];
+            v[j - 1]        = t;
+        }
+    }
+    return n == 0 ? 0 : n % 2 == 1 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2;
 }
 
 /// The median of clock times, cut where the clock has its widest stretch with
@@ -131,6 +153,11 @@ inline Usual usual(const Night *prior, size_t n)
     u.bed    = centre(beds, k);
     u.wake   = centre(wakes, k);
     u.nights = static_cast<uint8_t>(k);
+    for (size_t i = 0; i < k; ++i) {
+        const int32_t d = apart(beds[i], u.bed);
+        beds[i]         = d < 0 ? -d : d;
+    }
+    u.spread = median(beds, k);
     const size_t gFrom = n > kKeptNights ? n - kKeptNights : 0;
     int32_t      gBeds[kKeptNights];
     int32_t      gWakes[kKeptNights];
@@ -149,18 +176,77 @@ inline int32_t minuteOfDay(int32_t afterNoonMin)
     return (afterNoonMin + 720) % 1440;
 }
 
-/// The main night of each recent noon-to-noon local day, the longest worn
-/// period that began in it, oldest first; a nap beside a night is not one.
+/// The main night of each recent noon-to-noon local day, oldest first: the
+/// longest sleep that began in it, a sleep being worn periods less than
+/// SleepPeriods::kSameSleepGapS apart, so a nap beside a night is not one.
 class Recent
 {
 public:
     static constexpr size_t kCap = kKeptNights + 1;
 
+    /// Adds a worn period, in time order, to the sleep it continues or as a new one.
     void add(uint32_t startUtc, uint32_t endUtc, int32_t offsetMin, uint16_t restMin)
     {
-        const int32_t day = noonDay(startUtc, offsetMin);
-        Main m{day, startUtc, endUtc - startUtc,
-               Night{afterNoon(startUtc, offsetMin), afterNoon(endUtc, offsetMin), restMin}};
+        if (mOpen.spanS > 0 && startUtc >= mOpen.endUtc && startUtc - mOpen.endUtc < SleepPeriods::kSameSleepGapS) {
+            if (startUtc - mOpen.endUtc > mOpen.night.awakeS) {
+                mOpen.night.awakeFrom = afterNoon(mOpen.endUtc, offsetMin);
+                mOpen.night.awakeTo   = afterNoon(startUtc, offsetMin);
+                mOpen.night.awakeS    = startUtc - mOpen.endUtc;
+            }
+            mOpen.endUtc = endUtc;
+            mOpen.spanS += endUtc - startUtc;
+            mOpen.night.wake    = afterNoon(endUtc, offsetMin);
+            mOpen.night.restMin = static_cast<uint16_t>(mOpen.night.restMin + restMin);
+        } else {
+            mOpen = Main{noonDay(startUtc, offsetMin), startUtc, endUtc, endUtc - startUtc,
+                         Night{afterNoon(startUtc, offsetMin), afterNoon(endUtc, offsetMin), restMin}};
+        }
+        keep(mOpen);
+    }
+
+    /// The usual from the main nights that began before `beforeUtc`.
+    Usual usualBefore(uint32_t beforeUtc) const
+    {
+        Night  prior[kCap];
+        size_t k = 0;
+        for (size_t i = 0; i < mN; ++i) {
+            if (mMain[i].startUtc < beforeUtc) {
+                prior[k++] = mMain[i].night;
+            }
+        }
+        return usual(prior, k);
+    }
+
+    size_t size() const { return mN; }
+
+    /// Calls `f(noonDay, night)` for each main night kept, oldest first.
+    template <typename F>
+    void each(F f) const
+    {
+        for (size_t i = 0; i < mN; ++i) {
+            f(mMain[i].day, mMain[i].night);
+        }
+    }
+
+    /// Nights still to log before there can be a usual.
+    uint8_t nightsToGo() const
+    {
+        return static_cast<uint8_t>(mN < kMinBaselineNights ? kMinBaselineNights - mN : 0);
+    }
+
+private:
+    struct Main {
+        int32_t  day      = 0;
+        uint32_t startUtc = 0;
+        uint32_t endUtc   = 0;
+        uint32_t spanS    = 0;  ///< the periods' lengths summed
+        Night    night;
+    };
+
+    /// Stores `m` as its day's main night if it is longer than the one there.
+    void keep(const Main &m)
+    {
+        const int32_t day = m.day;
         for (size_t i = 0; i < mN; ++i) {
             if (mMain[i].day == day) {
                 if (m.spanS > mMain[i].spanS) {
@@ -190,36 +276,9 @@ public:
         ++mN;
     }
 
-    /// The usual from the main nights that began before `beforeUtc`.
-    Usual usualBefore(uint32_t beforeUtc) const
-    {
-        Night  prior[kCap];
-        size_t k = 0;
-        for (size_t i = 0; i < mN; ++i) {
-            if (mMain[i].startUtc < beforeUtc) {
-                prior[k++] = mMain[i].night;
-            }
-        }
-        return usual(prior, k);
-    }
-
-    size_t size() const { return mN; }
-
-    /// Nights still to log before there can be a usual.
-    uint8_t nightsToGo() const
-    {
-        return static_cast<uint8_t>(mN < kMinBaselineNights ? kMinBaselineNights - mN : 0);
-    }
-
-private:
-    struct Main {
-        int32_t  day     = 0;
-        uint32_t startUtc = 0;
-        uint32_t spanS   = 0;
-        Night    night;
-    };
     Main   mMain[kCap];
     size_t mN = 0;
+    Main   mOpen;  ///< the latest sleep, kept or not
 };
 
 /// Rest against the goal; past kFull is a second lap.

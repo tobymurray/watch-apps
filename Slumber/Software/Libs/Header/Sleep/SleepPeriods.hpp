@@ -35,6 +35,10 @@ constexpr uint16_t kStepsAwake = 10;
 constexpr uint32_t kMinBlockS = 30u * 60u;
 constexpr uint32_t kMergeGapS = 60u * 60u;
 
+/// Worn periods closer than this are one sleep broken by an awakening, not a night and a
+/// nap: the split nights replayed in README "Finding a night" were 64-108 min apart.
+constexpr uint32_t kSameSleepGapS = 3u * 60u * 60u;
+
 /// Neighbours further apart than this are separated by missing data.
 constexpr uint32_t kMaxStepS = 3u * kEpochS;
 

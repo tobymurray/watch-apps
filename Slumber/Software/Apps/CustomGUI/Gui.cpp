@@ -26,6 +26,7 @@ extern "C" void panickit_host_panic(const uint8_t *msg, uint32_t len)
 Gui::Gui(SDK::Kernel &kernel)
     : mKernel(kernel)
 {
+    mState.week_pick = SLUMBER_NO_PICK;
 }
 
 void Gui::queryDisplayConfig()
@@ -99,8 +100,17 @@ void Gui::show(uint8_t screen)
 {
     mState.screen      = screen;
     mState.just_logged = 0;
+    mState.week_pick   = SLUMBER_NO_PICK;
     mSequence          = 0;
     mDirty             = true;
+}
+
+void Gui::unpick()
+{
+    if (mState.week_pick != SLUMBER_NO_PICK) {
+        mState.week_pick = SLUMBER_NO_PICK;
+        mDirty           = true;
+    }
 }
 
 /// Pages without resetting the picker's sequence, whose presses are page turns too.
@@ -111,6 +121,7 @@ void Gui::turnTo(uint8_t page)
 }
 
 /// L1 and L2 page back and on, as the stock apps' faces do; R1 R1 R1 opens the picker; R2 leaves.
+/// On the week, R1 picks a night and L1 and L2 step between nights until R2 lets it go.
 void Gui::onButton(SDK::Message::EventButton::Id id)
 {
     using Id = SDK::Message::EventButton::Id;
@@ -135,6 +146,10 @@ void Gui::onButton(SDK::Message::EventButton::Id id)
     mLastPressMs = now;
     if (mSequence == slumber_sequence_len()) {
         show(SLUMBER_SCREEN_PICKER);
+    } else if (mState.screen == SLUMBER_SCREEN_WEEK &&
+               (mState.week_pick != SLUMBER_NO_PICK || button == SLUMBER_BUTTON_R1)) {
+        mState.week_pick = slumber_pick_after(mState.week_pick, button);
+        mDirty           = true;
     } else if (id == Id::SW1) {
         turnTo(slumber_page_before(mState.screen));
     } else if (id == Id::SW3) {
@@ -176,12 +191,16 @@ void Gui::run()
 
             case SDK::MessageType::COMMAND_APP_GUI_SUSPEND:
                 mResumed = false;
+                unpick();
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 break;
 
             case SDK::MessageType::EVENT_GUI_TICK:
                 msg->setResult(SDK::MessageResult::SUCCESS);
                 mKernel.comm.releaseMessage(msg);
+                if (mKernel.sys.getTimeMs() - mLastPressMs > kPickIdleMs) {
+                    unpick();
+                }
                 renderAndPush();
                 continue;
 
@@ -196,23 +215,33 @@ void Gui::run()
                 mState.hr_ok          = st->hrOk;
                 mState.have_status    = 1;
                 mState.night_kind        = st->night.kind;
-                mState.restless          = st->night.restless;
                 mState.rest_min          = st->night.restMin;
                 mState.onset_min         = st->night.onsetMin;
                 mState.wake_min          = st->night.wakeMin;
-                mState.rest_fill         = st->night.restFill;
                 mState.rhythm_fill       = st->night.rhythmFill;
                 mState.rhythm_offset_min = st->night.rhythmOffsetMin;
                 mState.usual_bed_min     = st->night.usualBedMin;
                 mState.scored_bed_min    = st->night.scoredBedMin;
                 mState.scored_wake_min   = st->night.scoredWakeMin;
+                static_assert(CustomMessage::kAwakenings == SLUMBER_AWAKENINGS, "every awakening sent is drawn");
+                for (size_t i = 0; i < CustomMessage::kAwakenings; ++i) {
+                    mState.awake_from_min[i] = st->night.awakeFromMin[i];
+                    mState.awake_to_min[i]   = st->night.awakeToMin[i];
+                }
+                if (st->week.newestWeekday != mState.week_newest_weekday) {
+                    unpick();
+                }
                 for (size_t i = 0; i < CustomMessage::kWeekNights; ++i) {
                     mState.week_bed[i]  = st->week.bed[i];
                     mState.week_wake[i] = st->week.wake[i];
+                    mState.week_rest[i] = st->week.rest[i];
+                    mState.week_awake_from[i] = st->week.awakeFrom[i];
+                    mState.week_awake_to[i]   = st->week.awakeTo[i];
                 }
                 mState.week_newest_weekday = st->week.newestWeekday;
                 mState.week_usual_bed      = st->week.usualBed;
                 mState.week_usual_wake     = st->week.usualWake;
+                mState.usual_spread_min    = st->week.usualSpreadMin;
                 mState.tonight_bed_min     = st->tonight.bedMin;
                 mState.tonight_wake_min    = st->tonight.wakeMin;
                 mState.now_min             = st->tonight.nowMin;
@@ -237,6 +266,12 @@ void Gui::run()
                 using Id    = SDK::Message::EventButton::Id;
                 using Event = SDK::Message::EventButton::Event;
 
+                if (btn->event == Event::CLICK && btn->id == Id::SW4 &&
+                    mState.week_pick != SLUMBER_NO_PICK) {
+                    unpick();
+                    msg->setResult(SDK::MessageResult::SUCCESS);
+                    break;
+                }
                 if (btn->event == Event::CLICK && btn->id == Id::SW4 &&
                     mState.screen != SLUMBER_SCREEN_PICKER) {
                     msg->setResult(SDK::MessageResult::SUCCESS);

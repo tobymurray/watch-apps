@@ -468,14 +468,12 @@ void Service::publishNow(uint32_t utc)
             LastNight::asleepSince(mPeriods, mPeriodN, mHistory.data()[mHistory.size() - 1].utc);
     }
     s.lastNight   = mLastNight;
+    s.lastSleep   = mLastSleep;
     s.usual       = mNights.recent().usualBefore(UINT32_MAX);
     s.usualBefore = mNights.recent().usualBefore(mLastNight != nullptr ? mLastNight->startUtc : UINT32_MAX);
     s.tonightDay  = Schedule::tonight(utc, off);
-    s.tonight     = Schedule::agree(mNights.schedule().expect(s.tonightDay), s.usual);
-    s.week        = mNights.schedule().week();
     if (mLastNight != nullptr && mLastNight->worn == SleepPeriods::Worn::Worn) {
-        s.lastHeart  = NightSummary::heart(mHistory.data(), mHistory.size(), *mLastNight);
-        s.usualHeart = mNights.schedule().heartBefore(Rhythm::noonDay(mLastNight->startUtc, off));
+        s.lastHeart = NightSummary::heart(mHistory.data(), mHistory.size(), *mLastNight);
     }
     if (!Slumber::SleepNow::publish(mKernel.fs, s)) {
         ++mWriteFails;
@@ -520,15 +518,17 @@ void Service::fillNight(SlumberCard::Card &card, uint32_t utc)
     card.state = SlumberCard::State::Recording;
     mPeriodN   = 0;
     mLastNight = nullptr;
+    mLastSleep = LastNight::Sleep{};
     mShown     = CustomMessage::NightView{};
+    mUsual     = Rhythm::Usual{};
     std::tm       local{};
     const int32_t off = utcOffsetMin(utc, local);
     if (off == -1 || mHistory.size() == 0) {
         return;
     }
-    const Rhythm::Usual usual = mNights.recent().usualBefore(UINT32_MAX);
-    if (usual.known) {
-        mShown.usualBedMin = static_cast<uint16_t>((usual.bed + 720) % 1440);
+    mUsual = mNights.recent().usualBefore(UINT32_MAX);
+    if (mUsual.known) {
+        mShown.usualBedMin = static_cast<uint16_t>(Rhythm::minuteOfDay(mUsual.bed));
     }
     const size_t n = SleepPeriods::find(mHistory.data(), mHistory.size(), mPeriods,
                                         sizeof(mPeriods) / sizeof(mPeriods[0]), utc);
@@ -539,51 +539,56 @@ void Service::fillNight(SlumberCard::Card &card, uint32_t utc)
         return;
     }
     mLastNight = c.period;
+    mLastSleep = c.sleep;
+    const LastNight::Sleep     &s = c.sleep;
     const SleepPeriods::Period &p = *c.period;
     using SlumberCard::State;
     card.state         = c.kind == LastNight::Kind::NotWorn ? State::NotWorn
-                         : p.settled                        ? State::Report
+                         : s.settled                        ? State::Report
                                                             : State::Provisional;
-    card.restMin       = p.restMin;
-    card.spanMin       = static_cast<uint16_t>((p.endUtc - p.startUtc) / 60u);
+    card.restMin       = s.restMin;
+    card.spanMin       = static_cast<uint16_t>((s.endUtc - s.startUtc) / 60u);
     int32_t sleptOff   = off;
-    mNights.loggedOffset(p.startUtc, sleptOff);
-    card.onsetMinOfDay = Slumber::LocalTime::minuteOfDay(p.startUtc, sleptOff);
-    card.wakeMinOfDay  = Slumber::LocalTime::minuteOfDay(p.endUtc, sleptOff);
-    card.validUntilUtc = p.endUtc + LastNight::kRecentS;
-    showNight(c.kind, p, card.state == State::Report, sleptOff);
+    mNights.loggedOffset(s.last->startUtc, sleptOff);
+    card.onsetMinOfDay = Slumber::LocalTime::minuteOfDay(s.startUtc, sleptOff);
+    card.wakeMinOfDay  = Slumber::LocalTime::minuteOfDay(s.endUtc, sleptOff);
+    card.validUntilUtc = s.endUtc + LastNight::kRecentS;
+    showNight(c.kind, s, sleptOff);
 
-    if (p.startUtc != mReportedStartUtc || card.state != mReportedState) {
-        mLog.line("night", "state=%u start=%lu end=%lu rest_min=%u worn_pct=%u hr_pct=%u",
-                  static_cast<unsigned>(card.state), static_cast<unsigned long>(p.startUtc),
-                  static_cast<unsigned long>(p.endUtc), static_cast<unsigned>(p.restMin),
-                  static_cast<unsigned>(p.wornPct), static_cast<unsigned>(p.hrCoverPct));
-        mReportedStartUtc = p.startUtc;
+    if (s.startUtc != mReportedStartUtc || card.state != mReportedState) {
+        mLog.line("night", "state=%u start=%lu end=%lu rest_min=%u periods=%u worn_pct=%u hr_pct=%u",
+                  static_cast<unsigned>(card.state), static_cast<unsigned long>(s.startUtc),
+                  static_cast<unsigned long>(s.endUtc), static_cast<unsigned>(s.restMin),
+                  static_cast<unsigned>(s.periods), static_cast<unsigned>(p.wornPct),
+                  static_cast<unsigned>(p.hrCoverPct));
+        mReportedStartUtc = s.startUtc;
         mReportedState    = card.state;
     }
 }
 
-void Service::showNight(LastNight::Kind kind, const SleepPeriods::Period &p, bool settled, int32_t sleptOff)
+void Service::showNight(LastNight::Kind kind, const LastNight::Sleep &s, int32_t sleptOff)
 {
     using namespace CustomMessage;
-    mShown.kind     = kind == LastNight::Kind::NotWorn ? kNightOffWrist : settled ? kNightSettled : kNightSoFar;
-    mShown.restMin  = p.restMin;
-    mShown.onsetMin = Slumber::LocalTime::minuteOfDay(p.startUtc, sleptOff);
-    mShown.wakeMin  = Slumber::LocalTime::minuteOfDay(p.endUtc, sleptOff);
+    mShown.kind     = kind == LastNight::Kind::NotWorn ? kNightOffWrist : s.settled ? kNightSettled : kNightSoFar;
+    mShown.restMin  = s.restMin;
+    mShown.onsetMin = Slumber::LocalTime::minuteOfDay(s.startUtc, sleptOff);
+    mShown.wakeMin  = Slumber::LocalTime::minuteOfDay(s.endUtc, sleptOff);
+    static_assert(kAwakenings == LastNight::kAwakenings, "every awakening kept is sent");
+    for (size_t i = 0; i < kAwakenings && s.awakeFromUtc[i] != 0; ++i) {
+        mShown.awakeFromMin[i] = Slumber::LocalTime::minuteOfDay(s.awakeFromUtc[i], sleptOff);
+        mShown.awakeToMin[i]   = Slumber::LocalTime::minuteOfDay(s.awakeToUtc[i], sleptOff);
+    }
     if (mShown.kind == kNightOffWrist) {
         return;
     }
-    const NightSummary::Summary s = NightSummary::summarise(mHistory.data(), mHistory.size(), p);
-    mShown.restless = static_cast<uint8_t>(s.restlessSpells > 255 ? 255 : s.restlessSpells);
-    mShown.restFill = Rhythm::restFill(p.restMin);
-    const Rhythm::Usual before = mNights.recent().usualBefore(p.startUtc);
-    if (before.known) {
-        const int32_t d         = Rhythm::offset(Rhythm::afterNoon(p.startUtc, sleptOff), before);
+    mUsual = mNights.recent().usualBefore(s.startUtc);
+    if (mUsual.known) {
+        const int32_t d         = Rhythm::offset(Rhythm::afterNoon(s.startUtc, sleptOff), mUsual);
         mShown.rhythmFill      = Rhythm::rhythmFill(d);
         mShown.rhythmOffsetMin = static_cast<int16_t>(d);
-        mShown.scoredBedMin    = static_cast<uint16_t>(Rhythm::minuteOfDay(before.bed));
-        mShown.scoredWakeMin   = static_cast<uint16_t>(Rhythm::minuteOfDay(before.wake));
-    } else if (before.varies) {
+        mShown.scoredBedMin    = static_cast<uint16_t>(Rhythm::minuteOfDay(mUsual.bed));
+        mShown.scoredWakeMin   = static_cast<uint16_t>(Rhythm::minuteOfDay(mUsual.wake));
+    } else if (mUsual.varies) {
         mShown.rhythmFill = CustomMessage::kRhythmVaries;
     }
 }
@@ -603,27 +608,27 @@ void Service::fillWeek(CustomMessage::Status &st)
     }
     st.tonight.nowMin = Slumber::LocalTime::minuteOfDay(utc, off);
 
-    const int32_t            tonight  = Schedule::tonight(utc, off);
-    const Schedule::Learner &schedule = mNights.schedule();
-    const Schedule::Bars     bars     = schedule.before(tonight);
+    const Schedule::Bars bars = Schedule::bars(mNights.recent(), Schedule::tonight(utc, off));
     static_assert(CustomMessage::kWeekNights == Schedule::kWeekNights, "the week sent is the week learned");
     for (size_t i = 0; i < CustomMessage::kWeekNights; ++i) {
         st.week.bed[i]  = bars.bed[i];
         st.week.wake[i] = bars.wake[i];
+        st.week.rest[i] = bars.rest[i];
+        st.week.awakeFrom[i] = bars.awakeFrom[i];
+        st.week.awakeTo[i]   = bars.awakeTo[i];
     }
     st.week.newestWeekday = bars.newestWeekday;
-    const Rhythm::Usual usual = mNights.recent().usualBefore(UINT32_MAX);
-    if (usual.known) {
-        st.week.usualBed  = static_cast<int16_t>(usual.bed);
-        st.week.usualWake = static_cast<int16_t>(usual.wake < usual.bed ? usual.wake + 1440 : usual.wake);
+    if (mUsual.known) {
+        st.week.usualBed       = static_cast<int16_t>(mUsual.bed);
+        st.week.usualWake      = static_cast<int16_t>(mUsual.wake < mUsual.bed ? mUsual.wake + 1440 : mUsual.wake);
+        st.week.usualSpreadMin = static_cast<uint16_t>(mUsual.spread);
     }
-
-    const Schedule::Expected e = Schedule::agree(schedule.expect(tonight), usual);
-    st.tonight.timesVary       = e.varies ? 1 : 0;
-    st.tonight.nightsToGo      = mNights.recent().nightsToGo();
-    if (e.known) {
-        st.tonight.bedMin  = static_cast<uint16_t>(Rhythm::minuteOfDay(e.bed));
-        st.tonight.wakeMin = static_cast<uint16_t>(Rhythm::minuteOfDay(e.wake));
+    const Rhythm::Usual usual = mNights.recent().usualBefore(UINT32_MAX);
+    st.tonight.timesVary  = usual.varies ? 1 : 0;
+    st.tonight.nightsToGo = mNights.recent().nightsToGo();
+    if (usual.known) {
+        st.tonight.bedMin  = static_cast<uint16_t>(Rhythm::minuteOfDay(usual.bed));
+        st.tonight.wakeMin = static_cast<uint16_t>(Rhythm::minuteOfDay(usual.wake));
     }
 }
 

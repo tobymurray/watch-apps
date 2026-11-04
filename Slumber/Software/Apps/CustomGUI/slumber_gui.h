@@ -14,6 +14,8 @@ extern "C" {
 #define SLUMBER_RHYTHM_VARIES 0xFFFEu
 #define SLUMBER_NO_BAR      (-1)
 #define SLUMBER_WEEK_NIGHTS 7
+#define SLUMBER_NO_PICK     0xFFu
+#define SLUMBER_AWAKENINGS  2
 
 #define SLUMBER_SCREEN_NIGHT   0u
 #define SLUMBER_SCREEN_PICKER  1u
@@ -42,11 +44,9 @@ typedef struct {
     uint16_t rest_min;
     uint16_t onset_min;     /* minute of day */
     uint16_t wake_min;      /* minute of day */
-    uint16_t rest_fill;     /* per mille; past 1000 is a second lap */
     uint16_t rhythm_fill;   /* per mille; SLUMBER_UNKNOWN = no usual to score against */
     int16_t  rhythm_offset_min;
     uint16_t usual_bed_min; /* minute of day; SLUMBER_UNKNOWN = none */
-    uint8_t  restless;
     uint8_t  week_newest_weekday;             /* 0 = Sunday */
     int16_t  week_bed[SLUMBER_WEEK_NIGHTS];   /* minutes after local noon, oldest first; SLUMBER_NO_BAR = none */
     int16_t  week_wake[SLUMBER_WEEK_NIGHTS];  /* minutes after local noon, past 1440 after noon */
@@ -59,6 +59,13 @@ typedef struct {
     uint8_t  times_vary;                      /* 1 = enough nights, but they keep no one time */
     uint16_t scored_bed_min;                  /* minute of day: the usual rhythm_offset_min is against; SLUMBER_UNKNOWN = none */
     uint16_t scored_wake_min;                 /* minute of day; SLUMBER_UNKNOWN = none */
+    uint16_t usual_spread_min;                /* minutes: Rhythm::Usual::spread of the week's usual; SLUMBER_UNKNOWN = none */
+    uint16_t week_rest[SLUMBER_WEEK_NIGHTS];  /* minutes of rest; 0 where there is no bar */
+    uint8_t  week_pick;                       /* the night picked on the week, 0 oldest; SLUMBER_NO_PICK = none */
+    uint16_t awake_from_min[SLUMBER_AWAKENINGS]; /* minute of day: last night's longest awakenings; SLUMBER_UNKNOWN = none */
+    uint16_t awake_to_min[SLUMBER_AWAKENINGS];   /* minute of day; SLUMBER_UNKNOWN = none */
+    int16_t  week_awake_from[SLUMBER_WEEK_NIGHTS]; /* minutes after local noon, as week_wake; SLUMBER_NO_BAR = none */
+    int16_t  week_awake_to[SLUMBER_WEEK_NIGHTS];   /* minutes after local noon, as week_wake; SLUMBER_NO_BAR = none */
 } slumber_state;
 
 /* FNV-1a over the layout as the linked Rust core sees it. */
@@ -91,6 +98,9 @@ uint8_t slumber_page_after(uint8_t screen);
 
 /* The page L1 goes to from `screen`. */
 uint8_t slumber_page_before(uint8_t screen);
+
+/* The night picked on the week after `button` is pressed with `pick` picked. */
+uint8_t slumber_pick_after(uint8_t pick, uint8_t button);
 
 /* The screen to open on, once the first status is in. */
 uint8_t slumber_opening_screen(const slumber_state* state);
@@ -129,11 +139,9 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(slumber_state, rest_min));
     h = fnv1a(h, offsetof(slumber_state, onset_min));
     h = fnv1a(h, offsetof(slumber_state, wake_min));
-    h = fnv1a(h, offsetof(slumber_state, rest_fill));
     h = fnv1a(h, offsetof(slumber_state, rhythm_fill));
     h = fnv1a(h, offsetof(slumber_state, rhythm_offset_min));
     h = fnv1a(h, offsetof(slumber_state, usual_bed_min));
-    h = fnv1a(h, offsetof(slumber_state, restless));
     h = fnv1a(h, offsetof(slumber_state, week_newest_weekday));
     h = fnv1a(h, offsetof(slumber_state, week_bed));
     h = fnv1a(h, offsetof(slumber_state, week_wake));
@@ -146,12 +154,19 @@ constexpr uint32_t fingerprint()
     h = fnv1a(h, offsetof(slumber_state, times_vary));
     h = fnv1a(h, offsetof(slumber_state, scored_bed_min));
     h = fnv1a(h, offsetof(slumber_state, scored_wake_min));
+    h = fnv1a(h, offsetof(slumber_state, usual_spread_min));
+    h = fnv1a(h, offsetof(slumber_state, week_rest));
+    h = fnv1a(h, offsetof(slumber_state, week_pick));
+    h = fnv1a(h, offsetof(slumber_state, awake_from_min));
+    h = fnv1a(h, offsetof(slumber_state, awake_to_min));
+    h = fnv1a(h, offsetof(slumber_state, week_awake_from));
+    h = fnv1a(h, offsetof(slumber_state, week_awake_to));
     return h;
 }
 
 } // namespace slumber_abi
 
-static_assert(sizeof(slumber_state) == 84, "slumber_state size changed");
+static_assert(sizeof(slumber_state) == 136, "slumber_state size changed");
 static_assert(alignof(slumber_state) == 4, "slumber_state alignment changed");
 static_assert(offsetof(slumber_state, rows_today) == 4, "rows_today moved");
 static_assert(offsetof(slumber_state, write_fails) == 8, "write_fails moved");
@@ -165,19 +180,26 @@ static_assert(offsetof(slumber_state, just_logged) == 21, "just_logged moved");
 static_assert(offsetof(slumber_state, screen) == 22, "screen moved");
 static_assert(offsetof(slumber_state, night_kind) == 23, "night_kind moved");
 static_assert(offsetof(slumber_state, rest_min) == 24, "rest_min moved");
-static_assert(offsetof(slumber_state, rest_fill) == 30, "rest_fill moved");
-static_assert(offsetof(slumber_state, rhythm_offset_min) == 34, "rhythm_offset_min moved");
-static_assert(offsetof(slumber_state, usual_bed_min) == 36, "usual_bed_min moved");
-static_assert(offsetof(slumber_state, restless) == 38, "restless moved");
-static_assert(offsetof(slumber_state, week_bed) == 40, "week_bed moved");
-static_assert(offsetof(slumber_state, week_wake) == 54, "week_wake moved");
-static_assert(offsetof(slumber_state, week_usual_bed) == 68, "week_usual_bed moved");
-static_assert(offsetof(slumber_state, tonight_bed_min) == 72, "tonight_bed_min moved");
-static_assert(offsetof(slumber_state, now_min) == 76, "now_min moved");
-static_assert(offsetof(slumber_state, nights_to_go) == 78, "nights_to_go moved");
-static_assert(offsetof(slumber_state, times_vary) == 79, "times_vary moved");
-static_assert(offsetof(slumber_state, scored_bed_min) == 80, "scored_bed_min moved");
-static_assert(offsetof(slumber_state, scored_wake_min) == 82, "scored_wake_min moved");
+static_assert(offsetof(slumber_state, rhythm_fill) == 30, "rhythm_fill moved");
+static_assert(offsetof(slumber_state, rhythm_offset_min) == 32, "rhythm_offset_min moved");
+static_assert(offsetof(slumber_state, usual_bed_min) == 34, "usual_bed_min moved");
+static_assert(offsetof(slumber_state, week_newest_weekday) == 36, "week_newest_weekday moved");
+static_assert(offsetof(slumber_state, week_bed) == 38, "week_bed moved");
+static_assert(offsetof(slumber_state, week_wake) == 52, "week_wake moved");
+static_assert(offsetof(slumber_state, week_usual_bed) == 66, "week_usual_bed moved");
+static_assert(offsetof(slumber_state, tonight_bed_min) == 70, "tonight_bed_min moved");
+static_assert(offsetof(slumber_state, now_min) == 74, "now_min moved");
+static_assert(offsetof(slumber_state, nights_to_go) == 76, "nights_to_go moved");
+static_assert(offsetof(slumber_state, times_vary) == 77, "times_vary moved");
+static_assert(offsetof(slumber_state, scored_bed_min) == 78, "scored_bed_min moved");
+static_assert(offsetof(slumber_state, scored_wake_min) == 80, "scored_wake_min moved");
+static_assert(offsetof(slumber_state, usual_spread_min) == 82, "usual_spread_min moved");
+static_assert(offsetof(slumber_state, week_rest) == 84, "week_rest moved");
+static_assert(offsetof(slumber_state, week_pick) == 98, "week_pick moved");
+static_assert(offsetof(slumber_state, awake_from_min) == 100, "awake_from_min moved");
+static_assert(offsetof(slumber_state, awake_to_min) == 104, "awake_to_min moved");
+static_assert(offsetof(slumber_state, week_awake_from) == 108, "week_awake_from moved");
+static_assert(offsetof(slumber_state, week_awake_to) == 122, "week_awake_to moved");
 #endif
 
 #endif // SLUMBER_GUI_H
