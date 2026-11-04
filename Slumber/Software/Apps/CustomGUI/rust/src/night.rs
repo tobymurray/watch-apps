@@ -85,7 +85,7 @@ fn atan_unit(z: f32) -> f32 {
 }
 
 /// The angle of (dx, dy) in turns, clockwise from 12 o'clock, in [0, 1).
-fn turns(dx: f32, dy: f32) -> f32 {
+pub(crate) fn turns(dx: f32, dy: f32) -> f32 {
     // atan2(dx, -dy): x is right, y is down.
     let (y, x) = (dx, -dy);
     let (ax, ay) = (if x < 0.0 { -x } else { x }, if y < 0.0 { -y } else { y });
@@ -112,7 +112,7 @@ fn turns(dx: f32, dy: f32) -> f32 {
 }
 
 /// sin of a turn fraction, by its Taylor series after folding into a quarter turn.
-fn sin_turns(t: f32) -> f32 {
+pub(crate) fn sin_turns(t: f32) -> f32 {
     let mut f = t - t as i32 as f32;
     if f > 0.5 {
         f -= 1.0;

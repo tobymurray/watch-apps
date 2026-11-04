@@ -7,6 +7,7 @@ use incised_text::{faces, Face, Style};
 use panickit as _;
 
 mod atlas;
+mod buttons;
 mod dial;
 mod night;
 mod tonight;
@@ -121,6 +122,17 @@ fn draw_dots(fb: &mut Surface<Abgr2222>, screen: u8) {
             }
         }
     }
+}
+
+/// Which buttons get an arc: on the week, R1 while nothing is picked, then L1, L2 and R2.
+fn button_arcs(state: &State) -> [bool; 4] {
+    let mut lit = [false; 4];
+    if state.screen == SCREEN_WEEK {
+        let picking = week::picking(state);
+        (lit[buttons::L1], lit[buttons::L2], lit[buttons::R2]) = (picking, picking, picking);
+        lit[buttons::R1] = !picking;
+    }
+    lit
 }
 
 pub const NO_MARK: u8 = 0xFF;
@@ -360,6 +372,7 @@ pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {
     if !week::picking(state) {
         draw_dots(&mut fb, state.screen);
     }
+    buttons::draw(&mut fb, button_arcs(state));
 }
 
 pub const BUTTON_L1: u8 = 0;
@@ -997,22 +1010,31 @@ mod tests {
     #[test]
     fn a_picked_night_says_its_rest_and_times() {
         let (_, st) = weeks().into_iter().find(|(n, _)| *n == "week").unwrap();
-        let say = |i: u8| week::pick_detail(&st, i as usize).0.as_str().to_owned();
+        let say = |i: u8| week::pick_parts(&st, i as usize).map(|(r, t)| (r.as_str().to_owned(), t.as_str().to_owned()));
         assert_eq!(week::pick_title(&st, 6), "Wednesday");
-        assert_eq!(say(6), "7h42 23:15-07:20");
-        assert_eq!(say(5), "8h22 01:30-10:15");
-        assert_eq!(say(2), "no night");
+        assert_eq!(say(6), Some(("7h42".into(), "23:15-07:20".into())));
+        assert_eq!(say(5), Some(("8h22".into(), "01:30-10:15".into())));
+        assert_eq!(say(2), None);
         assert_eq!(week::pick_title(&st, 2), "Saturday");
     }
 
     #[test]
     fn a_picked_nights_text_fits_the_glass() {
+        let f = week::PICK_FACE;
+        let y = week::PICK_Y;
+        assert!(y + (f.descent as i32) < week::PLOT_TOP);
+        assert!(fits_the_glass(f, "no night", 120, y));
         for (name, st) in picks() {
             let i = st.week_pick as usize;
-            let (detail, _) = week::pick_detail(&st, i);
-            assert!(week::PICK_FACE.covers(detail.as_str()), "{name}");
-            assert!(fits_the_glass(week::PICK_FACE, detail.as_str(), 120, week::SUMMARY_Y), "{name}: {:?}", detail.as_str());
             assert!(fits_the_glass(week::TITLE_FACE, week::pick_title(&st, i), 120, week::TITLE_Y), "{name}");
+            let Some((rest, times)) = week::pick_parts(&st, i) else { continue };
+            assert!(f.covers(rest.as_str()) && f.covers(times.as_str()), "{name}");
+            let (left, _, right) = week::pick_layout(&rest, &times);
+            for row in [y - f.ascent as i32, y + f.descent as i32] {
+                let d = row as f32 - 119.5;
+                let room = (118.5f32 * 118.5 - d * d).max(0.0).sqrt();
+                assert!(left as f32 - 1.0 >= 119.5 - room && right as f32 + 1.0 <= 119.5 + room, "{name}: {left}..{right}");
+            }
         }
     }
 
@@ -1030,6 +1052,50 @@ mod tests {
         assert!(dots_lit(&st) > 0);
         assert_eq!(dots_lit(&State { week_pick: 6, ..st }), 0);
         assert!(dots_lit(&State { week_pick: 6, screen: SCREEN_NIGHT, ..st }) > 0);
+    }
+
+    #[test]
+    fn the_week_marks_r1_and_a_pick_marks_l1_l2_and_r2() {
+        let (_, st) = weeks().into_iter().find(|(n, _)| *n == "week").unwrap();
+        assert_eq!(button_arcs(&st), [false, false, true, false]);
+        assert_eq!(button_arcs(&State { week_pick: 4, ..st }), [true, true, false, true]);
+        for (_, st) in nights().into_iter().chain(tonights()) {
+            assert_eq!(button_arcs(&st), [false; 4]);
+        }
+        assert_eq!(button_arcs(&reported()), [false; 4]);
+    }
+
+    /// Least clearance, in pixels, between an arc and anything else drawn.
+    const ARC_CLEARANCE: i32 = 3;
+
+    #[test]
+    fn nothing_on_the_week_comes_near_a_button_arc() {
+        let all = weeks().into_iter().map(|(n, s)| (n.to_owned(), s)).chain(picks());
+        for (name, st) in all {
+            let f = frame(&st);
+            let mut mask = vec![0u8; (W * H) as usize];
+            buttons::draw(&mut Surface::<Abgr2222>::round(&mut mask, W, H).unwrap(), button_arcs(&st));
+            let at = |x: i32, y: i32| (y * W as i32 + x) as usize;
+            let ground = f[at(60, DOTS_Y)];
+            for y in 0..H as i32 {
+                for x in 0..W as i32 {
+                    if mask[at(x, y)] == 0 {
+                        continue;
+                    }
+                    for ny in (y - ARC_CLEARANCE + 1).max(0)..=(y + ARC_CLEARANCE - 1).min(H as i32 - 1) {
+                        for nx in (x - ARC_CLEARANCE + 1).max(0)..=(x + ARC_CLEARANCE - 1).min(W as i32 - 1) {
+                            let ink = mask[at(nx, ny)] == 0 && f[at(nx, ny)] != ground && geometry_lit(nx, ny);
+                            assert!(!ink, "{name}: ink at {nx},{ny} beside the arc at {x},{y}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn geometry_lit(x: i32, y: i32) -> bool {
+        let (dx, dy) = (x as f32 - 119.5, y as f32 - 119.5);
+        dx * dx + dy * dy < 118.0 * 118.0
     }
 
     #[test]
@@ -1234,7 +1300,7 @@ mod tests {
             return;
         };
         let opts = inscribed_disc::preview::Options { scale: 2, ..Default::default() };
-        let picked = ["week-pick-6", "week-pick-5", "week-pick-2"];
+        let picked = ["week-pick-6", "week-pick-5", "week-pick-2", "week-long-pick-5"];
         let picks = picks().into_iter().filter(|(n, _)| picked.contains(&n.as_str())).collect::<Vec<_>>();
         let picks = picks.iter().map(|(n, st)| (n.as_str(), *st));
         for (name, st) in nights().into_iter().chain(weeks()).chain(picks).chain(tonights()).chain([("picker", reported())]) {

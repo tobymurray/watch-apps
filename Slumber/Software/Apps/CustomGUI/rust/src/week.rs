@@ -3,7 +3,7 @@
 use inscribed_disc::{Abgr2222, Surface};
 use incised_text::{faces, Face};
 
-use crate::night::{dither, minutes, rest_ink, text, GROUND, MAIN_INK, MUTED_INK, RHYTHM_INK, TITLE_INK, UNKNOWN};
+use crate::night::{dither, minutes, rest_ink, text, GROUND, MAIN_INK, MUTED_INK, REST_INK, RHYTHM_INK, TITLE_INK, UNKNOWN};
 use crate::{Line, State, NO_BAR, SCREEN_WEEK, WEEK_NIGHTS};
 
 pub static TITLE_FACE: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
@@ -15,6 +15,8 @@ pub static PICK_FACE: &Face = &faces::POPPINS_SEMIBOLD_18_ASCII;
 
 pub const TITLE_Y: i32 = 46;
 pub const SUMMARY_Y: i32 = 70;
+/// Lower than the summary, where the glass is wider, so a 10 h night clears the L1 arc.
+pub const PICK_Y: i32 = 73;
 pub const PLOT_TOP: i32 = 82;
 pub const PLOT_BOTTOM: i32 = 164;
 pub const DAY_Y: i32 = 186;
@@ -64,20 +66,46 @@ pub fn pick_title(state: &State, i: usize) -> &'static str {
     NAMES[weekday(state, i)]
 }
 
-/// "7h42 23:15-07:20", or "no night", in place of the summary.
-pub fn pick_detail(state: &State, i: usize) -> (Line, Abgr2222) {
-    let mut line = Line::new();
+/// Between the picked night's rest and its times, in place of a space.
+const PICK_GAP: i32 = 6;
+
+/// The picked night's rest and times, "7h42" and "23:15-07:20"; `None` if it has no bar.
+pub fn pick_parts(state: &State, i: usize) -> Option<(Line, Line)> {
     if state.week_bed[i] == NO_BAR {
-        line.push("no night");
-        return (line, MUTED_INK);
+        return None;
     }
     let clock = |m: i16| ((m as i32 + DAY_MIN / 2).rem_euclid(DAY_MIN)) as u16;
-    minutes(&mut line, state.week_rest[i] as u32);
-    line.push(" ");
-    crate::night::clock(&mut line, clock(state.week_bed[i]));
-    line.push("-");
-    crate::night::clock(&mut line, clock(state.week_wake[i]));
-    (line, MAIN_INK)
+    let mut rest = Line::new();
+    minutes(&mut rest, state.week_rest[i] as u32);
+    let mut times = Line::new();
+    crate::night::clock(&mut times, clock(state.week_bed[i]));
+    times.push("-");
+    crate::night::clock(&mut times, clock(state.week_wake[i]));
+    Some((rest, times))
+}
+
+/// Where the rest and the times start their ink, and where the times' ink ends, so the two
+/// centre together.
+pub fn pick_layout(rest: &Line, times: &Line) -> (i32, i32, i32) {
+    let (r, t) = (PICK_FACE.measure(rest.as_str()), PICK_FACE.measure(times.as_str()));
+    let (wr, wt) = ((r.ink_right - r.ink_left) as i32, (t.ink_right - t.ink_left) as i32);
+    let left = 120 - (wr + PICK_GAP + wt) / 2;
+    (left, left + wr + PICK_GAP, left + wr + PICK_GAP + wt)
+}
+
+/// The rest in the Rest colour and the times in white, as the night screen has them.
+fn draw_pick(fb: &mut Surface<Abgr2222>, state: &State, i: usize) {
+    let Some((rest, times)) = pick_parts(state, i) else {
+        let mut none = Line::new();
+        none.push("no night");
+        text(fb, PICK_FACE, &none, PICK_Y, MUTED_INK);
+        return;
+    };
+    let (left, times_at, _) = pick_layout(&rest, &times);
+    let (r, t) = (PICK_FACE.measure(rest.as_str()), PICK_FACE.measure(times.as_str()));
+    let style = |ink| incised_text::Style::left(ink, GROUND);
+    PICK_FACE.draw(fb, rest.as_str(), left - r.ink_left as i32, PICK_Y, style(REST_INK)).ok();
+    PICK_FACE.draw(fb, times.as_str(), times_at - t.ink_left as i32, PICK_Y, style(MAIN_INK)).ok();
 }
 
 fn usual_known(state: &State) -> bool {
@@ -222,17 +250,13 @@ pub fn draw(fb: &mut Surface<Abgr2222>, state: &State) {
     let mut title = Line::new();
     title.push(pick.map_or("Past week", |i| pick_title(state, i)));
     text(fb, TITLE_FACE, &title, TITLE_Y, TITLE_INK);
-    let (summary, ink, face) = match pick {
-        Some(i) => {
-            let (line, ink) = pick_detail(state, i);
-            (line, ink, PICK_FACE)
-        }
+    match pick {
+        Some(i) => draw_pick(fb, state, i),
         None => {
             let (line, ink) = summary(state);
-            (line, ink, SUMMARY_FACE)
+            text(fb, SUMMARY_FACE, &line, SUMMARY_Y, ink);
         }
-    };
-    text(fb, face, &summary, SUMMARY_Y, ink);
+    }
 
     let span = span(state);
     if nights(state).next().is_some() {
