@@ -175,7 +175,7 @@ only ever moves cannot tell them apart:
 | Flipped, but the file was not written | Amber pill, knob on the live side, `NOT SAVED`, footer `REVERTS ON REBOOT` |
 | Saving is switched off (the default) | Ordinary green/grey pill and `ON`/`OFF`, footer `REVERTS ON REBOOT` |
 | Firmware known, its settings unconfirmed | No pill, `SETTINGS?`, footer `UNREADABLE FILE` |
-| The firmware gate refused | No pill at all, `UNSUPPORTED`, footer `NEEDS WATCH 1.4.0` |
+| The firmware gate refused | No pill at all, `UNSUPPORTED`, footer `NEEDS WATCH 1.7.0` |
 
 The last two are the ones that matter. A change that took effect live but never
 reached `settings.json` is real right now and gone at the next reboot, and it
