@@ -352,6 +352,19 @@ constexpr AddressSet kFirmware_1_6_2 = {
 // StartupTask at 0x0806c3ec loads 0x2001118c and passes base-4 and base+0x3d4 to
 // Settings::Manager::parse, the witness 1.6.x used. Falsified by the gate
 // refusing on a 1.7.0 watch, which its debug log names by signature or field.
+//
+// Notification service: Ble::NotificationService::mPhoneNotificationEnabled is
+// refreshed only at boot, by a phone settings write and by the system Settings
+// screen, so a live-struct write alone leaves phone notifications dropped until
+// a reboot. Backend::GetInstance()::sInstance is 0x200013b8 and DWARF puts
+// pBleNotificationService at +0x64 and the flag at +21, which
+// enablePhoneNotification (0x0809c02c, `strb r1, [r0, #0x15]`) agrees with.
+// Backend::thread allocates the service with nothrow new, so it sits in the
+// malloc heap that _sbrk_r grows from `end` (0x200edc28) toward _estack
+// (0x2025e000). Its vptr is vtable+16, 0x0818c850, stored by the complete-object
+// constructor via the literal at 0x0809ce88. Falsified by the vptr check
+// refusing on a 1.7.0 watch, or by notifications staying off after the app
+// turns them on.
 constexpr Signature kSignatures_1_7_0[] = {
     // Open
     {0x080a732cu, {0xF0, 0xB5, 0x05, 0x46, 0x85, 0xB0, 0x00, 0xF5, 0x84, 0x77, 0x06, 0x1D, 0x0A, 0xB3, 0x00, 0x29}},
@@ -401,6 +414,14 @@ constexpr AddressSet kFirmware_1_7_0 = {
     .fileSizeFieldOffset      = 0x118u,
     .signatures               = kSignatures_1_7_0,
     .signatureCount           = sizeof(kSignatures_1_7_0) / sizeof(kSignatures_1_7_0[0]),
+    .notificationService      = {
+        .backendInstance      = 0x200013b8u,
+        .servicePointerOffset = 0x64u,
+        .phoneFlagOffset      = 21u,
+        .expectedVptr         = 0x0818c850u,
+        .heapBase             = 0x200edc28u,
+        .heapEnd              = 0x2025e000u,
+    },
 };
 
 // This part's memory map: code executes from the 4MB flash bank at
@@ -478,6 +499,23 @@ constexpr bool noTwoFieldsOverlap(const AddressSet &a)
     return true;
 }
 
+/// True if an underived site is all zero, and a derived one has a static instance
+/// below the heap, small aligned offsets and a flash vptr with no Thumb bit.
+constexpr bool notificationServiceIsWellFormed(const NotificationServiceSite &s)
+{
+    if (!isDerived(s)) {
+        return s.servicePointerOffset == 0u && s.phoneFlagOffset == 0u &&
+               s.expectedVptr == 0u && s.heapBase == 0u && s.heapEnd == 0u;
+    }
+    return s.backendInstance >= kSramBase && s.heapBase < s.heapEnd &&
+           s.backendInstance + s.servicePointerOffset + sizeof(uint32_t) <= s.heapBase &&
+           s.servicePointerOffset < kMaxStructOffset &&
+           s.servicePointerOffset % alignof(uint32_t) == 0u &&
+           s.phoneFlagOffset >= sizeof(uint32_t) && s.phoneFlagOffset < kMaxStructOffset &&
+           s.expectedVptr >= kFlashBase && s.expectedVptr < kFlashEnd &&
+           s.expectedVptr % alignof(uint32_t) == 0u;
+}
+
 constexpr bool isWellFormed(const AddressSet &a)
 {
     return a.abi > 0u && a.derivedFrom != nullptr && signaturesPairWithAddresses(a) &&
@@ -500,7 +538,8 @@ constexpr bool isWellFormed(const AddressSet &a)
            a.fileObjectSize > 0u &&
            a.pathBufferSize > 0u &&
            a.pathBufferOffset + a.pathBufferSize <= a.fileObjectSize &&
-           a.fileSizeFieldOffset + sizeof(uint64_t) <= a.fileObjectSize;
+           a.fileSizeFieldOffset + sizeof(uint64_t) <= a.fileObjectSize &&
+           notificationServiceIsWellFormed(a.notificationService);
 }
 
 // One row per firmware version that has actually had this investigation's
@@ -529,8 +568,8 @@ static_assert(everyEntryIsWellFormed(),
               "A table entry has a value in the wrong member, or its signatures do not "
               "fingerprint its own addresses: an address where an offset belongs, an offset "
               "where an address belongs, two live-struct fields claiming the same byte, a "
-              "File layout that does not fit its own object size, or a signature filed "
-              "under the wrong function.");
+              "File layout that does not fit its own object size, a signature filed "
+              "under the wrong function, or a notification-service site half filled in.");
 
 /// True if two rows carry the same signature at every index.
 constexpr bool signaturesIdentical(const AddressSet &a, const AddressSet &b)

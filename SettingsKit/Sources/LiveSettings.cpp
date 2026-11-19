@@ -147,4 +147,49 @@ bool matchesKernel(SDK::Interface::IFileSystem &fs, const SettingsAddresses::Add
     return activityAgrees && stepsAgrees;
 }
 
+ServiceSync syncNotificationService(SDK::Interface::IFileSystem &fs,
+                                    const SettingsAddresses::AddressSet &addrs, bool enabled)
+{
+    const SettingsAddresses::NotificationServiceSite &site = addrs.notificationService;
+    if (!SettingsAddresses::isDerived(site)) {
+        DebugLog::appendf(fs, "LiveSettings: no notification-service site for %s; not syncing",
+                           addrs.derivedFrom);
+        return ServiceSync::NotDerived;
+    }
+
+    const uintptr_t slot    = site.backendInstance + site.servicePointerOffset;
+    const uintptr_t service = *reinterpret_cast<const volatile uintptr_t *>(slot);
+    if (service == 0u) {
+        DebugLog::appendf(fs, "LiveSettings: service pointer at 0x%08X is null; not syncing",
+                           static_cast<unsigned>(slot));
+        return ServiceSync::NoService;
+    }
+    if (!SettingsAddresses::isPlausibleService(site, service)) {
+        DebugLog::appendf(fs, "LiveSettings: service pointer 0x%08X is outside the kernel heap; not syncing",
+                           static_cast<unsigned>(service));
+        return ServiceSync::ImplausiblePointer;
+    }
+
+    const uintptr_t vptr = *reinterpret_cast<const volatile uintptr_t *>(service);
+    if (vptr != site.expectedVptr) {
+        DebugLog::appendf(fs, "LiveSettings: service at 0x%08X has vptr 0x%08X, expected 0x%08X; not syncing",
+                           static_cast<unsigned>(service), static_cast<unsigned>(vptr),
+                           static_cast<unsigned>(site.expectedVptr));
+        return ServiceSync::UnexpectedVptr;
+    }
+
+    volatile uint8_t &flag = *reinterpret_cast<volatile uint8_t *>(service + site.phoneFlagOffset);
+    const uint8_t before = flag;
+    if (before != 0 && before != 1) {
+        DebugLog::appendf(fs, "LiveSettings: service flag raw=0x%02X is not 0/1; not syncing", before);
+        return ServiceSync::UnexpectedFlagByte;
+    }
+
+    const uint8_t after = enabled ? 1 : 0;
+    flag = after;
+    DebugLog::appendf(fs, "LiveSettings: service flag at 0x%08X 0x%02X -> 0x%02X",
+                       static_cast<unsigned>(service + site.phoneFlagOffset), before, after);
+    return ServiceSync::Written;
+}
+
 } // namespace LiveSettings
