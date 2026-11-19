@@ -1,8 +1,6 @@
 # Host tests for SettingsKit, built out of tree like the apps that use it.
 #
-# The splice is the only part of the write path that runs without a kernel, and
-# it decides which bytes of a real settings file get rewritten. The addresses,
-# the File primitives and the commit rename are exercised by nothing but a watch.
+# Only what runs without a kernel: the splice and the notification-service pointer check.
 
 cmake_minimum_required(VERSION 3.21)
 project(settingskit-host-tests CXX)
@@ -40,3 +38,8 @@ add_executable(settingskit-splice-tests SettingsSplice_test.cpp)
 target_include_directories(settingskit-splice-tests PRIVATE "${SETTINGSKIT_HEADER}")
 target_link_libraries(settingskit-splice-tests PRIVATE GTest::gtest_main)
 add_test(NAME settingskit-splice-tests COMMAND settingskit-splice-tests)
+
+add_executable(settingskit-service-site-tests NotificationServiceSite_test.cpp)
+target_include_directories(settingskit-service-site-tests PRIVATE "${SETTINGSKIT_HEADER}")
+target_link_libraries(settingskit-service-site-tests PRIVATE GTest::gtest_main)
+add_test(NAME settingskit-service-site-tests COMMAND settingskit-service-site-tests)

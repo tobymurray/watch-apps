@@ -56,6 +56,27 @@ enum SignatureIndex {
     kSignatureCount
 };
 
+/// Where the kernel's BLE notification service keeps its own copy of `phone.notifications`.
+struct NotificationServiceSite {
+    uintptr_t backendInstance      = 0u;  ///< 0 = not derived for this firmware
+    size_t    servicePointerOffset = 0u;  ///< of Backend's `Ble::NotificationService *`
+    size_t    phoneFlagOffset      = 0u;  ///< of the service's `bool mPhoneNotificationEnabled`
+    uintptr_t expectedVptr         = 0u;
+    uintptr_t heapBase             = 0u;  ///< inclusive
+    uintptr_t heapEnd              = 0u;  ///< exclusive
+};
+
+constexpr bool isDerived(const NotificationServiceSite &site)
+{
+    return site.backendInstance != 0u;
+}
+
+constexpr bool isPlausibleService(const NotificationServiceSite &site, uintptr_t service)
+{
+    return service != 0u && service % alignof(uint32_t) == 0u && service >= site.heapBase &&
+           service < site.heapEnd && site.phoneFlagOffset < site.heapEnd - service;
+}
+
 /// Everything LiveSettings.cpp and SettingsPersist.cpp need, for one exact
 /// firmware build. Addresses for the internal `File` class methods already
 /// carry the Thumb bit (see SettingsPersist.hpp) -- callable as-is.
@@ -127,6 +148,8 @@ struct AddressSet {
     // cross-check is its evidence instead. ---
     const Signature *signatures;
     size_t           signatureCount;
+
+    NotificationServiceSite notificationService = {};
 };
 
 /// Number of firmware rows in the table the gate walks.

@@ -67,6 +67,19 @@ Status writeFlag(SDK::Interface::IFileSystem &fs, const SettingsAddresses::Addre
 bool matchesKernel(SDK::Interface::IFileSystem &fs, const SettingsAddresses::AddressSet &addrs,
                    uint32_t kernelActivityMinutes, uint32_t kernelSteps);
 
+enum class ServiceSync {
+    Written,
+    NotDerived,          ///< This firmware's row has no notification-service site; nothing read.
+    NoService,           ///< The kernel built no notification service.
+    ImplausiblePointer,  ///< The service pointer is not an aligned address in the kernel heap.
+    UnexpectedVptr,      ///< The object there is not a NotificationService.
+    UnexpectedFlagByte,  ///< The service's flag byte wasn't 0 or 1.
+};
+
+/// Writes nothing unless the pointer, the object's vptr and the current byte all check out.
+ServiceSync syncNotificationService(SDK::Interface::IFileSystem &fs,
+                                    const SettingsAddresses::AddressSet &addrs, bool enabled);
+
 } // namespace LiveSettings
 
 #endif // LIVE_SETTINGS_HPP
