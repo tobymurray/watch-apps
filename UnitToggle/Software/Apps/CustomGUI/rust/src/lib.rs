@@ -242,7 +242,7 @@ const LABEL_NOT_SAVED: &str = "NOT SAVED";
 const LABEL_VIEW_ONLY: &str = "VIEW ONLY";
 const FOOTER: &str = "R1 SWITCH  R2 BACK";
 const FOOTER_NOT_SAVED: &str = "REVERTS ON REBOOT";
-const FOOTER_UNSUPPORTED: &str = "NEEDS WATCH 1.4.0";
+const FOOTER_UNSUPPORTED: &str = "NEEDS WATCH 1.7.0";
 const FOOTER_UNKNOWN: &str = "R2 BACK";
 
 pub fn render(buf: &mut [u8], width: u32, height: u32, state: &State) {

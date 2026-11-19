@@ -193,7 +193,7 @@ solid.
 | Read, and saved | White outline, the set half filled, no status line |
 | Saving is switched off (the default) | The same, footer `REVERTS ON REBOOT` |
 | Changed, but the file was not written | Amber outline, the set half still filled, `NOT SAVED`, footer `REVERTS ON REBOOT` |
-| Firmware refused, units still readable | Grey outline, the set half filled, `VIEW ONLY`, footer `NEEDS WATCH 1.4.0` |
+| Firmware refused, units still readable | Grey outline, the set half filled, `VIEW ONLY`, footer `NEEDS WATCH 1.7.0` |
 | The units could not be read at all | No control, `UNKNOWN` |
 
 The fourth row is the one that differs from `NotifyToggle`, which draws no

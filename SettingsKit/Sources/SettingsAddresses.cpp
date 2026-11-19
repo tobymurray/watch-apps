@@ -335,6 +335,74 @@ constexpr AddressSet kFirmware_1_6_2 = {
     .signatureCount           = sizeof(kSignatures_1_6_2) / sizeof(kSignatures_1_6_2[0]),
 };
 
+// Kernel 1.7.0, same ABI (3). Read from the symbols and DWARF of the
+// UnaWatch-Kernel-1.7.0.elf that github.com/UNAWatch/una-kernel-public publishes
+// with its v1.7.0 release (SHA-256 58610557504b5e02...), not matched across a
+// dump; the signatures are that release's own .hex bytes, and none of the five
+// rows above matches more than SetPath's in it.
+//
+// File class: Release is File::close() and Close is File::flush(). Each is
+// 1.4.0's instruction for instruction apart from bl targets and its __LINE__
+// constants, shifted by 8. DWARF gives FS::File as 856 bytes, mPath[256] at +4,
+// the FIL at +264 and obj.objsize at +16 within it. SetPath is in the shared
+// libc, whose 0x08000000-0x08060000 is byte-identical to the 1.4.0 dump.
+//
+// Live settings struct: Settings::Manager::GetInstance()::sInstance is
+// 0x20011188, DWARF puts mSettings at +4, and WatchSettings has 1.5.0's offsets.
+// StartupTask at 0x0806c3ec loads 0x2001118c and passes base-4 and base+0x3d4 to
+// Settings::Manager::parse, the witness 1.6.x used. Falsified by the gate
+// refusing on a 1.7.0 watch, which its debug log names by signature or field.
+constexpr Signature kSignatures_1_7_0[] = {
+    // Open
+    {0x080a732cu, {0xF0, 0xB5, 0x05, 0x46, 0x85, 0xB0, 0x00, 0xF5, 0x84, 0x77, 0x06, 0x1D, 0x0A, 0xB3, 0x00, 0x29}},
+    // Read
+    {0x080a75dcu, {0x1F, 0xB5, 0x29, 0xB9, 0x8D, 0x21, 0x0F, 0x4B, 0x0F, 0x4A, 0x10, 0x48, 0xC3, 0xF7, 0x8C, 0xFE}},
+    // Write
+    {0x080a7438u, {0x30, 0xB5, 0x14, 0x46, 0x1D, 0x46, 0x85, 0xB0, 0x29, 0xB9, 0x9D, 0x21, 0x0F, 0x4B, 0x10, 0x4A}},
+    // Close
+    {0x080a7554u, {0x1F, 0xB5, 0x00, 0xF5, 0x84, 0x70, 0x37, 0xF0, 0xA3, 0xFC, 0x88, 0xB1, 0x09, 0x4B, 0x01, 0x22}},
+    // Release
+    {0x080a73a4u, {0x30, 0xB5, 0x90, 0xF8, 0x04, 0x31, 0x04, 0x46, 0x85, 0xB0, 0x03, 0xB3, 0x00, 0xF5, 0x84, 0x75}},
+    // SetPath -- unmoved since 1.4.0.
+    {0x0802b3eau, {0x01, 0x39, 0x03, 0x46, 0x10, 0xB5, 0x32, 0xB1, 0x11, 0xF8, 0x01, 0x4F, 0x01, 0x3A, 0x03, 0xF8}},
+    // Exists
+    {0x080a7694u, {0x10, 0xB5, 0x04, 0x46, 0x28, 0xB9, 0xE0, 0x21, 0x06, 0x4B, 0x07, 0x4A, 0x07, 0x48, 0xC3, 0xF7}},
+    // Delete
+    {0x080a773cu, {0x10, 0xB5, 0x04, 0x46, 0x28, 0xB9, 0xEE, 0x21, 0x06, 0x4B, 0x07, 0x4A, 0x07, 0x48, 0xC3, 0xF7}},
+    // Rename
+    {0x080a76ccu, {0x70, 0xB5, 0x0D, 0x46, 0x04, 0x46, 0x28, 0xB9, 0xE6, 0x21, 0x09, 0x4B, 0x09, 0x4A, 0x0A, 0x48}},
+};
+
+constexpr AddressSet kFirmware_1_7_0 = {
+    .abi                      = 3u,
+    .derivedFrom              = "1.7.0",
+    .settingsStructBase       = 0x2001118cu,
+    .phoneNotificationsOffset = 5u,
+    .unitsImperialOffset      = 4u,
+    .watchFaceIdOffset        = kNoWatchFaceAnchor,
+    .heartRateZonesOffset     = 0x06u,
+    .activityMinutesOffset    = 0x0cu,
+    .stepsOffset              = 0x10u,
+    .floorsOffset             = 0x14u,
+    .heightOffset             = 0x18u,
+    .weightOffset             = 0x1cu,
+    .fileOpenAddr             = 0x080a732cu | 1u,
+    .fileReadAddr             = 0x080a75dcu | 1u,
+    .fileWriteAddr            = 0x080a7438u | 1u,
+    .fileCloseAddr            = 0x080a7554u | 1u,
+    .fileReleaseAddr          = 0x080a73a4u | 1u,
+    .setPathAddr              = 0x0802b3eau | 1u,
+    .fileExistsAddr           = 0x080a7694u | 1u,
+    .fileDeleteAddr           = 0x080a773cu | 1u,
+    .fileRenameAddr           = 0x080a76ccu | 1u,
+    .fileObjectSize           = 856u,
+    .pathBufferOffset         = 0x04u,
+    .pathBufferSize           = 0x100u,
+    .fileSizeFieldOffset      = 0x118u,
+    .signatures               = kSignatures_1_7_0,
+    .signatureCount           = sizeof(kSignatures_1_7_0) / sizeof(kSignatures_1_7_0[0]),
+};
+
 // This part's memory map: code executes from the 4MB flash bank at
 // 0x08000000, and the kernel's live structs sit in SRAM at 0x20000000.
 constexpr uintptr_t kFlashBase = 0x08000000u;
@@ -444,6 +512,7 @@ constexpr const AddressSet *kSupported[] = {
     &kFirmware_1_6_0,
     &kFirmware_1_6_1,
     &kFirmware_1_6_2,
+    &kFirmware_1_7_0,
 };
 
 constexpr bool everyEntryIsWellFormed()
