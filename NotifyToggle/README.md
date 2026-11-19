@@ -62,7 +62,8 @@ version:
   the phone writes settings — so on its own, the live write turned
   notifications off at once but on only after a reboot. On kernel 1.7.0,
   `LiveSettings::syncNotificationService` writes the same byte into the
-  service too, after checking that the pointer lands in the
+  service too, on R1 and again at launch so a watch left split by an earlier
+  build heals on opening, after checking that the pointer lands in the
   kernel heap and the object there carries the service's vptr; on any other
   firmware, or if either check fails, it writes nothing. Read from the 1.7.0
   release ELF, not yet seen on a watch. Falsified by notifications staying off

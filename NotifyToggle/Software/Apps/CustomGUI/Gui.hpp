@@ -26,6 +26,7 @@ private:
     void refreshLiveState();
     void toggle();
     void applyCapabilities(bool enabled);
+    void syncNotificationService(bool enabled);
 
     static constexpr int16_t  kFallbackWidth     = 240;
     static constexpr int16_t  kFallbackHeight    = 240;
