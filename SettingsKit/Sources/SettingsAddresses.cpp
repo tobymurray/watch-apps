@@ -354,11 +354,12 @@ constexpr AddressSet kFirmware_1_6_2 = {
 // refusing on a 1.7.0 watch, which its debug log names by signature or field.
 //
 // Notification service: Ble::NotificationService::mPhoneNotificationEnabled is
-// refreshed only at boot, by a phone settings write and by the system Settings
-// screen, so a live-struct write alone leaves phone notifications dropped until
-// a reboot. Backend::GetInstance()::sInstance is 0x200013b8 and DWARF puts
-// pBleNotificationService at +0x64 and the flag at +21, which
-// enablePhoneNotification (0x0809c02c, `strb r1, [r0, #0x15]`) agrees with.
+// refreshed only at boot and by a phone settings write (Backend.cpp's
+// G2BEvent::Settings handler has no sender), so a live-struct write alone leaves
+// phone notifications dropped until a reboot. Backend::GetInstance()::sInstance
+// is 0x200013b8 and DWARF puts pBleNotificationService at +0x64 and the flag at
+// +21, which enablePhoneNotification (0x0809c02c, `strb r1, [r0, #0x15]`)
+// agrees with.
 // Backend::thread allocates the service with nothrow new, so it sits in the
 // malloc heap that _sbrk_r grows from `end` (0x200edc28) toward _estack
 // (0x2025e000). Its vptr is vtable+16, 0x0818c850, stored by the complete-object
