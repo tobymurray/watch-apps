@@ -56,6 +56,17 @@ version:
   `LiveSettings.cpp` uses that to read/write the live, in-RAM copy of
   `phone.notifications` directly — immediate effect, the moment R1 is
   pressed.
+- **The kernel keeps a second copy of the flag.** Its BLE
+  `NotificationService` drops every phone notification while its own
+  `mPhoneNotificationEnabled` is false, and refreshes it only at boot, when
+  the phone writes settings, or from the system Settings screen — so on its
+  own, the live write turned notifications off at once but on only after a
+  reboot. On kernel 1.7.0, `LiveSettings::syncNotificationService` writes the
+  same byte into the service too, after checking that the pointer lands in the
+  kernel heap and the object there carries the service's vptr; on any other
+  firmware, or if either check fails, it writes nothing. Read from the 1.7.0
+  release ELF, not yet seen on a watch. Falsified by notifications staying off
+  after R1 turns them on with no reboot.
 - **Persisting that change to flash** does not go through the settings
   class's own `save()` method: it has zero callers anywhere in the firmware,
   and the real phone app doesn't call it either — it overwrites the whole
