@@ -500,8 +500,7 @@ constexpr bool noTwoFieldsOverlap(const AddressSet &a)
     return true;
 }
 
-/// True if an underived site is all zero, and a derived one has a static instance
-/// below the heap, small aligned offsets and a flash vptr with no Thumb bit.
+/// An underived site is all zero; a derived one has its instance below the heap and its vptr in flash.
 constexpr bool notificationServiceIsWellFormed(const NotificationServiceSite &s)
 {
     if (!isDerived(s)) {

@@ -76,8 +76,7 @@ enum class ServiceSync {
     UnexpectedFlagByte,  ///< The service's flag byte wasn't 0 or 1.
 };
 
-/// Writes `enabled` into the kernel notification service's own copy of the flag,
-/// only after the pointer, the object's vptr and the current byte all check out.
+/// Writes nothing unless the pointer, the object's vptr and the current byte all check out.
 ServiceSync syncNotificationService(SDK::Interface::IFileSystem &fs,
                                     const SettingsAddresses::AddressSet &addrs, bool enabled);
 

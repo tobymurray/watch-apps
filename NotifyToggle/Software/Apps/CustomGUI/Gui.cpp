@@ -160,7 +160,7 @@ void Gui::toggle()
         return;
     }
 
-    // SettingsAddresses::NotificationServiceSite says why the live flag alone is not enough.
+    // README.md says why the live flag alone is not enough.
     const auto sync = LiveSettings::syncNotificationService(mKernel.fs, *mAddresses, desired);
     if (sync != LiveSettings::ServiceSync::Written && sync != LiveSettings::ServiceSync::NotDerived) {
         LOG_WARNING("toggle: notification service not synced (status=%d)\n", static_cast<int>(sync));

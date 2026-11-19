@@ -56,15 +56,14 @@ enum SignatureIndex {
     kSignatureCount
 };
 
-/// The kernel BLE notification service's own copy of `phone.notifications`,
-/// which drops phone notifications while false whatever the live struct says.
+/// Where the kernel's BLE notification service keeps its own copy of `phone.notifications`.
 struct NotificationServiceSite {
-    uintptr_t backendInstance      = 0u;  ///< 0 = not derived for this firmware; every member is then 0.
-    size_t    servicePointerOffset = 0u;  ///< Backend's `Ble::NotificationService *`; nullptr when none was built.
-    size_t    phoneFlagOffset      = 0u;  ///< The service's `bool mPhoneNotificationEnabled`.
-    uintptr_t expectedVptr         = 0u;  ///< First word of a constructed service.
-    uintptr_t heapBase             = 0u;  ///< The kernel heap the service is allocated from, as [heapBase, heapEnd).
-    uintptr_t heapEnd              = 0u;
+    uintptr_t backendInstance      = 0u;  ///< 0 = not derived for this firmware
+    size_t    servicePointerOffset = 0u;  ///< of Backend's `Ble::NotificationService *`
+    size_t    phoneFlagOffset      = 0u;  ///< of the service's `bool mPhoneNotificationEnabled`
+    uintptr_t expectedVptr         = 0u;
+    uintptr_t heapBase             = 0u;  ///< inclusive
+    uintptr_t heapEnd              = 0u;  ///< exclusive
 };
 
 constexpr bool isDerived(const NotificationServiceSite &site)
@@ -72,7 +71,6 @@ constexpr bool isDerived(const NotificationServiceSite &site)
     return site.backendInstance != 0u;
 }
 
-/// True if `service` is an aligned heap address whose flag byte is inside the heap too.
 constexpr bool isPlausibleService(const NotificationServiceSite &site, uintptr_t service)
 {
     return service != 0u && service % alignof(uint32_t) == 0u && service >= site.heapBase &&

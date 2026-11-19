@@ -1,8 +1,6 @@
 # Host tests for SettingsKit, built out of tree like the apps that use it.
 #
-# The splice and the notification-service pointer check are the parts that run
-# without a kernel. The addresses, the File primitives and the commit rename are
-# exercised by nothing but a watch.
+# Only what runs without a kernel: the splice and the notification-service pointer check.
 
 cmake_minimum_required(VERSION 3.21)
 project(settingskit-host-tests CXX)
